@@ -1,102 +1,12 @@
-//! Shell-contract pins for the demo collapse: `--check` golden outputs,
-//! legacy CSV slot rows through the unified loader, and the deletion gate
-//! for the twins earlier milestones made redundant.
-//!
-//! The golden runner executes the built example binaries directly (no cargo
-//! recursion): `current_exe` is `target/<profile>/deps/<hash>`, so the
-//! examples sit at `target/<profile>/examples/`. The examples only build
-//! under their features (`demo`, `server-gateway`), so a feature-off run
-//! skips with a message instead of failing — the M10 gate runs
-//! `--all-features`, where the pin is enforced.
+//! Shell-contract pins for the demo collapse: legacy CSV slot rows
+//! through the unified loader, and the deletion gate for the twins
+//! earlier milestones made redundant. (The example-binary E2E lives in
+//! the integration-tier `demo_contract` target — see there for why.)
 
 use std::path::PathBuf;
-use std::process::Command;
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn example_binary(name: &str) -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let binary = exe.parent()?.parent()?.join("examples").join(name);
-    binary.is_file().then_some(binary)
-}
-
-fn run_check(binary: &std::path::Path, args: &[&str]) -> String {
-    let output = Command::new(binary)
-        .args(args)
-        .output()
-        .unwrap_or_else(|error| panic!("run {}: {error}", binary.display()));
-    assert!(
-        output.status.success(),
-        "{} {:?} failed: {}",
-        binary.display(),
-        args,
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        output.stderr.is_empty(),
-        "the check contract is stdout-only: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).expect("check output is UTF-8")
-}
-
-fn golden(name: &str) -> String {
-    std::fs::read_to_string(manifest_dir().join("tests/data").join(name))
-        .unwrap_or_else(|error| panic!("read golden {name}: {error}"))
-}
-
-/// Drop the volatile bar count from a directory-mode check line: the
-/// monthlies under the git-ignored history root grow over time, so no
-/// quantity is pinned — only that tracked code handles the use case
-/// (loads the directory, renders the contract lines).
-fn without_bars(line: &str) -> String {
-    let (head, tail) = line.split_once("bars=").expect("bars field");
-    let end = tail.find(' ').expect("bars field end");
-    format!("{head}bars={{}}{}", &tail[end..])
-}
-
-/// `--check` contracts pinned as golden text: the chart shell's directory
-/// and legacy-CSV outputs plus the mock terminal's trading-view output.
-/// Repointing `make protopyne-demo-check` must reproduce these byte-for-byte.
-#[test]
-fn check_contracts_are_pinned() {
-    let Some(demo) = example_binary("demo") else {
-        eprintln!("skip: demo example not built (needs --features demo)");
-        return;
-    };
-    let Some(terminal) = example_binary("terminal") else {
-        eprintln!("skip: terminal example not built (needs server-gateway,demo)");
-        return;
-    };
-    // Directory mode loads the local monthlies, so the bar quantity is
-    // never pinned — only that tracked code handles the use case: the
-    // command succeeds and renders the contract lines byte-for-byte
-    // apart from the count.
-    let output = run_check(&demo, &["--check"]);
-    let golden_text = golden("demo_check.txt");
-    let mut lines = output.lines();
-    let mut golden_lines = golden_text.lines();
-    let first = lines.next().expect("check prints a summary line");
-    let golden_first = golden_lines.next().expect("golden summary line");
-    assert_eq!(without_bars(first), without_bars(golden_first));
-    let rest: Vec<&str> = lines.collect();
-    let golden_rest: Vec<&str> = golden_lines.collect();
-    assert_eq!(rest, golden_rest, "tickers and notice lines");
-    let csv = manifest_dir()
-        .join("../../data/protopyne-rs/historical/SPY_15M.csv")
-        .to_string_lossy()
-        .into_owned();
-    assert_eq!(
-        run_check(&demo, &["--check", csv.as_str()]),
-        golden("demo_csv_check.txt"),
-        "the legacy CSV contract"
-    );
-    assert_eq!(
-        run_check(&terminal, &["--mock", "--check"]),
-        golden("terminal_mock_check.txt")
-    );
 }
 
 /// Legacy CSV slots through the unified loader: each file the old slot map
@@ -142,32 +52,6 @@ fn legacy_csv_slots_match_unified_loader() {
 /// The 1D fix, pinned end to end: a session-shaped history folds to a
 /// non-empty daily frame under `KeepPartial` (the demo's daily fold), so the
 /// 1D chart has bars instead of going dark.
-#[test]
-fn daily_fold_over_real_history_is_non_empty() {
-    use protopyne_types::{FoldEdges, Timeframe};
-    let dir = manifest_dir().join("../../data/protopyne-rs/historical");
-    let Ok(root) = protopyne_server::HistoryRoot::open(&dir) else {
-        eprintln!("skip: no history root at {}", dir.display());
-        return;
-    };
-    let mut cache = protopyne_server::HistoryCache::new(root);
-    let Ok(load) = cache.load_for("SPY") else {
-        eprintln!("skip: no SPY history under {}", dir.display());
-        return;
-    };
-    let frames = protopyne_server::fold_frames(
-        &load.bars,
-        protopyne_server::HISTORY_ROOT_BASE,
-        &[Timeframe::D1],
-        FoldEdges::KeepPartial,
-    )
-    .expect("fold SPY to daily");
-    assert!(
-        !frames[0].1.is_empty(),
-        "a session history folds to daily bars under KeepPartial"
-    );
-}
-
 /// Deletion gate: the twins earlier milestones made redundant stay gone.
 /// Identifier-exact (a `sma_params` or a comment mentioning a name is not a
 /// twin), over the library and both example shells.

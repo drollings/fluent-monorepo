@@ -35,5 +35,9 @@ tokio = { workspace = true, features = ["test-util"] }
 name = "doc_stubs"
 path = "tests/doc_stubs.rs"
 
+[[test]]
+name = "hnsw_concurrent"
+path = "tests/hnsw_concurrent.rs"
+
 [lints]
 workspace = true

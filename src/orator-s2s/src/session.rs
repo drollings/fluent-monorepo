@@ -813,9 +813,5 @@ impl_component!(AudioSession);
 mod tests;
 
 #[cfg(test)]
-#[path = "../tests/calibration.rs"]
-mod calibration_tests;
-
-#[cfg(test)]
 #[path = "../tests/duplex_calibration.rs"]
 mod duplex_calibration_tests;

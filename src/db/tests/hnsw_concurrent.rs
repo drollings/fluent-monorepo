@@ -1,13 +1,18 @@
 //! Concurrent HNSW behavior: generation purity under rebuild races +
 //! single-pass rebuild consumption.
+//!
+//! Soak tier (`make soak` / `make test-heavy`, never `make test`): 60 full
+//! rebuild rounds racing searcher threads — a concurrency stress, not a
+//! regular-gate signal. The single-pass consumption pins stay in the
+//! regular gate.
 
-use super::*;
+use fluent_db::hnsw::HnswIndex;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 
-use crate::vector::{try_bytes_to_vec, vec_to_bytes};
+use fluent_db::vector::{try_bytes_to_vec, vec_to_bytes};
 
 fn next_f32(state: &mut u64) -> f32 {
     // xorshift64* — deterministic, no new dev-dependency.
@@ -43,6 +48,7 @@ fn blobs(rows: &[(i64, Vec<f32>)]) -> Vec<(i64, Vec<u8>)> {
 }
 
 #[test]
+#[ignore = "heavy (~4s): 60 rebuild rounds racing searcher threads; run via `make test-heavy`"]
 fn concurrent_rebuild_never_mixes_generations() {
     const N: usize = 128;
     const DIM: usize = 8;
@@ -88,7 +94,7 @@ fn concurrent_rebuild_never_mixes_generations() {
                 while !stop_s.load(Ordering::Acquire) {
                     let query = &queries_s[probe % queries_s.len()];
                     probe += 1;
-                    let Some(hits) = crate::hnsw::hnsw_lookup(&index_s, query, K) else {
+                    let Some(hits) = fluent_db::hnsw::hnsw_lookup(&index_s, query, K) else {
                         continue; // empty index or retry-exhausted race: the brute-force path
                     };
                     assert!(!hits.is_empty());

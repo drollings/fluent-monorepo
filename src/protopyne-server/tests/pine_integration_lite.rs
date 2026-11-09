@@ -69,6 +69,10 @@
 //! `1e-9`, and any drift fails loudly instead of silently moving.
 
 use std::collections::HashMap;
+
+mod csv {
+    pub use protopyne_server::csv::load_bars_csv;
+}
 use std::path::PathBuf;
 
 use protopyne_kernels::{
@@ -78,8 +82,12 @@ use protopyne_kernels::{
 use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
 
-use super::common_golden::{check_golden, dump_canonical};
-use super::common_mtf::{
+#[path = "common/golden.rs"]
+mod common_golden;
+use common_golden::{check_golden, dump_canonical};
+#[path = "common/mtf.rs"]
+mod common_mtf;
+use common_mtf::{
     bars_at, build_tick_legs, dataset_of, engine_for, field_num, fixture_closure_inputs,
     inject_all, link_fixture_closure, linked_from_graph, load_history, load_tick_rows_from, num,
     present, resolve_inputs, WARMUP,

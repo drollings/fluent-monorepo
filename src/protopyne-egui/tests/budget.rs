@@ -119,12 +119,20 @@ pub(crate) fn lines_naming(text: &str, token: &str) -> Vec<String> {
 }
 
 fn forbid_in_src(token: &str, why: &str) {
+    forbid_any_in_src(&[token], why);
+}
+
+/// One walk per rule: every token is checked against each line while the
+/// file is already in hand, instead of re-reading the tree per token.
+fn forbid_any_in_src(tokens: &[&str], why: &str) {
     for name in src_file_names() {
         for line in code_lines(&read_src(&name)) {
-            assert!(
-                !line.contains(token),
-                "{name} must not contain {token:?}: {why} (line: {line})"
-            );
+            for token in tokens {
+                assert!(
+                    !line.contains(token),
+                    "{name} must not contain {token:?}: {why} (line: {line})"
+                );
+            }
         }
     }
 }
@@ -573,19 +581,18 @@ fn the_terminal_never_authors_money_or_quantities() {
     // constructed `Money` or `Qty` here would be a second authority. Values
     // still *flow* (typed fields, parses); only construction is forbidden —
     // the rule the `Decimal::` fence could not see.
-    for token in ["Money::", "Qty::"] {
-        forbid_in_src(
-            token,
-            "money and quantity are read from the core, never minted at the paint edge",
-        );
-    }
+    forbid_any_in_src(
+        &["Money::", "Qty::"],
+        "money and quantity are read from the core, never minted at the paint edge",
+    );
 }
 
 #[test]
 fn display_floats_never_parse_back_into_money() {
-    for token in ["rust_decimal", "Decimal::", "parse::<Decimal>", "Decimal>"] {
-        forbid_in_src(token, "the Decimal -> f64 boundary is one-way");
-    }
+    forbid_any_in_src(
+        &["rust_decimal", "Decimal::", "parse::<Decimal>", "Decimal>"],
+        "the Decimal -> f64 boundary is one-way",
+    );
 }
 
 #[test]

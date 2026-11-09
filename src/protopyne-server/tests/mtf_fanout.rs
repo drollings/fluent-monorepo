@@ -30,7 +30,12 @@ use protopyne_kernels::{
 use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
 
-use super::common_mtf::{data_root, engine_for, linked_from_graph, load_history};
+mod csv {
+    pub use protopyne_server::csv::load_bars_csv;
+}
+#[path = "common/mtf.rs"]
+mod common_mtf;
+use common_mtf::{data_root, engine_for, linked_from_graph, load_history};
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
 const EPS: f64 = 1e-9;

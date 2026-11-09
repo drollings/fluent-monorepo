@@ -299,7 +299,7 @@ test-router-all: $(CORAL_ROUTER_BIN) ## test-router + coral-context HNSW benchma
 	$(Q)$(CORAL_ROUTER_BIN) --help > /dev/null && echo "All router tests passed." || echo "ERRROR: coral-router did NOT successfully run."
 
 .PHONY: test-heavy
-test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/contention + router supervisor/HNSW calibration + search-vector scale-corpus calibration + protopyne tape/breaker/stream soaks
+test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/contention + router supervisor/HNSW calibration + search-vector scale-corpus calibration + protopyne tape/breaker/stream soaks + dag wave / db hnsw races / s2s readiness calibration
 	$(Q)cargo test -p spacy-rs --lib -- --ignored
 	$(Q)cargo test -p spacy-rs --test arceager_golden -- --ignored
 	$(Q)cargo test -p fluent-router --lib -- --ignored
@@ -308,6 +308,9 @@ test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/co
 	$(Q)cargo test -p protopyne-kernels --features pine,research --lib soak -- --ignored
 	$(Q)cargo test -p protopyne-server --lib soak -- --ignored
 	$(Q)cargo test -p protopyne-venue --lib soak -- --ignored
+	$(Q)cargo test -p fluent-dag --test target_work_unit_wave -- --ignored
+	$(Q)cargo test -p fluent-db --test hnsw_concurrent -- --ignored
+	$(Q)cargo test -p orator-s2s --test calibration -- --ignored
 
 .PHONY: router-start
 router-start: $(CORAL_ROUTER_BIN) ## Build (if needed), (re)start coral-router in real mode on :8079, and wait for /health (ort-free unless ROUTER_FEATURES=onnx; stops the old tree first)
@@ -538,7 +541,7 @@ guidance_PKGS           := guidance-core guidance guidance-ontology
 coral_PKGS              := coral-context coral
 protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
 protopyne-egui_PKGS     := protopyne-egui
-orator_PKGS            := orator-core orator-audio orator-vad orator-stt orator-llm orator-tts orator-turn orator-tools orator-store orator-models orator-diar orator-notes orator-s2s orator-desktop orator-testkit orator-bench orator-daemon orator-cli orator-lfm
+orator_PKGS            := orator-core orator-audio orator-vad orator-stt orator-llm orator-tts orator-turn orator-tools orator-store orator-models orator-diary orator-notes orator-s2s orator-desktop orator-testkit orator-bench orator-daemon orator-cli orator-lfm
 # The trading terminal's golden/contract tests compile only under these
 # features, so its gates carry them (its `demo_shell` golden suite is skipped
 # without them).

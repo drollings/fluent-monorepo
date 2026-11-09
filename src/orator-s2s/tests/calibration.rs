@@ -11,8 +11,8 @@
 
 use common_core::calibration::calibrate_threshold;
 
-use crate::config::S2sConfig;
-use crate::session::{AudioSession, S2sError};
+use orator_s2s::config::S2sConfig;
+use orator_s2s::session::{AudioSession, S2sError};
 
 /// One control case: did the readiness probe fire, and did a real
 /// turn produce audio?
@@ -126,6 +126,7 @@ fn audio_ready_case() -> (Case, Vec<f32>) {
     )
 }
 
+#[ignore = "heavy (~1.5s): readiness/fallback threshold calibration with real-timer probes; run via `make test-heavy`"]
 #[test]
 fn dead_servers_are_never_ready() {
     for case in [refused_case(), failing_case()] {
@@ -137,6 +138,7 @@ fn dead_servers_are_never_ready() {
     }
 }
 
+#[ignore = "heavy (~1.5s): readiness/fallback threshold calibration with real-timer probes; run via `make test-heavy`"]
 #[test]
 fn text_only_server_reports_no_audio_not_readiness() {
     let (case, outcome) = text_only_case();
@@ -149,6 +151,7 @@ fn text_only_server_reports_no_audio_not_readiness() {
     assert!(!case.audio_flowed);
 }
 
+#[ignore = "heavy (~1.5s): readiness/fallback threshold calibration with real-timer probes; run via `make test-heavy`"]
 #[test]
 fn audio_ready_server_flows() {
     let (case, samples) = audio_ready_case();
@@ -157,6 +160,7 @@ fn audio_ready_server_flows() {
     assert_eq!(samples, vec![2.5]);
 }
 
+#[ignore = "heavy (~1.5s): readiness/fallback threshold calibration with real-timer probes; run via `make test-heavy`"]
 #[test]
 fn probe_predicts_audio_on_the_fixture_set() {
     let refused = refused_case();

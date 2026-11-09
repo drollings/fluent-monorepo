@@ -161,8 +161,9 @@ pub fn parse_bars_csv(content: &str) -> Result<Vec<Bar>, ServerError> {
     Ok(bars)
 }
 
-/// Load closed bars from a CSV file at `path`.
-pub(crate) fn load_bars_csv(path: &Path) -> Result<Vec<Bar>, ServerError> {
+/// Load closed bars from a CSV file at `path`. Shared with the
+/// integration-tier proof targets, which read the same history files.
+pub fn load_bars_csv(path: &Path) -> Result<Vec<Bar>, ServerError> {
     let content = common_core::io::read_to_string_err(path)?;
     parse_bars_csv(&content)
 }

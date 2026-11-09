@@ -71,5 +71,25 @@ harness = false
 name = "fanout_serial"
 path = "tests/fanout_serial.rs"
 
+[[test]]
+name = "pine_integration_lite"
+path = "tests/pine_integration_lite.rs"
+required-features = ["pine"]
+
+[[test]]
+name = "pine_integration_lite_strategy"
+path = "tests/pine_integration_lite_strategy.rs"
+required-features = ["pine"]
+
+[[test]]
+name = "pine_task_indicators"
+path = "tests/pine_task_indicators.rs"
+required-features = ["pine"]
+
+[[test]]
+name = "mtf_fanout"
+path = "tests/mtf_fanout.rs"
+required-features = ["pine"]
+
 [lints]
 workspace = true

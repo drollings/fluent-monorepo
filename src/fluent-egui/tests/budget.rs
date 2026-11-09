@@ -846,9 +846,19 @@ fn live_unwired_exports() -> Vec<Decl> {
     unwired_exports(&decls, &crate_reexports(), &consumer_lines())
 }
 
+/// Memoized walk + mention matrix shared by the two reachability pins:
+/// both tests ask the identical question over the identical tree, so the
+/// second one reuses the first one's answer instead of re-walking ~73k
+/// consumer lines.
+fn live_unwired_exports_cached() -> Vec<Decl> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Vec<Decl>> = OnceLock::new();
+    CACHE.get_or_init(live_unwired_exports).clone()
+}
+
 #[test]
 fn src_module_must_have_a_declared_consumer() {
-    let unwired = live_unwired_exports();
+    let unwired = live_unwired_exports_cached();
     let undeclared: Vec<&Decl> = unwired
         .iter()
         .filter(|decl| {
@@ -867,7 +877,7 @@ fn src_module_must_have_a_declared_consumer() {
 
 #[test]
 fn every_reachability_exemption_names_a_live_item_and_a_reason() {
-    let unwired = live_unwired_exports();
+    let unwired = live_unwired_exports_cached();
     let mut seen: Vec<(&str, &str)> = Vec::new();
     for (module, name, reason) in REACHABILITY_EXEMPTIONS {
         assert!(

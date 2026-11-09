@@ -25,7 +25,12 @@ use std::path::PathBuf;
 
 use protopyne_kernels::{InputSet, LibraryId, LinkedModule, ModuleInput};
 
-use super::common_mtf::{engine_for, linked_from_graph, load_history, resolve_inputs};
+mod csv {
+    pub use protopyne_server::csv::load_bars_csv;
+}
+#[path = "common/mtf.rs"]
+mod common_mtf;
+use common_mtf::{engine_for, linked_from_graph, load_history, resolve_inputs};
 
 /// A library that does not export `isPatternType` (the shape of the
 /// on-disk `libCandles` the quarantined reference once resolved against).

@@ -224,47 +224,6 @@ fn overlapping_synths_resolve_cleanly_never_hang() {
     }
 }
 
-fn kokoro_model_present() -> Option<(PathBuf, PathBuf)> {
-    let (model, voices) = crate::kokoro::default_paths()?;
-    (model.exists() && voices.exists()).then_some((model, voices))
-}
-
-#[test]
-fn chunked_single_sentence_is_transparent() {
-    let Some((model, voices)) = kokoro_model_present() else {
-        eprintln!("SKIP chunked-transparency: no kokoro weights on this machine");
-        return;
-    };
-    let backend = KokoroBackend::new(model, voices, "af_heart");
-    let whole = backend.synth_blocking("Hello world").expect("synth runs");
-    let chunks = backend
-        .synth_chunks_blocking("Hello world")
-        .expect("chunked runs");
-    assert_eq!(chunks.len(), 1, "one sentence is one chunk");
-    assert_eq!(chunks.into_iter().next().expect("chunk"), whole);
-}
-
-#[test]
-fn chunked_multi_sentence_is_deterministic_and_structured() {
-    let Some((model, voices)) = kokoro_model_present() else {
-        eprintln!("SKIP chunked-structure: no kokoro weights on this machine");
-        return;
-    };
-    let text =
-        "Hello world, this is a test of the voice. How are you today? Quite well, thank you.";
-    let backend = KokoroBackend::new(model, voices, "af_heart");
-    let first = backend.synth_chunks_blocking(text).expect("chunked runs");
-    let second = backend.synth_chunks_blocking(text).expect("chunked reruns");
-    assert!(first.len() >= 2, "multi-sentence input splits: {first:?}");
-    assert_eq!(first, second, "same weights synth identically per device");
-    for chunk in &first {
-        assert!(!chunk.is_empty(), "every chunk voices");
-    }
-    // Per-chunk prosody is per-synthesis-unit by design: the equality
-    // claimed here is determinism and structure, never whole-turn
-    // sample equality (recorded with the performance numbers).
-}
-
 #[test]
 fn gpu_defaults_off_and_round_trips() {
     let mut backend = KokoroBackend::new(

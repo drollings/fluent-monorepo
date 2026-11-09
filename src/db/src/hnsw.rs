@@ -318,7 +318,3 @@ pub fn hnsw_lookup(hnsw: &HnswIndex, query: &[f32], k: usize) -> Option<Vec<(i64
 #[cfg(all(test, feature = "sqlite"))]
 #[path = "../tests/hnsw.rs"]
 mod tests;
-
-#[cfg(all(test, feature = "sqlite"))]
-#[path = "../tests/hnsw_concurrent.rs"]
-mod hnsw_concurrent_tests;

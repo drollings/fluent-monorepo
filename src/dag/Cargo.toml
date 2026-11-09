@@ -23,5 +23,9 @@ tokio = { workspace = true }
 tempfile = { workspace = true }
 rusqlite = { workspace = true }
 
+[[test]]
+name = "target_work_unit_wave"
+path = "tests/target_work_unit_wave.rs"
+
 [lints]
 workspace = true

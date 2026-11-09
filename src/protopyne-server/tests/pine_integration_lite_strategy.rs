@@ -25,6 +25,10 @@
 //! matrix row.
 
 use std::collections::BTreeSet;
+
+mod csv {
+    pub use protopyne_server::csv::load_bars_csv;
+}
 use std::path::PathBuf;
 
 use protopyne_kernels::{
@@ -32,8 +36,12 @@ use protopyne_kernels::{
 };
 use protopyne_types::{Bar, Money, Timeframe};
 
-use super::common_golden::dump_value;
-use super::common_mtf::{
+#[path = "common/golden.rs"]
+mod common_golden;
+use common_golden::dump_value;
+#[path = "common/mtf.rs"]
+mod common_mtf;
+use common_mtf::{
     engine_for, fixture_closure_inputs, fixture_closure_root, inject_all, linked_from_graph,
     load_history, present, resolve_inputs, WARMUP,
 };
@@ -536,16 +544,16 @@ fn strategy_refusals_name_their_matrix_row() {
     }
 }
 
-fn test_venue_config() -> crate::backtest::BacktestConfig {
-    crate::backtest::BacktestConfig::new()
+fn test_venue_config() -> protopyne_server::backtest::BacktestConfig {
+    protopyne_server::backtest::BacktestConfig::new()
         .underlying("SPY".to_owned())
         .data_version("strategy-harness-v1".to_owned())
         .quote_size(1_000_000)
         .build()
 }
 
-fn test_runner_config() -> crate::runner::RunnerConfig {
-    crate::runner::RunnerConfig::new(
+fn test_runner_config() -> protopyne_server::runner::RunnerConfig {
+    protopyne_server::runner::RunnerConfig::new(
         "SPY".to_owned(),
         "integration_lite".to_owned(),
         Money::zero(),
@@ -605,7 +613,7 @@ fn native_and_harness_agree_bar_for_bar() {
         ..LiteIndicatorParams::default()
     };
     let default_strategy = IntegrationLiteStrategyConfig::default();
-    let run = crate::simple_backtest::SimpleBacktestRequest::builder()
+    let run = protopyne_server::simple_backtest::SimpleBacktestRequest::builder()
         .indicator(&indicator)
         .strategy(&default_strategy)
         .venue_config(&test_venue_config())

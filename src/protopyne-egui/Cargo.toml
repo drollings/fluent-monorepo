@@ -60,5 +60,13 @@ required-features = ["demo"]
 name = "terminal"
 required-features = ["server-gateway", "demo"]
 
+[[test]]
+name = "demo_contract"
+path = "tests/demo_contract.rs"
+
+[[test]]
+name = "workspace_store"
+path = "tests/workspace_store.rs"
+
 [lints]
 workspace = true

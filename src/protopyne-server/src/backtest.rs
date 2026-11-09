@@ -493,27 +493,3 @@ mod history_source_tape_tests;
 #[cfg(test)]
 #[path = "../tests/history_source_backward_compatible.rs"]
 mod history_source_backward_compatible_tests;
-
-#[cfg(all(test, feature = "pine"))]
-#[path = "../tests/common/mtf.rs"]
-mod common_mtf;
-
-#[cfg(all(test, feature = "pine"))]
-#[path = "../tests/mtf_fanout.rs"]
-mod mtf_fanout_tests;
-
-#[cfg(all(test, feature = "pine"))]
-#[path = "../tests/common/golden.rs"]
-mod common_golden;
-
-#[cfg(all(test, feature = "pine"))]
-#[path = "../tests/pine_integration_lite.rs"]
-mod pine_integration_lite_tests;
-
-#[cfg(all(test, feature = "pine"))]
-#[path = "../tests/pine_task_indicators.rs"]
-mod pine_task_indicators_tests;
-
-#[cfg(all(test, feature = "pine"))]
-#[path = "../tests/pine_integration_lite_strategy.rs"]
-mod pine_integration_lite_strategy_tests;

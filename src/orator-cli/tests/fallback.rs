@@ -892,45 +892,47 @@ fn resolve_whisper_model_prefers_explicit_then_roles() {
 
 #[test]
 fn slow_synth_reports_its_tts_budget_instead_of_stalling() {
-    use crate::fallback::{budgeted, LOCAL_OP_BUDGET};
-    // The chat voice path wraps every local synth in
-    // `budgeted("TTS", LOCAL_OP_BUDGET, ...)`; a synth that cannot
-    // finish in ten seconds reports the harness-visible line below
-    // (surfaced as a chat ERROR event) instead of hanging the turn.
+    use crate::fallback::budgeted;
+    // The chat voice path wraps every local synth in a budget; a synth
+    // that cannot finish in time reports the harness-visible line below
+    // (surfaced as a chat ERROR event) instead of hanging the turn. The
+    // ten-second production value is pinned by
+    // `local_ops_share_one_ten_second_budget`; this test proves the
+    // mechanism with a short budget so the fast gate never waits it out.
+    let budget = std::time::Duration::from_millis(200);
     let started = std::time::Instant::now();
-    let error = budgeted("TTS", LOCAL_OP_BUDGET, || {
-        std::thread::sleep(std::time::Duration::from_secs(30));
+    let error = budgeted("TTS", budget, || {
+        std::thread::sleep(std::time::Duration::from_secs(5));
         Ok::<_, String>((vec![0.0; 8], 24_000))
     })
     .expect_err("slow synth reports");
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(30),
+        started.elapsed() < std::time::Duration::from_secs(5),
         "the caller never waits out the synth"
     );
-    assert!(
-        error.contains("local TTS exceeded its 10 s budget"),
-        "{error}"
-    );
+    assert!(error.contains("local TTS exceeded its"), "{error}");
     assert!(error.contains("instead of stalling"), "{error}");
 }
 
 #[test]
 fn slow_asr_reports_its_budget_instead_of_stalling() {
-    use crate::fallback::{budgeted, LOCAL_OP_BUDGET};
+    use crate::fallback::budgeted;
+    // Same mechanism pin as the synth case above: short budget here, the
+    // ten-second production value pinned by
+    // `local_ops_share_one_ten_second_budget`.
+    let budget = std::time::Duration::from_millis(200);
     let started = std::time::Instant::now();
-    let error = budgeted("ASR", LOCAL_OP_BUDGET, || {
-        std::thread::sleep(std::time::Duration::from_secs(30));
+    let error = budgeted("ASR", budget, || {
+        std::thread::sleep(std::time::Duration::from_secs(5));
         Ok::<_, String>("late transcript".to_string())
     })
     .expect_err("slow decode reports");
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(30),
+        started.elapsed() < std::time::Duration::from_secs(5),
         "the caller never waits out the decode"
     );
-    assert!(
-        error.contains("local ASR exceeded its 10 s budget"),
-        "{error}"
-    );
+    assert!(error.contains("local ASR exceeded its"), "{error}");
+    assert!(error.contains("instead of stalling"), "{error}");
 }
 
 #[test]

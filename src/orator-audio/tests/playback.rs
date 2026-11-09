@@ -112,7 +112,9 @@ fn over_cap_pushes_drop_oldest_with_counter() {
                 "over-cap drops oldest: {}",
                 player.dropped()
             );
-            let _ = player.finish();
+            // Drop, don't drain: the premise is the drop counter, and
+            // draining a full 20 s cap would stall the fast gate.
+            drop(player);
         }
         Err(AudioError::NoDevice(_)) => {}
         Err(error) => panic!("actionable error only: {error:?}"),

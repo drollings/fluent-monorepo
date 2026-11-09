@@ -11,6 +11,9 @@
 //! `request.security_lower_tf` is served from the registered minute window.
 //! Anything unregistered refuses naming the live fetch.
 
+//! Different suites use different subsets; dead code is shared harness, not drift.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

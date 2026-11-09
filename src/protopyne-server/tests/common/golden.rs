@@ -7,6 +7,9 @@
 //! identical inputs; checked-in files compare textually (exact float text,
 //! hence within kernel tolerance by construction).
 
+//! Different suites use different subsets; dead code is shared harness, not drift.
+#![allow(dead_code)]
+
 use std::path::Path;
 
 use protopyne_kernels::{BarSnapshot, EnumHandle, PineValue, RunOutcome};

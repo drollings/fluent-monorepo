@@ -34,5 +34,13 @@ name = "live"
 path = "tests/live.rs"
 required-features = ["live-ai"]
 
+[[test]]
+name = "calibration"
+path = "tests/calibration.rs"
+
+[[test]]
+name = "voice_readiness"
+path = "tests/voice_readiness.rs"
+
 [lints]
 workspace = true

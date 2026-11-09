@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::voice::{
     audio_server_home, audio_supervisor_config, managed_binary, resolve_audio_server,
-    resolve_audio_server_candidates, voice_server_args, wait_ready, AUDIO_SERVER_BIN,
+    resolve_audio_server_candidates, voice_server_args, AUDIO_SERVER_BIN,
     AUDIO_SERVER_ENV, VOICE_BOOT_TIMEOUT,
 };
 use orator_core::AudioBundle;
@@ -416,37 +416,6 @@ fn path_search_finds_the_binary_name() {
     }
     std::env::remove_var("ORATOR_TEST_PATH");
     assert_eq!(found, Some(candidate));
-}
-
-#[test]
-fn readiness_against_a_closed_port_fails_fast() {
-    let error = common_core::runtime::block_on_shared(wait_ready(
-        "http://127.0.0.1:1",
-        Duration::from_secs(2),
-    ))
-    .expect_err("closed port never readies");
-    assert!(error.to_string().contains("not ready"), "{error}");
-}
-
-#[test]
-fn readiness_accepts_an_options_200_stub() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-    let port = listener.local_addr().expect("addr").port();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept");
-        use std::io::{Read as _, Write as _};
-        let mut buf = [0u8; 1024];
-        let _ = stream.read(&mut buf);
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
-            .expect("reply");
-    });
-    common_core::runtime::block_on_shared(wait_ready(
-        &format!("http://127.0.0.1:{port}"),
-        Duration::from_secs(10),
-    ))
-    .expect("stub answers OPTIONS");
-    server.join().expect("server done");
 }
 
 /// A stub audio server answering `OPTIONS`: the readiness probe sees 200
