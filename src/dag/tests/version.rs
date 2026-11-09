@@ -1,6 +1,6 @@
 use crate::resolver::{DependencyResolver, ProviderSelection};
 use crate::target::TargetRegistry;
-use crate::version::{Version, VersionReq};
+use crate::version::Version;
 use common_core::interner::CapabilityRegistry;
 use fluent_types::{ExecutorKind, TargetType};
 use std::collections::HashMap;
@@ -38,13 +38,6 @@ fn versions(pairs: &[(&str, &str)]) -> HashMap<String, Version> {
         .iter()
         .map(|(n, v)| ((*n).to_string(), Version::parse(v).unwrap()))
         .collect()
-}
-
-#[test]
-fn version_placeholder() {
-    // Scaffolding placeholder: replaced by the real version suites below.
-    let _ = Version::parse("1").unwrap();
-    let _ = VersionReq::parse("1").unwrap();
 }
 
 #[test]

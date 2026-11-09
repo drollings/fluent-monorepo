@@ -78,22 +78,6 @@ async fn test_scope_close_prevents_panic() {
     );
 }
 
-/// `Scope::defer()` returns a guard that closes the scope on drop.
-/// The scope must not panic when the guard is dropped.
-#[tokio::test(start_paused = true)]
-async fn test_scope_defer_guard_closes_scope() {
-    tokio::time::resume();
-    let flag = Arc::new(AtomicUsize::new(0));
-    let flag_clone = Arc::clone(&flag);
-    let mut scope = Scope::new();
-    scope.spawn(async move {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        flag_clone.fetch_add(1, Ordering::SeqCst);
-    });
-    let _guard = scope.defer();
-    // _guard will call close().await when dropped
-}
-
 /// `Scope::defer()` guard: the scope's tasks are aborted when the guard drops.
 #[tokio::test(start_paused = true)]
 async fn test_scope_defer_aborts_tasks() {

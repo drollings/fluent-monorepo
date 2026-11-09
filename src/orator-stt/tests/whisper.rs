@@ -25,19 +25,6 @@ fn missing_model_is_unavailable_not_a_crash() {
 }
 
 #[test]
-fn pre_cancelled_abort_short_circuits_before_load() {
-    // Even the load path is skipped: cancellation is checked by the caller
-    // contract, and decode honors a fired abort without decoding.
-    let backend = WhisperBackend::new(PathBuf::from("/nonexistent-orator/x.bin"), "en");
-    let abort = StreamAbort::new();
-    abort.cancel();
-    // Load fails first (no model), which is the honest order: without a
-    // backend there is nothing to abort. The abort path itself is proven
-    // by `StreamingStt::push_checked` without touching whisper.cpp.
-    let _ = backend.decode_blocking(&vec![0.0; 320], &abort);
-}
-
-#[test]
 fn segments_split_into_uniform_words() {
     let segment = RawSegment {
         text: "one two three four".to_string(),

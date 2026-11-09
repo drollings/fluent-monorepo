@@ -66,12 +66,6 @@ fn closes_input() -> Arc<OwnedOhlcv> {
 }
 
 #[test]
-fn component_placeholder() {
-    // Scaffolding placeholder: replaced by the real component suites below.
-    let _ = ComponentRegistry::new().len();
-}
-
-#[test]
 fn component_executes_batch_with_spec_identity() {
     let indicator: Arc<dyn Indicator> = Arc::new(SmaIndicator::new());
     let unit = IndicatorComponent::builder(Arc::clone(&indicator))

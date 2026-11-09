@@ -10,12 +10,6 @@ fn mem_store() -> SqliteStore {
 }
 
 #[test]
-fn outbox_placeholder() {
-    // Scaffolding placeholder: replaced by the real outbox suites below.
-    let _ = outbox::OUTBOX_DDL.len();
-}
-
-#[test]
 fn fifo_order() {
     let store = mem_store();
     let a = store

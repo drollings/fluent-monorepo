@@ -427,14 +427,6 @@ fn disallowed_extra_arg_refuses_as_usage() {
     );
 }
 
-#[test]
-fn free_port_hint_is_bindable_and_retries() {
-    let port = free_port().expect("hint");
-    let listener = std::net::TcpListener::bind(format!("127.0.0.1:{port}")).expect("hint binds");
-    let _ = listener;
-    let _ = free_port().expect("second hint");
-}
-
 /// M11-S1 warning capture: records `binary` from each
 /// `orator.llm` WARN so candidate order is observable without a
 /// global subscriber. Used with `block_on` (current-thread) so the

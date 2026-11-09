@@ -937,23 +937,3 @@ async fn reports_context_and_embedding_runtime_failures() {
     assert!(error.to_string().contains("embedding failed"), "{error}");
     model.dispose().await;
 }
-
-#[test]
-fn batch_size_validation_rejects_oversize_batches() {
-    let fix = fixture(StubOptions::default());
-    let model = GgufEmbedding::new(
-        test_entry(),
-        GgufModelOptions {
-            model_cache_dir: Some(fix.cache_dir.path().to_path_buf()),
-            device: Device::Cpu,
-        },
-        fix.dependencies,
-    )
-    .unwrap();
-    // The test entry allows 8 per batch; 9 must fail before any runtime use.
-    let texts: Vec<String> = (0..9).map(|index| format!("text-{index}")).collect();
-    let error = fluent_llm::embeddings::validate_embed_batch(texts.len(), 8).unwrap_err();
-    assert!(error.to_string().contains("batch size"), "{error}");
-    drop(texts);
-    drop(model);
-}

@@ -27,12 +27,6 @@ fn bar_at(minute: u32) -> Bar {
 }
 
 #[test]
-fn series_placeholder() {
-    // Scaffolding placeholder: replaced by the real series suites below.
-    assert_eq!(PriceSource::all().len(), 7);
-}
-
-#[test]
 fn price_source_covers_all_seven_legs() {
     assert_eq!(PriceSource::all().len(), 7);
     let (o, h, l, c) = (dec("10"), dec("12"), dec("8"), dec("11"));

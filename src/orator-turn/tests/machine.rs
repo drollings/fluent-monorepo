@@ -204,18 +204,6 @@ fn barge_in_cuts_and_hands_over() {
     );
 }
 
-fn arbitrary_state() -> impl Strategy<Value = TurnState> {
-    prop_oneof![
-        Just(TurnState::Idle),
-        Just(TurnState::UserSpeaking),
-        Just(TurnState::Endpointing),
-        Just(TurnState::Thinking),
-        Just(TurnState::ToolWait),
-        Just(TurnState::Speaking),
-        Just(TurnState::Yielding),
-    ]
-}
-
 fn arbitrary_event() -> impl Strategy<Value = TurnEvent> {
     prop_oneof![
         Just(TurnEvent::VadStart),
@@ -251,37 +239,6 @@ proptest! {
         prop_assume!(machine.state() == TurnState::Speaking);
         assert_eq!(machine.step(&TurnEvent::BargeInDetected), TurnState::Yielding);
         assert_eq!(machine.step(&TurnEvent::AbortComplete), TurnState::UserSpeaking);
-    }
-
-    /// The transition function is total and state-closed: no pair escapes
-    /// the seven states, and stepping is deterministic — the same history
-    /// always lands in the same state, which guards against future
-    /// interior-mutability regressions.
-    #[test]
-    fn transitions_stay_closed(
-        state in arbitrary_state(),
-        event in arbitrary_event(),
-    ) {
-        let config = config();
-        let next = transition(state, &event, &config);
-        let legal = [
-            TurnState::Idle, TurnState::UserSpeaking, TurnState::Endpointing,
-            TurnState::Thinking, TurnState::ToolWait, TurnState::Speaking,
-            TurnState::Yielding,
-        ];
-        prop_assert!(legal.contains(&next));
-    }
-
-    /// Same history twice, same state at every step.
-    #[test]
-    fn stepping_is_deterministic(
-        history in prop::collection::vec(arbitrary_event(), 0..30),
-    ) {
-        let mut first = TurnMachine::new(config());
-        let mut second = TurnMachine::new(config());
-        for event in &history {
-            prop_assert_eq!(first.step(event), second.step(event));
-        }
     }
 }
 

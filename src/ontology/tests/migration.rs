@@ -16,11 +16,6 @@ fn test_version_recorded_and_retrieved() {
 }
 
 #[test]
-fn test_migration_stub_is_noop() {
-    (MIGRATIONS[0].migrate_fn)();
-}
-
-#[test]
 fn test_latest_returns_none_when_empty() {
     let reg = VersionRegistry::new();
     assert!(reg.latest().is_none());

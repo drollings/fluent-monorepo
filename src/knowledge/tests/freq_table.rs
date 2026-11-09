@@ -15,12 +15,6 @@ fn build_frequency_table_basic() {
 }
 
 #[test]
-fn build_frequency_table_from_map_works() {
-    let table = build_frequency_table_from_map("test data");
-    let _ = table;
-}
-
-#[test]
 fn freq_table_roundtrip() {
     let dir = tempdir();
     let path = dir.path().join("freq.bin");

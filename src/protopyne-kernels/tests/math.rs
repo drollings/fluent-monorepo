@@ -7,12 +7,6 @@ fn params_with_length(length: i64) -> ParamSet {
 }
 
 #[test]
-fn math_placeholder() {
-    // Scaffolding placeholder: replaced by the real math suites below.
-    assert_eq!(warmup_none(3).len(), 3);
-}
-
-#[test]
 fn period_validation_accepts_and_refuses() {
     assert_eq!(
         period_len("sma", &params_with_length(14), "length").unwrap(),

@@ -370,18 +370,6 @@ async fn invalid_reply_text_is_rejected_by_gate() {
     assert_eq!(doc.token(0).pos, Upos::Det); // parser rung: "The" → DET
 }
 
-#[test]
-fn annotation_rung_objects_exist() {
-    // Construct the rungs directly (scaffold/composability surface).
-    let _llm = LlmRung::new(
-        stub_fetch(GOLDEN_JSON.to_string()),
-        Arc::new(AnnotationValidator::new()),
-    );
-    let _rule = RuleRung {
-        rule: Arc::new(RuleAnnotator::en_default()),
-    };
-}
-
 /// A sync fetch seam returning a canned reply.
 fn stub_fetch_sync(reply: String) -> LlmFetchSync {
     Arc::new(move |_tokens: Vec<String>| Ok(reply.clone()))
