@@ -1,67 +1,85 @@
-# Fluent Monorepo - deterministic-first agentic backbone
+# Fluent Monorepo
 
-This Rust monorepo is an incubator for lightweight, native-compiled,
-hardened, fast agentic LLM projects built on a shared, composable
-infrastructure.  Concurrency and dependency tracking are pervasive and
-battle-tested.  Reflection and high degrees of polymorphism are available
-where they help, and zero-cost where they are not.
-
-This provides a deterministic NLP baseline for agentic LLM tools.
+This workspace holds a set of Rust projects built on shared infrastructure:
+a component model for configurable units of work, concurrency primitives
+over Tokio, and dependency-graph utilities. The projects cover HTTP request
+routing to language models, a knowledge-graph library, code navigation,
+paper trading, offline voice interaction, and tokenizer/parser tooling.
+Where a task can be decided by rules or local computation, the code does
+that instead of calling a model.
 
 ## Member Projects
 
-- **Coral Router** - LLM request router; two-stage deterministic-first
-  pipeline, escalation ladder, OpenAI-compatible API, owns and supervises the
-  local LLM fleet through llama-server and/or ONNX. → `doc/router/VISION.md`
-- **Coral Context** - deterministic-first knowledge graph library: 6-tier
-  "Level of Detail" pyramid, SQLite graph database, MCP server, WASM plugin
-  runtime. → `doc/coral/VISION.md`
-- **Guidance** - AST-guided code navigation subagent producing metadata
-  mirrors and SQLite vector search databases; sub-100ms deterministic queries
-  for AI-assisted development. → `doc/guidance/VISION.md`
-- **Fluent DAG** - dependency graphs, narrowing workflow, and checkpointed
-  step graph.  → `doc/skills/dag/SKILL.md`
-- **Fluent Concurrency** - a lightweight layer over Tokio, hyper, and
-  reqwest that keeps async I/O and inference for agentic LLM applications
-  fast, guardrailed, and rooted in the battle-tested Rust ecosystem.  →
-  `doc/skills/fluent-concurrency/SKILL.md`
-- **Fluent WVR** - the foundational lightweight component model:  `Fluent,
-  Wrapped, Verified, Reflected`  → `doc/skills/fluent-wvr/SKILL.md`
+- **Fluent WVR** - component model (`Fluent, Wrapped, Verified, Reflected`):
+  derive macros for field access, validation, and JSON Schema from struct
+  definitions. → `doc/skills/fluent-wvr/SKILL.md`
+- **Fluent Concurrency** - thin layer over Tokio (plus a `reqwest`-backed,
+  capability-gated HTTP client on the serving path): bounded worker pools,
+  structured scopes, supervised batches, rate limiters, priority queues.
+  → `doc/skills/fluent-concurrency/SKILL.md`
+- **Fluent DAG** - dependency graphs, provider-narrowing workflow resolution,
+  and checkpointed step graphs. → `doc/skills/dag/SKILL.md`
+- **Fluent Egui** (in development) - UI scaffolding beneath the trading
+  terminal and chart shells; the chart-model/scale crates stay UI-free. →
+  `src/fluent-egui/src/lib.rs`
+- **Shared crates** - `common-core` (retry, calibration, sync primitives),
+  `fluent-llm` (protocol, backends, queues), `search-vector` (vector math /
+  HNSW); consumed across projects, never forked per crate.
+- **Coral Router** - HTTP service with an OpenAI-compatible API that routes
+  chat requests through a two-stage pipeline (deterministic pre-filter, then
+  classifier) with a fallback ladder across local and remote models. It starts
+  and supervises one `llama-server` process per local weights file, plus
+  optional ONNX backends. → `doc/router/VISION.md`
+- **Coral Context** - knowledge-graph library: six answering tiers (hot cache
+  → tools → graph → semantic → local decomposition → frontier),
+  level-of-detail context packing, SQLite graph database, MCP server, WASM
+  plugin runtime. → `doc/coral/VISION.md`
+- **Guidance** - code navigation tooling that builds metadata mirrors and
+  SQLite vector-search databases from a source tree; millisecond-scale
+  deterministic queries on the L0 path. → `doc/guidance/VISION.md`
+- **Orator** (in development) - local, Linux-first voice interaction:
+  dictation, interruptible conversation, live captions, diarized meeting
+  notes; inference runs on the workstation. → `doc/orator/VISION.md`
+- **spacy-rs** (in development) - tokenizer, part-of-speech tagger,
+  dependency parser, and interlingua id assignment in Rust; the rule-based
+  parse is the default and model input is used only to amend low-confidence
+  spans. → `doc/spacy-rs/VISION.md`
 
 ## Design philosophy
 
-1. **Reflection at the control pane**: macros for polymorphism and
-   reflection where it counts.  Objects designed around Fluent WVR get a
-   single source of truth in metadata, which allows validated input
-   constraints, and composable control objects which allow for polymorphic
-   flexibility where it counts, and poses zero cost to the hot paths.
-2. **Deterministic-first, LLM-enabled**: prefer local computation over
-   probabilistic inference; LLM inference is firmly harnessed, additive to
-   deterministic flow
-3. **Dependency graphs as memory**: novel solutions are evaluated to become
-   nodes in cached Directed Acyclic Graphs - structured for easy reuse
-4. **Edge-deployable**: single-process SQLite, no external services, targets
-   Raspberry Pi class hardware
+1. **Configuration from struct definitions**: derive macros generate field
+   access, validation, and JSON Schema from the same fields, so the accessor,
+   the validator, and the schema cannot drift apart. Polymorphism lives at
+   the request boundary (`Arc<dyn Component>`); hot loops use concrete types.
+2. **Local computation first, models second**: prefer rules and local
+   computation over model calls; model calls handle what rules cannot, and
+   their output is validated the same way.
+3. **Dependency graphs for reuse**: resolved plans are cached as directed
+   acyclic graphs - structured for easy reuse.
+4. **Edge-deployable**: single-process SQLite, no mandatory external
+   database or services for the deterministic core; the local inference
+   fleet (`llama-server` processes, ONNX weights) and audio/model assets
+   are optional and hardware-dependent - full function on modest hardware
+   for the deterministic tiers.
 5. **Capability-gated I/O**: DB and knowledge effects require explicit
    capability tokens; operator CLI tooling is capability-exempt by design
 6. **Structured concurrency**: `Scope`-spawned tasks are awaited when the
    scope closes and server-owned background tasks are awaited at graceful
    shutdown; panics are contained within `SupervisedBatch`
 7. **Safe Rust by default**: the shared foundation crates carry
-   `#![forbid(unsafe_code)]`; the only `unsafe` in the workspace is boundary
-   IPC `read_unaligned`
+   `#![forbid(unsafe_code)]`; in shipping (non-test) code the only `unsafe`
+   is the `read_unaligned` boundary access in `wasm_ipc`
 
 # Member projects in detail
 
-## Coral Router - an agentic swarm orchestrator
+## Coral Router - request routing over local and remote models
 
-Coral Router exposes an OpenAI-compatible HTTP API and runs route-dispatched
-requests through a **multi-stage pipeline** - a deterministic pre-filter,
-then a classifier (see `src/router/src/pipeline_types.rs`) - that resolves
-to appropriate deterministic, LLM-optional workflows, or delegate to
-stronger LLMs at other OpenAI endpoints.  Requests that route to a locally
-managed model dispatch to that model while managing its VRAM footprint,
-allowing efficient local agentic teams.
+Coral Router exposes an OpenAI-compatible HTTP API and runs each request
+through a **two-stage pipeline** - a deterministic pre-filter, then a
+classifier (see `src/router/src/pipeline_types.rs`) - that resolves to a
+rule-based answer, a model-backed workflow, or a different model endpoint.
+Requests routed to a locally managed model dispatch to that model while the
+router manages its VRAM footprint.
 
 It is built for use with a branch of llama.cpp that allows parallel
 inference across context windows with their own sizes, parameters, and
@@ -77,50 +95,50 @@ is a direct call to the owning server; a frontier or remote call is the same
 request routed onward after the local ladder has genuinely failed to resolve
 it - never by default.
 
-- **Deterministic before probabilistic.** Anything decidable by a regex or a
-  fixed rule is handled without a model call wherever the pipeline runs - a
-  cost floor and a fully unit-testable layer with no model in the loop.
-- **Cheap before expensive.** Routing is an economic decision: the ladder runs
-  deterministic filter → fast classifier → local model → frontier, and a
-  request only reaches a rung after the previous one failed.
-- **Original context, parallel compaction.** The ledger compacts sessions
-  rather than growing them; the orchestrator never reasons over noise, dead
-  ends, or superseded exploration.
+- **Rules before models.** Anything decidable by a regex or a fixed rule is
+  handled without a model call wherever the pipeline runs - a cost floor and
+  a fully unit-testable layer with no model in the loop.
+- **Cheapest capable backend first.** The ladder runs deterministic filter →
+  fast classifier → local model → frontier, and a request only reaches a rung
+  after the previous one failed to resolve it.
+- **Compacted session history.** The ledger compacts sessions rather than
+  growing them, so follow-up requests carry the settled context instead of
+  the full transcript.
 
 ## Fluent WVR - the design patterns
 
-Fluent WVR (`Fluent, Wrapped, Verified, Reflected`) gives this codebase a
-consistent control plane, reflection layer, and baseline for data validation.
-It does this with a collection of interlocking design patterns for consistent
-metadata on composable units of work, polymorphism where needed, schemas for
-datatypes internally and over IPC, and other single sources of truth.
+Fluent WVR (`Fluent, Wrapped, Verified, Reflected`) is the shared convention
+for configurable units of work: one struct definition drives field access,
+validation, and JSON Schema, so the three cannot drift apart.
 
-Every orchestratable task presents the same `Arc<dyn Component>` interface -
+Every unit of work presents the same `Arc<dyn Component>` interface -
 whether it is a native Rust struct, a WASM plugin, or a database-driven
-config - so the orchestrator iterates uniform handles and never branches on
+config - so callers iterate over uniform handles instead of branching on
 origin. Twelve composable patterns are documented in
-`doc/fluent-wvr/USAGE.md` (Fluent Builder, Trait-Based Reflection,
+`doc/fluent-wvr/COMPOSABILITY.md` (day-to-day guide; authoritative contract in
+`doc/skills/fluent-wvr/SKILL.md`): Fluent Builder, Trait-Based Reflection,
 Trait Composition, Trait Objects, Binary IPC, Scoped Ownership, Newtype
 Handles, Unit of Work, Middleware Chain, Component Adapter, Structured
-Logging Context, Runtime Composition). These patterns are for the control
+Logging Context, Runtime Composition. These patterns are for the control
 plane, not for hot-path inner loops: the data plane uses concrete types and
 flat enums, and `dyn` lives at the request boundary, not in the tight loop.
 
 ## Fluent Concurrency - the execution fabric
 
-`fluent-concurrency` is a thin, 100% safe extension layer over Tokio:
+`fluent-concurrency` is a thin, 100% safe extension layer over Tokio
+(plus a `reqwest`-backed capability-gated HTTP client on the serving path):
 bounded worker pools, structured `Scope`s, the `SupervisedBatch`
 (supervision + dependency cancellation + panic/fail/cancel tracking),
 `Limiter`, `PriorityQueue`, `CreditFlow`, and the `first_accept_in_order`
-ladder.  Tokio is the workhorse - the crate composes its primitives rather
-than rebuilding the scheduler.
+ladder. Tokio does the scheduling - the crate composes its primitives rather
+than rebuilding them.
 
 Tasks spawned inside a `Scope` are awaited when the scope closes, and
 server-owned background/connection tasks are awaited when the server drains
 them at graceful shutdown. Capability tokens gate DB and knowledge access on
 the serving path - operator CLI tooling is capability-exempt by design.
 
-→ `doc/fluent-concurrency/USAGE.md`
+→ `doc/skills/fluent-concurrency/SKILL.md`
 
 ## DAG - the dependency fabric
 
@@ -128,7 +146,7 @@ the serving path - operator CLI tooling is capability-exempt by design.
 primitives that drive the chart executor, session orchestration, and workflow
 execution: dependency validation, ready-node selection, dependency-aware
 cancellation, and checkpoint/rewind - shared by every graph consumer in the
-workspace rather than re-implemented per crate. → `doc/dag/USAGE.md`
+workspace rather than re-implemented per crate. → `doc/skills/dag/SKILL.md`
 
 # Quick start
 
