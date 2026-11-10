@@ -9,7 +9,7 @@
 //!   `fluent-llm` (`onnx_config`, `onnx_error`, `onnx_session`, `backend`)
 //!   and are re-exported here, so hermetic tests exercise all of this
 //!   without a model.
-//! - **Feature `onnx` (default-on)**: the real `OrtSessionLoader` and the
+//! - **Feature `onnx` (opt-in)**: the real `OrtSessionLoader` and the
 //!   workers — `OrtEncoder`, the two-tower `TwoTowerWorker`, PII classifiers,
 //!   the token aligner, and the ColBERT retriever.
 //!

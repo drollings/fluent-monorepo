@@ -5,7 +5,7 @@
 //! N named context windows, each with its own KV cache" abstraction. It is the
 //! **live engine**: the llama fleet (`fluent-router`'s `instances/*` +
 //! `supervisor.rs` + `kv_cache.rs`) and the in-process ONNX fleet
-//! (`fluent-onnx`'s `session.rs` + `residency.rs` + `llm.rs`) serve through
+//! (`fluent-onnx`'s `session.rs` + `context.rs` + `context_pool.rs` + `llm.rs`) serve through
 //! thin adapters over these traits, and the shared residency engine replaced
 //! both sibling loops — the staging notes below
 //! are history, not current state.
@@ -61,7 +61,7 @@ pub enum EvictionPolicy {
     /// kept on tie. Ordered by `common_core::cache::eviction_order`.
     FootprintColdness,
     /// onnx: largest footprint first, oldest `last_used` first on tie (the
-    /// exact `sort_by` in `fluent-onnx/src/residency.rs`).
+    /// exact `sort_by` in `fluent-onnx/src/context_pool.rs`).
     LruLargest,
 }
 
@@ -388,7 +388,7 @@ fn now_unix_ms() -> i64 {
 /// onnx `OrtResidencyLoop::residency_cycle`) share this *pass structure*:
 ///
 /// 1. per-weights resume expiry (`expire_resume` hook; llama overrides);
-/// 2. idle-release (the onnx rule in `fluent-onnx/src/residency.rs:124-162`);
+/// 2. idle-release (the onnx rule in `fluent-onnx/src/context.rs`);
 /// 3. per-pool over-budget check + `evict_until_fit` (VRAM for
 ///    `FootprintColdness`, RAM for `LruLargest`);
 /// 4. unload weights left with zero contexts (the llama rule — llama-only).
