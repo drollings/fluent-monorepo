@@ -38,7 +38,7 @@ pub fn read_desktop_env() -> DesktopEnv {
     let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
     let session_bus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some()
         || user_bus_socket_exists();
-    let daemon_socket = orator_core::socket_path().is_some_and(|path| path.exists());
+    let daemon_socket = orator::socket_path().is_some_and(|path| path.exists());
     DesktopEnv {
         current_desktop,
         session_bus,
@@ -49,7 +49,7 @@ pub fn read_desktop_env() -> DesktopEnv {
 
 /// Whether the user-bus socket exists (`/run/user/<uid>/bus`).
 fn user_bus_socket_exists() -> bool {
-    let uid = orator_core::paths::current_uid();
+    let uid = orator::paths::current_uid();
     std::path::Path::new(&format!("/run/user/{uid}/bus")).exists()
 }
 

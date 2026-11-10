@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use fluent_concurrency::feed_worker::{CreditedFeedWorker, FeedConfig};
 use fluent_wvr::Runtime;
-use orator_core::Channel;
+use orator::Channel;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AudioError;

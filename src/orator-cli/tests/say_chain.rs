@@ -7,7 +7,7 @@ use crate::say_chain::{
     classify_daemon_call_failure, classify_daemon_voice_error, normalized_chunks, should_advance,
     unsynthesized_suffix, DaemonVoiceHint,
 };
-use orator_s2s::S2sError;
+use orator_voice::s2s::S2sError;
 
 #[test]
 fn advance_on_voicelessness_and_empty_transport_failures() {
@@ -28,7 +28,7 @@ fn interrupts_never_advance() {
 #[test]
 fn unsupported_audio_input_advances_through_the_same_gate() {
     let error = S2sError::Backend("audio input is not supported".to_string());
-    assert!(orator_s2s::audio_input_unsupported(&error));
+    assert!(orator_voice::s2s::audio_input_unsupported(&error));
     assert!(should_advance(&error));
 }
 
@@ -130,7 +130,7 @@ fn fences_and_urls_never_reach_the_voice() {
 #[test]
 fn normalized_split_matches_direct_normalize_then_split() {
     let text = "# Hello\n\nSee `my_var` at https://example.com/a and ```\ncode()\n``` end.";
-    let expected: Vec<String> = orator_tts::split_all(&orator_tts::normalize_for_speech(text))
+    let expected: Vec<String> = orator_voice::tts::split_all(&orator_voice::tts::normalize_for_speech(text))
         .into_iter()
         .map(|chunk| chunk.text)
         .collect();

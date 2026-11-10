@@ -131,12 +131,12 @@ fn setting_execute_validates_the_level() {
 
 #[test]
 fn initial_mode_follows_config_with_loud_fallback() {
-    let config = orator_core::OratorConfig::default();
+    let config = orator::OratorConfig::default();
     assert_eq!(initial_narration_mode(&config), NarrationLevel::None);
-    let mut intro = orator_core::OratorConfig::default();
+    let mut intro = orator::OratorConfig::default();
     intro.chat.narration = "intro".to_string();
     assert_eq!(initial_narration_mode(&intro), NarrationLevel::Intro);
-    let mut garbage = orator_core::OratorConfig::default();
+    let mut garbage = orator::OratorConfig::default();
     garbage.chat.narration = "loud".to_string();
     assert_eq!(initial_narration_mode(&garbage), NarrationLevel::None);
 }

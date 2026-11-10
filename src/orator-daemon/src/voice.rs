@@ -12,7 +12,7 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use orator_core::LlmSession as _;
+use orator::LlmSession as _;
 
 use crate::admission::{AdmissionGate, EjectionTracker, EJECTION_THRESHOLD};
 
@@ -114,7 +114,7 @@ impl VoiceError {
 }
 
 struct VoiceState {
-    server: Option<orator_llm::Supervisor>,
+    server: Option<orator_agent::llm::Supervisor>,
     last_used: Instant,
     booting: bool,
     /// Task-value outcome of the last voice request: a real turn
@@ -182,7 +182,7 @@ pub struct VoiceOwner {
     /// compiled-in bundle, binary resolution and idle budget — the
     /// schema carries no voice-server leaves, so there is nothing
     /// configured to consult yet.
-    config: Box<orator_core::OratorConfig>,
+    config: Box<orator::OratorConfig>,
     /// Bounded concurrency gate: turns past the configured bound
     /// refuse fast instead of queueing. Composes the admission module
     /// (the harness scores its bound); the owner never reimplements it.
@@ -190,11 +190,11 @@ pub struct VoiceOwner {
     pub(crate) gate: AdmissionGate,
     state: Mutex<VoiceState>,
     sessions: Mutex<crate::session::SessionRegistry>,
-    log: std::sync::Arc<orator_store::EventLog>,
+    log: std::sync::Arc<orator_memory::store::EventLog>,
     /// Pending human approvals. The socket route answers through this
     /// hub; the D-Bus edge gates on `Caller::may_approve` before ever
     /// dialing `Approve`, so ambient speech can never approve.
-    approvals: orator_tools::ApprovalHub,
+    approvals: orator_agent::tools::ApprovalHub,
     /// Conversational context per session: past (question, reply)
     /// turns, oldest first. `ask_via` with a session id voices the
     /// joined history plus the new question, so voice and text chat
@@ -208,7 +208,7 @@ impl VoiceOwner {
     /// Owner that boots on demand with the standard resolution, using
     /// the daemon's loaded configuration for the session factory.
     #[must_use]
-    pub fn new(config: &orator_core::OratorConfig) -> Self {
+    pub fn new(config: &orator::OratorConfig) -> Self {
         Self {
             binary: None,
             idle_timeout: VOICE_IDLE_TIMEOUT,
@@ -219,7 +219,7 @@ impl VoiceOwner {
             state: Mutex::new(VoiceState::fresh()),
             sessions: Mutex::new(crate::session::SessionRegistry::new()),
             log: memory_log(),
-            approvals: orator_tools::ApprovalHub::new(),
+            approvals: orator_agent::tools::ApprovalHub::new(),
             llm_history: Mutex::new(std::collections::HashMap::new()),
         }
     }
@@ -233,12 +233,12 @@ impl VoiceOwner {
             idle_timeout: VOICE_IDLE_TIMEOUT,
             disabled: true,
             shutting_down: std::sync::atomic::AtomicBool::new(false),
-            config: Box::new(orator_core::OratorConfig::default()),
+            config: Box::new(orator::OratorConfig::default()),
             gate: AdmissionGate::new(default_max_inflight()),
             state: Mutex::new(VoiceState::fresh()),
             sessions: Mutex::new(crate::session::SessionRegistry::new()),
             log: memory_log(),
-            approvals: orator_tools::ApprovalHub::new(),
+            approvals: orator_agent::tools::ApprovalHub::new(),
             llm_history: Mutex::new(std::collections::HashMap::new()),
         }
     }
@@ -252,12 +252,12 @@ impl VoiceOwner {
             idle_timeout,
             disabled: false,
             shutting_down: std::sync::atomic::AtomicBool::new(false),
-            config: Box::new(orator_core::OratorConfig::default()),
+            config: Box::new(orator::OratorConfig::default()),
             gate: AdmissionGate::new(default_max_inflight()),
             state: Mutex::new(VoiceState::fresh()),
             sessions: Mutex::new(crate::session::SessionRegistry::new()),
             log: memory_log(),
-            approvals: orator_tools::ApprovalHub::new(),
+            approvals: orator_agent::tools::ApprovalHub::new(),
             llm_history: Mutex::new(std::collections::HashMap::new()),
         }
     }
@@ -282,7 +282,7 @@ impl VoiceOwner {
     /// The loaded configuration this owner was built with, for the
     /// session factory that shares the daemon's leaves.
     #[must_use]
-    pub fn config(&self) -> &orator_core::OratorConfig {
+    pub fn config(&self) -> &orator::OratorConfig {
         &self.config
     }
 
@@ -332,7 +332,7 @@ impl VoiceOwner {
         if self.binary.is_none() && !self.has_server() {
             let base = self.config.s2s.endpoint.clone();
             let model = self.config.s2s.model.clone();
-            if crate::socket::bridge_concurrent(orator_s2s::serves_model(&base, &model)) {
+            if crate::socket::bridge_concurrent(orator_voice::s2s::serves_model(&base, &model)) {
                 self.record_voice_success(&base);
                 return Ok(base);
             }
@@ -462,7 +462,7 @@ impl VoiceOwner {
         self.clear();
     }
 
-    async fn boot(&self) -> Result<orator_llm::Supervisor, VoiceError> {
+    async fn boot(&self) -> Result<orator_agent::llm::Supervisor, VoiceError> {
         // Explicit binaries pin exactly one candidate below; the
         // resolved path boots only when the file opts in. Off means
         // the voice server is independently started: absence fails
@@ -474,7 +474,7 @@ impl VoiceOwner {
                 self.config.s2s.model,
             )));
         }
-        let bundle = orator_core::bundle_from_s2s(
+        let bundle = orator::bundle_from_s2s(
             &self.config.s2s,
             &self.config.models,
             &self.config.gguf_dir,
@@ -495,31 +495,31 @@ impl VoiceOwner {
         // pre-LFM3 install fails fast on the bundle and the next
         // serves instead of vetoing voice.
         if self.config.s2s.gpu {
-            orator_core::gpu::require_gpu("llama-server").map_err(VoiceError::Boot)?;
+            orator::gpu::require_gpu("llama-server").map_err(VoiceError::Boot)?;
         }
         let candidates: Vec<std::path::PathBuf> = match self.binary.as_ref() {
             Some(pinned) => vec![pinned.clone()],
-            None => orator_s2s::resolve_audio_server_candidates(),
+            None => orator_voice::s2s::resolve_audio_server_candidates(),
         };
         if candidates.is_empty() {
             return Err(VoiceError::NoBinary(format!(
                 "no voice server (set {} or install {}; search hits that fail the ownership check are refused)",
-                orator_s2s::AUDIO_SERVER_ENV,
-                orator_s2s::AUDIO_SERVER_BIN
+                orator_voice::s2s::AUDIO_SERVER_ENV,
+                orator_voice::s2s::AUDIO_SERVER_BIN
             )));
         }
         match fluent_wvr::ladder::first_accept_in_order(
             candidates,
             |binary: std::path::PathBuf| {
-                let mut config = orator_s2s::audio_supervisor_config(&bundle, 0);
+                let mut config = orator_voice::s2s::audio_supervisor_config(&bundle, 0);
                 if self.config.s2s.gpu {
                     config.extra_args.extend([
                         "--n-gpu-layers".to_string(),
-                        orator_llm::GPU_OFFLOAD_LAYERS.to_string(),
+                        orator_agent::llm::GPU_OFFLOAD_LAYERS.to_string(),
                     ]);
                 }
                 async move {
-                    match orator_llm::boot_with_binary(config, &binary).await {
+                    match orator_agent::llm::boot_with_binary(config, &binary).await {
                         Ok(server) => Ok(Some(server)),
                         Err(error) => Err(error.to_string()),
                     }
@@ -683,9 +683,9 @@ impl VoiceOwner {
         loop {
             let page = self
                 .log
-                .replay_session(id, since, orator_store::REPLAY_PAGE)
+                .replay_session(id, since, orator_memory::store::REPLAY_PAGE)
                 .map_err(|error| VoiceError::Backend(error.to_string()))?;
-            let full = page.len() >= orator_store::REPLAY_PAGE;
+            let full = page.len() >= orator_memory::store::REPLAY_PAGE;
             if let Some(last) = page.last() {
                 since = last.seq;
             }
@@ -697,8 +697,8 @@ impl VoiceOwner {
         if events.is_empty() {
             return Err(VoiceError::UnknownSession(id.to_string()));
         }
-        let text = orator_notes::render_meeting_export(id, &events);
-        let dir = orator_core::meetings_dir().ok_or_else(|| {
+        let text = orator_memory::notes::render_meeting_export(id, &events);
+        let dir = orator::meetings_dir().ok_or_else(|| {
             VoiceError::Backend("no meetings dir (HOME and XDG_DATA_HOME are unset)".to_string())
         })?;
         std::fs::create_dir_all(&dir).map_err(|error| {
@@ -764,11 +764,11 @@ impl VoiceOwner {
     /// cannot load; capturing turns for those would fail every turn
     /// instead of serving through the configured backends.
     fn shared_head_model(&self, endpoint: &str, role: &str) -> Option<String> {
-        let head = orator_core::resolve_role_model(&self.config.roles, role)?;
+        let head = orator::resolve_role_model(&self.config.roles, role)?;
         if head == self.config.s2s.model {
             return None;
         }
-        if crate::socket::bridge_concurrent(orator_s2s::model_loaded(endpoint, &head)) {
+        if crate::socket::bridge_concurrent(orator_voice::s2s::model_loaded(endpoint, &head)) {
             Some(head)
         } else {
             None
@@ -840,7 +840,7 @@ impl VoiceOwner {
         let model = self
             .shared_head_model(endpoint, "tts")
             .unwrap_or_else(|| self.config.s2s.model.clone());
-        let mut audio = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+        let mut audio = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
             endpoint: endpoint.to_string(),
             model,
             ..self.config.s2s.clone()
@@ -856,21 +856,21 @@ impl VoiceOwner {
                     common_core::sync::lock(&self.sessions).touch(id);
                 }
                 self.record_voice_success(endpoint);
-                Ok((samples, orator_s2s::AUDIO_OUT_RATE))
+                Ok((samples, orator_voice::s2s::AUDIO_OUT_RATE))
             }
-            Err(orator_s2s::S2sError::NoAudio) => {
+            Err(orator_voice::s2s::S2sError::NoAudio) => {
                 self.record_voice_response();
                 Err(VoiceError::NoAudio("server sent no audio".to_string()))
             }
-            Err(orator_s2s::S2sError::Aborted) => {
+            Err(orator_voice::s2s::S2sError::Aborted) => {
                 self.record_voice_response();
                 Err(VoiceError::Aborted("voice turn aborted".to_string()))
             }
-            Err(orator_s2s::S2sError::Overflow(detail)) => {
+            Err(orator_voice::s2s::S2sError::Overflow(detail)) => {
                 self.record_voice_backend();
                 Err(VoiceError::Overflow(detail))
             }
-            Err(orator_s2s::S2sError::Backend(message)) => {
+            Err(orator_voice::s2s::S2sError::Backend(message)) => {
                 self.record_voice_backend();
                 Err(VoiceError::Backend(message))
             }
@@ -900,14 +900,14 @@ impl VoiceOwner {
         // leaf only fills in when no role binds one. Without this the
         // daemon would keep loading the leaf while every label names
         // the head.
-        let model = orator_core::resolve_role_model(&self.config.roles, "chat").unwrap_or(leaf);
+        let model = orator::resolve_role_model(&self.config.roles, "chat").unwrap_or(leaf);
         // Local-first text: the configured endpoint wins when it
         // answers; otherwise the ensured voice server takes the turn
         // (LFM3-Audio answers text as well as speech). A refused
         // connection fails the probe instantly, so the fallback costs
         // nothing when the gateway is simply down — and a live gateway
         // never pays for a voice boot it does not need.
-        if crate::socket::bridge_concurrent(orator_llm::probe_models(
+        if crate::socket::bridge_concurrent(orator_agent::llm::probe_models(
             &base,
             common_core::http::shared_http_client(),
         ))
@@ -1020,7 +1020,7 @@ impl VoiceOwner {
         let model = self
             .shared_head_model(endpoint, "asr")
             .unwrap_or_else(|| self.config.s2s.model.clone());
-        let mut audio = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+        let mut audio = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
             endpoint: endpoint.to_string(),
             model,
             ..self.config.s2s.clone()
@@ -1036,19 +1036,19 @@ impl VoiceOwner {
                 self.record_voice_success(endpoint);
                 Ok(text)
             }
-            Err(orator_s2s::S2sError::Aborted) => {
+            Err(orator_voice::s2s::S2sError::Aborted) => {
                 self.record_voice_response();
                 Err(VoiceError::Aborted("voice turn aborted".to_string()))
             }
-            Err(orator_s2s::S2sError::Backend(message)) => {
+            Err(orator_voice::s2s::S2sError::Backend(message)) => {
                 self.record_voice_backend();
                 Err(VoiceError::Backend(message))
             }
-            Err(orator_s2s::S2sError::Overflow(detail)) => {
+            Err(orator_voice::s2s::S2sError::Overflow(detail)) => {
                 self.record_voice_backend();
                 Err(VoiceError::Overflow(detail))
             }
-            Err(orator_s2s::S2sError::NoAudio) => {
+            Err(orator_voice::s2s::S2sError::NoAudio) => {
                 self.record_voice_response();
                 Ok(String::new())
             }
@@ -1078,9 +1078,9 @@ impl VoiceOwner {
             Some(id) => self.prompt_with_history(id, question),
             None => question.to_string(),
         };
-        let mut llm_session = orator_llm::HttpSession::open(endpoint, model, ctx, n_batch);
+        let mut llm_session = orator_agent::llm::HttpSession::open(endpoint, model, ctx, n_batch);
         llm_session.push_text(&prompt);
-        match llm_session.step(&mut orator_core::Sampler::default()) {
+        match llm_session.step(&mut orator::Sampler::default()) {
             Ok(out) => {
                 let reply = out.delta.trim_end().to_string();
                 let label = session.unwrap_or("daemon").to_string();
@@ -1145,7 +1145,7 @@ impl VoiceOwner {
     }
 }
 
-fn orator_cli_config_base(llm: &orator_core::LlmEndpointConfig) -> (String, String) {
+fn orator_cli_config_base(llm: &orator::LlmEndpointConfig) -> (String, String) {
     let explicit = std::env::var("LLM_BASE_URL").unwrap_or_default();
     if explicit.trim().is_empty() {
         (format!("http://{}", llm.endpoint), llm.model.clone())
@@ -1189,11 +1189,11 @@ fn wait_voice_loaded(url: &str) {
 }
 
 fn default_max_inflight() -> usize {
-    usize::from(orator_core::OratorConfig::default().daemon.admission_max)
+    usize::from(orator::OratorConfig::default().daemon.admission_max)
 }
 
-fn memory_log() -> std::sync::Arc<orator_store::EventLog> {
-    orator_store::EventLog::in_memory().expect("memory event log")
+fn memory_log() -> std::sync::Arc<orator_memory::store::EventLog> {
+    orator_memory::store::EventLog::in_memory().expect("memory event log")
 }
 
 fn build_meeting_pipeline(meeting: &str) -> Result<(), String> {
@@ -1201,12 +1201,12 @@ fn build_meeting_pipeline(meeting: &str) -> Result<(), String> {
         fluent_db::store::SqliteStore::open_in_memory().map_err(|error| error.to_string())?;
     store
         .with_conn(|conn| {
-            fluent_db::migrate::migrate(conn, &orator_store::migrations())?;
+            fluent_db::migrate::migrate(conn, &orator_memory::store::migrations())?;
             Ok(())
         })
         .map_err(|error| error.to_string())?;
     let pipeline =
-        orator_diary::MeetingPipeline::new(store, meeting).map_err(|error| error.to_string())?;
+        orator_memory::diary::MeetingPipeline::new(store, meeting).map_err(|error| error.to_string())?;
     if !pipeline.ready().contains(&"finalize_audio".to_string()) {
         return Err("meeting pipeline did not open at finalize_audio".to_string());
     }
@@ -1215,16 +1215,16 @@ fn build_meeting_pipeline(meeting: &str) -> Result<(), String> {
 
 impl Default for VoiceOwner {
     fn default() -> Self {
-        Self::new(&orator_core::OratorConfig::default())
+        Self::new(&orator::OratorConfig::default())
     }
 }
 
 /// Whether `url` answers the readiness probe right now.
 async fn is_alive(url: &str) -> bool {
-    orator_llm::probe_voice_ready(
+    orator_agent::llm::probe_voice_ready(
         common_core::http::shared_http_client(),
         url,
-        orator_llm::HealthProbe::OptionsCompletions,
+        orator_agent::llm::HealthProbe::OptionsCompletions,
     )
     .await
     .is_ok()

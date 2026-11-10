@@ -6,7 +6,7 @@
 //! values; `LLM_BASE_URL`/`LLM_MODEL` win over the `llm` section.
 
 use fluent_wvr::FieldAccess;
-use orator_core::{LlmEndpointConfig, OratorConfig};
+use orator::{LlmEndpointConfig, OratorConfig};
 
 /// Resolve a backend flag against the configured default: a non-empty
 /// flag wins, otherwise the file value applies.
@@ -47,7 +47,7 @@ pub fn audio_base_url(llm: &LlmEndpointConfig) -> String {
 /// Resolve the audio-server base URL: `LLM_BASE_URL` wins when set,
 /// otherwise the `s2s` section applies (default port 8080).
 #[must_use]
-pub fn s2s_base_url(s2s: &orator_core::S2sConfig) -> String {
+pub fn s2s_base_url(s2s: &orator::S2sConfig) -> String {
     if let Ok(explicit) = std::env::var("LLM_BASE_URL") {
         return explicit;
     }
@@ -59,7 +59,7 @@ pub fn s2s_base_url(s2s: &orator_core::S2sConfig) -> String {
 /// still holds an unparseable value (the dial then fails loudly with
 /// its remedy — honest, never silent).
 fn base_url_of(endpoint: &str) -> String {
-    orator_core::parse_endpoint(endpoint).map_or_else(
+    orator::parse_endpoint(endpoint).map_or_else(
         |_| {
             if endpoint.starts_with("http") {
                 endpoint.to_string()
@@ -115,7 +115,7 @@ pub fn gpu_llm_args(gpu: bool) -> Vec<String> {
     if gpu {
         vec![
             "--n-gpu-layers".to_string(),
-            orator_llm::GPU_OFFLOAD_LAYERS.to_string(),
+            orator_agent::llm::GPU_OFFLOAD_LAYERS.to_string(),
         ]
     } else {
         Vec::new()
@@ -220,7 +220,7 @@ pub fn config_set(config: &mut OratorConfig, key: &str, value: &str) -> Result<(
         ));
     };
     if matches!(key, "llm.endpoint" | "s2s.endpoint") {
-        if let Err(detail) = orator_core::parse_endpoint(value) {
+        if let Err(detail) = orator::parse_endpoint(value) {
             return Err(format!(
                 "orator: bad key '{key}': {detail}; allowed keys: {}",
                 allowed_keys()

@@ -71,7 +71,7 @@ pub fn parse_ptt_mode(raw: &str) -> Result<PttMode, String> {
 /// anything else falls back to `off` so the loop can name the bad
 /// value instead of refusing the session.
 #[must_use]
-pub fn initial_ptt_mode(config: &orator_core::OratorConfig) -> PttMode {
+pub fn initial_ptt_mode(config: &orator::OratorConfig) -> PttMode {
     parse_ptt_mode(config.chat.ptt.trim()).unwrap_or_default()
 }
 

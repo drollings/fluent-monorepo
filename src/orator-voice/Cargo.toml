@@ -1,0 +1,69 @@
+[package]
+name = "orator-voice"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+base64 = { workspace = true }
+bon = { workspace = true }
+common-core = { path = "../common-core" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-llm = { path = "../llm" }
+fluent-wvr = { path = "../fluent-wvr" }
+internment = { workspace = true }
+kokoro-en = { version = "0.1.5", default-features = false }
+orator = { path = "../orator" }
+orator-audio = { path = "../orator-audio" }
+orator-agent = { path = "../orator-agent" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+spacy-rs = { path = "../spacy-rs" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+transcribe-cpp = "=0.4.1"
+whisper-rs = "0.16"
+
+[dev-dependencies]
+fluent-concurrency = { path = "../fluent-concurrency" }
+httpmock = { workspace = true }
+orator-audio = { path = "../orator-audio" }
+orator = { path = "../orator" }
+orator-models = { path = "../orator-models" }
+proptest = { workspace = true }
+tempfile = { workspace = true }
+
+[features]
+live-ai = []
+# AMD ROCm/HIP ggml backend for moonshine (`transcribe_cpp::Backend::Rocm`).
+# Strictly opt-in: enabling it requires the ROCm toolchain (hipcc) at build
+# time and fails the build where ROCm is absent, so default (CI) builds stay
+# CPU-only. Build with `--features orator-voice/rocm`, then set `stt.gpu = true`.
+rocm = ["transcribe-cpp/rocm"]
+
+[[test]]
+name = "stt_live"
+path = "tests/stt_live.rs"
+required-features = ["live-ai"]
+
+[[test]]
+name = "tts_live"
+path = "tests/tts_live.rs"
+required-features = ["live-ai"]
+
+[[test]]
+name = "s2s_live"
+path = "tests/s2s_live.rs"
+required-features = ["live-ai"]
+
+[[test]]
+name = "s2s_calibration"
+path = "tests/s2s_calibration.rs"
+
+[[test]]
+name = "s2s_voice_readiness"
+path = "tests/s2s_voice_readiness.rs"
+
+[lints]
+workspace = true

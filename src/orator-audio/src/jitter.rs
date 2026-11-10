@@ -8,7 +8,7 @@
 
 use std::collections::VecDeque;
 
-use orator_core::Frame;
+use orator::Frame;
 
 /// Jitter buffer over whole frames.
 #[derive(Debug)]

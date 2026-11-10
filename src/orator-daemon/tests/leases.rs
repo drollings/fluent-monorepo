@@ -69,7 +69,7 @@ fn held_lease_holds_past_idle_released_reaps() {
     let id = owner.start_session("assistant").expect("start");
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(
+        state.server = Some(orator_agent::llm::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_used = std::time::Instant::now()
@@ -220,7 +220,7 @@ fn shutdown_drains_sessions_leases_and_server() {
     let _ = owner.start_session("meeting");
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(
+        state.server = Some(orator_agent::llm::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
     }
@@ -255,7 +255,7 @@ fn mid_turn_shutdown_reaps_everything_owned() {
     let _ = owner.start_session("dictation").expect("start");
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(
+        state.server = Some(orator_agent::llm::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
     }
@@ -313,7 +313,7 @@ fn concurrent_sessions_multiplex_over_one_shared_endpoint() {
                     .say_via(&url, "hello", Some(session))
                     .expect("shared endpoint serves every session");
                 assert_eq!(samples.len(), 1);
-                assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
+                assert_eq!(rate, orator_voice::s2s::AUDIO_OUT_RATE);
                 done.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             });
         }

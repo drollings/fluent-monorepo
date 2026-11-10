@@ -5,7 +5,7 @@ use std::io::Write;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::Arc;
 
-use orator_core::{MessageType, SocketFrame};
+use orator::{MessageType, SocketFrame};
 
 use crate::socket::serve_serial;
 use crate::voice::VoiceOwner;
@@ -210,13 +210,13 @@ fn bind_rejects_insecure_parent_modes() {
 fn parent_check_rejects_a_foreign_owner() {
     let _guard = serve_serial();
     let dir = secure_dir();
-    let foreign = orator_core::paths::current_uid().wrapping_add(1);
+    let foreign = orator::paths::current_uid().wrapping_add(1);
     let error = super::check_parent(dir.path(), foreign).expect_err("foreign owner must refuse");
     assert!(
         error.to_string().contains("owned by uid"),
         "names the owner: {error}"
     );
-    super::check_parent(dir.path(), orator_core::paths::current_uid())
+    super::check_parent(dir.path(), orator::paths::current_uid())
         .expect("own directory passes");
 }
 
@@ -227,7 +227,7 @@ fn booting_owner_answers_contention_immediately() {
     // Dead configured endpoint: the shared-probe misses hermetically
     // (no dial past loopback stubs), so the in-flight boot answers
     // contention instead of serving.
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.s2s.endpoint = "http://127.0.0.1:9".to_string();
     let voice = VoiceOwner::new(&config);
     voice.set_booting_for_tests(true);
@@ -500,9 +500,9 @@ fn wait_for_mode(path: &std::path::Path) -> u32 {
 
 #[test]
 fn unreadable_credential_never_matches() {
-    assert!(!orator_core::check_peer_uid(1000, u32::MAX));
-    assert!(orator_core::check_peer_uid(1000, 1000));
-    assert!(!orator_core::check_peer_uid(1000, 1001));
+    assert!(!orator::check_peer_uid(1000, u32::MAX));
+    assert!(orator::check_peer_uid(1000, 1000));
+    assert!(!orator::check_peer_uid(1000, 1001));
 }
 
 #[test]

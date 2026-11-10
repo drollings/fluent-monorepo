@@ -7,7 +7,7 @@
 //! Approvals arrive only from the socket or a notification action:
 //! an arbitrary D-Bus caller id never approves.
 
-use orator_core::protocol::METHOD_NAMES;
+use orator::protocol::METHOD_NAMES;
 
 /// Service name on the session bus.
 pub const SERVICE_NAME: &str = "org.fluent.Orator1";

@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use orator_core::protocol::METHOD_NAMES;
+use orator::protocol::METHOD_NAMES;
 
 use crate::{contract_matches, dispatch, DispatchError, DISPATCH_METHODS};
 

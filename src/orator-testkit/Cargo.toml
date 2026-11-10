@@ -5,6 +5,19 @@ edition.workspace = true
 autotests = false
 
 [dependencies]
+common-core = { path = "../common-core" }
+orator = { path = "../orator" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+base64 = { workspace = true }
+fluent-concurrency = { path = "../fluent-concurrency" }
+httpmock = { workspace = true }
+orator-audio = { path = "../orator-audio" }
+orator = { path = "../orator" }
+orator-daemon = { path = "../orator-daemon" }
+orator-voice = { path = "../orator-voice" }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

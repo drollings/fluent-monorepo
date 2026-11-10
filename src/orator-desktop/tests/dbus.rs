@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use orator_core::protocol::METHOD_NAMES;
+use orator::protocol::METHOD_NAMES;
 
 use crate::dbus::{serves, Caller, SignalPolicy, PROPERTIES, SERVICE_NAME, SIGNALS};
 

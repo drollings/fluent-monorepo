@@ -8,14 +8,14 @@ use crate::envelope::{
 /// the calibrated constants, so default configs voice identically.
 #[test]
 fn configured_duck_matches_the_default_duck() {
-    let turn = orator_core::TurnConfig::default();
+    let turn = orator::TurnConfig::default();
     for elapsed in [0, 25, 50, 99, 100, 101, 5000] {
         assert!((duck_gain_at_with(elapsed, &turn) - duck_gain_at(elapsed)).abs() < f32::EPSILON);
     }
-    let shallow = orator_core::TurnConfig {
+    let shallow = orator::TurnConfig {
         duck_depth_db: -6.0,
         duck_ramp_ms: 50,
-        ..orator_core::TurnConfig::default()
+        ..orator::TurnConfig::default()
     };
     assert!((duck_gain_at_with(0, &shallow) - 1.0).abs() < f32::EPSILON);
     assert!(duck_gain_at_with(5000, &shallow) > duck_gain_at(5000));
@@ -66,7 +66,7 @@ fn cut_fade_spans_twenty_ms_at_voice_rates() {
 /// M3-S1 characterization: exact scalar contract of the playout
 /// envelope. The shared `common_core::envelope` primitive must
 /// reproduce these vectors; the driver constants must equal these
-/// values (pinned separately in `orator-turn` driver tests).
+/// values (pinned separately in `orator-voice::turn` driver tests).
 #[test]
 fn orator_audio_envelope_vectors() {
     // dB scale anchors.

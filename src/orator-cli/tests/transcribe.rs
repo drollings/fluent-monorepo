@@ -229,11 +229,11 @@ fn file_gate_holds_non_speech_and_fires_on_speech() {
             .collect()
     }
     assert!(
-        !orator_vad::speech_present_16k(&vec![0.0; 16_000]),
+        !orator_voice::vad::speech_present_16k(&vec![0.0; 16_000]),
         "silence holds the gate"
     );
     assert!(
-        !orator_vad::speech_present_16k(&tone(440.0, 0.3)),
+        !orator_voice::vad::speech_present_16k(&tone(440.0, 0.3)),
         "the verified tone shape holds the gate"
     );
     let voiced: Vec<f32> = (0..16_000)
@@ -244,7 +244,7 @@ fn file_gate_holds_non_speech_and_fires_on_speech() {
         })
         .collect();
     assert!(
-        orator_vad::speech_present_16k(&voiced),
+        orator_voice::vad::speech_present_16k(&voiced),
         "voiced input fires the gate (byte-identical path)"
     );
 }

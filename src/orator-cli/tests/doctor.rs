@@ -4,7 +4,7 @@ use crate::doctor::{full_report, render_full};
 
 #[test]
 fn full_report_names_every_section() {
-    let report = full_report(&orator_core::OratorConfig::default());
+    let report = full_report(&orator::OratorConfig::default());
     let text = render_full(&report);
     for section in [
         "devices:",
@@ -21,7 +21,7 @@ fn full_report_names_every_section() {
 
 #[test]
 fn models_cover_all_families() {
-    let report = full_report(&orator_core::OratorConfig::default());
+    let report = full_report(&orator::OratorConfig::default());
     assert!(report.models.iter().any(|row| row.kind == "whisper"));
     assert!(report.models.iter().any(|row| row.kind == "llm"));
     assert!(report.models.iter().any(|row| row.kind == "tts"));
@@ -29,7 +29,7 @@ fn models_cover_all_families() {
 
 #[test]
 fn report_honors_the_loaded_configuration() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.llm.endpoint = "10.0.0.9:1234".to_string();
     config.tts.voice = "test-voice".to_string();
     let report = full_report(&config);
@@ -43,7 +43,7 @@ fn report_honors_the_loaded_configuration() {
 #[test]
 fn desktop_section_reports_both_worlds() {
     use crate::doctor::{desktop_lines, full_report};
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     // Live report always carries the section.
     let text = crate::doctor::render_full(&full_report(&OratorConfig::default()));
     assert!(
@@ -102,20 +102,20 @@ fn desktop_section_reports_both_worlds() {
 #[test]
 fn roles_section_reports_resolved_models() {
     use crate::doctor::roles_lines;
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     let lines = roles_lines(&OratorConfig::default());
     assert_eq!(lines.len(), 3, "asr + tts + chat: {lines:?}");
     let asr = lines
         .iter()
         .find(|line| line.starts_with("asr:"))
         .expect("asr line");
-    assert!(asr.contains(orator_core::DEFAULT_ASR_MODEL), "{asr}");
+    assert!(asr.contains(orator::DEFAULT_ASR_MODEL), "{asr}");
     assert!(asr.contains("moonshine"), "{asr}");
     let tts = lines
         .iter()
         .find(|line| line.starts_with("tts:"))
         .expect("tts line");
-    assert!(tts.contains(orator_core::DEFAULT_TTS_MODEL), "{tts}");
+    assert!(tts.contains(orator::DEFAULT_TTS_MODEL), "{tts}");
     assert!(tts.contains("kokoro"), "{tts}");
     let chat = lines
         .iter()
@@ -146,7 +146,7 @@ fn roles_section_reports_resolved_models() {
 #[test]
 fn doctor_pins_leaf_vs_role_disagreement() {
     use crate::doctor::{full_report, render_full};
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     let mut config = OratorConfig::default();
     config.stt.model = "custom-leaf-whisper".to_string();
     config.roles.asr.models = vec!["liquidai/lfm3-audio-2b".to_string()];
@@ -195,7 +195,7 @@ fn doctor_pins_leaf_vs_role_disagreement() {
 #[test]
 fn composed_params_name_no_winning_layer() {
     use crate::doctor::roles_lines;
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     let mut config = OratorConfig::default();
     config.roles.asr.models = vec!["large-v3-turbo-q5_0".to_string()];
     config.roles.asr.params = Some(serde_json::json!({"threads": 8}));
@@ -207,11 +207,11 @@ fn composed_params_name_no_winning_layer() {
     entry.params = Some(serde_json::json!({"threads": 4}));
     entry.role_params = Some(std::collections::HashMap::from([(
         "asr".to_string(),
-        orator_core::ModelRoleOverride {
+        orator::ModelRoleOverride {
             params: Some(serde_json::json!({"threads": 16})),
         },
     )]));
-    let composed = orator_core::compose_role_params(
+    let composed = orator::compose_role_params(
         &config.models,
         &config.roles,
         "asr",
@@ -239,7 +239,7 @@ fn composed_params_name_no_winning_layer() {
 #[test]
 fn chat_line_renders_head_or_leaf_fallback() {
     use crate::doctor::roles_lines;
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     let mut config = OratorConfig::default();
     config.roles.chat.models = vec!["liquidai/lfm3-audio-2b".to_string()];
     config.roles.chat.params = Some(serde_json::json!({"ctx": 4096}));
@@ -267,7 +267,7 @@ fn chat_line_renders_head_or_leaf_fallback() {
 #[test]
 fn role_lines_note_a_disagreeing_leaf() {
     use crate::doctor::roles_lines;
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     let mut config = OratorConfig::default();
     config.stt.model = "custom-leaf-whisper".to_string();
     config.roles.asr.models = vec!["liquidai/lfm3-audio-2b".to_string()];
@@ -305,7 +305,7 @@ fn role_lines_note_a_disagreeing_leaf() {
     );
     // Agreeing leaves render no note; neither does the default config.
     let mut agreed = OratorConfig::default();
-    agreed.stt.model = orator_core::DEFAULT_ASR_MODEL.to_string();
+    agreed.stt.model = orator::DEFAULT_ASR_MODEL.to_string();
     for line in roles_lines(&agreed) {
         assert!(!line.contains("ignored"), "agreement is quiet: {line}");
     }
@@ -334,7 +334,7 @@ fn role_lines_note_a_disagreeing_leaf() {
 #[test]
 fn session_model_line_names_agreement_or_leaf() {
     use crate::doctor::{full_report, render_full};
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.asr.models = vec!["liquidai/lfm3-audio-2b".to_string()];
     config.roles.tts.models = vec!["liquidai/lfm3-audio-2b".to_string()];
     config.s2s.model = "custom-leaf-s2s".to_string();
@@ -343,11 +343,11 @@ fn session_model_line_names_agreement_or_leaf() {
         text.contains("session model: liquidai/lfm3-audio-2b (asr+tts agree; s2s.model=custom-leaf-s2s ignored)"),
         "exact agreement line:\n{text}"
     );
-    let plain = render_full(&full_report(&orator_core::OratorConfig::default()));
+    let plain = render_full(&full_report(&orator::OratorConfig::default()));
     assert!(
         plain.contains(&format!(
             "session model: {}",
-            orator_core::OratorConfig::default().s2s.model
+            orator::OratorConfig::default().s2s.model
         )),
         "split heads render the leaf plainly:\n{plain}"
     );
@@ -367,12 +367,12 @@ fn render_full_text(report: &crate::doctor::FullReport) -> String {
 #[test]
 fn speech_section_reports_chat_session_starts() {
     use crate::doctor::full_report;
-    let plain = render_full_text(&full_report(&orator_core::OratorConfig::default()));
+    let plain = render_full_text(&full_report(&orator::OratorConfig::default()));
     assert!(
         plain.contains("chat: narration=none ptt=off voice=short text=full mic=auto barge=on"),
         "defaults render:\n{plain}"
     );
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.chat.voice = "off".to_string();
     config.chat.barge = false;
     config.chat.narration = "summary".to_string();
@@ -387,7 +387,7 @@ fn speech_section_reports_chat_session_starts() {
 #[test]
 fn speech_section_reports_lfm_readiness_honestly() {
     use crate::doctor::{full_report, lfm_readiness_lines};
-    let config = orator_core::OratorConfig::default();
+    let config = orator::OratorConfig::default();
     let lines = lfm_readiness_lines(&config);
     assert!(
         lines.iter().any(|line| line.starts_with("lfm:")),
@@ -411,7 +411,7 @@ fn speech_section_reports_lfm_readiness_honestly() {
 #[test]
 fn speech_section_names_the_configured_bundle_model() {
     use crate::doctor::{lfm_readiness_lines, speech_lines};
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.s2s.model = "custom-voice-model".to_string();
     config.s2s.mmproj = "custom-weights/mmproj.gguf".to_string();
     let lines = speech_lines(&config);
@@ -442,7 +442,7 @@ fn speech_section_names_the_configured_bundle_model() {
 #[test]
 fn roles_section_renders_composed_params() {
     use crate::doctor::roles_lines;
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     // Defaults carry no params: lines stay exactly as before.
     let lines = roles_lines(&OratorConfig::default());
     let asr = lines
@@ -460,7 +460,7 @@ fn roles_section_renders_composed_params() {
         .expect("whisper listed")
         .role_params = Some(std::collections::HashMap::from([(
         "asr".to_string(),
-        orator_core::ModelRoleOverride {
+        orator::ModelRoleOverride {
             params: Some(serde_json::json!({"threads": 8})),
         },
     )]));

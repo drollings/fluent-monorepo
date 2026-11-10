@@ -6,6 +6,10 @@ pub mod model;
 pub mod ops;
 pub mod residency;
 
+/// LFM3-Audio reference knowledge: arch constants, chat template,
+/// generation params, and weight-layout verification (no tensors).
+pub mod lfm;
+
 pub use model::{
     audio_entries, llm_entries, tts_entries, whisper_entries, ModelEntry, ModelKind, ModelManifest,
     AUDIO_BUNDLE_SHA256, AUDIO_BUNDLE_SIZE, AUDIO_COMPONENT_PINS,

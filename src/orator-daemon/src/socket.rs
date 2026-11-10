@@ -12,7 +12,7 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::Arc;
 
-use orator_core::{check_peer_uid, MessageType, SocketFrame};
+use orator::{check_peer_uid, MessageType, SocketFrame};
 
 use crate::voice::VoiceOwner;
 
@@ -242,7 +242,7 @@ async fn handle_tokio_connection(
         return Err("slow peer".to_string());
     }
     let len = u32::from_le_bytes([header[0], header[1], header[2], header[3]]) as usize;
-    if len == 0 || len > (orator_core::MAX_BODY + 1) {
+    if len == 0 || len > (orator::MAX_BODY + 1) {
         return Err("bad frame length".to_string());
     }
     let mut rest = vec![0u8; len - 1];
@@ -291,7 +291,7 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
     }
     // Every component lstat-ed: a symlink parent refuses instead of
     // serving through it.
-    if orator_core::paths::has_symlink_parent(path) {
+    if orator::paths::has_symlink_parent(path) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
             format!(
@@ -309,7 +309,7 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
                 std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
             }
         }
-        check_parent(parent, orator_core::paths::current_uid())?;
+        check_parent(parent, orator::paths::current_uid())?;
     }
     // Bounded probe → unlink → bind retry: a racing starter may win
     // the unlink window, so retry instead of failing the first boot.
@@ -318,7 +318,7 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
     match common_core::io::bind_unix_listener_with_stale_reclaim(path, 3, || {
         // Re-lstat after unlink: a swapped-in link refuses instead of
         // riding the retry.
-        if orator_core::paths::has_symlink_parent(path)
+        if orator::paths::has_symlink_parent(path)
             || std::fs::symlink_metadata(path).is_ok()
         {
             return Err(std::io::Error::new(

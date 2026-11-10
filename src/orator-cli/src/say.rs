@@ -10,7 +10,7 @@ use orator_cli::{
     stream::stream_chunks,
     ExitCode,
 };
-use orator_core::OratorConfig;
+use orator::OratorConfig;
 
 use super::note_unavailable;
 
@@ -77,7 +77,7 @@ pub(crate) fn say(
     if selected == "kokoro" {
         // The composed voice for the serving head wins; the leaf
         // fills in when the tables say nothing (defaults: the leaf).
-        let tag = orator_core::resolve_role_model(&config.roles, "tts")
+        let tag = orator::resolve_role_model(&config.roles, "tts")
             .unwrap_or_else(|| config.tts.voice.clone());
         let voice = orator_cli::fallback::resolve_tts_voice(config, &tag);
         return say_kokoro(&spoken, &voice, config.tts.gpu).0;
@@ -94,15 +94,15 @@ pub(crate) fn say(
 /// the daemon so the reply still speaks.
 fn say_audio_server(text: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
     match run_audio_turn(config, transport, |session| session.speak_blocking(text)) {
-        Ok(samples) => match orator_audio::play_blocking(&samples, orator_s2s::AUDIO_OUT_RATE) {
+        Ok(samples) => match orator_audio::play_blocking(&samples, orator_voice::s2s::AUDIO_OUT_RATE) {
             Ok(()) => ExitCode::Success,
             Err(error) => {
                 eprintln!("orator: {error}");
                 ExitCode::Error
             }
         },
-        Err(orator_s2s::S2sError::Aborted) => ExitCode::Interrupted,
-        Err(error) if orator_s2s::should_advance_chain(&error) => {
+        Err(orator_voice::s2s::S2sError::Aborted) => ExitCode::Interrupted,
+        Err(error) if orator_voice::s2s::should_advance_chain(&error) => {
             say_fallback(text, config, transport)
         }
         Err(error) => {
@@ -118,12 +118,12 @@ fn say_audio_server(text: &str, config: &OratorConfig, transport: Transport) -> 
 /// server is authoritative: a voiceless reply falls through to the
 /// voice chain, never to a spawned child.
 pub(crate) fn run_audio_turn<T>(
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
     transport: Transport,
-    mut run: impl FnMut(&mut orator_s2s::AudioSession) -> Result<T, orator_s2s::S2sError>,
-) -> Result<T, orator_s2s::S2sError> {
+    mut run: impl FnMut(&mut orator_voice::s2s::AudioSession) -> Result<T, orator_voice::s2s::S2sError>,
+) -> Result<T, orator_voice::s2s::S2sError> {
     let s2s = &config.s2s;
-    use orator_s2s::S2sError;
+    use orator_voice::s2s::S2sError;
     // One overall budget for the whole chain so a worker timeout plus
     // a stream timeout plus a boot timeout never stack without bound.
     // `shutdown_signal` stays the only preemption; this bound only
@@ -134,9 +134,9 @@ pub(crate) fn run_audio_turn<T>(
     let chain_start = std::time::Instant::now();
     let base = s2s_base_url(s2s);
     let model = s2s.model.clone();
-    let bundle = orator_core::bundle_from_s2s(s2s, &config.models, &config.gguf_dir);
+    let bundle = orator::bundle_from_s2s(s2s, &config.models, &config.gguf_dir);
     let endpoint = std::sync::Arc::new(
-        common_core::runtime::block_on(orator_s2s::ensure_audio_server(
+        common_core::runtime::block_on(orator_voice::s2s::ensure_audio_server(
             &base,
             &model,
             &bundle,
@@ -172,7 +172,7 @@ pub(crate) fn run_audio_turn<T>(
         eprintln!("orator: interrupted; endpoint released");
         Err(S2sError::Aborted)
     };
-    let mut session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+    let mut session = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
         endpoint: endpoint.base_url().to_string(),
         ..s2s.clone()
     });
@@ -191,7 +191,7 @@ pub(crate) fn run_audio_turn<T>(
             match daemon_voice_endpoint(transport) {
                 orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                     eprintln!("orator: using the daemon-owned voice server");
-                    let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+                    let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
                         endpoint: url,
                         ..s2s.clone()
                     });
@@ -213,7 +213,7 @@ pub(crate) fn run_audio_turn<T>(
                     match wait_for_daemon_boot(transport) {
                         orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                             eprintln!("orator: using the daemon-owned voice server");
-                            let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
                                 endpoint: url,
                                 ..s2s.clone()
                             });
@@ -250,14 +250,14 @@ pub(crate) fn run_audio_turn<T>(
                         eprintln!("orator: shared server sent no audio and supervised boot is off (set s2s.auto_boot to boot a voice server); using the shared server only");
                         return Err(S2sError::NoAudio);
                     }
-                    if orator_s2s::resolve_audio_server().is_none() {
+                    if orator_voice::s2s::resolve_audio_server().is_none() {
                         eprintln!(
                             "orator: no voice server binary (set LLAMA_AUDIO_SERVER or install llama-liquid-audio-server); falling through to the voice chain"
                         );
                         return Err(S2sError::NoAudio);
                     }
                     eprintln!("orator: booting a supervised voice server");
-                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(
+                    match common_core::runtime::block_on(orator_voice::s2s::boot_audio_server(
                         &bundle,
                         &model,
                         s2s.auto_boot,
@@ -269,7 +269,7 @@ pub(crate) fn run_audio_turn<T>(
                                 let owned = std::sync::Arc::clone(&owned);
                                 move || owned.release()
                             }));
-                            let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
                                 endpoint: owned.base_url().to_string(),
                                 ..s2s.clone()
                             });
@@ -290,8 +290,8 @@ pub(crate) fn run_audio_turn<T>(
             }
         }
         Err(error)
-            if orator_s2s::audio_input_unsupported(&error)
-                && matches!(&*endpoint, orator_s2s::AudioEndpoint::Shared(_))
+            if orator_voice::s2s::audio_input_unsupported(&error)
+                && matches!(&*endpoint, orator_voice::s2s::AudioEndpoint::Shared(_))
                 && bundle.present() =>
         {
             endpoint.release();
@@ -299,7 +299,7 @@ pub(crate) fn run_audio_turn<T>(
             match daemon_voice_endpoint(transport) {
                 orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                     eprintln!("orator: using the daemon-owned voice server");
-                    let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+                    let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
                         endpoint: url,
                         ..s2s.clone()
                     });
@@ -321,7 +321,7 @@ pub(crate) fn run_audio_turn<T>(
                     match wait_for_daemon_boot(transport) {
                         orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                             eprintln!("orator: using the daemon-owned voice server");
-                            let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
                                 endpoint: url,
                                 ..s2s.clone()
                             });
@@ -345,7 +345,7 @@ pub(crate) fn run_audio_turn<T>(
                         return Err(S2sError::NoAudio);
                     }
                     eprintln!("orator: booting a supervised voice server");
-                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(
+                    match common_core::runtime::block_on(orator_voice::s2s::boot_audio_server(
                         &bundle,
                         &model,
                         s2s.auto_boot,
@@ -357,7 +357,7 @@ pub(crate) fn run_audio_turn<T>(
                                 let owned = std::sync::Arc::clone(&owned);
                                 move || owned.release()
                             }));
-                            let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
                                 endpoint: owned.base_url().to_string(),
                                 ..s2s.clone()
                             });
@@ -430,10 +430,10 @@ fn daemon_voice_endpoint(transport: Transport) -> orator_cli::say_chain::DaemonV
 /// Every hop narrates, so silence always comes with the exact
 /// remedy.
 fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
-    if let Some(binary) = orator_s2s::resolve_tts_binary() {
+    if let Some(binary) = orator_voice::s2s::resolve_tts_binary() {
         eprintln!("orator: server sent no audio; synthesizing on the GPU worker");
-        let bundle = orator_core::bundle_from_s2s(&config.s2s, &config.models, &config.gguf_dir);
-        match orator_s2s::synth_blocking(&binary, &bundle, text, orator_s2s::TTS_TIMEOUT) {
+        let bundle = orator::bundle_from_s2s(&config.s2s, &config.models, &config.gguf_dir);
+        match orator_voice::s2s::synth_blocking(&binary, &bundle, text, orator_voice::s2s::TTS_TIMEOUT) {
             Ok((samples, rate)) => {
                 return match orator_audio::play_blocking(&samples, rate) {
                     Ok(()) => ExitCode::Success,
@@ -450,7 +450,7 @@ fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> Exit
             "orator: server sent no audio; no llama-tts binary (set LLAMA_TTS or add it to $PATH)"
         );
     }
-    let resolved = orator_tts::default_paths();
+    let resolved = orator_voice::tts::default_paths();
     let kokoro_ready = resolved
         .as_ref()
         .is_some_and(|(model, voices)| model.exists() && voices.exists());
@@ -505,7 +505,7 @@ fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> Exit
 /// the chunk list and the count already played, so the caller speaks
 /// only the unsynthesized suffix onward and never repeats a prefix.
 fn say_kokoro(text: &str, voice: &str, gpu: bool) -> (ExitCode, Vec<String>, usize) {
-    let Some((model, voices)) = orator_tts::default_paths() else {
+    let Some((model, voices)) = orator_voice::tts::default_paths() else {
         eprintln!("orator: no managed model directory (HOME and XDG_DATA_HOME are unset)");
         return (ExitCode::Error, Vec::new(), 0);
     };
@@ -514,7 +514,7 @@ fn say_kokoro(text: &str, voice: &str, gpu: bool) -> (ExitCode, Vec<String>, usi
     if chunks.iter().all(|chunk| chunk.trim().is_empty()) {
         return (ExitCode::Success, chunks, 0);
     }
-    let player = match orator_audio::StreamPlayer::open(orator_tts::KOKORO_SAMPLE_RATE) {
+    let player = match orator_audio::StreamPlayer::open(orator_voice::tts::KOKORO_SAMPLE_RATE) {
         Ok(player) => player,
         Err(error) => {
             eprintln!("orator: {error}");

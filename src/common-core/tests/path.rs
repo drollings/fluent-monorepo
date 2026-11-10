@@ -75,8 +75,8 @@ fn is_absolute_lexical_matrix() {
 
 #[test]
 fn symlink_hop_cap_is_shared_at_forty() {
-    // M12-S2: the single hop cap composed by `orator_core::paths`
-    // (fast check) and `orator_tools::sandbox` (authoritative jail).
+    // M12-S2: the single hop cap composed by `orator::paths`
+    // (fast check) and `orator_agent::tools::sandbox` (authoritative jail).
     assert_eq!(common_core::path::MAX_SYMLINK_HOPS, 40);
 }
 

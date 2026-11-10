@@ -20,7 +20,7 @@ fn matrix_prefixes_resolve_to_component_smoke_gates() {
         ("src/bin/coral/src/main.rs", "coral"),
         ("src/protopyne-server/src/lib.rs", "protopyne"),
         ("src/protopyne-egui/src/lib.rs", "protopyne-egui"),
-        ("src/orator-core/src/lib.rs", "orator"),
+        ("src/orator/src/lib.rs", "orator"),
     ] {
         let resolved = component_gate_for_path(path);
         assert_eq!(resolved.component.as_deref(), Some(component), "{path}");

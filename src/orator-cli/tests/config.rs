@@ -16,7 +16,7 @@
 //! | `tts.voice` | `say::say` → `say_kokoro` (leaf verbatim); `fallback::resolve_tts_voice` (composed `voice` param wins, leaf is fallback); `chat::tts_serving` (role head, else the leaf); `doctor::speech_lines` (leaf verbatim) | Split: `say` and doctor use the leaf unconditionally; `resolve_tts_voice`/`tts_serving` callers use composed/role-first |
 //! | `s2s.model` | `say::run_audio_turn` (assurance target + session model); `main::transcribe_audio_server` / `dictate_audio_server` (via `run_audio_turn`); `main::chat` native branch (assurance + `ChatEvent` model labels); `orator-daemon::VoiceOwner` (assurance target) | Leaf everywhere (selection ignores the agreed role model — the M5 finding); `should_prefer_s2s` gates *whether* to assure, never *which* model |
 
-use orator_core::{LlmEndpointConfig, OratorConfig};
+use orator::{LlmEndpointConfig, OratorConfig};
 
 use crate::config::{
     audio_base_url, config_get, config_keys, config_set, gpu_llm_args, resolve_backend,
@@ -157,7 +157,7 @@ fn gpu_llm_args_stay_empty_on_cpu_and_pair_on_opt_in() {
         gpu_llm_args(true),
         vec![
             "--n-gpu-layers".to_string(),
-            orator_llm::GPU_OFFLOAD_LAYERS.to_string()
+            orator_agent::llm::GPU_OFFLOAD_LAYERS.to_string()
         ]
     );
 }
@@ -169,12 +169,12 @@ fn gpu_flag_reaches_the_whisper_params() {
     // remedy; the default path names the missing model instead —
     // the flag is read, never silently dropped.
     use fluent_concurrency::stream::StreamAbort;
-    if orator_core::gpu::device_present() {
+    if orator::gpu::device_present() {
         eprintln!("SKIP gpu-flag-reaches-params: GPU device present, nothing to refuse");
         return;
     }
     let backend =
-        orator_stt::WhisperBackend::new(std::path::PathBuf::from("/nonexistent/ggml.bin"), "en")
+        orator_voice::stt::WhisperBackend::new(std::path::PathBuf::from("/nonexistent/ggml.bin"), "en")
             .with_gpu();
     let error = backend
         .decode_blocking(&[0.0; 320], &StreamAbort::new())
@@ -184,7 +184,7 @@ fn gpu_flag_reaches_the_whisper_params() {
         "the flag reached the params: {error:?}"
     );
     let plain =
-        orator_stt::WhisperBackend::new(std::path::PathBuf::from("/nonexistent/ggml.bin"), "en");
+        orator_voice::stt::WhisperBackend::new(std::path::PathBuf::from("/nonexistent/ggml.bin"), "en");
     let error = plain
         .decode_blocking(&[0.0; 320], &StreamAbort::new())
         .expect_err("missing model must fail");
@@ -307,23 +307,23 @@ fn roles_chat_round_trips_and_resolves() {
     )
     .expect("roles with chat settable");
     assert_eq!(
-        orator_core::resolve_role_model(&config.roles, "chat").as_deref(),
+        orator::resolve_role_model(&config.roles, "chat").as_deref(),
         Some("chat-probe")
     );
     let back = config_get(&config, "roles").expect("roles readable");
-    let roles: orator_core::RolesConfig = serde_json::from_str(&back).expect("roles are JSON");
+    let roles: orator::RolesConfig = serde_json::from_str(&back).expect("roles are JSON");
     assert_eq!(
-        orator_core::resolve_role_model(&roles, "chat").as_deref(),
+        orator::resolve_role_model(&roles, "chat").as_deref(),
         Some("chat-probe"),
         "chat survives the round-trip"
     );
     // Old tables without chat load today's chat behavior.
-    let legacy: orator_core::RolesConfig =
+    let legacy: orator::RolesConfig =
         serde_json::from_str(r#"{"asr":{"models":["x"]},"tts":{"models":["y"]}}"#)
             .expect("legacy roles parse");
     assert_eq!(
-        orator_core::resolve_role_model(&legacy, "chat").as_deref(),
-        Some(orator_core::DEFAULT_LLM_MODEL),
+        orator::resolve_role_model(&legacy, "chat").as_deref(),
+        Some(orator::DEFAULT_LLM_MODEL),
         "missing chat defaults to the llm-default head"
     );
 }
@@ -336,7 +336,7 @@ fn gguf_models_roles_round_trip_as_json() {
     let mut config = OratorConfig::default();
     assert_eq!(
         config_get(&config, "gguf_dir").expect("readable"),
-        orator_core::DEFAULT_GGUF_DIR
+        orator::DEFAULT_GGUF_DIR
     );
     config_set(&mut config, "gguf_dir", "/app/ai/models/gguf").expect("settable");
     assert_eq!(
@@ -349,7 +349,7 @@ fn gguf_models_roles_round_trip_as_json() {
     assert!(config_keys().contains(&"roles".to_string()));
     assert_eq!(
         config_get(&config, "default").expect("readable"),
-        orator_core::DEFAULT_MODEL
+        orator::DEFAULT_MODEL
     );
     config_set(&mut config, "default", "liquidai/lfm3-audio-2b").expect("settable");
     assert_eq!(
@@ -358,15 +358,15 @@ fn gguf_models_roles_round_trip_as_json() {
     );
     // Whole-table get parses back to the same tables.
     let models_json = config_get(&config, "models").expect("models readable");
-    let models: orator_core::ModelsConfig =
+    let models: orator::ModelsConfig =
         serde_json::from_str(&models_json).expect("models are JSON");
-    assert!(models.models.contains_key(orator_core::DEFAULT_TTS_MODEL));
+    assert!(models.models.contains_key(orator::DEFAULT_TTS_MODEL));
     let roles_json = config_get(&config, "roles").expect("roles readable");
-    let roles: orator_core::RolesConfig =
+    let roles: orator::RolesConfig =
         serde_json::from_str(&roles_json).expect("roles are JSON");
     assert_eq!(
-        orator_core::resolve_role_model(&roles, "asr").as_deref(),
-        Some(orator_core::DEFAULT_ASR_MODEL)
+        orator::resolve_role_model(&roles, "asr").as_deref(),
+        Some(orator::DEFAULT_ASR_MODEL)
     );
     // A custom roles table round-trips and resolves.
     config_set(
@@ -376,7 +376,7 @@ fn gguf_models_roles_round_trip_as_json() {
     )
     .expect("roles settable");
     assert_eq!(
-        orator_core::resolve_role_model(&config.roles, "asr").as_deref(),
+        orator::resolve_role_model(&config.roles, "asr").as_deref(),
         Some("liquidai/lfm3-audio-2b")
     );
     // Garbage refuses with the shape named; state untouched.

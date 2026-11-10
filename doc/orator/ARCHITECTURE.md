@@ -17,25 +17,16 @@ commands or forward control calls over either transport.
 
 | Crate | Role |
 | --- | --- |
-| `orator-core` | Shared types, config schema, wire codec, traits, paths, GPU probe |
+| `orator` | Shared types, config schema, wire codec, traits, paths, GPU probe |
 | `orator-audio` | Capture/playout backends, resampling, jitter, archive, codec seam |
-| `orator-vad` | Energy detector plus tonal commit gate |
-| `orator-stt` | Whisper backend, Moonshine streaming backend, commit wrapper |
-| `orator-llm` | Endpoint session plus supervised `llama-server` child owner |
-| `orator-tts` | Kokoro backend, sentence splitter, text normalizer |
-| `orator-turn` | Turn state machine, endpointing/hold driver, barge-in gate |
-| `orator-tools` | Tool trait/registry, agentic loop, sandbox, approvals, policy |
-| `orator-store` | SQLite event log, sessions, transcripts, retention |
-| `orator-models` | Model catalog, verification, residency (dependency leaf) |
-| `orator-diar` | Segmentation, embeddings, clustering, meeting pipeline |
-| `orator-notes` | Live notes, map-reduce summarizer, full-text search |
+| `orator-voice` | Realtime pipeline: `vad` gate, `stt` engines, `turn` policy, `tts` voices, `s2s` native adapter |
+| `orator-agent` | Thinking: `llm` supervised endpoint + session, `tools` registry/loop/sandbox/policy |
+| `orator-models` | Model catalog, verification, residency, plus `lfm` LFM3 reference knowledge (dependency leaf) |
+| `orator-memory` | Durability + knowledge: `store` event log, `diary` diarization pipeline, `notes` summarizer/search |
 | `orator-desktop` | Probes, injection ladder, refine chain, clipboard, hotkeys, tray, D-Bus, KRunner |
-| `orator-s2s` | Native speech-to-speech adapter over the supervised endpoint |
-| `orator-lfm` | LFM3-Audio reference config: arch, chat template, generation params, layout |
 | `orator-daemon` | `oratord`: sessions, voice serving, admission, listeners |
 | `orator-cli` | `orator`: all user commands, TUI, transcribe, dictate, fallback |
-| `orator-testkit` | Deterministic fakes: clocks, scripted scenarios, slow probes |
-| `orator-bench` | Scenario replay, latency/RSS/drop stat files |
+| `orator-testkit` | Deterministic fakes plus the replay `harness`: scenarios, gates, stat files |
 
 Shared foundations (never reimplemented here; compose them):
 
@@ -63,8 +54,9 @@ Shared foundations (never reimplemented here; compose them):
   `spacy-rs` (`Sentencizer`).
 
 Dependency edges enforced by `it_source_guard` plus `cargo tree`:
-`orator-models` is a leaf (config/core only); `orator-s2s` never
-depends on `orator-stt`; `common-core` stays zero-domain (no
+`orator-models` is a leaf (config/foundation only); the `s2s`
+stage never names the sibling `stt`/`tts` engine backends (module
+rule inside `orator-voice`); `common-core` stays zero-domain (no
 `fluent-*`, `guidance`, `router`, `coral`, `wasm_ipc` imports);
 `fluent-concurrency` consumes `fluent-wvr` control-plane types
 without redefining them; all Orator roots carry
@@ -129,7 +121,7 @@ fades 20 ms; history commits only DAC-confirmed words + marker.
 ```
 
 The LLM serving detail: the turn queue is an `LlmRequestQueue`
-fronting the supervised endpoint in `orator-llm`; per-turn prefill
+fronting the supervised endpoint in `orator-agent::llm`; per-turn prefill
 is chunked, speculative prefixes re-request after abort (the
 server keeps its KV cache — no client-side KV surgery), and slot
 snapshots bound the cost of a wrong guess.
@@ -173,7 +165,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
 
 ## 4. Crate guide (files → named items)
 
-### `orator-core` — shared vocabulary and selection
+### `orator` — shared vocabulary and selection
 
 - `src/types.rs`: `Frame` (fallible `new`, `NonZeroU32` rate),
   `MediaTime`, `Channel::{Mic, Sys, Reply}`, `AudioChunk`,
@@ -212,7 +204,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   `TtsStream` (all `Component`s).
 - `src/gpu.rs`: `require_gpu`, `device_present`.
 
-### `orator-llm` — session plus supervised children (single home)
+### `orator-agent::llm` — session plus supervised children (single home)
 
 - `src/session.rs`: `HttpSession::{open, with_queue, push_text,
   step, plan_task, pack_user_text}` via
@@ -237,7 +229,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   so no `/v1` request fires); `ProbeInfo.via_v1_fallback`;
   ID extraction composes `fluent_llm::openai::model_ids`.
 
-### `orator-s2s` — native adapter (thin; no second supervisor)
+### `orator-voice::s2s` — native adapter (thin; no second supervisor)
 
 - `src/session.rs`: `AudioSession::{new, transcribe_blocking,
   speak_blocking, chat_turn, step, abort_handle, set_epoch,
@@ -260,7 +252,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   `voice_server_args`, `audio_supervisor_config`,
   `managed_binary`, `resolve_tts_binary`, `synth_blocking`,
   `ScratchGuard`. Shares
-  `orator_llm::{Supervisor, shared_http_client,
+  `orator_agent::llm::{Supervisor, shared_http_client,
   LatencyHistogram}`; owns only audio argv/probe/stream shaping.
 - `src/config.rs`: `S2sConfig` (`turn_window_ms`).
 
@@ -391,42 +383,42 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   `parse_query`; `src/tray.rs`, `src/notify.rs`, `src/dbus.rs`.
   Wiring status: `doc/orator/DESKTOP_WIRING.md`.
 
-### `orator-turn` / `orator-vad` — conversation policy
+### `orator-voice::{turn, vad}` — conversation policy
 
-- `turn/src/machine.rs`: `TurnMachine` via
+- `voice/src/turn/machine.rs`: `TurnMachine` via
   `delegate_component_fields!(TurnMachine, config)`,
   `TurnState` (`Idle`/`UserSpeaking`/`Endpointing`/`Thinking`/
   `ToolWait`/`Speaking`/`Yielding`), `TurnEvent`; legality drops
   counted, never errors.
-- `turn/src/driver.rs`: `TurnDriver::{with_config, detect}`,
+- `voice/src/turn/driver.rs`: `TurnDriver::{with_config, detect}`,
   `HopGate::{pass, cut}`, `Hop::{PostStt, PreLlm, PreSpeak}`
   (three-hop generation cancel), `BargeInOutcome`.
-- `vad/src/energy.rs`: `EnergyVad::{with_floor, push}` (RMS via
+- `voice/src/vad/energy.rs`: `EnergyVad::{with_floor, push}` (RMS via
   `common_core::pcm::root_mean_square_f32`); floor/hysteresis/
   attack/hangover constants (calibrated bands in
   `CALIBRATION.md`).
-- `vad/src/gate.rs`: `speech_present_16k` (energy fraction AND
+- `voice/src/vad/gate.rs`: `speech_present_16k` (energy fraction AND
   NOT stationary tone — the single home for file and daemon
   gating), `stationary_tone_present`,
   `energy_gate` (shared RMS, 20 ms frames, re-arm cadence).
 
-### `orator-stt` / `orator-tts` — engines
+### `orator-voice::{stt, tts}` — engines
 
-- `stt/src/whisper.rs`: `WhisperBackend::{new, with_gpu,
+- `voice/src/stt/whisper.rs`: `WhisperBackend::{new, with_gpu,
   decode_blocking}` (lazy context, language/model-keyed
-  rebuild); `stt/src/streaming.rs`: `StreamingStt`
+  rebuild); `voice/src/stt/streaming.rs`: `StreamingStt`
   (utterance-absolute incremental commits, tail-only window),
   `BlockDecoder::decode` (+ `offset_ms`);
-  `stt/src/moonshine.rs`: `MoonshineBackend` (streaming ASR
-  backing the default ASR tag); `stt/src/wer.rs`.
-- `tts/src/kokoro.rs`: `KokoroBackend::{new, with_gpu,
+  `voice/src/stt/moonshine.rs`: `MoonshineBackend` (streaming ASR
+  backing the default ASR tag); `voice/src/stt/wer.rs`.
+- `voice/src/tts/kokoro.rs`: `KokoroBackend::{new, with_gpu,
   synth_blocking, synth_async}`, `trim_silence`,
   `uniform_marks`, `KOKORO_SAMPLE_RATE`, load-once session;
-  `tts/src/splitter.rs`: `split_all` (MIN=16, FIRST_MAX=100,
+  `voice/src/tts/splitter.rs`: `split_all` (MIN=16, FIRST_MAX=100,
   CAP=220, comma fast-path, buffer-end hold, abbreviation
-  guard); `tts/src/normalize.rs`
+  guard); `voice/src/tts/normalize.rs`
   (`normalize_for_speech` — the oracle single home, composed by
-  `say_chain`); `tts/src/pipeline.rs`
+  `say_chain`); `voice/src/tts/pipeline.rs`
   (`synth_chunks_blocking`); `default_paths`.
 
 ### `orator-audio` — sound in/out/on disk
@@ -448,7 +440,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
 - `src/envelope.rs`: re-exports and delegates to
   `common_core::envelope` (`DUCK_DEPTH_DB`/`DUCK_RAMP_MS`/
   `CUT_FADE_MS`, `db_to_linear`, `duck_gain_at`,
-  `apply_fade_out`); `turn/src/driver.rs` consts are aliases of
+  `apply_fade_out`); `voice/src/turn/driver.rs` consts are aliases of
   the same home.
 - `src/playback.rs`: `play_blocking`,
   `StreamPlayer::{open, push, dropped, pushed, played, finish}`
@@ -465,7 +457,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   25 ms), `src/source.rs` (already composes `retry_async`),
   `src/doctor.rs`, `src/error.rs`.
 
-### `orator-lfm` — LFM3-Audio reference knowledge (no tensors)
+### `orator-models::lfm` — LFM3-Audio reference knowledge (no tensors)
 
 Config/processing/layout home for
 `Lfm3AudioForConditionalGeneration`: architecture constants,
@@ -499,7 +491,7 @@ composed over these definitions.
   three `live-ai` tests re-run the probe (staleness guard),
   re-verify assembly, and anchor generation params.
 
-### `orator-tools` — agency with guardrails
+### `orator-agent::tools` — agency with guardrails
 
 - `src/tool.rs`: `Tool` trait, `ToolCall`/`ToolRegistry`,
   `truncate_tool_output` + `TOOL_OUTPUT_CHARS` (single home),
@@ -527,7 +519,7 @@ composed over these definitions.
   `common_core::string` without merging the two classifier
   tables (their disagreements are pinned).
 
-### `orator-store` — one event log, thin views
+### `orator-memory::store` — one event log, thin views
 
 - `src/events.rs`: `EventLog::{over, in_memory, append,
   replay, replay_kind, count_kind, latest, subscribe,
@@ -542,7 +534,7 @@ composed over these definitions.
   runtime-dir `0700` enforcement, symlink checks, no added
   socket chmod), `spawn_writer`, `WriteReq`.
 
-### `orator-diar` / `orator-notes` — meetings into knowledge
+### `orator-memory::{diary, notes}` — meetings into knowledge
 
 - `diar`: `segment`, `align_words`, `speaker_name`,
   `MeetingPipeline` (finalize → offline_stt → diarize →
@@ -562,7 +554,7 @@ composed over these definitions.
   Markdown facts + rolling summary, deterministic export, FTS
   search over the store.
 
-### `orator-models` / `orator-bench` / `orator-testkit`
+### `orator-models` / `orator-testkit`
 
 - `models/src/ops.rs`: `list_models`, `find_entry`,
   `verify_entry` (size-then-SHA-256 via
@@ -581,7 +573,7 @@ composed over these definitions.
 
 ## 5. Cross-cutting contracts
 
-- **Wire** (`orator-core::protocol`, `orator-core::socket`,
+- **Wire** (`orator::protocol`, `orator::socket`,
   `orator-daemon::socket`, `orator-cli::socket`): 11 methods;
   `COMMANDS` (18 CLI verbs) ↔ `METHOD_NAMES` ↔
   `DISPATCH_METHODS` pinned equal by `it_parity.rs`;

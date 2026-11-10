@@ -82,7 +82,7 @@ pub fn parse_narration_level(raw: &str) -> Result<NarrationLevel, String> {
 /// anything else falls back to `none` so the loop can name the bad
 /// value instead of refusing the session.
 #[must_use]
-pub fn initial_narration_mode(config: &orator_core::OratorConfig) -> NarrationLevel {
+pub fn initial_narration_mode(config: &orator::OratorConfig) -> NarrationLevel {
     parse_narration_level(config.chat.narration.trim()).unwrap_or_default()
 }
 

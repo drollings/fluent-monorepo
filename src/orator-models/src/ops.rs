@@ -53,7 +53,7 @@ pub struct ModelStatus {
 /// `None` when no home base resolves.
 #[must_use]
 pub fn path_for(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
-    orator_core::models_dir().map(|dir| dir.join(&entry.file))
+    orator::models_dir().map(|dir| dir.join(&entry.file))
 }
 
 /// Resolve where `entry` lives: the installation layout first for
@@ -63,9 +63,9 @@ pub fn path_for(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
 pub fn resolve_entry_path(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
     match entry.kind {
         crate::model::ModelKind::Llm => {
-            let mut roots = vec![PathBuf::from(orator_core::DEFAULT_GGUF_DIR)];
-            roots.extend(orator_core::llama_weights_dirs());
-            roots.extend(orator_core::models_dir());
+            let mut roots = vec![PathBuf::from(orator::DEFAULT_GGUF_DIR)];
+            roots.extend(orator::llama_weights_dirs());
+            roots.extend(orator::models_dir());
             roots
                 .into_iter()
                 .map(|root| root.join(&entry.file))
@@ -79,7 +79,7 @@ pub fn resolve_entry_path(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
 /// Installation directory holding the audio bundle, when complete.
 #[must_use]
 pub fn bundle_dir() -> Option<PathBuf> {
-    let bundle = orator_core::default_bundle();
+    let bundle = orator::default_bundle();
     bundle.present().then(|| {
         bundle
             .mmproj
@@ -91,7 +91,7 @@ pub fn bundle_dir() -> Option<PathBuf> {
 /// Verify the bundle manifest: every component matches its pinned
 /// size + hash, and the manifest over the digests matches the entry.
 pub fn verify_bundle(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpError> {
-    let bundle = orator_core::default_bundle();
+    let bundle = orator::default_bundle();
     verify_bundle_files(
         &[bundle.backbone.clone(), bundle.mmproj.clone()],
         &crate::model::AUDIO_COMPONENT_PINS,
@@ -182,7 +182,7 @@ pub fn list_models() -> Vec<ModelStatus> {
 fn size_matches(entry: &crate::model::ModelEntry) -> Option<bool> {
     let want = entry.size.unwrap_or(0);
     if entry.kind == crate::model::ModelKind::Audio {
-        let bundle = orator_core::default_bundle();
+        let bundle = orator::default_bundle();
         let files = [&bundle.backbone, &bundle.mmproj];
         let mut total = 0u64;
         for (file, (_, size, _)) in files.into_iter().zip(crate::model::AUDIO_COMPONENT_PINS) {
@@ -204,7 +204,7 @@ fn size_matches(entry: &crate::model::ModelEntry) -> Option<bool> {
 /// The size-then-digest mechanics compose
 /// `common_core::hash::verify_sha256_file`; this wrapper keeps the catalog
 /// policy local (missing-file and unpinned variants, audio bundles resolve
-/// separately). `orator_lfm::verify_weights` remains a presence/non-empty
+/// separately). `lfm::manifest::verify_weights` remains a presence/non-empty
 /// check, a different contract.
 pub fn verify_entry(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpError> {
     if !entry.pinned() {
@@ -257,7 +257,7 @@ pub fn remove_entry(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpErr
 
 /// Whether the reference audio bundle is fully present.
 fn orator_s2s_bundle_present() -> bool {
-    orator_core::default_bundle().present()
+    orator::default_bundle().present()
 }
 
 /// Find an entry by family tag and name across the catalog.
@@ -292,7 +292,7 @@ pub fn pull_plan(
     }
     let dest = match entry.kind {
         crate::model::ModelKind::Llm | crate::model::ModelKind::Audio => resolve_entry_path(entry)
-            .unwrap_or_else(|| PathBuf::from(orator_core::DEFAULT_GGUF_DIR).join(&entry.file)),
+            .unwrap_or_else(|| PathBuf::from(orator::DEFAULT_GGUF_DIR).join(&entry.file)),
         _ => path_for(entry).ok_or_else(|| {
             ModelOpError::Io(
                 "no managed model directory (HOME and XDG_DATA_HOME are unset)".to_string(),

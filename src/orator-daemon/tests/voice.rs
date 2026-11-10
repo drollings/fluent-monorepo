@@ -41,7 +41,7 @@ fn idle_budget_matches_the_gateway_shape() {
 
 #[test]
 fn owner_keeps_the_loaded_configuration() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.tts.backend = "kokoro".to_string();
     let owner = VoiceOwner::new(&config);
     assert_eq!(owner.config().tts.backend, "kokoro");
@@ -56,7 +56,7 @@ fn idle_supervisor_is_stopped_and_reaped() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(
+        state.server = Some(orator_agent::llm::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_used = std::time::Instant::now()
@@ -116,7 +116,7 @@ fn is_alive_false_when_refused() {
 
 #[test]
 fn shutdown_stops_new_boots_and_reports() {
-    let owner = VoiceOwner::new(&orator_core::OratorConfig::default());
+    let owner = VoiceOwner::new(&orator::OratorConfig::default());
     owner.shutdown();
     let error =
         common_core::runtime::block_on_shared(owner.ensure()).expect_err("no boots after shutdown");
@@ -127,7 +127,7 @@ fn shutdown_stops_new_boots_and_reports() {
 
 #[test]
 fn shutdown_waits_boundedly_for_an_in_flight_boot() {
-    let owner = VoiceOwner::new(&orator_core::OratorConfig::default());
+    let owner = VoiceOwner::new(&orator::OratorConfig::default());
     {
         let mut state = common_core::sync::lock(&owner.state);
         state.booting = true;
@@ -161,7 +161,7 @@ fn ok_outcome_reaps_when_idle() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(
+        state.server = Some(orator_agent::llm::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_outcome = Some(RequestOutcome::Ok);
@@ -190,7 +190,7 @@ fn backend_outcome_reaps_after_idle() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(
+        state.server = Some(orator_agent::llm::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_outcome = Some(RequestOutcome::Backend);
@@ -230,7 +230,7 @@ fn successful_use_records_ok_and_reaps_when_idle() {
     });
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(format!(
+        state.server = Some(orator_agent::llm::Supervisor::attach(format!(
             "http://127.0.0.1:{port}"
         )));
     }
@@ -319,7 +319,7 @@ fn ejected_probe_success_drops_the_same_child() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_llm::Supervisor::attach(
+        state.server = Some(orator_agent::llm::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_url = Some("http://127.0.0.1:9".to_string());
@@ -354,7 +354,7 @@ fn ensure_uses_a_serving_configured_endpoint_without_booting() {
         when.method("OPTIONS").path("/v1/chat/completions");
         then.status(200);
     });
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.s2s.endpoint = server.base_url();
     let owner = VoiceOwner::new(&config);
     let url = common_core::runtime::block_on_shared(owner.ensure()).expect("shared serves");
@@ -367,7 +367,7 @@ fn ensure_uses_a_serving_configured_endpoint_without_booting() {
 fn ensure_without_server_or_boot_names_auto_boot() {
     // Dead configured endpoint, auto-boot off: the refusal names the
     // file leave instead of spawning a child.
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.s2s.endpoint = "http://127.0.0.1:9".to_string();
     assert!(!config.s2s.auto_boot, "off unless the file opts in");
     let owner = VoiceOwner::new(&config);
@@ -426,8 +426,8 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
 /// Config pointing at a dead endpoint with auto-boot on and a present
 /// bundle rooted at `base` (backbone + mmproj exist there).
 #[cfg(unix)]
-fn boot_test_config(base: &std::path::Path) -> orator_core::OratorConfig {
-    let mut config = orator_core::OratorConfig::default();
+fn boot_test_config(base: &std::path::Path) -> orator::OratorConfig {
+    let mut config = orator::OratorConfig::default();
     config.s2s.endpoint = "http://127.0.0.1:9".to_string();
     config.s2s.model = "m".to_string();
     config.s2s.auto_boot = true;
@@ -435,7 +435,7 @@ fn boot_test_config(base: &std::path::Path) -> orator_core::OratorConfig {
     config.s2s.mmproj = "mmproj.gguf".to_string();
     config.models.models.insert(
         "m".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: Some("backbone.gguf".to_string()),
             backends: vec!["audio-server".to_string()],
             params: None,
@@ -453,13 +453,13 @@ fn ensure_tries_audio_candidates_in_order_and_stops_after_success() {
     use std::os::unix::fs::PermissionsExt as _;
     let _guard = common_core::sync::lock(&BOOT_ENV_LOCK);
     let _home_guard = common_core::sync::lock(&super::export_tests::HOME_LOCK);
-    let prior_audio = std::env::var_os(orator_s2s::AUDIO_SERVER_ENV);
-    let prior_llama = std::env::var_os(orator_llm::LLAMA_SERVER_ENV);
+    let prior_audio = std::env::var_os(orator_voice::s2s::AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_agent::llm::LLAMA_SERVER_ENV);
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     let prior_xdg = std::env::var_os("XDG_DATA_HOME");
-    std::env::remove_var(orator_s2s::AUDIO_SERVER_ENV);
-    std::env::remove_var(orator_llm::LLAMA_SERVER_ENV);
+    std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV);
+    std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV);
 
     let base = fixture_base();
     std::env::set_var("HOME", base.path());
@@ -476,23 +476,23 @@ fn ensure_tries_audio_candidates_in_order_and_stops_after_success() {
     let marker1 = base.path().join("ran-first");
     let marker3 = base.path().join("ran-third");
     std::fs::write(
-        dir1.join(orator_s2s::AUDIO_SERVER_BIN),
+        dir1.join(orator_voice::s2s::AUDIO_SERVER_BIN),
         format!("#!/bin/sh\ntouch \"{}\"\nexit 1\n", marker1.display()),
     )
     .expect("failing stub writes");
     std::fs::write(
-        dir2.join(orator_s2s::AUDIO_SERVER_BIN),
+        dir2.join(orator_voice::s2s::AUDIO_SERVER_BIN),
         FAKE_AUDIO_SERVER_ABS,
     )
     .expect("healthy stub writes");
     std::fs::write(
-        dir3.join(orator_s2s::AUDIO_SERVER_BIN),
+        dir3.join(orator_voice::s2s::AUDIO_SERVER_BIN),
         format!("#!/bin/sh\ntouch \"{}\"\nsleep 30\n", marker3.display()),
     )
     .expect("unused stub writes");
     for dir in [&dir1, &dir2, &dir3] {
         std::fs::set_permissions(
-            dir.join(orator_s2s::AUDIO_SERVER_BIN),
+            dir.join(orator_voice::s2s::AUDIO_SERVER_BIN),
             std::fs::Permissions::from_mode(0o755),
         )
         .expect("stub runs");
@@ -514,12 +514,12 @@ fn ensure_tries_audio_candidates_in_order_and_stops_after_success() {
     owner.shutdown();
 
     match prior_audio {
-        Some(value) => std::env::set_var(orator_s2s::AUDIO_SERVER_ENV, value),
-        None => std::env::remove_var(orator_s2s::AUDIO_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_voice::s2s::AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV),
     }
     match prior_llama {
-        Some(value) => std::env::set_var(orator_llm::LLAMA_SERVER_ENV, value),
-        None => std::env::remove_var(orator_llm::LLAMA_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_agent::llm::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),
@@ -544,13 +544,13 @@ fn ensure_maps_all_failed_candidates_to_boot_last_error() {
     use std::os::unix::fs::PermissionsExt as _;
     let _guard = common_core::sync::lock(&BOOT_ENV_LOCK);
     let _home_guard = common_core::sync::lock(&super::export_tests::HOME_LOCK);
-    let prior_audio = std::env::var_os(orator_s2s::AUDIO_SERVER_ENV);
-    let prior_llama = std::env::var_os(orator_llm::LLAMA_SERVER_ENV);
+    let prior_audio = std::env::var_os(orator_voice::s2s::AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_agent::llm::LLAMA_SERVER_ENV);
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     let prior_xdg = std::env::var_os("XDG_DATA_HOME");
-    std::env::remove_var(orator_s2s::AUDIO_SERVER_ENV);
-    std::env::remove_var(orator_llm::LLAMA_SERVER_ENV);
+    std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV);
+    std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV);
 
     let base = fixture_base();
     std::env::set_var("HOME", base.path());
@@ -563,13 +563,13 @@ fn ensure_maps_all_failed_candidates_to_boot_last_error() {
     for dir in [&dir1, &dir2] {
         std::fs::create_dir(dir).expect("candidate dir");
     }
-    std::fs::write(dir1.join(orator_s2s::AUDIO_SERVER_BIN), "not an executable\n")
+    std::fs::write(dir1.join(orator_voice::s2s::AUDIO_SERVER_BIN), "not an executable\n")
         .expect("exec-format stub writes");
-    std::fs::write(dir2.join(orator_s2s::AUDIO_SERVER_BIN), "#!/bin/sh\nexit 1\n")
+    std::fs::write(dir2.join(orator_voice::s2s::AUDIO_SERVER_BIN), "#!/bin/sh\nexit 1\n")
         .expect("immediate-exit stub writes");
     for dir in [&dir1, &dir2] {
         std::fs::set_permissions(
-            dir.join(orator_s2s::AUDIO_SERVER_BIN),
+            dir.join(orator_voice::s2s::AUDIO_SERVER_BIN),
             std::fs::Permissions::from_mode(0o755),
         )
         .expect("stub mode");
@@ -599,12 +599,12 @@ fn ensure_maps_all_failed_candidates_to_boot_last_error() {
     owner.shutdown();
 
     match prior_audio {
-        Some(value) => std::env::set_var(orator_s2s::AUDIO_SERVER_ENV, value),
-        None => std::env::remove_var(orator_s2s::AUDIO_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_voice::s2s::AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV),
     }
     match prior_llama {
-        Some(value) => std::env::set_var(orator_llm::LLAMA_SERVER_ENV, value),
-        None => std::env::remove_var(orator_llm::LLAMA_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_agent::llm::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),
@@ -628,13 +628,13 @@ fn ensure_does_not_boot_while_ejected_or_contending() {
     use std::os::unix::fs::PermissionsExt as _;
     let _guard = common_core::sync::lock(&BOOT_ENV_LOCK);
     let _home_guard = common_core::sync::lock(&super::export_tests::HOME_LOCK);
-    let prior_audio = std::env::var_os(orator_s2s::AUDIO_SERVER_ENV);
-    let prior_llama = std::env::var_os(orator_llm::LLAMA_SERVER_ENV);
+    let prior_audio = std::env::var_os(orator_voice::s2s::AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_agent::llm::LLAMA_SERVER_ENV);
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     let prior_xdg = std::env::var_os("XDG_DATA_HOME");
-    std::env::remove_var(orator_s2s::AUDIO_SERVER_ENV);
-    std::env::remove_var(orator_llm::LLAMA_SERVER_ENV);
+    std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV);
+    std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV);
 
     let base = fixture_base();
     std::env::set_var("HOME", base.path());
@@ -646,12 +646,12 @@ fn ensure_does_not_boot_while_ejected_or_contending() {
     std::fs::create_dir(&dir).expect("candidate dir");
     let marker = base.path().join("ran-boot");
     std::fs::write(
-        dir.join(orator_s2s::AUDIO_SERVER_BIN),
+        dir.join(orator_voice::s2s::AUDIO_SERVER_BIN),
         format!("#!/bin/sh\ntouch \"{}\"\nsleep 30\n", marker.display()),
     )
     .expect("stub writes");
     std::fs::set_permissions(
-        dir.join(orator_s2s::AUDIO_SERVER_BIN),
+        dir.join(orator_voice::s2s::AUDIO_SERVER_BIN),
         std::fs::Permissions::from_mode(0o755),
     )
     .expect("stub runs");
@@ -694,12 +694,12 @@ fn ensure_does_not_boot_while_ejected_or_contending() {
     owner.shutdown();
 
     match prior_audio {
-        Some(value) => std::env::set_var(orator_s2s::AUDIO_SERVER_ENV, value),
-        None => std::env::remove_var(orator_s2s::AUDIO_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_voice::s2s::AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV),
     }
     match prior_llama {
-        Some(value) => std::env::set_var(orator_llm::LLAMA_SERVER_ENV, value),
-        None => std::env::remove_var(orator_llm::LLAMA_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_agent::llm::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),

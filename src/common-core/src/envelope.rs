@@ -3,7 +3,7 @@
 //! Pure sample arithmetic with no audio device or session state. The
 //! calibrated constants below are the shared playout targets (about
 //! −12 dB of duck over 100 ms on barge-in detect, a 20 ms fade on
-//! cut): `orator-audio` and `orator-turn` previously declared the same
+//! cut): `orator-audio` and `orator-voice::turn` previously declared the same
 //! numbers independently, which is the duplication this module ends.
 //! Values stay calibrated — retuning is a calibration decision, never
 //! a refactor side effect (see `orator_audio_envelope_vectors`).

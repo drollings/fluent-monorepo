@@ -24,16 +24,16 @@ fn request_envelope_round_trips_framing() {
         params: serde_json::json!({}),
     };
     let bytes = encode_request(&request).expect("request encodes");
-    let frame = orator_core::SocketFrame::decode(&bytes).expect("framing holds");
-    assert_eq!(frame.kind, orator_core::MessageType::Request);
+    let frame = orator::SocketFrame::decode(&bytes).expect("framing holds");
+    assert_eq!(frame.kind, orator::MessageType::Request);
     let back: WireRequest = serde_json::from_slice(&frame.body).expect("json holds");
     assert_eq!(back, request);
 }
 
 #[test]
 fn reply_decode_rejects_wrong_family() {
-    let frame = orator_core::SocketFrame {
-        kind: orator_core::MessageType::Ping,
+    let frame = orator::SocketFrame {
+        kind: orator::MessageType::Ping,
         body: b"{}".to_vec(),
     };
     assert!(decode_reply(&frame.encode()).is_err());
@@ -42,8 +42,8 @@ fn reply_decode_rejects_wrong_family() {
         ok: true,
         body: serde_json::json!({"state": "idle"}),
     };
-    let frame = orator_core::SocketFrame {
-        kind: orator_core::MessageType::Response,
+    let frame = orator::SocketFrame {
+        kind: orator::MessageType::Response,
         body: serde_json::to_vec(&reply).expect("json"),
     };
     assert_eq!(decode_reply(&frame.encode()).expect("reply"), reply);
@@ -118,8 +118,8 @@ fn quiet_socket_core_returns_text_instead_of_printing() {
             "body": {"error": "busy"},
         }))
         .expect("reply");
-        let frame = orator_core::SocketFrame {
-            kind: orator_core::MessageType::Response,
+        let frame = orator::SocketFrame {
+            kind: orator::MessageType::Response,
             body: reply,
         };
         stream.write_all(&frame.encode()).expect("send");
@@ -260,16 +260,16 @@ fn daemon_call_round_trips_through_shared_framing() {
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept");
         let frame =
-            orator_core::SocketFrame::read_from(&mut stream).expect("server reads one frame");
-        assert_eq!(frame.kind, orator_core::MessageType::Request);
+            orator::SocketFrame::read_from(&mut stream).expect("server reads one frame");
+        assert_eq!(frame.kind, orator::MessageType::Request);
         let reply = serde_json::to_vec(&serde_json::json!({
             "id": 1,
             "ok": true,
             "body": {"state": "idle"},
         }))
         .expect("json");
-        orator_core::SocketFrame {
-            kind: orator_core::MessageType::Response,
+        orator::SocketFrame {
+            kind: orator::MessageType::Response,
             body: reply,
         }
         .write_to(&mut stream)
@@ -306,8 +306,8 @@ fn daemon_refusal_is_error_not_unavailable() {
             "body": {"error": "not wired yet"},
         }))
         .expect("json");
-        let frame = orator_core::SocketFrame {
-            kind: orator_core::MessageType::Response,
+        let frame = orator::SocketFrame {
+            kind: orator::MessageType::Response,
             body: reply,
         };
         stream.write_all(&frame.encode()).expect("reply");
@@ -333,7 +333,7 @@ fn ws_listen_binds_the_configured_port() {
         format!(r#"{{"daemon": {{"ws_listen": "127.0.0.1:{port}", "ws_token": "bind-token"}}}}"#),
     )
     .expect("config writes");
-    let config: orator_core::OratorConfig =
+    let config: orator::OratorConfig =
         common_core::config::load_json(&path).expect("configured value loads");
     assert_eq!(config.daemon.ws_listen, format!("127.0.0.1:{port}"));
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));

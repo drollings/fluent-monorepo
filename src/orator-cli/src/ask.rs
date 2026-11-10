@@ -21,8 +21,8 @@ pub enum AskFail {
 /// resolve byte-identically through either layer. Pure (no weights,
 /// no I/O) so resolution pins without hardware.
 #[must_use]
-pub fn resolve_ask_model(config: &orator_core::OratorConfig) -> String {
-    orator_core::resolve_role_model(&config.roles, "chat")
+pub fn resolve_ask_model(config: &orator::OratorConfig) -> String {
+    orator::resolve_role_model(&config.roles, "chat")
         .unwrap_or_else(|| config.llm.model.clone())
 }
 
@@ -34,12 +34,12 @@ pub fn resolve_ask_model(config: &orator_core::OratorConfig) -> String {
 /// cannot smuggle a boot the leaves would refuse. Pure: the caller
 /// (supervised boot, direct session) does the I/O.
 pub fn effective_llm_config(
-    config: &orator_core::OratorConfig,
-) -> Result<orator_core::LlmEndpointConfig, String> {
+    config: &orator::OratorConfig,
+) -> Result<orator::LlmEndpointConfig, String> {
     let mut llm = config.llm.clone();
     llm.model = resolve_ask_model(config);
     let composed =
-        orator_core::compose_role_params(&config.models, &config.roles, "chat", &llm.model);
+        orator::compose_role_params(&config.models, &config.roles, "chat", &llm.model);
     if let Some(value) = composed.get("ctx") {
         llm.ctx = composed_u16("ctx", value, 1024)?;
     }
@@ -53,7 +53,7 @@ pub fn effective_llm_config(
             .filter(|weights| !weights.is_empty())
         {
             let resolved =
-                orator_core::resolve_model_weights(&config.models, &config.gguf_dir, &llm.model)
+                orator::resolve_model_weights(&config.models, &config.gguf_dir, &llm.model)
                     .unwrap_or_else(|| std::path::PathBuf::from(declared));
             llm.weights = resolved.to_string_lossy().into_owned();
         }
@@ -85,7 +85,7 @@ fn composed_u16(key: &str, value: &serde_json::Value, min: u16) -> Result<u16, S
 /// auto-reserve (the supervisor's documented shape). Shares the one
 /// endpoint grammar with `config set`, so set-time and use-time agree.
 pub fn parse_ask_port(endpoint: &str) -> Result<u16, String> {
-    orator_core::parse_endpoint(endpoint)
+    orator::parse_endpoint(endpoint)
         .map(|parts| parts.port)
         .map_err(|_| {
             format!("orator: invalid port in llm.endpoint {endpoint:?} (expected host:port)")
@@ -98,8 +98,8 @@ pub fn parse_ask_port(endpoint: &str) -> Result<u16, String> {
 /// entries additionally verify the file being used (size stat, then
 /// SHA-256 over those bytes): a tampered `.gguf` refuses even though
 /// the file exists.
-pub fn check_ask_weights(endpoint: &orator_core::LlmEndpointConfig) -> Result<PathBuf, String> {
-    let path = match orator_core::resolve_llm_weights(endpoint) {
+pub fn check_ask_weights(endpoint: &orator::LlmEndpointConfig) -> Result<PathBuf, String> {
+    let path = match orator::resolve_llm_weights(endpoint) {
         Some(path) if path.exists() => path,
         Some(path) => return Err(format!(
             "orator: no weights for model {} (missing {}; declare `llm.weights` or place {}.gguf in the llama.cpp layout)",
@@ -108,7 +108,7 @@ pub fn check_ask_weights(endpoint: &orator_core::LlmEndpointConfig) -> Result<Pa
             endpoint.model,
         )),
         None => {
-            let config_hint = orator_core::config_path().map_or_else(
+            let config_hint = orator::config_path().map_or_else(
                 || "the config file".to_string(),
                 |path| path.display().to_string(),
             );

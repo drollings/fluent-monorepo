@@ -18,11 +18,11 @@ fn bad_port_is_usage_never_auto_reserve() {
 
 #[test]
 fn missing_weights_fail_fast_with_a_named_remedy() {
-    let endpoint = orator_core::LlmEndpointConfig {
+    let endpoint = orator::LlmEndpointConfig {
         model: "no-such-model-xyz".to_string(),
         weights: "/nonexistent-weights-xyz.gguf".to_string(),
         gguf_dir: "/nonexistent-gguf-dir-xyz".to_string(),
-        ..orator_core::LlmEndpointConfig::default()
+        ..orator::LlmEndpointConfig::default()
     };
     let error = check_ask_weights(&endpoint).expect_err("missing refuses");
     assert!(error.contains("no weights"), "{error}");
@@ -36,11 +36,11 @@ fn tampered_pinned_weights_refuse_despite_presence() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bad = dir.path().join("tampered.gguf");
     std::fs::write(&bad, b"not the model").expect("tampered writes");
-    let endpoint = orator_core::LlmEndpointConfig {
+    let endpoint = orator::LlmEndpointConfig {
         model: "liquidai/lfm2.5-2.6b".to_string(),
         weights: bad.display().to_string(),
         gguf_dir: String::new(),
-        ..orator_core::LlmEndpointConfig::default()
+        ..orator::LlmEndpointConfig::default()
     };
     // Unpinned or unknown models pass presence; pinned models with a
     // manifest entry verify. This model is pinned in the manifest, so
@@ -146,7 +146,7 @@ fn concise_speech_passes_short_replies_and_announces_cuts() {
 /// the audio-bundle model, not the chat model).
 #[test]
 fn chat_head_wins_empty_list_falls_back_to_the_leaf() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.chat.models = vec!["custom-chat-tag".to_string()];
     config.llm.model = "leaf-model".to_string();
     assert_eq!(resolve_ask_model(&config), "custom-chat-tag");
@@ -161,15 +161,15 @@ fn chat_head_wins_empty_list_falls_back_to_the_leaf() {
 /// entry spells the leaf-relative path absolutely).
 #[test]
 fn default_config_resolves_byte_identically() {
-    let config = orator_core::OratorConfig::default();
+    let config = orator::OratorConfig::default();
     assert_eq!(resolve_ask_model(&config), config.llm.model);
     let effective = effective_llm_config(&config).expect("defaults compose");
     assert_eq!(effective.model, config.llm.model);
     assert_eq!(effective.ctx, config.llm.ctx);
     assert_eq!(effective.n_batch, config.llm.n_batch);
     assert_eq!(
-        orator_core::resolve_llm_weights(&effective),
-        orator_core::resolve_llm_weights(&config.llm),
+        orator::resolve_llm_weights(&effective),
+        orator::resolve_llm_weights(&config.llm),
         "same weights file through either layer"
     );
 }
@@ -179,18 +179,18 @@ fn default_config_resolves_byte_identically() {
 /// each winning wholesale per key.
 #[test]
 fn composed_ctx_and_n_batch_override_the_leaves() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.chat.models = vec!["chat-probe".to_string()];
     config.roles.chat.params = Some(serde_json::json!({"ctx": 4096}));
     config.models.models.insert(
         "chat-probe".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["llm".to_string()],
             params: Some(serde_json::json!({"n_batch": 256})),
             role_params: Some(std::collections::HashMap::from([(
                 "chat".to_string(),
-                orator_core::ModelRoleOverride {
+                orator::ModelRoleOverride {
                     params: Some(serde_json::json!({"n_batch": 1024})),
                 },
             )])),
@@ -210,11 +210,11 @@ fn composed_ctx_and_n_batch_override_the_leaves() {
 /// so tables cannot smuggle a boot the leaves would refuse.
 #[test]
 fn out_of_range_composed_tuning_refuses_loudly() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.chat.models = vec!["chat-probe".to_string()];
     config.models.models.insert(
         "chat-probe".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["llm".to_string()],
             params: None,
@@ -240,11 +240,11 @@ fn out_of_range_composed_tuning_refuses_loudly() {
 /// replaces the leaf declaration in the effective section.
 #[test]
 fn table_weights_win_for_the_head() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.chat.models = vec!["chat-probe".to_string()];
     config.models.models.insert(
         "chat-probe".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: Some("custom/chat.gguf".to_string()),
             backends: vec!["llm".to_string()],
             params: None,
@@ -254,7 +254,7 @@ fn table_weights_win_for_the_head() {
     let effective = effective_llm_config(&config).expect("weights compose");
     assert_eq!(
         effective.weights,
-        format!("{}/custom/chat.gguf", orator_core::DEFAULT_GGUF_DIR),
+        format!("{}/custom/chat.gguf", orator::DEFAULT_GGUF_DIR),
         "relative table weights join under the top root"
     );
 }
@@ -265,7 +265,7 @@ fn table_weights_win_for_the_head() {
 /// model nobody listed.
 #[test]
 fn unlisted_head_resolves_for_loud_failure_later() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.chat.models = vec!["no-such-chat-tag".to_string()];
     let effective = effective_llm_config(&config).expect("resolution succeeds");
     assert_eq!(effective.model, "no-such-chat-tag");

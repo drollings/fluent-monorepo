@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use fluent_concurrency::stream::StreamAbort;
-use orator_vad::EnergyVad;
+use orator_voice::vad::EnergyVad;
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
@@ -197,10 +197,10 @@ impl SessionControl for LiveControl {
             text: failure.text.unwrap_or_else(|| match failure.code {
                 ExitCode::DaemonUnavailable => match self.transport {
                     Transport::Socket => {
-                        unavailable_socket_text(orator_core::socket_path().as_deref())
+                        unavailable_socket_text(orator::socket_path().as_deref())
                     }
                     Transport::Ws => {
-                        let (config, _) = orator_core::config::load_hierarchical();
+                        let (config, _) = orator::config::load_hierarchical();
                         unavailable_ws_text(&config.daemon.ws_listen)
                     }
                 },
@@ -236,13 +236,13 @@ impl MicGate {
     /// Gate with the default detector constants.
     #[must_use]
     pub fn new() -> Self {
-        Self::with_config(&orator_core::VadConfig::default())
+        Self::with_config(&orator::VadConfig::default())
     }
 
     /// Gate with every tunable taken from `VadConfig`: the single
     /// tunable surface for live capture, file turns, and the TUI.
     #[must_use]
-    pub fn with_config(config: &orator_core::VadConfig) -> Self {
+    pub fn with_config(config: &orator::VadConfig) -> Self {
         Self {
             vad: EnergyVad::with_config(config),
             level: 0.0,
@@ -390,12 +390,12 @@ impl<C: SessionControl> TuiApp<C> {
     /// App over `control`.
     #[must_use]
     pub fn new(control: C) -> Self {
-        Self::with_config(control, &orator_core::VadConfig::default())
+        Self::with_config(control, &orator::VadConfig::default())
     }
 
     /// App over `control` with the gate tuned from `VadConfig`.
     #[must_use]
-    pub fn with_config(control: C, vad: &orator_core::VadConfig) -> Self {
+    pub fn with_config(control: C, vad: &orator::VadConfig) -> Self {
         Self {
             state: TuiState::new(),
             control,
@@ -720,7 +720,7 @@ where
 /// Run the live duplex client: capture, gate, transcribe, ask, voice.
 /// Raw mode and the alternate screen require a terminal; anything
 /// else refuses with a named usage error before touching the display.
-pub fn run_live(transport: Transport, config: &orator_core::OratorConfig) -> crate::ExitCode {
+pub fn run_live(transport: Transport, config: &orator::OratorConfig) -> crate::ExitCode {
     use ratatui::crossterm::tty::IsTty as _;
 
     if !std::io::stdin().is_tty() {
@@ -779,7 +779,7 @@ impl SttWorker {
     /// Spawn the worker; it parks until the first utterance.
     /// Transcription runs daemon-first, falling back to local
     /// specialized ASR when the daemon has no voice serving.
-    fn spawn(config: &orator_core::OratorConfig) -> Self {
+    fn spawn(config: &orator::OratorConfig) -> Self {
         let config = config.clone();
         Self::spawn_with(move |samples, transport, abort| {
             crate::fallback::transcribe_dial(samples, transport, abort, &config)
@@ -875,7 +875,7 @@ impl VoiceWorker {
     /// Spawn the worker; it parks until the first turn. Voice runs
     /// daemon-first through `ask_then_voice`, falling back to local
     /// specialized inference when the daemon has no voice serving.
-    fn spawn(config: &orator_core::OratorConfig) -> Self {
+    fn spawn(config: &orator::OratorConfig) -> Self {
         let config = config.clone();
         Self::spawn_with(move |text, session, transport, abort| {
             ask_then_voice(text, session, transport, abort, &config)
@@ -953,7 +953,7 @@ fn ask_then_voice(
     session: Option<&str>,
     transport: Transport,
     abort: &StreamAbort,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Result<VoiceTurn, String> {
     if abort.is_cancelled() {
         return Err("orator: voice turn aborted".to_string());
@@ -1060,7 +1060,7 @@ fn ask_then_voice_with(
 fn run_loop(
     transport: Transport,
     backend: orator_audio::CpalBackend,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> crate::ExitCode {
     use ratatui::backend::CrosstermBackend;
     use ratatui::crossterm::event::{self, Event};

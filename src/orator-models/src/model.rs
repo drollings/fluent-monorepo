@@ -201,7 +201,7 @@ pub fn audio_entries() -> Vec<ModelEntry> {
 }
 
 /// Voice-activity catalog. No VAD weights are pinned in v1 (the
-/// energy gate ships in `orator-vad`); the family stays reachable
+/// energy gate ships in `orator-voice::vad`); the family stays reachable
 /// through an explicitly empty list so `list`/`find` remain total over
 /// `ModelKind`.
 #[must_use]

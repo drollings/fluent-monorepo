@@ -118,7 +118,7 @@ fn chunked_first_audio_beats_whole_turn() {
     // the whole turn would finish. Banded, never exact.
     let fixture = "Hello world, this is the opening line for the test. \
          How are you doing on this fine day? Quite well, thank you.";
-    let chunks: Vec<String> = orator_tts::split_all(fixture)
+    let chunks: Vec<String> = orator_voice::tts::split_all(fixture)
         .into_iter()
         .map(|chunk| chunk.text)
         .collect();
@@ -153,7 +153,7 @@ fn single_sentence_is_one_identical_synth_call() {
     // call, and the streamed samples equal the whole-turn synth of
     // the same text — chunking never rewrites a one-chunk turn.
     let fixture = "Hello there.";
-    let chunks: Vec<String> = orator_tts::split_all(fixture)
+    let chunks: Vec<String> = orator_voice::tts::split_all(fixture)
         .into_iter()
         .map(|chunk| chunk.text)
         .collect();

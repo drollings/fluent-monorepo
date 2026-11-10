@@ -16,7 +16,7 @@ pub struct Session {
     /// Kind label (`assistant`, `dictation`, `meeting`, …).
     pub kind: String,
     /// Turn-taking machine for this session.
-    pub machine: orator_turn::TurnMachine,
+    pub machine: orator_voice::turn::TurnMachine,
     /// Barge-in signal for the in-flight turn.
     pub abort: StreamAbort,
     /// Last activity for idle accounting.
@@ -40,13 +40,13 @@ impl SessionRegistry {
     }
 
     /// Allocate and store one session; returns its id.
-    pub fn start(&mut self, kind: &str, config: &orator_core::OratorConfig) -> String {
+    pub fn start(&mut self, kind: &str, config: &orator::OratorConfig) -> String {
         let id = format!("s{}", self.next);
         self.next += 1;
         let session = Session {
             id: id.clone(),
             kind: kind.to_string(),
-            machine: orator_turn::TurnMachine::new(config.turn.clone()),
+            machine: orator_voice::turn::TurnMachine::new(config.turn.clone()),
             abort: StreamAbort::new(),
             last_active: Instant::now(),
         };

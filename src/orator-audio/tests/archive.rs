@@ -1,7 +1,7 @@
 //! Archive tests: segment rotation, manifest verification, crash rule,
 //! spill policy, and Opus round-trip validity.
 
-use orator_core::Channel;
+use orator::Channel;
 
 use crate::archive::{
     ArchiveItem, ArchiveWriter, Manifest, ARCHIVE_SAMPLE_RATE, FRAME_SAMPLES, SEGMENT_SAMPLES,

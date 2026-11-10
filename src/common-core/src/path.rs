@@ -41,8 +41,8 @@ use std::path::{Component, Path, PathBuf};
 /// Hop cap for symlink-chasing resolution: resolvers that chase
 /// symlinks before a containment check refuse past this many hops
 /// (loops and deep chains fail closed instead of hanging). Composed by
-/// `orator_core::paths::within_root` (fast check) and
-/// `orator_tools::sandbox` (authoritative jail) alike — one number,
+/// `orator::paths::within_root` (fast check) and
+/// `orator_agent::tools::sandbox` (authoritative jail) alike — one number,
 /// two layers (see their cross-linked rustdocs for why both exist).
 pub const MAX_SYMLINK_HOPS: u32 = 40;
 

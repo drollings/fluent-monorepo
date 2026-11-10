@@ -3,11 +3,11 @@
 //! orator-cli: the `orator` command surface.
 //!
 //! The clap surface is generated from `COMMANDS`, and every socket request
-//! the CLI builds is validated against the wire contract in `orator-core`.
+//! the CLI builds is validated against the wire contract in `orator`.
 //! The parity test pins both, so neither side can drift alone.
 
 use clap::{CommandFactory, Parser, Subcommand};
-use orator_core::protocol::{validate_method, METHOD_NAMES};
+use orator::protocol::{validate_method, METHOD_NAMES};
 
 /// Shell integration surface.
 pub mod doctor;
@@ -128,7 +128,7 @@ pub struct OutboundRequest {
 impl OutboundRequest {
     /// Build a request for `method`, rejecting anything outside the
     /// contract shared with the daemon.
-    pub fn new(method: &str) -> Result<Self, orator_core::ProtocolError> {
+    pub fn new(method: &str) -> Result<Self, orator::ProtocolError> {
         validate_method(method)?;
         Ok(Self {
             method: method.to_string(),
@@ -406,7 +406,7 @@ pub async fn cancel_on_signal<T>(
 ) -> Option<T> {
     tokio::select! {
         out = task => Some(out),
-        () = orator_core::shutdown_signal() => {
+        () = orator::shutdown_signal() => {
             on_signal();
             None
         }
@@ -436,7 +436,7 @@ impl SignalWatch {
             std::sync::Arc::clone(&signalled),
         );
         std::thread::spawn(move || {
-            common_core::runtime::block_on(orator_core::shutdown_signal());
+            common_core::runtime::block_on(orator::shutdown_signal());
             signalled_task.store(true, Ordering::SeqCst);
             if armed_task.swap(false, Ordering::SeqCst) {
                 release();

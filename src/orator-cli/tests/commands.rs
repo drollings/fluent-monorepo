@@ -47,8 +47,8 @@ fn not_implemented_refusal_is_error() {
             "body": {"error": "not implemented: Say"},
         }))
         .expect("json");
-        let frame = orator_core::SocketFrame {
-            kind: orator_core::MessageType::Response,
+        let frame = orator::SocketFrame {
+            kind: orator::MessageType::Response,
             body: reply,
         };
         stream.write_all(&frame.encode()).expect("reply");

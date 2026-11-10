@@ -14,7 +14,7 @@ use std::sync::Arc;
 use fluent_llm::protocol::{
     ChatMessage, LlmError as FluentError, LlmQueueConfig, LlmRequestQueue, LlmTask,
 };
-use orator_core::{Channel, DuplexEngine, Epoch, LlmSession, MediaTime, Sampler};
+use orator::{Channel, DuplexEngine, Epoch, LlmSession, MediaTime, Sampler};
 
 fn one_f32() -> String {
     use base64::prelude::*;
@@ -74,7 +74,7 @@ fn speech_span(frames: usize) -> Vec<f32> {
 fn cascade_turn_flows_from_speech_to_store() {
     common_core::runtime::block_on_shared(async {
         // VAD: speech opens on voiced frames, closes after hangover.
-        let mut vad = orator_vad::EnergyVad::with_floor(0.02);
+        let mut vad = orator_voice::vad::EnergyVad::with_floor(0.02);
         for _ in 0..5 {
             vad.push(&speech_frame());
         }
@@ -96,9 +96,9 @@ fn cascade_turn_flows_from_speech_to_store() {
                  data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n",
             );
         });
-        let mut listener = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+        let mut listener = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
             endpoint: asr.base_url(),
-            ..orator_s2s::S2sConfig::default()
+            ..orator_voice::s2s::S2sConfig::default()
         });
         let transcript = listener
             .transcribe_blocking(&speech_span(8))
@@ -108,9 +108,9 @@ fn cascade_turn_flows_from_speech_to_store() {
         // Supervised LLM stub: the transcript reaches the request.
         let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
         let queue = scripted_queue(Arc::clone(&recorded), "noted");
-        let mut llm = orator_llm::HttpSession::with_queue(
+        let mut llm = orator_agent::llm::HttpSession::with_queue(
             queue,
-            orator_llm::SessionConfig {
+            orator_agent::llm::SessionConfig {
                 endpoint_base: "http://127.0.0.1:9".to_string(),
                 model: "cascade-test".to_string(),
                 ctx_tokens: 8192,
@@ -141,33 +141,33 @@ fn cascade_turn_flows_from_speech_to_store() {
                 one_f32()
             ));
         });
-        let mut speaker = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+        let mut speaker = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
             endpoint: tts.base_url(),
-            ..orator_s2s::S2sConfig::default()
+            ..orator_voice::s2s::S2sConfig::default()
         });
         let samples = speaker.speak_blocking(&out.delta).expect("tts turn runs");
         assert_eq!(samples, vec![2.5]);
         assert!(speaker.heard_audio());
 
         // Notes roll the transcript up; diarization attributes speakers.
-        let summary = orator_notes::roll_summary("", &transcript);
+        let summary = orator_memory::notes::roll_summary("", &transcript);
         assert!(summary.contains("book a table for two"), "{summary}");
-        let facts = orator_notes::append_fact("", "reservation at seven");
+        let facts = orator_memory::notes::append_fact("", "reservation at seven");
         assert!(facts.contains("reservation at seven"), "{facts}");
-        let segments = orator_diary::segment(Channel::Mic, 3200);
+        let segments = orator_memory::diary::segment(Channel::Mic, 3200);
         assert!(!segments.is_empty(), "speech spans segments");
         let labels = vec![0usize; segments.len()];
         let mids: Vec<u64> = segments
             .iter()
             .map(|segment| u64::midpoint(segment.start_sample, segment.end_sample))
             .collect();
-        let attributed = orator_diary::align_words(&mids, &segments, &labels);
+        let attributed = orator_memory::diary::align_words(&mids, &segments, &labels);
         assert_eq!(attributed.len(), segments.len());
         assert!(attributed.iter().all(|label| *label == 0));
-        assert_eq!(orator_diary::speaker_name(0), "Speaker 1");
+        assert_eq!(orator_memory::diary::speaker_name(0), "Speaker 1");
 
         // Event store keeps the turn sequence.
-        let log = orator_store::EventLog::in_memory().expect("memory log");
+        let log = orator_memory::store::EventLog::in_memory().expect("memory log");
         log.append("s1", 0, "transcript", &transcript, 1)
             .expect("append transcript");
         log.append("s1", 0, "reply", &out.delta, 2)
@@ -505,9 +505,9 @@ fn over_bound_inputs_stay_bounded_everywhere() {
         // with a loud marker; the newest text is what the endpoint sees.
         let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
         let queue = scripted_queue(Arc::clone(&recorded), "ok");
-        let mut llm = orator_llm::HttpSession::with_queue(
+        let mut llm = orator_agent::llm::HttpSession::with_queue(
             queue,
-            orator_llm::SessionConfig {
+            orator_agent::llm::SessionConfig {
                 endpoint_base: "http://127.0.0.1:9".to_string(),
                 model: "bound-test".to_string(),
                 ctx_tokens: 8192,
@@ -533,8 +533,8 @@ fn over_bound_inputs_stay_bounded_everywhere() {
         drop(requests);
 
         // Event store: replay pages at REPLAY_PAGE however many rows exist.
-        let log = orator_store::EventLog::in_memory().expect("memory log");
-        let over = orator_store::REPLAY_PAGE + 10;
+        let log = orator_memory::store::EventLog::in_memory().expect("memory log");
+        let over = orator_memory::store::REPLAY_PAGE + 10;
         for index in 0..over {
             log.append("s1", 0, "note", &format!("row {index}"), index as u64)
                 .expect("append");
@@ -542,7 +542,7 @@ fn over_bound_inputs_stay_bounded_everywhere() {
         let page = log.replay(0, over + 1000).expect("replay");
         assert_eq!(
             page.len(),
-            orator_store::REPLAY_PAGE,
+            orator_memory::store::REPLAY_PAGE,
             "replay never exceeds one page"
         );
         assert_eq!(
@@ -562,10 +562,10 @@ fn over_bound_inputs_stay_bounded_everywhere() {
     });
 }
 
-fn mic_frame(samples: Vec<f32>) -> orator_core::Frame {
+fn mic_frame(samples: Vec<f32>) -> orator::Frame {
     use std::num::NonZeroU32;
     let rate = NonZeroU32::new(16_000).expect("rate");
-    orator_core::Frame {
+    orator::Frame {
         samples: std::sync::Arc::new(samples),
         channel: Channel::Mic,
         sample_rate: 16_000,
@@ -573,7 +573,7 @@ fn mic_frame(samples: Vec<f32>) -> orator_core::Frame {
     }
 }
 
-fn hot_mic() -> orator_core::Frame {
+fn hot_mic() -> orator::Frame {
     mic_frame(speech_frame())
 }
 
@@ -601,12 +601,12 @@ fn live_conversation_with_barge_in_completes_in_order() {
                  data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n",
             );
         });
-        let mut listener = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+        let mut listener = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
             endpoint: asr.base_url(),
-            ..orator_s2s::S2sConfig::default()
+            ..orator_voice::s2s::S2sConfig::default()
         });
         // VAD opens on the voiced span (attack run, then speech).
-        let mut vad = orator_vad::EnergyVad::with_floor(0.02);
+        let mut vad = orator_voice::vad::EnergyVad::with_floor(0.02);
         for _ in 0..2 {
             assert!(!vad.push(&speech_frame()).speech, "attack runs first");
         }
@@ -639,9 +639,9 @@ fn live_conversation_with_barge_in_completes_in_order() {
                 }
             },
         ));
-        let mut llm = orator_llm::HttpSession::with_queue(
+        let mut llm = orator_agent::llm::HttpSession::with_queue(
             echo,
-            orator_llm::SessionConfig {
+            orator_agent::llm::SessionConfig {
                 endpoint_base: "http://127.0.0.1:9".to_string(),
                 model: "conversation-test".to_string(),
                 ctx_tokens: 8192,
@@ -665,10 +665,10 @@ fn live_conversation_with_barge_in_completes_in_order() {
             when.method("POST").path("/v1/chat/completions");
             then.status(200).body(voiced_duplex_body("first reply"));
         });
-        let mut session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+        let mut session = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
             endpoint: voice.base_url(),
             turn_window_ms: 100,
-            ..orator_s2s::S2sConfig::default()
+            ..orator_voice::s2s::S2sConfig::default()
         });
         // First turn voices: seven hot frames latch and fill the cap.
         let mut first = None;
@@ -697,7 +697,7 @@ fn live_conversation_with_barge_in_completes_in_order() {
         let cut = session.step(&hot_mic()).expect_err("cut turn aborts");
         assert_eq!(
             cut,
-            orator_core::DuplexError::Aborted,
+            orator::DuplexError::Aborted,
             "barge-in cuts exactly the in-flight turn"
         );
         // Re-armed: the resumed turn completes on fresh hot frames.
@@ -724,11 +724,11 @@ fn live_conversation_with_barge_in_completes_in_order() {
 
         // Notes roll up, diarization attributes, the store sequences —
         // transcript, reply, barge, resumed reply, note, in order.
-        let summary = orator_notes::roll_summary("", &transcript);
+        let summary = orator_memory::notes::roll_summary("", &transcript);
         assert!(summary.contains("book a table for two"), "{summary}");
-        let segments = orator_diary::segment(Channel::Mic, 3200);
+        let segments = orator_memory::diary::segment(Channel::Mic, 3200);
         assert!(!segments.is_empty(), "speech spans segments");
-        let log = orator_store::EventLog::in_memory().expect("memory log");
+        let log = orator_memory::store::EventLog::in_memory().expect("memory log");
         log.append("s1", 0, "transcript", &transcript, 1)
             .expect("append transcript");
         log.append("s1", 0, "reply", &out.delta, 2)

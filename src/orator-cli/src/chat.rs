@@ -255,19 +255,19 @@ pub fn display_for_text(reply: &str, mode: ChatTextMode) -> Vec<String> {
 /// the bad value when it falls back, so config garbage is loud at the
 /// session start instead of refusing the session or voicing silently.
 #[must_use]
-pub fn initial_voice_mode(config: &orator_core::OratorConfig) -> ChatVoiceMode {
+pub fn initial_voice_mode(config: &orator::OratorConfig) -> ChatVoiceMode {
     parse_voice_mode(config.chat.voice.trim()).unwrap_or_default()
 }
 
 /// See [`initial_voice_mode`]: text starts, same fallback rule.
 #[must_use]
-pub fn initial_text_mode(config: &orator_core::OratorConfig) -> ChatTextMode {
+pub fn initial_text_mode(config: &orator::OratorConfig) -> ChatTextMode {
     parse_text_mode(config.chat.text.trim()).unwrap_or_default()
 }
 
 /// See [`initial_voice_mode`]: mic starts, same fallback rule.
 #[must_use]
-pub fn initial_mic_mode(config: &orator_core::OratorConfig) -> MicMode {
+pub fn initial_mic_mode(config: &orator::OratorConfig) -> MicMode {
     match config.chat.mic.trim() {
         "auto" => MicMode::Auto,
         "ptt" => MicMode::PushToTalk,
@@ -277,14 +277,14 @@ pub fn initial_mic_mode(config: &orator_core::OratorConfig) -> MicMode {
 
 /// See [`initial_voice_mode`]: barge-in starts straight off the leaf.
 #[must_use]
-pub fn initial_barge_on(config: &orator_core::OratorConfig) -> bool {
+pub fn initial_barge_on(config: &orator::OratorConfig) -> bool {
     config.chat.barge
 }
 
 /// See [`initial_voice_mode`]: push-to-talk starts, same fallback rule.
 /// Single source lives in `ptt`; this re-exports it for the loop.
 #[must_use]
-pub fn initial_ptt_mode(config: &orator_core::OratorConfig) -> crate::ptt::PttMode {
+pub fn initial_ptt_mode(config: &orator::OratorConfig) -> crate::ptt::PttMode {
     crate::ptt::initial_ptt_mode(config)
 }
 
@@ -311,7 +311,7 @@ pub fn ptt_for_mic(mode: MicMode) -> crate::ptt::PttMode {
 /// Single source lives in `narration`; this re-exports it for the loop.
 #[must_use]
 pub fn initial_narration_mode(
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> crate::narration::NarrationLevel {
     crate::narration::initial_narration_mode(config)
 }
@@ -320,7 +320,7 @@ pub fn initial_narration_mode(
 /// over the daemon-first endpoint (head wins, `llm.model` leaf as
 /// fallback — defaults seed them equal).
 #[must_use]
-pub fn llm_serving(config: &orator_core::OratorConfig) -> (String, String) {
+pub fn llm_serving(config: &orator::OratorConfig) -> (String, String) {
     (
         crate::ask::resolve_ask_model(config),
         "daemon-or-direct".to_string(),
@@ -333,11 +333,11 @@ pub fn llm_serving(config: &orator_core::OratorConfig) -> (String, String) {
 /// declared backend. This names the LOCAL leg only — daemon-served
 /// turns log [`daemon_asr_serving`] instead (see `transcribe_leg`).
 #[must_use]
-pub fn asr_serving(config: &orator_core::OratorConfig) -> (String, String) {
+pub fn asr_serving(config: &orator::OratorConfig) -> (String, String) {
     if let Ok(found) = crate::fallback::resolve_local_asr(config) {
         return (found.tag, found.backend.name().to_string());
     }
-    let model = orator_core::resolve_role_model(&config.roles, "asr")
+    let model = orator::resolve_role_model(&config.roles, "asr")
         .unwrap_or_else(|| config.stt.model.clone());
     let backend = config
         .models
@@ -353,15 +353,15 @@ pub fn asr_serving(config: &orator_core::OratorConfig) -> (String, String) {
 /// assures this tag before serving it, so the loop names the served
 /// model — never the local leg's fallback pick.
 #[must_use]
-pub fn daemon_asr_serving(config: &orator_core::OratorConfig) -> (String, String) {
+pub fn daemon_asr_serving(config: &orator::OratorConfig) -> (String, String) {
     (config.s2s.model.clone(), "audio-server".to_string())
 }
 
 /// Model+backend label logged for one TTS turn: the first listed tts
 /// role entry with its declared backend (kokoro default).
 #[must_use]
-pub fn tts_serving(config: &orator_core::OratorConfig) -> (String, String) {
-    let model = orator_core::resolve_role_model(&config.roles, "tts")
+pub fn tts_serving(config: &orator::OratorConfig) -> (String, String) {
+    let model = orator::resolve_role_model(&config.roles, "tts")
         .unwrap_or_else(|| config.tts.voice.clone());
     let backend = config
         .models
@@ -493,7 +493,7 @@ pub fn merge_preserved_question(preserved: Option<&str>, transcribed: &str) -> S
 /// The driver owns the run and the `turn.barge_in_ms` bound; the
 /// loop owns only the latch, which carries no audio.
 pub struct BargeSustain {
-    driver: orator_turn::TurnDriver,
+    driver: orator_voice::turn::TurnDriver,
     prev_len: usize,
     latched: bool,
 }
@@ -504,9 +504,9 @@ impl BargeSustain {
     /// are unused by the continuity path — the loop has no hops and
     /// no STT words at this stage, so only the bound is shared.
     #[must_use]
-    pub fn new(config: &orator_core::OratorConfig) -> Self {
+    pub fn new(config: &orator::OratorConfig) -> Self {
         Self {
-            driver: orator_turn::TurnDriver::with_config(orator_core::Epoch(1), "en", &config.turn),
+            driver: orator_voice::turn::TurnDriver::with_config(orator::Epoch(1), "en", &config.turn),
             prev_len: 0,
             latched: false,
         }
@@ -528,7 +528,7 @@ impl BargeSustain {
         let grew = utterance_len > self.prev_len;
         self.prev_len = utterance_len;
         let outcome = self.driver.push_frame(speaking && grew, ptt_cold, frame_ms);
-        if outcome != orator_turn::BargeInOutcome::Ignored {
+        if outcome != orator_voice::turn::BargeInOutcome::Ignored {
             self.latched = true;
         }
         self.latched
@@ -601,7 +601,7 @@ pub fn check_file_gate(
     mic_mode: crate::tui::MicMode,
     talking: bool,
     samples: &[f32],
-    vad: &orator_core::VadConfig,
+    vad: &orator::VadConfig,
 ) -> Result<(), FileGate> {
     use crate::tui::MicMode;
     if mic_mode == MicMode::PushToTalk && !talking {
@@ -609,7 +609,7 @@ pub fn check_file_gate(
             samples: samples.len(),
         });
     }
-    if !orator_vad::gate::speech_present_16k_with_config(samples, vad) {
+    if !orator_voice::vad::gate::speech_present_16k_with_config(samples, vad) {
         return Err(FileGate::NoSpeech);
     }
     Ok(())

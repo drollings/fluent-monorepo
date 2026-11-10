@@ -48,12 +48,12 @@ fn setting_execute_validates_the_level() {
 
 #[test]
 fn initial_mode_follows_config_with_loud_fallback() {
-    let config = orator_core::OratorConfig::default();
+    let config = orator::OratorConfig::default();
     assert_eq!(initial_ptt_mode(&config), PttMode::Off);
-    let mut on = orator_core::OratorConfig::default();
+    let mut on = orator::OratorConfig::default();
     on.chat.ptt = "on".to_string();
     assert_eq!(initial_ptt_mode(&on), PttMode::On);
-    let mut garbage = orator_core::OratorConfig::default();
+    let mut garbage = orator::OratorConfig::default();
     garbage.chat.ptt = "loud".to_string();
     assert_eq!(initial_ptt_mode(&garbage), PttMode::Off);
 }

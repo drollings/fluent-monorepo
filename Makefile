@@ -310,7 +310,7 @@ test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/co
 	$(Q)cargo test -p protopyne-venue --lib soak -- --ignored
 	$(Q)cargo test -p fluent-dag --test target_work_unit_wave -- --ignored
 	$(Q)cargo test -p fluent-db --test hnsw_concurrent -- --ignored
-	$(Q)cargo test -p orator-s2s --test calibration -- --ignored
+	$(Q)cargo test -p orator-voice --test s2s_calibration -- --ignored
 
 .PHONY: router-start
 router-start: $(CORAL_ROUTER_BIN) ## Build (if needed), (re)start coral-router in real mode on :8079, and wait for /health (ort-free unless ROUTER_FEATURES=onnx; stops the old tree first)
@@ -541,7 +541,7 @@ guidance_PKGS           := guidance-core guidance guidance-ontology
 coral_PKGS              := coral-context coral
 protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
 protopyne-egui_PKGS     := protopyne-egui
-orator_PKGS            := orator-core orator-audio orator-vad orator-stt orator-llm orator-tts orator-turn orator-tools orator-store orator-models orator-diary orator-notes orator-s2s orator-desktop orator-testkit orator-bench orator-daemon orator-cli orator-lfm
+orator_PKGS            := orator orator-audio orator-voice orator-agent orator-models orator-memory orator-desktop orator-testkit orator-daemon orator-cli
 # The trading terminal's golden/contract tests compile only under these
 # features, so its gates carry them (its `demo_shell` golden suite is skipped
 # without them).
@@ -595,12 +595,10 @@ LIVE_CRATES := \
 	spacy:spacy-rs \
 	ort:fluent-onnx \
 	venue:protopyne-venue \
-	orator_llm:orator-llm \
-	orator_stt:orator-stt \
-	orator_tts:orator-tts \
-	orator_s2s:orator-s2s \
+	orator_agent:orator-agent \
+	orator_voice:orator-voice \
 	orator_cli:orator-cli \
-	orator_lfm:orator-lfm
+	orator_models:orator-models
 
 # Live-AI feature sets per crate shorthand (the `ort` live tests drive real
 # `ort` sessions, so they need `onnx` on top of `live-ai`; every other crate's
@@ -611,22 +609,21 @@ LIVE_FEATURES_guidance := live-ai
 LIVE_FEATURES_llm := live-ai
 LIVE_FEATURES_spacy := live-ai
 LIVE_FEATURES_venue := live-ai
-LIVE_FEATURES_orator_llm := live-ai
-LIVE_FEATURES_orator_stt := live-ai
-LIVE_FEATURES_orator_tts := live-ai
-LIVE_FEATURES_orator_s2s := live-ai
+LIVE_FEATURES_orator_agent := live-ai
+LIVE_FEATURES_orator_voice := live-ai
 LIVE_FEATURES_orator_cli := live-ai
-LIVE_FEATURES_orator_lfm := live-ai
+LIVE_FEATURES_orator_models := live-ai
+LIVE_TESTS_orator_voice := stt_live tts_live s2s_live
 
 define live-crate-rule
 .PHONY: $(1)-test-live
 $(1)-test-live: ## Run the live-AI (real model) tests for $(2); skip-not-fail without env
-	$(Q)cargo test -p $(2) --features $(LIVE_FEATURES_$(1)) --test live -- --ignored
+	$(Q)for t in $(or $(LIVE_TESTS_$(1)),live); do cargo test -p $(2) --features $(LIVE_FEATURES_$(1)) --test $$t -- --ignored; done
 endef
 $(foreach pair,$(LIVE_CRATES),$(eval $(call live-crate-rule,$(firstword $(subst :, ,$(pair))),$(lastword $(subst :, ,$(pair))))))
 
 .PHONY: orator-test-live
-orator-test-live: orator_llm-test-live orator_stt-test-live orator_tts-test-live orator_s2s-test-live orator_cli-test-live orator_lfm-test-live ## Run the orator live-AI suites (LLM + STT + TTS + S2S + TUI barge + LFM3 reference); skip-not-fail without env
+orator-test-live: orator_agent-test-live orator_voice-test-live orator_cli-test-live orator_models-test-live ## Run the orator live-AI suites (LLM + voice pipeline + TUI barge + LFM3 reference); skip-not-fail without env
 
 .PHONY: test-live
 test-live: ## Run ALL live-AI tests (the ONLY real-inference pathway); skips cleanly without env

@@ -20,9 +20,9 @@ use orator_cli::{
     transcribe::{audio_server_cue, cue_from_centiseconds, render, Cue, TranscriptFormat},
     Cli, Command, ExitCode,
 };
-use orator_core::OratorConfig;
+use orator::OratorConfig;
 use orator_desktop::{ExternalClipboard, LadderMemory, NoChord};
-use orator_stt::WhisperBackend;
+use orator_voice::stt::WhisperBackend;
 
 mod ask_cmd;
 mod models_cmd;
@@ -51,13 +51,13 @@ fn run(cli: Cli) -> ExitCode {
         // unless this flag (or the env it sets) opts out.
         std::env::set_var("ORATOR_INSECURE", "1");
     }
-    let (cfg, config_source) = orator_core::config::load_hierarchical();
+    let (cfg, config_source) = orator::config::load_hierarchical();
     // Removed audio keys refuse loudly: a config that sets them names
     // the removal instead of running with silently ignored fields.
     // `load_hierarchical` falls back to the canonical path when no
     // file exists, so only a real file refusal counts.
     if config_source.is_file() {
-        let removed = orator_core::config::removed_audio_keys(&config_source);
+        let removed = orator::config::removed_audio_keys(&config_source);
         if !removed.is_empty() {
             eprintln!(
                 "orator: audio.{} removed from the config (no capture path or AEC gate ever read it); delete the key",
@@ -163,11 +163,11 @@ pub(crate) fn note_unavailable(transport: Transport) {
         Transport::Socket => {
             eprintln!(
                 "{}",
-                unavailable_socket_text(orator_core::socket_path().as_deref())
+                unavailable_socket_text(orator::socket_path().as_deref())
             );
         }
         Transport::Ws => {
-            let (config, _) = orator_core::config::load_hierarchical();
+            let (config, _) = orator::config::load_hierarchical();
             eprintln!("{}", unavailable_ws_text(&config.daemon.ws_listen));
         }
     }
@@ -348,33 +348,33 @@ fn chat(
     // through the audio server (the LFM3-Audio shape) is assured once
     // here; success runs turns natively, failure names the remedy and
     // the cascade serves every turn instead. Startup-only cost.
-    let prefer_s2s = orator_core::should_prefer_s2s(config);
+    let prefer_s2s = orator::should_prefer_s2s(config);
     let s2s_shared: Option<S2sShared> = if prefer_s2s {
         // The session serves the agreed role model (heads), falling
         // back to the `s2s.model` leaf only when the heads cannot
         // agree. Bundle backbone follows the same tag through the
         // models table, so assurance, weights, and session agree.
-        let session_model = orator_core::agreed_s2s_model(config);
-        let s2s_effective = orator_core::S2sConfig {
+        let session_model = orator::agreed_s2s_model(config);
+        let s2s_effective = orator::S2sConfig {
             model: session_model.clone(),
             ..config.s2s.clone()
         };
-        match common_core::runtime::block_on(orator_s2s::ensure_audio_server(
+        match common_core::runtime::block_on(orator_voice::s2s::ensure_audio_server(
             &orator_cli::config::s2s_base_url(&config.s2s),
             &session_model,
-            &orator_core::bundle_from_s2s(&s2s_effective, &config.models, &config.gguf_dir),
+            &orator::bundle_from_s2s(&s2s_effective, &config.models, &config.gguf_dir),
             config.s2s.auto_boot,
             config.s2s.gpu,
         )) {
             Ok(endpoint) => {
                 let url = endpoint.base_url().to_string();
                 let origin = match &endpoint {
-                    orator_s2s::AudioEndpoint::Shared(_) => "shared existing server",
-                    orator_s2s::AudioEndpoint::Owned { .. } => {
+                    orator_voice::s2s::AudioEndpoint::Shared(_) => "shared existing server",
+                    orator_voice::s2s::AudioEndpoint::Owned { .. } => {
                         "supervised child (s2s.auto_boot=on)"
                     }
                 };
-                let session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+                let session = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
                     endpoint: url.clone(),
                     ..s2s_effective
                 });
@@ -1150,9 +1150,9 @@ struct TurnSpec {
 #[derive(Clone)]
 struct S2sShared {
     /// Interleaved session (locked per turn).
-    session: std::sync::Arc<std::sync::Mutex<orator_s2s::AudioSession>>,
+    session: std::sync::Arc<std::sync::Mutex<orator_voice::s2s::AudioSession>>,
     /// Assured endpoint (released at quit).
-    endpoint: std::sync::Arc<orator_s2s::AudioEndpoint>,
+    endpoint: std::sync::Arc<orator_voice::s2s::AudioEndpoint>,
 }
 
 /// Rearm: a fresh abort becomes the live one; the watch cancels it
@@ -1310,7 +1310,7 @@ struct MicCapture {
 impl MicCapture {
     /// Capture state over an open `backend` with the gate tuned from
     /// `VadConfig`: the single tunable surface for live capture.
-    fn with_config(backend: orator_audio::CpalBackend, vad: &orator_core::VadConfig) -> Self {
+    fn with_config(backend: orator_audio::CpalBackend, vad: &orator::VadConfig) -> Self {
         Self {
             backend,
             gate: orator_cli::tui::MicGate::with_config(vad),
@@ -1483,7 +1483,7 @@ fn transcribe_leg(
                 }
                 orator_cli::fallback::DialLeg::Local => spec.asr.clone(),
                 orator_cli::fallback::DialLeg::Shared => {
-                    let model = orator_core::resolve_role_model(&spec.config.roles, "asr")
+                    let model = orator::resolve_role_model(&spec.config.roles, "asr")
                         .unwrap_or_else(|| spec.config.s2s.model.clone());
                     (model, "audio-server".to_string())
                 }
@@ -1664,7 +1664,7 @@ fn native_turn(
                 at: std::time::SystemTime::now(),
                 message: turn.text.clone(),
                 latency_ms: turn_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-                model: orator_core::agreed_s2s_model(&spec.config),
+                model: orator::agreed_s2s_model(&spec.config),
                 detail: false,
             });
             if matches!(spec.narration, orator_cli::narration::NarrationLevel::None) {
@@ -1677,12 +1677,12 @@ fn native_turn(
                     at: std::time::SystemTime::now(),
                     message: format!("Voicing {} samples... [Native]", turn.audio.len()),
                     latency_ms: turn_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-                    model: orator_core::agreed_s2s_model(&spec.config),
+                    model: orator::agreed_s2s_model(&spec.config),
                     backend: "audio-server".to_string(),
                 });
                 common_core::sync::lock(&spec.voice_queue).push_back(VoiceItem {
                     samples: turn.audio,
-                    rate: orator_s2s::AUDIO_OUT_RATE,
+                    rate: orator_voice::s2s::AUDIO_OUT_RATE,
                 });
                 return TurnEnd { cool_until: None };
             }
@@ -1706,12 +1706,12 @@ fn native_turn(
                     at: std::time::SystemTime::now(),
                     message: format!("Voicing {} samples... [Native]", turn.audio.len()),
                     latency_ms: turn_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-                    model: orator_core::agreed_s2s_model(&spec.config),
+                    model: orator::agreed_s2s_model(&spec.config),
                     backend: "audio-server".to_string(),
                 });
                 common_core::sync::lock(&spec.voice_queue).push_back(VoiceItem {
                     samples: turn.audio,
-                    rate: orator_s2s::AUDIO_OUT_RATE,
+                    rate: orator_voice::s2s::AUDIO_OUT_RATE,
                 });
                 return TurnEnd { cool_until: None };
             }
@@ -1731,16 +1731,16 @@ fn native_turn(
                         message: format!("Voicing {} samples... [Native]", clips.len()),
                         latency_ms: turn_started.elapsed().as_millis().min(u128::from(u64::MAX))
                             as u64,
-                        model: orator_core::agreed_s2s_model(&spec.config),
+                        model: orator::agreed_s2s_model(&spec.config),
                         backend: "audio-server".to_string(),
                     });
                     common_core::sync::lock(&spec.voice_queue).push_back(VoiceItem {
                         samples: clips,
-                        rate: orator_s2s::AUDIO_OUT_RATE,
+                        rate: orator_voice::s2s::AUDIO_OUT_RATE,
                     });
                     return TurnEnd { cool_until: None };
                 }
-                Err(error) if !orator_s2s::should_advance_chain(&error) => {
+                Err(error) if !orator_voice::s2s::should_advance_chain(&error) => {
                     if spec.abort.is_cancelled() {
                         return silent_end();
                     }
@@ -1774,7 +1774,7 @@ fn native_turn(
             if spec.abort.is_cancelled() {
                 return silent_end();
             }
-            if !orator_s2s::should_advance_chain(&error) {
+            if !orator_voice::s2s::should_advance_chain(&error) {
                 log(ChatEvent::Error {
                     at: std::time::SystemTime::now(),
                     message: format!("orator: {error}"),
@@ -1983,7 +1983,7 @@ fn stream_full_voice(spoken: &str, spec: &TurnSpec, log: &impl Fn(orator_cli::ch
     if chunks.iter().all(|chunk| chunk.trim().is_empty()) {
         return;
     }
-    let rate = orator_tts::KOKORO_SAMPLE_RATE;
+    let rate = orator_voice::tts::KOKORO_SAMPLE_RATE;
     let mut queued_chunks = 0usize;
     for chunk in &chunks {
         if spec.abort.is_cancelled() {
@@ -2261,7 +2261,7 @@ fn meeting(action: &str, id: &str, transport: Transport) -> ExitCode {
         }
         // Status/show read the live registry: same sessions the
         // daemon serves, no second store. Export needs the diarized
-        // transcript store (orator-diary over the event log) — not
+        // transcript store (orator-memory over the event log) — not
         // yet served over the socket, so it names the gap instead of
         // printing an empty file.
         "status" | "show" => {
@@ -2347,8 +2347,8 @@ fn propose(request: &[String], config: &OratorConfig, transport: Transport) -> E
 /// Returns the reply text or the exit to fall back with.
 fn propose_via_supervised(want: &str, config: &OratorConfig) -> Result<String, ExitCode> {
     use orator_cli::config::resolve_llm_base;
-    use orator_core::LlmSession as _;
-    use orator_llm::{probe_models, HttpSession};
+    use orator::LlmSession as _;
+    use orator_agent::llm::{probe_models, HttpSession};
     let llm = config.llm.clone();
     let explicit = std::env::var("LLM_BASE_URL").unwrap_or_default();
     let (base, model) = resolve_llm_base(&llm);
@@ -2369,7 +2369,7 @@ fn propose_via_supervised(want: &str, config: &OratorConfig) -> Result<String, E
         session.push_text(&format!(
             "Propose a shell command for this request. Reply with only the command, no explanation, no fences: {want}"
         ));
-        match session.step(&mut orator_core::Sampler::default()) {
+        match session.step(&mut orator::Sampler::default()) {
             Ok(out) => Ok(out.delta.trim().to_string()),
             Err(_) => Err(ExitCode::Error),
         }
@@ -2398,9 +2398,9 @@ fn config(action: &str, key: &str, value: &str) -> ExitCode {
     match action {
         "path" => {
             let mut candidates = vec![std::path::PathBuf::from("orator.json")];
-            candidates.extend(orator_core::config_path());
+            candidates.extend(orator::config_path());
             let Some(path) = common_core::config::find_hierarchical(&candidates)
-                .or_else(orator_core::config_path)
+                .or_else(orator::config_path)
             else {
                 eprintln!("orator: no config path (HOME and XDG_DATA_HOME are unset)");
                 return ExitCode::Error;
@@ -2413,7 +2413,7 @@ fn config(action: &str, key: &str, value: &str) -> ExitCode {
                 eprintln!("orator: config get needs a key");
                 return ExitCode::Usage;
             }
-            let (loaded, _) = orator_core::config::load_hierarchical();
+            let (loaded, _) = orator::config::load_hierarchical();
             match config_get(&loaded, key) {
                 Ok(found) => {
                     println!("{found}");
@@ -2431,9 +2431,9 @@ fn config(action: &str, key: &str, value: &str) -> ExitCode {
                 return ExitCode::Usage;
             }
             let mut candidates = vec![std::path::PathBuf::from("orator.json")];
-            candidates.extend(orator_core::config_path());
+            candidates.extend(orator::config_path());
             let Some(path) = common_core::config::find_hierarchical(&candidates)
-                .or_else(orator_core::config_path)
+                .or_else(orator::config_path)
             else {
                 eprintln!("orator: no config path (HOME and XDG_DATA_HOME are unset)");
                 return ExitCode::Error;
@@ -2514,7 +2514,7 @@ fn daemon_run() -> ExitCode {
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join("oratord")))
         .filter(|path| path.is_file())
-        .or_else(|| orator_core::paths::find_on_path("oratord"));
+        .or_else(|| orator::paths::find_on_path("oratord"));
     let Some(binary) = candidate else {
         eprintln!("orator: no oratord binary (same directory or $PATH)");
         return ExitCode::Error;
@@ -2570,7 +2570,7 @@ fn transcribe(
     // pure tones) emits the empty output with a stderr note, never a
     // hallucination. The gate is transparent when it fires — speech
     // takes the exact path below, byte-identical to the ungated flow.
-    if !orator_vad::speech_present_16k_with_config(&samples, &config.vad) {
+    if !orator_voice::vad::speech_present_16k_with_config(&samples, &config.vad) {
         eprintln!("{}", orator_cli::transcribe::NO_SPEECH_NOTE);
         let empty: Vec<Cue> = Vec::new();
         return match render(&empty, format) {
@@ -2643,7 +2643,7 @@ fn transcribe_moonshine(
         }
     };
     eprintln!("orator: transcribing locally (moonshine {tag})");
-    let mut backend = orator_stt::MoonshineBackend::new(path);
+    let mut backend = orator_voice::stt::MoonshineBackend::new(path);
     if config.stt.gpu {
         backend = backend.with_gpu();
     }
@@ -2697,7 +2697,7 @@ fn transcribe_audio_server(
                 }
             }
         }
-        Err(orator_s2s::S2sError::Aborted) => ExitCode::Interrupted,
+        Err(orator_voice::s2s::S2sError::Aborted) => ExitCode::Interrupted,
         Err(error) => {
             eprintln!("orator: {error}");
             ExitCode::Error
@@ -2860,7 +2860,7 @@ fn dictate_moonshine(samples: &[f32], config: &OratorConfig) -> Result<String, E
         eprintln!("orator: {error}");
         ExitCode::Error
     })?;
-    let mut backend = orator_stt::MoonshineBackend::new(path);
+    let mut backend = orator_voice::stt::MoonshineBackend::new(path);
     if config.stt.gpu {
         backend = backend.with_gpu();
     }
@@ -2891,7 +2891,7 @@ fn dictate_audio_server(
         session.transcribe_blocking(samples)
     })
     .map_err(|error| {
-        if error == orator_s2s::S2sError::Aborted {
+        if error == orator_voice::s2s::S2sError::Aborted {
             return ExitCode::Interrupted;
         }
         eprintln!("orator: {error}");

@@ -45,15 +45,15 @@ async fn main() {
         return;
     }
     let mut root = RootScope::build();
-    let Some(path) = orator_core::socket_path() else {
+    let Some(path) = orator::socket_path() else {
         eprintln!(
             "oratord: no socket path: neither XDG_RUNTIME_DIR nor HOME is set; refusing to start"
         );
         std::process::exit(1);
     };
-    let (daemon_config, config_source) = orator_core::config::load_hierarchical();
+    let (daemon_config, config_source) = orator::config::load_hierarchical();
     if config_source.is_file() {
-        let removed = orator_core::config::removed_audio_keys(&config_source);
+        let removed = orator::config::removed_audio_keys(&config_source);
         if !removed.is_empty() {
             eprintln!(
                 "oratord: audio.{} removed from the config (no capture path or AEC gate ever read it); delete the key",
@@ -87,7 +87,7 @@ async fn main() {
             }))
         }
     };
-    orator_core::shutdown_signal().await;
+    orator::shutdown_signal().await;
     eprintln!("oratord: shutting down");
     orator_daemon::request_shutdown();
     voice.shutdown();

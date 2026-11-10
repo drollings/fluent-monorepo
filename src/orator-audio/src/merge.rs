@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use fluent_concurrency::queue::BoundedPriorityQueue;
-use orator_core::{Channel, MediaTime};
+use orator::{Channel, MediaTime};
 
 /// One transcript word with its channel, timing, confidence, and an
 /// optional speaker label (filled by diarization later).

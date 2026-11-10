@@ -6,7 +6,7 @@
 //! serving path in `main` keeps the I/O; this module keeps the
 //! decisions so they stay testable and identical on every arm.
 
-use orator_s2s::S2sError;
+use orator_voice::s2s::S2sError;
 
 /// Daemon voice-endpoint outcome for one lookup.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,7 +125,7 @@ pub fn classify_daemon_call_failure(text: Option<&str>) -> DaemonVoiceHint {
 /// of matching variants inline.
 #[must_use]
 pub fn should_advance(error: &S2sError) -> bool {
-    orator_s2s::should_advance_chain(error)
+    orator_voice::s2s::should_advance_chain(error)
 }
 
 /// Split `text` for speech after normalizing once.
@@ -136,8 +136,8 @@ pub fn should_advance(error: &S2sError) -> bool {
 /// actually synthesized.
 #[must_use]
 pub fn normalized_chunks(text: &str) -> Vec<String> {
-    let normalized = orator_tts::normalize_for_speech(text);
-    orator_tts::split_all(&normalized)
+    let normalized = orator_voice::tts::normalize_for_speech(text);
+    orator_voice::tts::split_all(&normalized)
         .into_iter()
         .map(|chunk| chunk.text)
         .collect()

@@ -1,6 +1,6 @@
 //! Jitter tests: drop-oldest on overflow, growth on underrun, exact stats.
 
-use orator_core::{Channel, Frame};
+use orator::{Channel, Frame};
 
 use crate::jitter::JitterBuffer;
 

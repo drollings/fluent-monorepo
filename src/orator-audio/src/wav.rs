@@ -3,7 +3,7 @@
 //! Only what offline audio needs: RIFF/WAVE with one `fmt ` and one
 //! `data` chunk. Anything else is rejected with a message, never guessed.
 
-use orator_core::SttError;
+use orator::SttError;
 
 /// PCM audio in memory.
 #[derive(Debug, Clone, PartialEq)]

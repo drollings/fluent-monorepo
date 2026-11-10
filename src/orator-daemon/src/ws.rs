@@ -15,7 +15,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
-use orator_core::SocketFrame;
+use orator::SocketFrame;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 use tokio_tungstenite::{
@@ -47,7 +47,7 @@ const WS_HANDLER_CAP: usize = 32;
 pub const WS_PATH: &str = "/ws";
 
 /// WS liveness tuning: ping cadence, silence bound, lifetime cap.
-/// Built from [`DaemonConfig`](orator_core::DaemonConfig) in
+/// Built from [`DaemonConfig`](orator::DaemonConfig) in
 /// production; tests pass explicit values.
 #[derive(Debug, Clone, Copy)]
 pub struct WsTuning {
@@ -74,7 +74,7 @@ impl WsTuning {
     /// Tuning from daemon config. Zero cap disables; ping clamps to
     /// the silence bound so a call always gets a keepalive first.
     #[must_use]
-    pub fn from_config(daemon: &orator_core::config::DaemonConfig) -> Self {
+    pub fn from_config(daemon: &orator::config::DaemonConfig) -> Self {
         let inactivity = Duration::from_secs(daemon.ws_inactivity_secs.max(1));
         let ping_every = Duration::from_secs(daemon.ws_ping_secs.max(1))
             .min(inactivity)
@@ -406,7 +406,7 @@ fn error_bytes(id: u64, error: &str) -> Vec<u8> {
             // Last resort stays a valid frame: the body names the failure
             // instead of an empty payload desyncing the carrier.
             SocketFrame {
-                kind: orator_core::MessageType::Response,
+                kind: orator::MessageType::Response,
                 body: format!("refusal encode failed ({encode_error}): {error}").into_bytes(),
             }
             .encode()

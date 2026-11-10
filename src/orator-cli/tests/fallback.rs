@@ -89,10 +89,10 @@ fn whisper_path_needs_a_present_file() {
 /// serves when the whole role side serves nothing.
 #[test]
 fn role_walk_leads_the_leaf_closes() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.models.models.insert(
         "m5-leaf-probe".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["whisper".to_string()],
             params: None,
@@ -101,7 +101,7 @@ fn role_walk_leads_the_leaf_closes() {
     );
     config.models.models.insert(
         "m5-head-probe".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["audio-server".to_string()],
             params: None,
@@ -110,7 +110,7 @@ fn role_walk_leads_the_leaf_closes() {
     );
     config.models.models.insert(
         "m5-default-probe".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["audio-server".to_string()],
             params: None,
@@ -151,15 +151,15 @@ fn present_head_beats_a_present_leaf() {
     for tag in ["m5-leaf-probe", "m5-head-probe"] {
         std::fs::write(models_dir.join(format!("ggml-{tag}.bin")), b"stub").expect("seed writes");
     }
-    fn entry(backends: &[&str]) -> orator_core::ModelSpec {
-        orator_core::ModelSpec {
+    fn entry(backends: &[&str]) -> orator::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: backends.iter().map(ToString::to_string).collect(),
             params: None,
             role_params: None,
         }
     }
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.stt.model = "m5-leaf-probe".to_string();
     config
         .models
@@ -205,8 +205,8 @@ fn precedence_grid_picks_exact_winners() {
     for tag in ["m3-present-leaf", "m3-present-role"] {
         std::fs::write(models_dir.join(format!("ggml-{tag}.bin")), b"stub").expect("seed writes");
     }
-    fn entry(backends: &[&str]) -> orator_core::ModelSpec {
-        orator_core::ModelSpec {
+    fn entry(backends: &[&str]) -> orator::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: backends.iter().map(ToString::to_string).collect(),
             params: None,
@@ -218,8 +218,8 @@ fn precedence_grid_picks_exact_winners() {
         leaf_backends: &[&str],
         heads: &[&str],
         default: &str,
-    ) -> orator_core::OratorConfig {
-        let mut config = orator_core::OratorConfig::default();
+    ) -> orator::OratorConfig {
+        let mut config = orator::OratorConfig::default();
         config.stt.model = leaf.to_string();
         config
             .models
@@ -352,16 +352,16 @@ fn unified_walk_follows_role_order_across_backends() {
     let store = home.path().join("weights");
     std::fs::create_dir_all(&store).expect("mkdir");
     std::fs::write(store.join("m5moon.gguf"), b"stub").expect("seed writes");
-    fn entry(backends: &[&str], weights: Option<&str>) -> orator_core::ModelSpec {
-        orator_core::ModelSpec {
+    fn entry(backends: &[&str], weights: Option<&str>) -> orator::ModelSpec {
+        orator::ModelSpec {
             weights: weights.map(str::to_string),
             backends: backends.iter().map(ToString::to_string).collect(),
             params: None,
             role_params: None,
         }
     }
-    fn configured(store: &std::path::Path, heads: &[&str]) -> orator_core::OratorConfig {
-        let mut models = orator_core::ModelsConfig::default();
+    fn configured(store: &std::path::Path, heads: &[&str]) -> orator::OratorConfig {
+        let mut models = orator::ModelsConfig::default();
         models
             .models
             .insert("m5w".to_string(), entry(&["whisper"], None));
@@ -372,16 +372,16 @@ fn unified_walk_follows_role_order_across_backends() {
         models
             .models
             .insert("m5missing".to_string(), entry(&["whisper"], None));
-        let base = orator_core::OratorConfig::default();
-        orator_core::OratorConfig {
+        let base = orator::OratorConfig::default();
+        orator::OratorConfig {
             gguf_dir: store.to_string_lossy().into_owned(),
-            stt: orator_core::SttConfig {
+            stt: orator::SttConfig {
                 model: "m5missing".to_string(),
                 ..base.stt
             },
             models,
-            roles: orator_core::RolesConfig {
-                asr: orator_core::RoleSpec {
+            roles: orator::RolesConfig {
+                asr: orator::RoleSpec {
                     models: heads.iter().map(ToString::to_string).collect(),
                     params: None,
                 },
@@ -423,10 +423,10 @@ fn whisper_only_resolution_ignores_moonshine_heads() {
     let models_dir = home.path().join(".local/share/orator/models");
     std::fs::create_dir_all(&models_dir).expect("mkdir");
     std::fs::write(models_dir.join("ggml-m5w.bin"), b"stub").expect("seed writes");
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.models.models.insert(
         "m5w".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["whisper".to_string()],
             params: None,
@@ -435,7 +435,7 @@ fn whisper_only_resolution_ignores_moonshine_heads() {
     );
     config.models.models.insert(
         "m5moon".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["moonshine".to_string()],
             params: None,
@@ -445,7 +445,7 @@ fn whisper_only_resolution_ignores_moonshine_heads() {
     config.stt.model = "m5missing".to_string();
     config.models.models.insert(
         "m5missing".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["whisper".to_string()],
             params: None,
@@ -470,10 +470,10 @@ fn whisper_only_resolution_ignores_moonshine_heads() {
 #[test]
 fn moonshine_missing_weights_name_the_file() {
     use crate::fallback::resolve_moonshine_model;
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.models.models.insert(
         "m5moon".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: Some("m5moon.gguf".to_string()),
             backends: vec!["moonshine".to_string()],
             params: None,
@@ -493,14 +493,14 @@ fn moonshine_missing_weights_name_the_file() {
 /// and without the real weights.
 #[test]
 fn unservable_backends_skip_with_reasons() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     for (tag, backends) in [
         ("m5audio", vec!["audio-server"]),
         ("m5whisper", vec!["whisper"]),
     ] {
         config.models.models.insert(
             tag.to_string(),
-            orator_core::ModelSpec {
+            orator::ModelSpec {
                 weights: None,
                 backends: backends.iter().map(ToString::to_string).collect(),
                 params: None,
@@ -543,27 +543,27 @@ fn roles_walk_selects_present_whisper_weights() {
     let models_dir = home.path().join(".local/share/orator/models");
     std::fs::create_dir_all(&models_dir).expect("mkdir");
     std::fs::write(models_dir.join("ggml-probe-whisper.bin"), b"not a model").expect("seed writes");
-    let base = orator_core::OratorConfig::default();
+    let base = orator::OratorConfig::default();
     let mut models = base.models.clone();
     models.models.insert(
         "probe-whisper".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["whisper".to_string()],
             params: None,
             role_params: None,
         },
     );
-    let config = orator_core::OratorConfig {
+    let config = orator::OratorConfig {
         // Point the weights root at the temp HOME too: the default
         // moonshine head must stay missing here, or machines carrying
         // the real GGUF would serve it instead of reaching whisper.
         gguf_dir: home.path().to_string_lossy().into_owned(),
         models,
-        roles: orator_core::RolesConfig {
-            asr: orator_core::RoleSpec {
+        roles: orator::RolesConfig {
+            asr: orator::RoleSpec {
                 models: vec![
-                    orator_core::DEFAULT_ASR_MODEL.to_string(),
+                    orator::DEFAULT_ASR_MODEL.to_string(),
                     "probe-whisper".to_string(),
                 ],
                 params: None,
@@ -594,12 +594,12 @@ fn roles_walk_selects_present_whisper_weights() {
 
 #[test]
 fn local_ask_names_a_dead_endpoint() {
-    let config = orator_core::OratorConfig {
-        llm: orator_core::LlmEndpointConfig {
+    let config = orator::OratorConfig {
+        llm: orator::LlmEndpointConfig {
             endpoint: "127.0.0.1:1".to_string(),
-            ..orator_core::LlmEndpointConfig::default()
+            ..orator::LlmEndpointConfig::default()
         },
-        ..orator_core::OratorConfig::default()
+        ..orator::OratorConfig::default()
     };
     let error = crate::fallback::local_ask("hi", &config).expect_err("refused port fails fast");
     assert!(error.contains("127.0.0.1:1"), "{error}");
@@ -613,7 +613,7 @@ fn local_say_names_missing_weights() {
     let home = tempfile::tempdir().expect("tempdir");
     std::env::set_var("HOME", home.path());
     std::env::remove_var("XDG_DATA_HOME");
-    let config = orator_core::OratorConfig::default();
+    let config = orator::OratorConfig::default();
     let error = crate::fallback::local_say("hi", &config).expect_err("no weights fails");
     assert!(error.contains("kokoro"), "{error}");
     match prior_home {
@@ -637,12 +637,12 @@ fn ask_dial_falls_back_to_direct_endpoint() {
     let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
     let runtime = tempfile::tempdir().expect("tempdir");
     std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
-    let config = orator_core::OratorConfig {
-        llm: orator_core::LlmEndpointConfig {
+    let config = orator::OratorConfig {
+        llm: orator::LlmEndpointConfig {
             endpoint: "127.0.0.1:1".to_string(),
-            ..orator_core::LlmEndpointConfig::default()
+            ..orator::LlmEndpointConfig::default()
         },
-        ..orator_core::OratorConfig::default()
+        ..orator::OratorConfig::default()
     };
     let error = ask_dial("hi", None, Transport::Socket, &StreamAbort::new(), &config)
         .expect_err("both legs fail loudly");
@@ -670,26 +670,26 @@ fn transcribe_dial_falls_back_to_roles_walk() {
     // socket), then the unified walk names every tried candidate in
     // role order. Hermetic on machines with and without the real
     // weights (gguf_dir points at the temp HOME).
-    let base = orator_core::OratorConfig::default();
+    let base = orator::OratorConfig::default();
     let mut models = base.models.clone();
     models.models.insert(
         "m5w".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["whisper".to_string()],
             params: None,
             role_params: None,
         },
     );
-    let config = orator_core::OratorConfig {
+    let config = orator::OratorConfig {
         gguf_dir: runtime.path().to_string_lossy().into_owned(),
-        stt: orator_core::SttConfig {
+        stt: orator::SttConfig {
             model: "m5w".to_string(),
             ..base.stt
         },
         models,
-        roles: orator_core::RolesConfig {
-            asr: orator_core::RoleSpec {
+        roles: orator::RolesConfig {
+            asr: orator::RoleSpec {
                 models: vec!["m5w".to_string()],
                 params: None,
             },
@@ -727,8 +727,8 @@ fn transcribe_dial_leg_reports_the_local_leg_on_fallback() {
     let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
     let runtime = tempfile::tempdir().expect("tempdir");
     std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
-    let base = orator_core::OratorConfig::default();
-    let config = orator_core::OratorConfig {
+    let base = orator::OratorConfig::default();
+    let config = orator::OratorConfig {
         gguf_dir: runtime.path().to_string_lossy().into_owned(),
         ..base
     };
@@ -790,7 +790,7 @@ fn say_dial_falls_back_to_local_kokoro() {
     std::env::set_var("HOME", home.path());
     std::env::remove_var("XDG_DATA_HOME");
     std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
-    let config = orator_core::OratorConfig::default();
+    let config = orator::OratorConfig::default();
     let error = say_dial("hi", Transport::Socket, &StreamAbort::new(), &config)
         .expect_err("no weights, no voice");
     assert!(error.contains("kokoro"), "kokoro leg answered: {error}");
@@ -844,11 +844,11 @@ fn resolve_whisper_model_prefers_explicit_then_roles() {
     std::fs::create_dir_all(&models).expect("mkdir");
     // Explicit whisper tag with present weights wins outright.
     std::fs::write(models.join("ggml-explicit.bin"), b"x").expect("seed writes");
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.stt.model = "explicit".to_string();
     config.models.models.insert(
         "explicit".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["whisper".to_string()],
             params: None,
@@ -860,10 +860,10 @@ fn resolve_whisper_model_prefers_explicit_then_roles() {
     assert!(path.ends_with("ggml-explicit.bin"), "{}", path.display());
     // A moonshine default falls through to present whisper weights.
     std::fs::write(models.join("ggml-fallback.bin"), b"x").expect("seed writes");
-    config.stt.model = orator_core::DEFAULT_ASR_MODEL.to_string();
+    config.stt.model = orator::DEFAULT_ASR_MODEL.to_string();
     config.models.models.insert(
         "fallback".to_string(),
-        orator_core::ModelSpec {
+        orator::ModelSpec {
             weights: None,
             backends: vec!["whisper".to_string()],
             params: None,
@@ -871,7 +871,7 @@ fn resolve_whisper_model_prefers_explicit_then_roles() {
         },
     );
     config.roles.asr.models = vec![
-        orator_core::DEFAULT_ASR_MODEL.to_string(),
+        orator::DEFAULT_ASR_MODEL.to_string(),
         "fallback".to_string(),
     ];
     let (path, tag) = resolve_whisper_model(&config).expect("roles fall back");
@@ -938,7 +938,7 @@ fn slow_asr_reports_its_budget_instead_of_stalling() {
 #[test]
 fn role_overrides_tune_language_and_voice() {
     use crate::fallback::{resolve_asr_language, resolve_tts_voice};
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     // Globals hold without overrides.
     assert_eq!(resolve_asr_language(&config, "large-v3-turbo-q5_0"), "en");
     assert_eq!(resolve_tts_voice(&config, "agentory/kokoro-82m"), "bf_emma");
@@ -958,7 +958,7 @@ fn role_overrides_tune_language_and_voice() {
         .expect("whisper listed")
         .role_params = Some(std::collections::HashMap::from([(
         "asr".to_string(),
-        orator_core::ModelRoleOverride {
+        orator::ModelRoleOverride {
             params: Some(serde_json::json!({"language": "fr"})),
         },
     )]));
@@ -971,7 +971,7 @@ fn role_overrides_tune_language_and_voice() {
         .expect("kokoro listed")
         .role_params = Some(std::collections::HashMap::from([(
         "tts".to_string(),
-        orator_core::ModelRoleOverride {
+        orator::ModelRoleOverride {
             params: Some(serde_json::json!({"voice": "af_sky"})),
         },
     )]));
@@ -1133,23 +1133,23 @@ fn say_dial_serves_a_loaded_tts_head_through_the_shared_server() {
             "data": [{"id": "tts-head", "status": {"value": "loaded"}}],
         }));
     });
-    let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], orator_s2s::AUDIO_OUT_RATE);
+    let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], orator_voice::s2s::AUDIO_OUT_RATE);
     let tts = server.mock(|when, then| {
         when.method("POST").path("/tts").body_contains("tts-head");
         then.status(200)
             .header("content-type", "audio/wav")
             .body(wav);
     });
-    let base = orator_core::OratorConfig::default();
-    let config = orator_core::OratorConfig {
-        roles: orator_core::RolesConfig {
-            tts: orator_core::RoleSpec {
+    let base = orator::OratorConfig::default();
+    let config = orator::OratorConfig {
+        roles: orator::RolesConfig {
+            tts: orator::RoleSpec {
                 models: vec!["tts-head".to_string()],
                 params: None,
             },
             ..base.roles.clone()
         },
-        s2s: orator_core::S2sConfig {
+        s2s: orator::S2sConfig {
             endpoint: server.base_url(),
             model: "other-voice".to_string(),
             ..base.s2s.clone()
@@ -1159,7 +1159,7 @@ fn say_dial_serves_a_loaded_tts_head_through_the_shared_server() {
     let (samples, rate) = say_dial("hi", Transport::Socket, &StreamAbort::new(), &config)
         .expect("shared head voices");
     assert_eq!(samples, vec![0.0, 1.0, -1.0]);
-    assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
+    assert_eq!(rate, orator_voice::s2s::AUDIO_OUT_RATE);
     assert_eq!(tts.hits(), 1, "one direct turn, no daemon hop");
     match prior_runtime {
         Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
@@ -1192,16 +1192,16 @@ fn say_dial_skips_the_shared_leg_when_the_head_is_the_voice_model() {
         when.method("POST").path("/tts");
         then.status(200).body(vec![0u8; 44]);
     });
-    let base = orator_core::OratorConfig::default();
-    let config = orator_core::OratorConfig {
-        roles: orator_core::RolesConfig {
-            tts: orator_core::RoleSpec {
+    let base = orator::OratorConfig::default();
+    let config = orator::OratorConfig {
+        roles: orator::RolesConfig {
+            tts: orator::RoleSpec {
                 models: vec!["same-voice".to_string()],
                 params: None,
             },
             ..base.roles.clone()
         },
-        s2s: orator_core::S2sConfig {
+        s2s: orator::S2sConfig {
             endpoint: server.base_url(),
             model: "same-voice".to_string(),
             ..base.s2s.clone()
@@ -1248,16 +1248,16 @@ fn say_dial_skips_a_listed_but_unloaded_tts_head() {
         when.method("POST").path("/tts");
         then.status(200).body(vec![0u8; 44]);
     });
-    let base = orator_core::OratorConfig::default();
-    let config = orator_core::OratorConfig {
-        roles: orator_core::RolesConfig {
-            tts: orator_core::RoleSpec {
+    let base = orator::OratorConfig::default();
+    let config = orator::OratorConfig {
+        roles: orator::RolesConfig {
+            tts: orator::RoleSpec {
                 models: vec!["unloadable".to_string()],
                 params: None,
             },
             ..base.roles.clone()
         },
-        s2s: orator_core::S2sConfig {
+        s2s: orator::S2sConfig {
             endpoint: server.base_url(),
             model: "other-voice".to_string(),
             ..base.s2s.clone()
@@ -1301,16 +1301,16 @@ fn transcribe_dial_leg_serves_a_loaded_asr_head_through_the_shared_server() {
         then.status(200)
             .body("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\ndata: [DONE]\n");
     });
-    let base = orator_core::OratorConfig::default();
-    let config = orator_core::OratorConfig {
-        roles: orator_core::RolesConfig {
-            asr: orator_core::RoleSpec {
+    let base = orator::OratorConfig::default();
+    let config = orator::OratorConfig {
+        roles: orator::RolesConfig {
+            asr: orator::RoleSpec {
                 models: vec!["asr-head".to_string()],
                 params: None,
             },
             ..base.roles.clone()
         },
-        s2s: orator_core::S2sConfig {
+        s2s: orator::S2sConfig {
             endpoint: server.base_url(),
             model: "other-voice".to_string(),
             ..base.s2s.clone()
@@ -1345,7 +1345,7 @@ fn transcribe_dial_leg_serves_a_loaded_asr_head_through_the_shared_server() {
 fn role_head_gates_fire_only_for_servable_non_voice_heads() {
     use crate::fallback::{asr_local_head, tts_local_head};
     use crate::socket::Transport;
-    let base = orator_core::OratorConfig::default();
+    let base = orator::OratorConfig::default();
     // Defaults head elsewhere with serving backends: kokoro fires
     // without touching disk.
     assert_eq!(
@@ -1353,16 +1353,16 @@ fn role_head_gates_fire_only_for_servable_non_voice_heads() {
         Some("agentory/kokoro-82m")
     );
     // Same-model heads never divert (the daemon already serves them).
-    let same_tts = orator_core::OratorConfig {
-        s2s: orator_core::S2sConfig {
+    let same_tts = orator::OratorConfig {
+        s2s: orator::S2sConfig {
             model: "agentory/kokoro-82m".to_string(),
             ..base.s2s.clone()
         },
         ..base.clone()
     };
     assert_eq!(tts_local_head(&same_tts), None);
-    let same_asr = orator_core::OratorConfig {
-        s2s: orator_core::S2sConfig {
+    let same_asr = orator::OratorConfig {
+        s2s: orator::S2sConfig {
             model: "handy-computer/moonshine-streaming-medium".to_string(),
             ..base.s2s.clone()
         },
@@ -1385,7 +1385,7 @@ fn role_head_gates_fire_only_for_servable_non_voice_heads() {
     // weights keep the daemon-first chain.
     let _guard = common_core::sync::lock(&ENV_LOCK);
     let gguf = tempfile::tempdir().expect("tempdir");
-    let missing = orator_core::OratorConfig {
+    let missing = orator::OratorConfig {
         gguf_dir: gguf.path().to_string_lossy().into_owned(),
         ..base.clone()
     };
@@ -1395,7 +1395,7 @@ fn role_head_gates_fire_only_for_servable_non_voice_heads() {
         .join("handy-computer/moonshine-streaming-medium-gguf");
     std::fs::create_dir_all(&dir).expect("mkdir");
     std::fs::write(dir.join("latest.gguf"), b"fake").expect("seed writes");
-    let present = orator_core::OratorConfig {
+    let present = orator::OratorConfig {
         gguf_dir: gguf.path().to_string_lossy().into_owned(),
         ..base.clone()
     };
@@ -1416,8 +1416,8 @@ fn role_head_gates_fire_only_for_servable_non_voice_heads() {
     });
     // The stub answers nothing, so the shared leg stays off without
     // depending on ambient gateway state.
-    let stubbed = orator_core::OratorConfig {
-        s2s: orator_core::S2sConfig {
+    let stubbed = orator::OratorConfig {
+        s2s: orator::S2sConfig {
             endpoint: server.base_url(),
             model: "other-voice".to_string(),
             ..base.s2s.clone()

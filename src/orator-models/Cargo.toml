@@ -6,13 +6,21 @@ autotests = false
 
 [dependencies]
 common-core = { path = "../common-core" }
-orator-core = { path = "../orator-core" }
+orator = { path = "../orator" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[features]
+live-ai = []
+
+[[test]]
+name = "live"
+path = "tests/lfm_live.rs"
+required-features = ["live-ai"]
 
 [lints]
 workspace = true

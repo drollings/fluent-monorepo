@@ -14,16 +14,11 @@ fluent-llm = { path = "../llm" }
 fluent-wvr = { path = "../fluent-wvr" }
 futures-util = { workspace = true }
 orator-audio = { path = "../orator-audio" }
-orator-core = { path = "../orator-core" }
+orator = { path = "../orator" }
 orator-desktop = { path = "../orator-desktop" }
-orator-llm = { path = "../orator-llm" }
+orator-agent = { path = "../orator-agent" }
 orator-models = { path = "../orator-models" }
-orator-lfm = { path = "../orator-lfm" }
-orator-s2s = { path = "../orator-s2s" }
-orator-stt = { path = "../orator-stt" }
-orator-tts = { path = "../orator-tts" }
-orator-turn = { path = "../orator-turn" }
-orator-vad = { path = "../orator-vad" }
+orator-voice = { path = "../orator-voice" }
 ratatui = "0.30"
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -33,9 +28,7 @@ tokio-tungstenite = { workspace = true }
 [dev-dependencies]
 libc = { workspace = true }
 orator-daemon = { path = "../orator-daemon" }
-orator-diary = { path = "../orator-diary" }
-orator-notes = { path = "../orator-notes" }
-orator-store = { path = "../orator-store" }
+orator-memory = { path = "../orator-memory" }
 async-trait = { workspace = true }
 httpmock = { workspace = true }
 tempfile = { workspace = true }

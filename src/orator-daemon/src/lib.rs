@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use fluent_concurrency::scope::Scope;
 use orator_audio::{spawn_archive_feed, ArchiveItem, ArchiveWriter, Manifest};
-use orator_core::protocol::METHOD_NAMES;
-use orator_core::Channel;
+use orator::protocol::METHOD_NAMES;
+use orator::Channel;
 use thiserror::Error;
 
 /// Session presets over pipeline stages.
@@ -35,7 +35,7 @@ pub mod ws;
 /// Daemon-owned voice server.
 pub mod voice;
 
-/// Methods this daemon serves. Mirrors the wire contract in `orator-core`;
+/// Methods this daemon serves. Mirrors the wire contract in `orator`;
 /// the dispatch test enforces set equality so the two can never drift.
 pub const DISPATCH_METHODS: [&str; 14] = METHOD_NAMES;
 

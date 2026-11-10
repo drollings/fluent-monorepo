@@ -141,8 +141,18 @@ const ENTRIES: &[Entry] = &[
         component: None,
     },
     Entry {
-        prefix: "src/orator-core",
-        package: "orator-core",
+        prefix: "src/orator",
+        package: "orator",
+        component: Some("orator"),
+    },
+    Entry {
+        prefix: "src/orator-voice",
+        package: "orator-voice",
+        component: Some("orator"),
+    },
+    Entry {
+        prefix: "src/orator-agent",
+        package: "orator-agent",
         component: Some("orator"),
     },
     Entry {
@@ -151,58 +161,13 @@ const ENTRIES: &[Entry] = &[
         component: Some("orator"),
     },
     Entry {
-        prefix: "src/orator-vad",
-        package: "orator-vad",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-stt",
-        package: "orator-stt",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-llm",
-        package: "orator-llm",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-tts",
-        package: "orator-tts",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-turn",
-        package: "orator-turn",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-tools",
-        package: "orator-tools",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-store",
-        package: "orator-store",
+        prefix: "src/orator-memory",
+        package: "orator-memory",
         component: Some("orator"),
     },
     Entry {
         prefix: "src/orator-models",
         package: "orator-models",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-diary",
-        package: "orator-diary",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-notes",
-        package: "orator-notes",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-s2s",
-        package: "orator-s2s",
         component: Some("orator"),
     },
     Entry {
@@ -216,11 +181,6 @@ const ENTRIES: &[Entry] = &[
         component: Some("orator"),
     },
     Entry {
-        prefix: "src/orator-bench",
-        package: "orator-bench",
-        component: Some("orator"),
-    },
-    Entry {
         prefix: "src/orator-daemon",
         package: "orator-daemon",
         component: Some("orator"),
@@ -228,11 +188,6 @@ const ENTRIES: &[Entry] = &[
     Entry {
         prefix: "src/orator-cli",
         package: "orator-cli",
-        component: Some("orator"),
-    },
-    Entry {
-        prefix: "src/orator-lfm",
-        package: "orator-lfm",
         component: Some("orator"),
     },
     Entry {

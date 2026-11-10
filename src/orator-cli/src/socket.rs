@@ -1,7 +1,7 @@
 //! Daemon socket client: one credentialed request, one reply.
 //!
 //! The socket file is owner-only in a private runtime directory; the
-//! daemon serves only same-uid peers (the pure gate in `orator-core`
+//! daemon serves only same-uid peers (the pure gate in `orator`
 //! decides, the accept path feeds it). Bodies are JSON through the
 //! length+type framing; unknown methods never leave this process.
 
@@ -9,7 +9,7 @@ use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-use orator_core::{MessageType, SocketFrame};
+use orator::{MessageType, SocketFrame};
 
 use crate::{ExitCode, OutboundRequest};
 
@@ -182,7 +182,7 @@ pub fn socket_preflight_warning(path: &std::path::Path) -> Option<String> {
         let metadata = std::fs::metadata(path).ok()?;
         let mode = metadata.permissions().mode() & 0o777;
         let owner = metadata.uid();
-        let expected = orator_core::paths::current_uid();
+        let expected = orator::paths::current_uid();
         if owner != expected || mode != 0o600 {
             return Some(format!(
                 "orator: socket {} owned by uid {owner} with mode {mode:o} (expected uid {expected} mode 600)",
@@ -225,7 +225,7 @@ pub fn decode_reply(bytes: &[u8]) -> Result<WireReply, String> {
 /// refusal is `Error` (the daemon was there, the call failed) so the
 /// caller never reports a running daemon as missing.
 pub fn daemon_call(method: &str, params: serde_json::Value) -> Result<serde_json::Value, ExitCode> {
-    let Some(path) = orator_core::socket_path() else {
+    let Some(path) = orator::socket_path() else {
         eprintln!("{}", no_socket_path_text());
         return Err(ExitCode::DaemonUnavailable);
     };
@@ -265,7 +265,7 @@ pub fn call_transport(
 ) -> Result<serde_json::Value, CallFailure> {
     match transport {
         Transport::Socket => {
-            let Some(path) = orator_core::socket_path() else {
+            let Some(path) = orator::socket_path() else {
                 return Err(CallFailure::lined(
                     ExitCode::DaemonUnavailable,
                     no_socket_path_text(),
@@ -274,7 +274,7 @@ pub fn call_transport(
             call_socket_at(&path, method, params)
         }
         Transport::Ws => {
-            let (config, _) = orator_core::config::load_hierarchical();
+            let (config, _) = orator::config::load_hierarchical();
             let addr = config.daemon.ws_listen;
             if addr.is_empty() {
                 return Err(CallFailure::lined(

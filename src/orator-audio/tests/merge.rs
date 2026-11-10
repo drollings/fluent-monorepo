@@ -4,7 +4,7 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use orator_core::{Channel, MediaTime};
+use orator::{Channel, MediaTime};
 
 use crate::merge::{MergeQueue, WordRecord};
 

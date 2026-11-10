@@ -37,15 +37,15 @@ use crate::tui::MicMode;
 /// heads; this pins the divergence it resolves.
 #[test]
 fn native_session_derives_from_the_agreed_heads() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.asr.models = vec!["liquidai/lfm3-audio-2b".to_string()];
     config.roles.tts.models = vec!["liquidai/lfm3-audio-2b".to_string()];
     config.s2s.model = "some-other-leaf".to_string();
     assert!(
-        orator_core::should_prefer_s2s(&config),
+        orator::should_prefer_s2s(&config),
         "heads agree through audio-server: preference fires"
     );
-    let agreed = orator_core::agreed_s2s_model(&config);
+    let agreed = orator::agreed_s2s_model(&config);
     assert_eq!(
         agreed, "liquidai/lfm3-audio-2b",
         "session derives from the agreed heads, not the leaf ({})",
@@ -71,7 +71,7 @@ fn turn_path_needs_preference_and_assurance() {
 /// head equals the leaf, so the label is byte-identical.
 #[test]
 fn llm_serving_prefers_the_chat_head() {
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     let (model, _) = llm_serving(&config);
     assert_eq!(model, config.llm.model, "default: head equals leaf");
     config.roles.chat.models = vec!["custom-chat-tag".to_string()];
@@ -262,7 +262,7 @@ fn text_selection_prints_full_once() {
 
 #[test]
 fn serving_labels_name_the_roles() {
-    let config = orator_core::OratorConfig::default();
+    let config = orator::OratorConfig::default();
     let (model, _backend) = llm_serving(&config);
     assert_eq!(model, config.llm.model, "llm labels the chat model");
     let (asr_model, asr_backend) = asr_serving(&config);
@@ -299,7 +299,7 @@ fn control_lines_reuse_the_tui_chord_table() {
 fn file_gate_sheds_ptt_off_then_silence() {
     use crate::chat::{check_file_gate, FileGate};
     use crate::tui::MicMode;
-    let vad = orator_core::VadConfig::default();
+    let vad = orator::VadConfig::default();
     let hot = vec![0.5; 16_000];
     let silent = vec![0.0; 16_000];
     assert_eq!(
@@ -357,8 +357,8 @@ fn turn_path_needs_both_preference_and_assurance() {
 /// hermetically and the role walk decides.
 #[test]
 fn serving_selectors_pin_fixture_outputs() {
-    use orator_core::ModelSpec;
-    let mut config = orator_core::OratorConfig::default();
+    use orator::ModelSpec;
+    let mut config = orator::OratorConfig::default();
     config.roles.chat.models = vec!["chat-fixture".to_string()];
     config.llm.model = "leaf-model".to_string();
     config.roles.asr.models = vec!["asr-fixture".to_string()];
@@ -399,7 +399,7 @@ fn serving_selectors_pin_fixture_outputs() {
 /// can name the bad value instead of refusing the session.
 #[test]
 fn chat_initial_modes_follow_config_with_loud_fallbacks() {
-    use orator_core::OratorConfig;
+    use orator::OratorConfig;
     let config = OratorConfig::default();
     assert_eq!(initial_voice_mode(&config), ChatVoiceMode::Short);
     assert_eq!(initial_text_mode(&config), ChatTextMode::Full);
@@ -461,7 +461,7 @@ fn voice_barge_needs_hot_sustained_speech() {
 #[test]
 fn barge_composition_grid_cuts_only_the_user_interruption() {
     use crate::chat::{should_cut_for_barge, BargeCutInput};
-    let bound = u64::from(orator_core::TurnConfig::default().barge_in_ms);
+    let bound = u64::from(orator::TurnConfig::default().barge_in_ms);
     let cut = |sustained_ms: u64, gate_quiet: bool, barge_on: bool, turn_live: bool| {
         should_cut_for_barge(&BargeCutInput {
             turn_live,
@@ -494,7 +494,7 @@ fn barge_composition_grid_cuts_only_the_user_interruption() {
 #[test]
 fn sustain_latches_continuous_speech_and_clears_on_empty() {
     use crate::chat::BargeSustain;
-    let mut tracker = BargeSustain::new(&orator_core::OratorConfig::default());
+    let mut tracker = BargeSustain::new(&orator::OratorConfig::default());
     // 7 hot growing polls (140 ms): not yet.
     for index in 0..7 {
         assert!(
@@ -521,7 +521,7 @@ fn sustain_latches_continuous_speech_and_clears_on_empty() {
 #[test]
 fn sustain_ignores_pause_split_speech() {
     use crate::chat::BargeSustain;
-    let mut tracker = BargeSustain::new(&orator_core::OratorConfig::default());
+    let mut tracker = BargeSustain::new(&orator::OratorConfig::default());
     for index in 0..5 {
         assert!(
             !tracker.poll(true, (index + 1) * 320, false, 20),
@@ -543,14 +543,14 @@ fn sustain_ignores_pause_split_speech() {
 #[test]
 fn sustain_advances_only_on_buffered_user_speech() {
     use crate::chat::BargeSustain;
-    let mut tracker = BargeSustain::new(&orator_core::OratorConfig::default());
+    let mut tracker = BargeSustain::new(&orator::OratorConfig::default());
     for _ in 0..10 {
         assert!(
             !tracker.poll(true, 320, false, 20),
             "hot-but-flat never advances"
         );
     }
-    let mut ptt = BargeSustain::new(&orator_core::OratorConfig::default());
+    let mut ptt = BargeSustain::new(&orator::OratorConfig::default());
     for index in 0..10 {
         assert!(
             !ptt.poll(true, (index + 1) * 320, true, 20),
@@ -620,7 +620,7 @@ fn preserved_and_fresh_transcripts_merge_verbatim() {
 #[test]
 fn daemon_leg_serving_names_the_configured_voice_model() {
     use crate::chat::daemon_asr_serving;
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.s2s.model = "custom-voice-model".to_string();
     assert_eq!(
         daemon_asr_serving(&config),

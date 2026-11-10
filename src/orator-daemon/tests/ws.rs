@@ -68,8 +68,8 @@ async fn ws_call(
     let body =
         serde_json::to_vec(&serde_json::json!({ "id": id, "method": method, "params": params }))
             .expect("request encodes");
-    let frame = orator_core::SocketFrame {
-        kind: orator_core::MessageType::Request,
+    let frame = orator::SocketFrame {
+        kind: orator::MessageType::Request,
         body,
     };
     ws.send(Message::Binary(frame.encode().into()))
@@ -81,8 +81,8 @@ async fn ws_call(
             .expect("reply arrives")
         {
             Some(Ok(Message::Binary(bytes))) => {
-                let frame = orator_core::SocketFrame::decode(&bytes).expect("reply frame decodes");
-                assert_eq!(frame.kind, orator_core::MessageType::Response);
+                let frame = orator::SocketFrame::decode(&bytes).expect("reply frame decodes");
+                assert_eq!(frame.kind, orator::MessageType::Response);
                 return serde_json::from_slice(&frame.body).expect("reply parses");
             }
             Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
@@ -105,13 +105,13 @@ fn socket_call(
     let body =
         serde_json::to_vec(&serde_json::json!({ "id": 7, "method": method, "params": params }))
             .expect("request encodes");
-    let frame = orator_core::SocketFrame {
-        kind: orator_core::MessageType::Request,
+    let frame = orator::SocketFrame {
+        kind: orator::MessageType::Request,
         body,
     };
     stream.write_all(&frame.encode()).expect("send");
-    let reply = orator_core::SocketFrame::read_from(&mut stream).expect("reply reads");
-    assert_eq!(reply.kind, orator_core::MessageType::Response);
+    let reply = orator::SocketFrame::read_from(&mut stream).expect("reply reads");
+    assert_eq!(reply.kind, orator::MessageType::Response);
     serde_json::from_slice(&reply.body).expect("reply parses")
 }
 
@@ -137,7 +137,7 @@ fn transport_parity_over_every_method() {
         let mut ws = connect(addr, Some(TOKEN)).await;
         // StopDaemon latches the process-global shutdown flag other
         // suites observe, so parity covers every other method.
-        for (index, method) in orator_core::protocol::METHOD_NAMES
+        for (index, method) in orator::protocol::METHOD_NAMES
             .iter()
             .filter(|method| **method != "StopDaemon")
             .enumerate()
@@ -317,16 +317,16 @@ fn tuning_defaults_pin_the_moshi_numbers() {
     assert_eq!(WS_INACTIVITY_TIMEOUT, std::time::Duration::from_secs(10));
     assert_eq!(WS_CONNECTION_CAP, std::time::Duration::from_secs(360));
     assert_eq!(WS_WATCHDOG_POLL, std::time::Duration::from_millis(500));
-    let tuning = WsTuning::from_config(&orator_core::config::DaemonConfig::default());
+    let tuning = WsTuning::from_config(&orator::config::DaemonConfig::default());
     assert_eq!(tuning.ping_every, std::time::Duration::from_secs(5));
     assert_eq!(tuning.inactivity, std::time::Duration::from_secs(10));
     assert_eq!(tuning.cap, Some(std::time::Duration::from_secs(360)));
     // Ping clamps to the silence bound so a call always gets a
     // keepalive first; zero cap disables.
-    let config = orator_core::config::DaemonConfig {
+    let config = orator::config::DaemonConfig {
         ws_ping_secs: 60,
         ws_cap_secs: 0,
-        ..orator_core::config::DaemonConfig::default()
+        ..orator::config::DaemonConfig::default()
     };
     let tuning = WsTuning::from_config(&config);
     assert_eq!(tuning.ping_every, tuning.inactivity);

@@ -44,7 +44,7 @@ fn entry(name: &str, file: &str, bytes: Option<&[u8]>) -> ModelEntry {
 }
 
 fn write_managed(file: &str, bytes: &[u8]) {
-    let dir = orator_core::models_dir().expect("fixture home resolves");
+    let dir = orator::models_dir().expect("fixture home resolves");
     std::fs::create_dir_all(&dir).expect("managed dir");
     std::fs::write(dir.join(file), bytes).expect("fixture writes");
 }

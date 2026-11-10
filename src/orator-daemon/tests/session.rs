@@ -1,7 +1,7 @@
 //! Session factory tests: lifecycle, Say/Ask over stubs, interrupt
 //! abort, unknown ids fail closed.
 
-use orator_core::LlmSession as _;
+use orator::LlmSession as _;
 
 use crate::voice::VoiceOwner;
 
@@ -99,7 +99,7 @@ fn say_against_scripted_audio_server() {
         .say_via(&server.base_url(), "hello", None)
         .expect("scripted speak runs");
     assert_eq!(samples.len(), 1);
-    assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
+    assert_eq!(rate, orator_voice::s2s::AUDIO_OUT_RATE);
     owner.shutdown();
 }
 
@@ -153,9 +153,9 @@ fn ask_against_scripted_llm_queue_fixture() {
                 }
             },
         ));
-        let mut session = orator_llm::HttpSession::with_queue(
+        let mut session = orator_agent::llm::HttpSession::with_queue(
             queue,
-            orator_llm::SessionConfig {
+            orator_agent::llm::SessionConfig {
                 endpoint_base: "http://127.0.0.1:9".to_string(),
                 model: "session-test".to_string(),
                 ctx_tokens: 8192,
@@ -165,7 +165,7 @@ fn ask_against_scripted_llm_queue_fixture() {
         );
         session.push_text("what time is it");
         let out = session
-            .step(&mut orator_core::Sampler::default())
+            .step(&mut orator::Sampler::default())
             .expect("scripted ask runs");
         assert_eq!(out.delta, "scripted reply");
         let requests = common_core::sync::lock(&recorded);
@@ -267,7 +267,7 @@ fn ask_with_session_builds_context_across_turns() {
     // first use: seed it inside a runtime before the sync `ask_via`
     // path touches it (production always has one; tests do not).
     common_core::runtime::block_on_shared(async {
-        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+        let _seed = orator_agent::llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
     });
     let server = httpmock::MockServer::start();
     let mut first = server.mock(|when, then| {
@@ -345,7 +345,7 @@ fn ask_without_session_stays_stateless() {
         serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string()
     }
     common_core::runtime::block_on_shared(async {
-        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+        let _seed = orator_agent::llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
     });
     let server = httpmock::MockServer::start();
     server.mock(|when, then| {
@@ -380,21 +380,21 @@ fn say_via_prefers_a_loaded_tts_head_over_the_leaf() {
              data: [DONE]\n",
         );
     });
-    let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], orator_s2s::AUDIO_OUT_RATE);
+    let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], orator_voice::s2s::AUDIO_OUT_RATE);
     let tts = server.mock(|when, then| {
         when.method("POST").path("/tts").body_contains("role-voice");
         then.status(200)
             .header("content-type", "audio/wav")
             .body(wav);
     });
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.tts.models = vec!["role-voice".to_string()];
     let owner = VoiceOwner::new(&config);
     let (samples, rate) = owner
         .say_via(&server.base_url(), "hello", None)
         .expect("head voices");
     assert_eq!(samples, vec![0.0, 1.0, -1.0]);
-    assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
+    assert_eq!(rate, orator_voice::s2s::AUDIO_OUT_RATE);
     assert_eq!(tts.hits(), 1, "the head voiced, not the leaf");
     owner.shutdown();
 }
@@ -419,7 +419,7 @@ fn transcribe_via_prefers_a_loaded_asr_head_over_the_leaf() {
              data: [DONE]\n",
         );
     });
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.roles.asr.models = vec!["role-asr".to_string()];
     let owner = VoiceOwner::new(&config);
     let samples: Vec<f32> = (0..16_000)
@@ -446,7 +446,7 @@ fn ask_blocking_serves_the_chat_head_not_the_leaf() {
         serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string()
     }
     common_core::runtime::block_on_shared(async {
-        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+        let _seed = orator_agent::llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
     });
     let server = httpmock::MockServer::start();
     server.mock(|when, then| {
@@ -461,7 +461,7 @@ fn ask_blocking_serves_the_chat_head_not_the_leaf() {
             .body_contains("chat-head");
         then.status(200).body(chat_reply("head-reply"));
     });
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.llm.endpoint = server.base_url().trim_start_matches("http://").to_string();
     config.llm.model = "leaf-model".to_string();
     config.roles.chat.models = vec!["chat-head".to_string()];
@@ -481,7 +481,7 @@ fn ask_blocking_falls_back_to_the_voice_model_when_the_llm_endpoint_is_down() {
         serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string()
     }
     common_core::runtime::block_on_shared(async {
-        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+        let _seed = orator_agent::llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
     });
     let voice = httpmock::MockServer::start();
     voice.mock(|when, then| {
@@ -496,7 +496,7 @@ fn ask_blocking_falls_back_to_the_voice_model_when_the_llm_endpoint_is_down() {
             .body_contains("voice-model");
         then.status(200).body(chat_reply("voice-reply"));
     });
-    let mut config = orator_core::OratorConfig::default();
+    let mut config = orator::OratorConfig::default();
     config.llm.endpoint = "127.0.0.1:1".to_string();
     config.llm.model = "leaf-model".to_string();
     config.roles.chat.models = vec!["chat-head".to_string()];

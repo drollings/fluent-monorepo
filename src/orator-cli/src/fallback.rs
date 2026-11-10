@@ -12,7 +12,7 @@
 //! silently become something else.
 
 use fluent_concurrency::stream::StreamAbort;
-use orator_core::LlmSession;
+use orator::LlmSession;
 
 use crate::config::resolve_llm_base;
 use crate::socket::Transport;
@@ -102,7 +102,7 @@ pub fn fallback_if_unavailable<T>(
 /// Resolve the managed ggml whisper file for `tag`. Missing homes and
 /// missing files fail loudly naming the pull remedy.
 pub fn whisper_model_path(tag: &str) -> Result<std::path::PathBuf, String> {
-    let Some(dir) = orator_core::models_dir() else {
+    let Some(dir) = orator::models_dir() else {
         return Err(
             "orator: no managed model directory (HOME and XDG_DATA_HOME are unset)".to_string(),
         );
@@ -127,7 +127,7 @@ pub fn decode_whisper_samples(
     samples: &[f32],
     abort: &StreamAbort,
 ) -> Result<String, String> {
-    let mut backend = orator_stt::WhisperBackend::new(path.to_path_buf(), language.to_string());
+    let mut backend = orator_voice::stt::WhisperBackend::new(path.to_path_buf(), language.to_string());
     if gpu {
         backend = backend.with_gpu();
     }
@@ -147,8 +147,8 @@ pub fn decode_whisper_samples(
 /// composed `language` override wins, else the global STT leaf.
 /// Pure (no weights, no I/O) so the override is unit-testable.
 #[must_use]
-pub fn resolve_asr_language(config: &orator_core::OratorConfig, tag: &str) -> String {
-    orator_core::compose_role_params(&config.models, &config.roles, "asr", tag)
+pub fn resolve_asr_language(config: &orator::OratorConfig, tag: &str) -> String {
+    orator::compose_role_params(&config.models, &config.roles, "asr", tag)
         .get("language")
         .and_then(|value| value.as_str())
         .map_or_else(|| config.stt.language.clone(), str::to_string)
@@ -158,8 +158,8 @@ pub fn resolve_asr_language(config: &orator_core::OratorConfig, tag: &str) -> St
 /// override wins, else the global TTS leaf. Pure (no weights, no
 /// I/O) so the override is unit-testable.
 #[must_use]
-pub fn resolve_tts_voice(config: &orator_core::OratorConfig, tag: &str) -> String {
-    orator_core::compose_role_params(&config.models, &config.roles, "tts", tag)
+pub fn resolve_tts_voice(config: &orator::OratorConfig, tag: &str) -> String {
+    orator::compose_role_params(&config.models, &config.roles, "tts", tag)
         .get("voice")
         .and_then(|value| value.as_str())
         .map_or_else(|| config.tts.voice.clone(), str::to_string)
@@ -175,7 +175,7 @@ pub fn ask_dial(
     session: Option<&str>,
     transport: Transport,
     abort: &StreamAbort,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Result<String, String> {
     fallback_if_unavailable(
         crate::tui::live_ask(text, session, transport, abort),
@@ -194,7 +194,7 @@ pub fn say_dial(
     text: &str,
     transport: Transport,
     abort: &StreamAbort,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Result<(Vec<f32>, u32), String> {
     if let Some(Ok(direct)) = shared_head_say(text, config, abort) {
         return Ok(direct);
@@ -234,19 +234,19 @@ pub fn say_dial(
 /// so this stays best-effort role routing, never a new failure.
 fn shared_head_say(
     text: &str,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
     abort: &StreamAbort,
 ) -> Option<Result<(Vec<f32>, u32), String>> {
-    let head = orator_core::resolve_role_model(&config.roles, "tts")?;
+    let head = orator::resolve_role_model(&config.roles, "tts")?;
     if head == config.s2s.model {
         return None; // the daemon leg already serves this model
     }
     let base = crate::config::s2s_base_url(&config.s2s);
-    if !common_core::runtime::block_on_shared(orator_s2s::model_loaded(&base, &head)) {
+    if !common_core::runtime::block_on_shared(orator_voice::s2s::model_loaded(&base, &head)) {
         return None; // configured backends (daemon, then local) serve
     }
     eprintln!("orator: voicing through the shared server ({head} audio-server)");
-    let session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+    let session = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
         endpoint: base,
         model: head,
         ..config.s2s.clone()
@@ -254,7 +254,7 @@ fn shared_head_say(
     Some(
         session
             .speak_text_via_tts(text, abort)
-            .map(|samples| (samples, orator_s2s::AUDIO_OUT_RATE))
+            .map(|samples| (samples, orator_voice::s2s::AUDIO_OUT_RATE))
             .map_err(|error| error.to_string()),
     )
 }
@@ -268,7 +268,7 @@ pub fn transcribe_dial(
     samples: &[f32],
     transport: Transport,
     abort: &StreamAbort,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Result<String, String> {
     transcribe_dial_leg(samples, transport, abort, config).0
 }
@@ -296,7 +296,7 @@ pub fn transcribe_dial_leg(
     samples: &[f32],
     transport: Transport,
     abort: &StreamAbort,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> (Result<String, String>, DialLeg) {
     if let Some(Ok(text)) = shared_head_transcribe(samples, config) {
         return (Ok(text), DialLeg::Shared);
@@ -335,18 +335,18 @@ pub fn transcribe_dial_leg(
 /// (the next legs narrate), so this stays best-effort role routing.
 fn shared_head_transcribe(
     samples: &[f32],
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Option<Result<String, String>> {
-    let head = orator_core::resolve_role_model(&config.roles, "asr")?;
+    let head = orator::resolve_role_model(&config.roles, "asr")?;
     if head == config.s2s.model {
         return None; // the daemon leg already serves this model
     }
     let base = crate::config::s2s_base_url(&config.s2s);
-    if !common_core::runtime::block_on_shared(orator_s2s::model_loaded(&base, &head)) {
+    if !common_core::runtime::block_on_shared(orator_voice::s2s::model_loaded(&base, &head)) {
         return None; // configured backends (daemon, then local) serve
     }
     eprintln!("orator: transcribing through the shared server ({head} audio-server)");
-    let mut session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+    let mut session = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
         endpoint: base,
         model: head,
         ..config.s2s.clone()
@@ -398,7 +398,7 @@ pub struct LocalAsr {
 /// name what actually served. Nothing servable fails loudly naming
 /// the pull remedy.
 pub fn resolve_whisper_model(
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Result<(std::path::PathBuf, String), String> {
     resolve_local_asr_with(config, &[LocalBackend::Whisper]).map(|found| (found.path, found.tag))
 }
@@ -407,7 +407,7 @@ pub fn resolve_whisper_model(
 /// [`resolve_whisper_model`] but serving moonshine-backed tags.
 /// Nothing servable fails loudly naming the file.
 pub fn resolve_moonshine_model(
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Result<(std::path::PathBuf, String), String> {
     resolve_local_asr_with(config, &[LocalBackend::Moonshine]).map(|found| (found.path, found.tag))
 }
@@ -444,12 +444,12 @@ pub fn local_asr_serve_note(
 /// Role order decides across backends — a present moonshine head
 /// beats a whisper head listed later. Returns path, tag, and the
 /// decoding backend so callers name what actually served.
-pub fn resolve_local_asr(config: &orator_core::OratorConfig) -> Result<LocalAsr, String> {
+pub fn resolve_local_asr(config: &orator::OratorConfig) -> Result<LocalAsr, String> {
     resolve_local_asr_with(config, &[LocalBackend::Whisper, LocalBackend::Moonshine])
 }
 
 fn resolve_local_asr_with(
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
     allowed: &[LocalBackend],
 ) -> Result<LocalAsr, String> {
     let allows = |name: &str| match name {
@@ -578,10 +578,10 @@ fn resolve_local_asr_with(
 /// The Ok path returns the file; the Err path returns the exact
 /// tried-list note so the role walk names every candidate.
 pub fn moonshine_model_path(
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
     tag: &str,
 ) -> Result<std::path::PathBuf, String> {
-    match orator_core::resolve_model_weights(&config.models, &config.gguf_dir, tag) {
+    match orator::resolve_model_weights(&config.models, &config.gguf_dir, tag) {
         Some(path) if path.exists() => Ok(path),
         Some(path) => Err(format!("{tag} (weights missing at {})", path.display())),
         None => Err(format!("{tag} (no weights declared)")),
@@ -598,7 +598,7 @@ pub fn decode_moonshine_samples(
     samples: &[f32],
     abort: &StreamAbort,
 ) -> Result<String, String> {
-    let mut backend = orator_stt::MoonshineBackend::new(path.to_path_buf());
+    let mut backend = orator_voice::stt::MoonshineBackend::new(path.to_path_buf());
     if gpu {
         backend = backend.with_gpu();
     }
@@ -620,8 +620,8 @@ pub fn decode_moonshine_samples(
 /// chain (the full role walk still serves the head when the daemon
 /// is down). The weights check is existence only — the decode owns
 /// failure naming, same as the role walk.
-pub(crate) fn asr_local_head(config: &orator_core::OratorConfig) -> Option<LocalAsr> {
-    let head = orator_core::resolve_role_model(&config.roles, "asr")?;
+pub(crate) fn asr_local_head(config: &orator::OratorConfig) -> Option<LocalAsr> {
+    let head = orator::resolve_role_model(&config.roles, "asr")?;
     if head == config.s2s.model {
         return None;
     }
@@ -651,7 +651,7 @@ pub(crate) fn asr_local_head(config: &orator_core::OratorConfig) -> Option<Local
 /// fetch remedy.
 pub fn local_transcribe(
     samples: &[f32],
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
     abort: &StreamAbort,
 ) -> Result<String, String> {
     match resolve_local_asr(config) {
@@ -673,7 +673,7 @@ pub fn local_transcribe(
 fn decode_local_asr(
     found: LocalAsr,
     samples: &[f32],
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
     abort: &StreamAbort,
 ) -> Result<String, String> {
     // Owned up front: the budgeted closure runs on a worker
@@ -694,7 +694,7 @@ fn decode_local_asr(
 /// Absence fails loudly naming the endpoint. The session opens
 /// inside the shared runtime bridge (like `ask`): opening outside
 /// would force the shared queue's worker spawn with no reactor.
-pub fn local_ask(question: &str, config: &orator_core::OratorConfig) -> Result<String, String> {
+pub fn local_ask(question: &str, config: &orator::OratorConfig) -> Result<String, String> {
     let llm = crate::ask::effective_llm_config(config)?;
     let (base, model) = resolve_llm_base(&llm);
     let ctx = usize::from(llm.ctx);
@@ -702,15 +702,15 @@ pub fn local_ask(question: &str, config: &orator_core::OratorConfig) -> Result<S
     let question = question.to_string();
     common_core::runtime::block_on_shared(async move {
         if let Err(error) =
-            orator_llm::probe_models(&base, common_core::http::shared_http_client()).await
+            orator_agent::llm::probe_models(&base, common_core::http::shared_http_client()).await
         {
             return Err(format!(
                 "orator: no LLM server answers at {base} ({error}; start a llama-server there)"
             ));
         }
-        let mut session = orator_llm::HttpSession::open(&base, &model, ctx, n_batch);
+        let mut session = orator_agent::llm::HttpSession::open(&base, &model, ctx, n_batch);
         session.push_text(&question);
-        match session.step(&mut orator_core::Sampler::default()) {
+        match session.step(&mut orator::Sampler::default()) {
             Ok(out) => Ok(out.delta.trim_end().to_string()),
             Err(error) => Err(format!("orator: local ask failed: {error}")),
         }
@@ -723,7 +723,7 @@ pub fn local_ask(question: &str, config: &orator_core::OratorConfig) -> Result<S
 /// quiet so one synth never logs twice.
 pub fn local_say(
     text: &str,
-    config: &orator_core::OratorConfig,
+    config: &orator::OratorConfig,
 ) -> Result<(Vec<f32>, u32), String> {
     synth_kokoro(text, config)
 }
@@ -734,8 +734,8 @@ pub fn local_say(
 /// configured-local leg — weights presence is decided by the synth,
 /// whose failure falls through to the daemon instead of failing the
 /// turn outright.
-pub(crate) fn tts_local_head(config: &orator_core::OratorConfig) -> Option<String> {
-    let head = orator_core::resolve_role_model(&config.roles, "tts")?;
+pub(crate) fn tts_local_head(config: &orator::OratorConfig) -> Option<String> {
+    let head = orator::resolve_role_model(&config.roles, "tts")?;
     if head == config.s2s.model {
         return None;
     }
@@ -762,11 +762,11 @@ pub fn cached_kokoro(
     voices: std::path::PathBuf,
     voice: String,
     gpu: bool,
-) -> std::sync::Arc<orator_tts::KokoroBackend> {
+) -> std::sync::Arc<orator_voice::tts::KokoroBackend> {
     use std::collections::HashMap;
     type Key = (std::path::PathBuf, std::path::PathBuf, String, bool);
     static CACHE: std::sync::LazyLock<
-        std::sync::Mutex<HashMap<Key, std::sync::Arc<orator_tts::KokoroBackend>>>,
+        std::sync::Mutex<HashMap<Key, std::sync::Arc<orator_voice::tts::KokoroBackend>>>,
     > = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
     let mut cache = common_core::sync::lock(&CACHE);
     if cache.len() > 8 {
@@ -775,10 +775,10 @@ pub fn cached_kokoro(
     std::sync::Arc::clone(cache.entry((model, voices, voice, gpu)).or_insert_with_key(
         |(model, voices, voice, gpu)| {
             std::sync::Arc::new(if *gpu {
-                orator_tts::KokoroBackend::new(model.clone(), voices.clone(), voice.clone())
+                orator_voice::tts::KokoroBackend::new(model.clone(), voices.clone(), voice.clone())
                     .with_gpu()
             } else {
-                orator_tts::KokoroBackend::new(model.clone(), voices.clone(), voice.clone())
+                orator_voice::tts::KokoroBackend::new(model.clone(), voices.clone(), voice.clone())
             })
         },
     ))
@@ -788,15 +788,15 @@ pub fn cached_kokoro(
 /// the configured model when the daemon would voice another; the
 /// fallback leg voices after a daemon refusal. One synth, two logs —
 /// each caller narrates its own hop.
-fn synth_kokoro(text: &str, config: &orator_core::OratorConfig) -> Result<(Vec<f32>, u32), String> {
-    let Some((model, voices)) = orator_tts::default_paths() else {
+fn synth_kokoro(text: &str, config: &orator::OratorConfig) -> Result<(Vec<f32>, u32), String> {
+    let Some((model, voices)) = orator_voice::tts::default_paths() else {
         return Err(
             "orator: no managed model directory (HOME and XDG_DATA_HOME are unset)".to_string(),
         );
     };
     // Voice rides the composed TTS params (role override wins), else
     // the global leaf — the composition chain with a visible effect.
-    let tts_tag = orator_core::resolve_role_model(&config.roles, "tts")
+    let tts_tag = orator::resolve_role_model(&config.roles, "tts")
         .filter(|tag| config.models.models.contains_key(tag))
         .unwrap_or_default();
     let voice = resolve_tts_voice(config, &tts_tag);
@@ -805,7 +805,7 @@ fn synth_kokoro(text: &str, config: &orator_core::OratorConfig) -> Result<(Vec<f
     budgeted("TTS", LOCAL_OP_BUDGET, move || {
         backend
             .synth_blocking(&text)
-            .map(|samples| (samples, orator_tts::KOKORO_SAMPLE_RATE))
+            .map(|samples| (samples, orator_voice::tts::KOKORO_SAMPLE_RATE))
             .map_err(|error| format!("orator: local voice failed: {error}"))
     })
 }

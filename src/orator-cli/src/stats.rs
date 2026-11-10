@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use orator_core::bench::{render_stats, BenchEvent, BenchLog};
+use orator::bench::{render_stats, BenchEvent, BenchLog};
 
 /// Render the stat file at `path` to its report text. Missing or
 /// unreadable files fail with the envelope line naming the path and
@@ -24,7 +24,7 @@ pub fn render_stat_file(path: &Path) -> Result<String, String> {
         events.push(event);
     }
     let log = BenchLog { events };
-    Ok(render_stats(&orator_core::bench::histograms(&log)))
+    Ok(render_stats(&orator::bench::histograms(&log)))
 }
 
 #[cfg(test)]

@@ -8,8 +8,8 @@ use orator_cli::{
     socket::Transport,
     ExitCode,
 };
-use orator_core::{LlmEndpointConfig, LlmSession, OratorConfig};
-use orator_llm::{probe_models, HttpSession, Supervisor, SupervisorConfig};
+use orator::{LlmEndpointConfig, LlmSession, OratorConfig};
+use orator_agent::llm::{probe_models, HttpSession, Supervisor, SupervisorConfig};
 
 use crate::say::say_via_daemon;
 
@@ -78,7 +78,7 @@ pub(crate) fn ask(
         {
             return ExitCode::Interrupted;
         }
-        let code = match session.step(&mut orator_core::Sampler::default()) {
+        let code = match session.step(&mut orator::Sampler::default()) {
             Ok(out) => {
                 let reply = out.delta.trim_end().to_string();
                 println!("{reply}");
@@ -132,7 +132,7 @@ async fn boot_supervised(
         )));
     }
     if endpoint.gpu {
-        orator_core::gpu::require_gpu("llama-server").map_err(AskFail::Error)?;
+        orator::gpu::require_gpu("llama-server").map_err(AskFail::Error)?;
     }
     let weights = orator_cli::ask::check_ask_weights(endpoint).map_err(AskFail::Error)?;
     let port = orator_cli::ask::parse_ask_port(&endpoint.endpoint).map_err(AskFail::Usage)?;

@@ -30,7 +30,7 @@ pub struct FullReport {
 /// follow the loaded configuration, so `doctor` shows the settings
 /// the commands will use. Desktop lines follow the live session.
 #[must_use]
-pub fn full_report(config: &orator_core::OratorConfig) -> FullReport {
+pub fn full_report(config: &orator::OratorConfig) -> FullReport {
     FullReport {
         audio: orator_audio::doctor_report(),
         injection: injection_lines(),
@@ -96,7 +96,7 @@ fn injection_lines() -> Vec<String> {
     ]
 }
 
-fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
+fn speech_lines(config: &orator::OratorConfig) -> Vec<String> {
     let voice = config.tts.voice.clone();
     let s2s = config.s2s.clone();
     let mut lines = vec![format!("endpoint: {}", s2s_base_url(&s2s))];
@@ -113,7 +113,7 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
     // Native session identity: the agreed heads model, or the leaf
     // when the heads cannot agree. A disagreeing leaf is named, so
     // the assured model never surprises.
-    let session_model = orator_core::agreed_s2s_model(config);
+    let session_model = orator::agreed_s2s_model(config);
     lines.push(if session_model == s2s.model {
         format!("session model: {session_model}")
     } else {
@@ -122,7 +122,7 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
             s2s.model
         )
     });
-    let bundle = orator_core::bundle_from_s2s(&s2s, &config.models, &config.gguf_dir);
+    let bundle = orator::bundle_from_s2s(&s2s, &config.models, &config.gguf_dir);
     for missing in bundle.missing() {
         lines.push(format!("missing: {}", missing.display()));
     }
@@ -140,13 +140,13 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
             s2s.model
         ));
     }
-    let kokoro_paths = orator_tts::default_paths();
+    let kokoro_paths = orator_voice::tts::default_paths();
     let voice_pack = kokoro_paths
         .as_ref()
         .map(|(_, voices)| voices.join(format!("{voice}.bin")));
-    match orator_s2s::resolve_audio_server() {
+    match orator_voice::s2s::resolve_audio_server() {
         Some(binary) => lines.push(format!("audio server: {}", binary.display())),
-        None => match orator_s2s::managed_binary() {
+        None => match orator_voice::s2s::managed_binary() {
             Some(home) => lines.push(format!(
                 "audio server: missing (set LLAMA_AUDIO_SERVER or install to {})",
                 home.display()
@@ -156,7 +156,7 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
             ),
         },
     }
-    match orator_s2s::resolve_tts_binary() {
+    match orator_voice::s2s::resolve_tts_binary() {
         Some(binary) => lines.push(format!("gpu worker: {}", binary.display())),
         None => lines
             .push("gpu worker: no llama-tts binary (set LLAMA_TTS or add it to $PATH)".to_string()),
@@ -206,10 +206,10 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
 /// from the configured voice projector's directory (same home the
 /// serving bundle resolves under), never a compiled-in model path.
 #[must_use]
-pub fn lfm_readiness_lines(config: &orator_core::OratorConfig) -> Vec<String> {
+pub fn lfm_readiness_lines(config: &orator::OratorConfig) -> Vec<String> {
     use std::fmt::Write as _;
     use std::path::{Path, PathBuf};
-    let layout = orator_lfm::manifest::expected_layout();
+    let layout = orator_models::lfm::manifest::expected_layout();
     let mmproj = Path::new(&config.s2s.mmproj);
     let gguf_home: PathBuf = if mmproj.is_absolute() {
         mmproj
@@ -219,7 +219,7 @@ pub fn lfm_readiness_lines(config: &orator_core::OratorConfig) -> Vec<String> {
         Path::new(&config.gguf_dir).join(mmproj.parent().unwrap_or_else(|| Path::new("")))
     };
     let mut lines = Vec::new();
-    match orator_lfm::manifest::verify_weights(
+    match orator_models::lfm::manifest::verify_weights(
         &gguf_home,
         &[layout.gguf_text.clone(), layout.gguf_projector.clone()],
     ) {
@@ -264,8 +264,8 @@ fn shortcut_lines() -> Vec<String> {
 /// its backend, and where its weights resolve (or why they don't).
 /// Pure over the loaded config so both worlds pin without hardware.
 #[must_use]
-pub fn roles_lines(config: &orator_core::OratorConfig) -> Vec<String> {
-    use orator_core::{resolve_model_weights, resolve_role_model};
+pub fn roles_lines(config: &orator::OratorConfig) -> Vec<String> {
+    use orator::{resolve_model_weights, resolve_role_model};
     let mut lines = Vec::with_capacity(3);
     for role in ["asr", "tts", "chat"] {
         // Root selection leaf each role falls back to when its side
@@ -288,7 +288,7 @@ pub fn roles_lines(config: &orator_core::OratorConfig) -> Vec<String> {
             }
             (None, _) => {
                 if let Some(fallback) =
-                    orator_core::resolve_role_model_or_default(&config.roles, role, &config.default)
+                    orator::resolve_role_model_or_default(&config.roles, role, &config.default)
                 {
                     if leaf == fallback {
                         lines.push(format!(
@@ -339,7 +339,7 @@ pub fn roles_lines(config: &orator_core::OratorConfig) -> Vec<String> {
             backends
         };
         let composed =
-            orator_core::compose_role_params(&config.models, &config.roles, role, &model);
+            orator::compose_role_params(&config.models, &config.roles, role, &model);
         let params = composed
             .as_object()
             .filter(|map| !map.is_empty())

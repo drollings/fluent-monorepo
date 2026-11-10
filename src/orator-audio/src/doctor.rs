@@ -29,7 +29,7 @@ pub fn doctor_report() -> DoctorReport {
         .map(|info| info.name)
         .collect();
     let opus_ok = opus_self_test().is_ok();
-    let models_dir = orator_core::models_dir();
+    let models_dir = orator::models_dir();
     let mut notes = Vec::new();
     if devices.is_empty() {
         notes.push(

@@ -17,13 +17,13 @@ fn missing_stat_file_fails_with_prefixed_remedy() {
 fn valid_stat_file_renders_core_identical_bytes() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("stat.jsonl");
-    let mut log = orator_core::bench::BenchLog::new();
-    log.push(orator_core::bench::BenchKind::InputPcm, "voice", 100);
-    log.push(orator_core::bench::BenchKind::SendPcm, "voice", 150);
+    let mut log = orator::bench::BenchLog::new();
+    log.push(orator::bench::BenchKind::InputPcm, "voice", 100);
+    log.push(orator::bench::BenchKind::SendPcm, "voice", 150);
     log.write_stat_file(&path).expect("fixture writes");
     let rendered = render_stat_file(&path).expect("valid file renders");
-    let expected = orator_core::bench::render_stats(&orator_core::bench::histograms(
-        &orator_core::bench::BenchLog::read_stat_file(&path).expect("core reads"),
+    let expected = orator::bench::render_stats(&orator::bench::histograms(
+        &orator::bench::BenchLog::read_stat_file(&path).expect("core reads"),
     ));
     assert_eq!(rendered, expected, "success bytes unchanged");
     assert!(rendered.contains("voice"), "{rendered}");
@@ -49,8 +49,8 @@ fn empty_stat_file_renders_empty_log() {
     let path = dir.path().join("empty.jsonl");
     std::fs::write(&path, "\n").expect("fixture writes");
     let rendered = render_stat_file(&path).expect("empty file renders");
-    let expected = orator_core::bench::render_stats(&orator_core::bench::histograms(
-        &orator_core::bench::BenchLog::new(),
+    let expected = orator::bench::render_stats(&orator::bench::histograms(
+        &orator::bench::BenchLog::new(),
     ));
     assert_eq!(rendered, expected);
 }
