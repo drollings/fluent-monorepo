@@ -80,6 +80,60 @@ async fn submit_while_running_coalesces_into_one_followup() {
 }
 
 #[tokio::test]
+async fn queued_followup_merges_latest_run_wins() {
+    // A second watch submit while a followup is queued replaces the
+    // queued run: the followup executes the latest body exactly once.
+    let scheduler = JobScheduler::new(1, 3, 1);
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let ran: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mk_run = |marker: &'static str, block: bool| {
+        let entered = Arc::clone(&entered);
+        let release = Arc::clone(&release);
+        let ran = Arc::clone(&ran);
+        Arc::new(move |_: JobContext| {
+            let entered = Arc::clone(&entered);
+            let release = Arc::clone(&release);
+            let ran = Arc::clone(&ran);
+            Box::pin(async move {
+                ran.lock().map(|mut guard| guard.push(marker.to_string())).ok();
+                if block {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+                Ok(())
+            }) as BoxFuture<Result<(), JobError>>
+        })
+    };
+    let _first = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Watch,
+        followup_if_running: true,
+        run: mk_run("first", true),
+    });
+    entered.notified().await;
+    let second = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Watch,
+        followup_if_running: true,
+        run: mk_run("second", false),
+    });
+    assert!(second.reused);
+    let third = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Watch,
+        followup_if_running: true,
+        run: mk_run("third", false),
+    });
+    assert!(third.reused);
+    release.notify_one();
+    scheduler.wait_for_root_idle("/repo").await;
+    let ran = ran.lock().map(|guard| guard.clone()).unwrap_or_default();
+    assert_eq!(ran, vec!["first".to_string(), "third".to_string()]);
+    scheduler.close();
+}
+
+#[tokio::test]
 async fn retryable_errors_retry_the_same_run() {
     let scheduler = JobScheduler::new(1, 3, 1);
     let attempts = Arc::new(AtomicUsize::new(0));

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::freshness::{hash_decides_fresh, mtime_skew, MtimeSkew};
+use crate::freshness::{hash_decides_fresh, mtime_skew, mtime_skew_with_granularity, MtimeSkew};
 
 pub fn is_stale(json_path: &Path, source_path: &Path) -> bool {
     let Some(json_mtime) = common_core::io::mtime(json_path) else {
@@ -55,20 +55,49 @@ pub fn should_generate_with_stored(
     stored_hash: Option<&str>,
     hash_now: impl FnOnce() -> Option<String>,
 ) -> bool {
-    if is_stale(json_path, source_path) {
-        return true;
-    }
-    if !in_ambiguity_window(json_path, source_path) {
-        return false;
-    }
-    let Some(current) = hash_now() else {
-        return true;
-    };
-    !hash_decides_fresh(&current, stored_hash)
+    should_generate_with_granularity(
+        json_path,
+        source_path,
+        std::time::Duration::from_secs(1),
+        stored_hash,
+        hash_now,
+    )
 }
 
+/// [`should_generate_with_stored`] under a probed timestamp granularity:
+/// the window is producer-axis self-doubt from the filesystem, so the
+/// engine passes what `init` measured instead of assuming 1s.
+pub fn should_generate_with_granularity(
+    json_path: &Path,
+    source_path: &Path,
+    granularity: std::time::Duration,
+    stored_hash: Option<&str>,
+    hash_now: impl FnOnce() -> Option<String>,
+) -> bool {
+    let (Some(json_mtime), Some(source_mtime)) = (
+        common_core::io::mtime(json_path),
+        common_core::io::mtime(source_path),
+    ) else {
+        return should_generate(json_path, source_path);
+    };
+    match mtime_skew_with_granularity(json_mtime, source_mtime, granularity) {
+        MtimeSkew::SourceNewer => true,
+        MtimeSkew::SourceOlder => false,
+        MtimeSkew::Ambiguous => {
+            let Some(current) = hash_now() else {
+                return true;
+            };
+            !hash_decides_fresh(&current, stored_hash)
+        }
+    }
+}
+
+/// Match hash over the normalized signature: whitespace-collapsed, so
+/// cosmetic-only edits keep the hash stable and never cascade. Stored
+/// values migrate lazily — a missing hash recomputes on the next regen,
+/// never fails, and one regen refreshes every member in the file.
 pub fn match_hash_from_signature(signature: &str) -> String {
-    common_core::hash::blake3_hex(signature.as_bytes())
+    common_core::hash::blake3_hex(crate::item_hashes::normalize_signature_text(signature).as_bytes())
 }
 
 #[cfg(test)]

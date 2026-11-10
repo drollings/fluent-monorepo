@@ -40,8 +40,205 @@ pub fn can_synthesize(stages: &[Stage]) -> bool {
 
 pub use common_core::cite::{extract_citation_at, extract_citations, Citation};
 
-fn citation_to_string(c: &Citation) -> String {
-    format!("{}:{}", c.file, c.line)
+/// Stored byte range plus hashes for one member, as stamped at parse.
+#[derive(Debug, Clone)]
+pub struct MemberRange {
+    /// Byte start of the member span.
+    pub start: u64,
+    /// Byte end (exclusive) of the member span.
+    pub end: u64,
+    /// Byte-exact hash of the span at stamp time.
+    pub range_hash: String,
+    /// Normalized item identity, when recorded.
+    pub item_hash: Option<String>,
+}
+
+/// Freshness of one citation against live bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CitationFreshness {
+    /// Live range re-hashes to the stored receipt.
+    Fresh,
+    /// Live bytes moved under the citation; the item requeues.
+    Stale,
+    /// No stored row to check against; hash the live bytes and say so.
+    Unverified,
+}
+
+/// One verified citation line plus its verdict.
+#[derive(Debug, Clone)]
+pub struct StageCitation {
+    /// Rendered citation (`path:Lstart-Lend @ b3:hash`, or legacy shape).
+    pub cite: String,
+    /// Verdict against live bytes.
+    pub freshness: CitationFreshness,
+    /// Cited member name, when the stage names one.
+    pub member: Option<String>,
+    /// Stage source path, as cited.
+    pub source: String,
+    /// Resolution tier that produced the stage (`fts`, `vector`,
+    /// `fts+vector`, or `doc` for parse-built stages).
+    pub tier: String,
+}
+
+/// Map a stage tier string to its retrieval label. Known vocabularies
+/// map exactly; anything else returns `None` rather than inventing
+/// precision.
+#[must_use]
+pub fn retrieval_tier_for_stage_tier(tier: &str) -> Option<crate::search_types::RetrievalTier> {
+    use crate::search_types::RetrievalTier;
+    match tier {
+        "doc" => Some(RetrievalTier::Exact),
+        "fts" => Some(RetrievalTier::Lexical),
+        "vector" => Some(RetrievalTier::Semantic),
+        "fts+vector" => Some(RetrievalTier::Fusion),
+        _ => None,
+    }
+}
+
+impl StageCitation {
+    /// Additive retrieval label for this citation's tier. `None` when
+    /// the tier string is outside the known vocabulary.
+    #[must_use]
+    pub fn retrieval_tier(&self) -> Option<crate::search_types::RetrievalTier> {
+        retrieval_tier_for_stage_tier(&self.tier)
+    }
+}
+
+/// Short display form of a hash (long enough to spot-check, never the
+/// comparison input — comparison always uses the full stored hash).
+fn short_hash(hash: &str) -> &str {
+    hash.get(..12).unwrap_or(hash)
+}
+
+/// Re-hash every code stage's stored range against live bytes. `lookup`
+/// maps a stage to its stamped row (sidecar, index, or test fixture);
+/// `root` resolves relative sources. Mismatches name their item so the
+/// orchestrator can requeue exactly that unit; the read plane itself
+/// writes nothing.
+#[must_use]
+pub fn verify_stage_ranges(
+    stages: &[Stage],
+    root: &std::path::Path,
+    lookup: impl Fn(&Stage) -> Option<MemberRange>,
+) -> Vec<StageCitation> {
+    stages
+        .iter()
+        .filter(|stage| stage.kind == fluent_types::StageKind::Code)
+        .map(|stage| verify_one_stage(stage, root, &lookup))
+        .collect()
+}
+
+fn resolve_source(source: &str, root: &std::path::Path) -> std::path::PathBuf {
+    let path = std::path::Path::new(source);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
+}
+
+fn verify_one_stage(
+    stage: &Stage,
+    root: &std::path::Path,
+    lookup: &dyn Fn(&Stage) -> Option<MemberRange>,
+) -> StageCitation {
+    let member = stage.member_name.clone();
+    let source = stage.source.clone();
+    let tier = stage.trace.as_ref().map_or_else(
+        || "doc".to_owned(),
+        |trace| trace.matched_by.clone(),
+    );
+    let Some(row) = lookup(stage) else {
+        return StageCitation {
+            cite: legacy_cite(stage),
+            freshness: CitationFreshness::Unverified,
+            member,
+            source,
+            tier,
+        };
+    };
+    let path = resolve_source(&stage.source, root);
+    let live = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| bytes.get(row.start as usize..row.end as usize).map(ToOwned::to_owned));
+    let freshness = match live {
+        Some(range) if common_core::hash::blake3_hex(&range) == row.range_hash => {
+            CitationFreshness::Fresh
+        }
+        _ => CitationFreshness::Stale,
+    };
+    StageCitation {
+        cite: ranged_cite(stage, &row.range_hash),
+        freshness,
+        member,
+        source,
+        tier,
+    }
+}
+
+/// Legacy `source:line` shape for rows without hashes. Accepted as
+/// input everywhere; emitted only when no receipt exists to hash.
+fn legacy_cite(stage: &Stage) -> String {
+    match stage.line {
+        Some(line) => format!("{}:{line}", stage.source),
+        None => stage.source.clone(),
+    }
+}
+
+/// Hash-carrying shape with the stage's line range when known.
+fn ranged_cite(stage: &Stage, range_hash: &str) -> String {
+    let short = short_hash(range_hash);
+    match (stage.line, stage.end_line) {
+        (Some(first), Some(last)) => format!("{}:L{first}-L{last} @ b3:{short}", stage.source),
+        (Some(first), None) => format!("{}:L{first} @ b3:{short}", stage.source),
+        (None, _) => format!("{} @ b3:{short}", stage.source),
+    }
+}
+
+/// Stale items as `(source, member)` requeue targets for the
+/// orchestrator. The bytes-decide staleness gate picks them up on the
+/// next pass; this list only names them.
+#[must_use]
+pub fn stale_members(cited: &[StageCitation]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for citation in cited {
+        if citation.freshness == CitationFreshness::Stale {
+            if let Some(member) = &citation.member {
+                out.push((citation.source.clone(), member.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// Citations in the emitted shape (`path:Lstart-Lend @ b3:hash` or
+/// `path:Lstart`): the file-plus-start-line pairs they claim, so model
+/// output that quotes verified citations checks against the same
+/// grounded set as the legacy `path:line` shape.
+fn extract_ranged_citations(output: &str) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    let mut rest = output;
+    let mut base = 0;
+    while let Some(found) = rest.find(":L") {
+        let abs = base + found;
+        let before = &output[..abs];
+        let file_start = before
+            .rfind(|c: char| {
+                !c.is_alphanumeric() && c != '/' && c != '\\' && c != '.' && c != '_' && c != '-'
+            })
+            .map_or(0, |p| p + 1);
+        let file_part = &before[file_start..];
+        let after = &output[abs + 2..];
+        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+        if !file_part.is_empty() && file_part.contains('.') && !digits.is_empty() {
+            if let Ok(line) = digits.parse::<u32>() {
+                out.push((file_part.to_string(), line));
+            }
+        }
+        rest = &rest[found + 2..];
+        base = abs + 2;
+    }
+    out
 }
 
 /// Verify that all citations in LLM output trace to provided stages.
@@ -62,15 +259,26 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
         .collect();
 
     let citations = extract_citations(output);
+    let mut claimed: Vec<(String, u32)> = citations
+        .iter()
+        .map(|citation| {
+            let file =
+                common_core::path::file_name_lexical(&citation.file).unwrap_or(&citation.file);
+            (file.to_string(), citation.line)
+        })
+        .collect();
+    for (file, line) in extract_ranged_citations(output) {
+        let base = common_core::path::file_name_lexical(&file).unwrap_or(&file);
+        let pair = (base.to_string(), line);
+        if !claimed.contains(&pair) {
+            claimed.push(pair);
+        }
+    }
 
     let mut verified = Vec::new();
     let mut unverified = Vec::new();
-
-    for citation in &citations {
-        let citation_str = citation_to_string(citation);
-        let citation_file =
-            common_core::path::file_name_lexical(&citation.file).unwrap_or(&citation.file);
-        let is_grounded = grounded_refs.contains(&(citation_file.to_string(), citation.line));
+    for (citation_file, citation_line) in &claimed {
+        let citation_str = format!("{citation_file}:{citation_line}");        let is_grounded = grounded_refs.contains(&(citation_file.clone(), *citation_line));
 
         if is_grounded {
             verified.push(citation_str.clone());
@@ -122,6 +330,10 @@ pub fn stage_content_hash(stages: &[Stage]) -> String {
 #[cfg(test)]
 #[path = "../tests/synthesis_gate.rs"]
 mod synthesis_gate_tests;
+
+#[cfg(test)]
+#[path = "../tests/m5_citations.rs"]
+mod m5_citations_tests;
 
 #[cfg(test)]
 mod tests {

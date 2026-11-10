@@ -39,8 +39,9 @@ pub use eval::{
 };
 pub use ladder::{decide_with_ladder, prefix_cascade};
 pub use registry::{
-    authorize, gate_for_point_with, CalibrationRegistry, CalibrationStatus, CaseOrigin,
-    CaseProvenance, Corpus, CorpusProvenance, GateParams, GateReport, RegistryEntry,
+    authorize, authorize_advisory, authorize_pinned, gate_for_point_with, CalibrationRegistry,
+    CalibrationStatus, CaseOrigin, CaseProvenance, Corpus, CorpusProvenance, GateParams,
+    GateReport, RegistryEntry,
 };
 pub use shadow::{instrumented_shadow, shadow_adapter, ShadowLog, ShadowOutcome};
 pub use transport::{

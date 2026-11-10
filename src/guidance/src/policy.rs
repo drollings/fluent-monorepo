@@ -59,6 +59,21 @@ pub fn policy_fingerprint(policy: &MaintenancePolicy) -> String {
     common_core::hash::blake3_hex(canonical.as_bytes())
 }
 
+/// Fingerprint of one policy section for staleness keys: a policy edit
+/// re-derives exactly the receipts that consumed the changed section.
+#[must_use]
+pub fn section_fingerprint(policy: &MaintenancePolicy, section: &str) -> String {
+    let canonical = match section {
+        "mechanical" => serde_json::to_string(&policy.mechanical_classes).unwrap_or_default(),
+        "scope" => serde_json::to_string(&policy.scope).unwrap_or_default(),
+        "human_owned" => serde_json::to_string(&policy.human_owned).unwrap_or_default(),
+        "approval" => serde_json::to_string(&policy.requires_approval).unwrap_or_default(),
+        "limits" => policy.attempt_limit.to_string(),
+        _ => policy.version.to_string(),
+    };
+    common_core::hash::blake3_hex(canonical.as_bytes())
+}
+
 /// Whether stored work predates the current policy: a version mismatch
 /// re-derives exactly the affected items, never the whole workspace.
 #[must_use]

@@ -68,7 +68,7 @@ fn rg_context_flags_shape_output() {
 }
 
 #[test]
-fn rg_enrichment_attaches_symbols() {
+fn rg_renders_plain_hits_without_symbols() {
     let dir = workspace();
     let root = dir.path().to_str().unwrap().to_string();
     let out = run(
@@ -77,20 +77,8 @@ fn rg_enrichment_attaches_symbols() {
     );
     assert!(out.status.success(), "{out:?}");
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(text.contains("[main]"), "{text}");
-    let out = run(
-        dir.path(),
-        &[
-            "search",
-            "rg_bypass_needle",
-            "--workspace",
-            &root,
-            "--rg",
-            "--no-enrich",
-        ],
-    );
-    assert!(out.status.success(), "{out:?}");
-    assert!(!String::from_utf8_lossy(&out.stdout).contains("[main]"));
+    assert!(text.contains("rg_bypass_needle"), "{text}");
+    assert!(!text.contains("[main]"));
 }
 
 #[test]

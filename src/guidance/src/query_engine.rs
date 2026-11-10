@@ -47,6 +47,7 @@ pub struct QueryEngine {
     pub aliases: Option<SemanticAliases>,
     pub no_llm: bool,
     backends: Vec<RegisteredBackend>,
+    workspace_root: std::path::PathBuf,
 }
 
 impl Default for QueryEngine {
@@ -62,6 +63,7 @@ impl QueryEngine {
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
+            workspace_root: std::path::PathBuf::from("."),
         }
     }
 
@@ -71,7 +73,17 @@ impl QueryEngine {
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
+            workspace_root: std::path::PathBuf::from("."),
         }
+    }
+
+    /// Resolve relative stage sources against this root when verifying
+    /// citations. Defaults to the process directory; set it to the
+    /// workspace for hash-verified answers.
+    #[must_use]
+    pub fn with_workspace_root(mut self, root: std::path::PathBuf) -> Self {
+        self.workspace_root = root;
+        self
     }
 
     fn default_backends() -> Vec<RegisteredBackend> {
@@ -222,13 +234,62 @@ impl QueryEngine {
     /// Answer a query with the unified envelope: intent, axis-labeled
     /// confidence, stages, citations, gaps, and resolution method.
     /// Additive: `explain` keeps its stage shape byte-identically.
+    /// Citations re-hash stored member ranges against live bytes, so a
+    /// wrong excerpt is structurally impossible; unresolvable rows stay
+    /// explicitly unverified.
     pub fn answer(&self, query: &str, doc: &GuidanceDoc) -> super::query::envelope::AnswerEnvelope {
+        use super::query::envelope::AnswerEnvelope;
         let mut fsm = strategy::FsmEngine::new();
         let class = fsm.run(query);
         let route = fsm.route(&class).to_string();
         match self.explain(query, doc) {
-            Ok(stages) => super::query::envelope::AnswerEnvelope::from_stages(&class, &route, stages),
-            Err(_) => super::query::envelope::AnswerEnvelope::from_stages(&class, &route, Vec::new()),
+            Ok(stages) => {
+                let root = self.workspace_root.clone();
+                let cited = crate::grounding::verify_stage_ranges(&stages, &root, |stage| {                    let (Some(name), Some(kind)) = (&stage.member_name, stage.member_type) else {
+                        return None;
+                    };
+                    doc.members
+                        .iter()
+                        .find(|m| m.name.as_str() == name.as_str() && m.type_name == kind)
+                        .and_then(|m| {
+                            Some(crate::grounding::MemberRange {
+                                start: m.span_start?,
+                                end: m.span_end?,
+                                range_hash: m.range_hash.as_deref()?.to_string(),
+                                item_hash: m.item_hash.as_deref().map(str::to_string),
+                            })
+                        })
+                });
+                let mut envelope = AnswerEnvelope::from_verified_stages(&class, &route, stages, &cited);
+                envelope.gaps.extend(crate::fidelity::blind_spot_gaps(query));
+                envelope
+            }
+            Err(_) => AnswerEnvelope::from_stages(&class, &route, Vec::new()),
+        }
+    }
+
+    /// Strict answer: fresh serves normally, anything else refuses with
+    /// a reason. Opt-in; `answer` keeps its labelled shape.
+    pub fn answer_strict(
+        &self,
+        query: &str,
+        doc: &GuidanceDoc,
+        freshness: &crate::freshness::Freshness,
+    ) -> Result<super::query::envelope::AnswerEnvelope, crate::freshness::StrictRefusal> {
+        if freshness.is_fresh() {
+            Ok(self.answer(query, doc))
+        } else if freshness.is_pending() {
+            Err(crate::freshness::StrictRefusal {
+                reason: "pending".to_string(),
+            })
+        } else if freshness.is_dependent_stale() {
+            Err(crate::freshness::StrictRefusal {
+                reason: "dependent-stale".to_string(),
+            })
+        } else {
+            Err(crate::freshness::StrictRefusal {
+                reason: "stale".to_string(),
+            })
         }
     }
 

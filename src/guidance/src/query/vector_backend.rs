@@ -29,6 +29,10 @@ impl SearchBackend for VectorBackend<'_> {
         true
     }
 
+    fn retrieval_tier(&self) -> crate::search_types::RetrievalTier {
+        crate::search_types::RetrievalTier::Semantic
+    }
+
     fn search(
         &self,
         query: &str,

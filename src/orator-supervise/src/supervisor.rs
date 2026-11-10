@@ -50,6 +50,17 @@ pub enum SupervisorError {
     Usage(String),
 }
 
+/// Marker for a spawn refused with ETXTBSY: the binary was mid-write
+/// (concurrent upgrade, lingering writer, container-FS settle). Always
+/// transient — the boot loop retries the same port instead of failing.
+pub(crate) fn spawn_busy_marker(error: &std::io::Error) -> &'static str {
+    if error.kind() == std::io::ErrorKind::ExecutableFileBusy || error.raw_os_error() == Some(26) {
+        "text-busy "
+    } else {
+        ""
+    }
+}
+
 /// Flags the supervisor passes through verbatim. Anything else in
 /// `extra_args` fails as usage before a child ever spawns — the
 /// server argv stays a closed set, never an open shell.
@@ -629,7 +640,7 @@ impl Supervisor {
                 let marker = if error.kind() == std::io::ErrorKind::AddrInUse {
                     "addr-in-use "
                 } else {
-                    ""
+                    spawn_busy_marker(&error)
                 };
                 SupervisorError::Spawn(format!(
                     "{marker}{} ({}): {error}",
@@ -709,6 +720,13 @@ pub async fn boot_with_binary(
                     || text.contains("EADDRINUSE")
                     || text.contains("98");
                 attempts += 1;
+                if text.contains("text-busy") && attempts < 3 {
+                    // Transient mid-write refusal: same port, brief
+                    // settle, bounded retries. Never a requeue or a new
+                    // port — the binary did not move.
+                    tokio::time::sleep(Duration::from_millis(50 * attempts as u64)).await;
+                    continue;
+                }
                 if collision && attempts < 3 {
                     if let Some(port) = free_port() {
                         config.port = port;
@@ -772,4 +790,3 @@ async fn probe_health(base: &str, probe: HealthProbe) -> Result<(), String> {
 #[cfg(test)]
 #[path = "../tests/supervise_supervisor.rs"]
 mod tests;
-

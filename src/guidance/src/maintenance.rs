@@ -48,7 +48,7 @@ pub enum WorkState {
 }
 
 /// One unit of maintenance work.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkItem {
     /// Stable id (also the graph key).
     pub id: String,
@@ -126,7 +126,7 @@ static LOOP_HELD: AtomicBool = AtomicBool::new(false);
 pub(crate) fn serial_loop_tests() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::OnceLock;
     static SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
-    SERIAL.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    common_core::sync::lock(SERIAL.get_or_init(|| Mutex::new(())))
 }
 
 impl LoopGuard {
@@ -345,6 +345,15 @@ impl LoopBreaker {
     }
 }
 
+/// Whether a stop reason is a breaker trip (resumable halt) rather
+/// than an ordinary stop. Only the breaker's own named reasons count;
+/// anything else (pass budgets, aborts, owner blocks) is work
+/// remaining, never a halt.
+#[must_use]
+pub fn is_breaker_trip(reason: &str) -> bool {
+    matches!(reason, "repeat failure" | "revert rate" | "no progress")
+}
+
 /// Fixpoint run report: what was verified, what was escalated, and why
 /// the loop stopped. Serializable so the reviewable ledger persists
 /// across runs — every applied change is listed, never implied.
@@ -365,6 +374,25 @@ pub struct LoopReport {
 }
 
 impl LoopReport {
+    /// Contract exit for the run: breaker trips halt (resumable, with
+    /// verified work kept and model tiers stopped while deterministic
+    /// tiers continue); escalations strand as stuck; any other stop is
+    /// work remaining; a quiet loop is done.
+    #[must_use]
+    pub fn exit_code(&self) -> crate::seal::ExitCode {
+        if let Some(reason) = &self.stopped {
+            if is_breaker_trip(reason) {
+                return crate::seal::ExitCode::Halted;
+            }
+            return crate::seal::ExitCode::WorkRemaining;
+        }
+        if self.escalated.is_empty() {
+            crate::seal::ExitCode::Done
+        } else {
+            crate::seal::ExitCode::Stuck
+        }
+    }
+
     /// Compact human rendering: fixed, reverted, escalated, and why.
     #[must_use]
     pub fn render(&self) -> String {
@@ -449,6 +477,41 @@ impl Describable for StepUnit {
 }
 
 impl_component!(StepUnit);
+
+/// First-run ratchet for a dirty tree: record the ledger baseline,
+/// then converge leaf-first in capped waves. The baseline lets a later
+/// run prove it introduced no giant diff — every applied edit lands
+/// as its own small reviewable entry. Strict breaker, caller-sized
+/// cap, same fixpoint driver as every other run.
+pub fn run_first_run(
+    guard: &LoopGuard,
+    queue: &mut MaintenanceQueue,
+    policy: &MaintenancePolicy,
+    max_passes: usize,
+    abort: &StreamAbort,
+    act: &ActFn,
+    baseline_path: &std::path::Path,
+) -> std::io::Result<LoopReport> {
+    let baseline = LoopReport {
+        passes: 0,
+        verified: Vec::new(),
+        escalated: Vec::new(),
+        summary: ReviewSummary::new(),
+        packets: Vec::new(),
+        stopped: None,
+    };
+    baseline.save_ledger(baseline_path)?;
+    let mut breaker = LoopBreaker::new(BreakerConfig::strict());
+    Ok(run_to_fixpoint_with_breaker(
+        guard,
+        queue,
+        policy,
+        max_passes,
+        abort,
+        Some(&mut breaker),
+        act,
+    ))
+}
 
 /// Drive the queue to the fixpoint: observe what is stale (ready set),
 /// act on one unit at the cheapest sufficient tier, verify with the
@@ -566,6 +629,8 @@ fn execute_step(id: &str, tier: Tier, act: &ActFn) -> Option<ActOutcome> {
     let outcome: Arc<Mutex<Option<ActOutcome>>> = Arc::new(Mutex::new(None));
     let id_owned = id.to_string();
     let shared = Arc::clone(act);
+    // Shared lock helper is `Sized`-bound; this mutex holds a
+    // trait object, so explicit poison recovery stays here.
     let runner = move |tier: Tier| {
         shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner)(&id_owned, tier)
     };
@@ -584,7 +649,7 @@ fn execute_step(id: &str, tier: Tier, act: &ActFn) -> Option<ActOutcome> {
         Some(batch.await)
     })?;
     let _ = summary;
-    let mut slot = outcome.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut slot = common_core::sync::lock(&outcome);
     slot.take()
 }
 
@@ -640,9 +705,21 @@ fn escalate(queue: &mut MaintenanceQueue, report: &mut LoopReport, id: &str, rea
 mod loop_safety_tests;
 
 #[cfg(test)]
+#[path = "../tests/authorization_gates.rs"]
+mod authorization_gates_tests;
+
+#[cfg(test)]
 #[path = "../tests/work_queue.rs"]
 mod work_queue_tests;
 
 #[cfg(test)]
 #[path = "../tests/fixpoint.rs"]
 mod fixpoint_tests;
+
+#[cfg(test)]
+#[path = "../tests/m0_hygiene.rs"]
+mod m0_hygiene_tests;
+
+#[cfg(test)]
+#[path = "../tests/redteam_hardening.rs"]
+mod hardening_tests;

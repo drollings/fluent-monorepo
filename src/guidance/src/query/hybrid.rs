@@ -81,6 +81,7 @@ pub fn stage_from_hit(hit: &SearchHit) -> Stage {
         member_type: None,
         trace: hit.trace.as_ref().map(|trace| StageTrace {
             matched_by: matched_by_name(hit.matched_by).to_string(),
+            tier: Some(crate::search_types::RetrievalTier::from(hit.matched_by).as_str().to_string()),
             score: hit.score,
             rank: hit.rank,
             recall: trace

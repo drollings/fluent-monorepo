@@ -53,6 +53,37 @@ pub struct SymbolDef {
     pub symbol: String,
 }
 
+/// Resolution tier of a graph edge: which machinery produced it.
+/// Every edge carries its tier, so an answer never overstates how a
+/// relation was established. Only the syntactic tier exists today;
+/// resolved edges (exact references) land as a second producer later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EdgeTier {
+    /// Name-based edges, always available and error-tolerant.
+    Syntactic,
+    /// Exact references (reserved for a resolved producer).
+    Resolved,
+}
+
+impl EdgeTier {
+    /// Stable tier name for answers and reports.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Syntactic => "syntactic",
+            Self::Resolved => "resolved",
+        }
+    }
+
+    /// Additive retrieval label: both edge kinds come from deterministic
+    /// exact machinery (parsing, name resolution), differing only in
+    /// precision, which `as_str` already records. Pure naming.
+    #[must_use]
+    pub fn retrieval_tier(self) -> crate::search_types::RetrievalTier {
+        crate::search_types::RetrievalTier::Exact
+    }
+}
+
 /// A caller → callee-name edge (callee resolved at build).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallEdge {
@@ -66,6 +97,8 @@ pub struct CallEdge {
     pub callee_files: Vec<String>,
     /// How the callee name resolved to definition sites.
     pub resolution: ResolutionMethod,
+    /// Which machinery produced the edge.
+    pub tier: EdgeTier,
 }
 
 /// How a bare name resolved to definition sites. Producer-confidence
@@ -110,6 +143,8 @@ pub struct ImportEdge {
     pub specifier: String,
     /// Resolved target file, if any.
     pub resolved_file: Option<String>,
+    /// Which machinery produced the edge.
+    pub tier: EdgeTier,
 }
 
 /// Anchor-file cap for query-time closure expansion: the top-N fused
@@ -154,6 +189,8 @@ pub struct ContextEdge {
     /// How the edge target resolved (imports that reach this struct
     /// are resolved by construction, so always `Unique`).
     pub resolution: ResolutionMethod,
+    /// Which machinery produced the edge.
+    pub tier: EdgeTier,
 }
 
 /// Query-side graph signals: routing-signal lemmas (predicate + roles),
@@ -320,6 +357,25 @@ impl GraphIndex {
         Self::assemble(&ordered, roots)
     }
 
+    /// Guarded build from rows: refuse before assembling when the
+    /// caller-computed expected generation differs from the committed
+    /// one. `build_from_rows` keeps its shape for existing callers.
+    pub fn build_guarded(
+        known_files: &[String],
+        edges: &[(String, String)],
+        symbols: &[(String, String, Vec<String>)],
+        roots: &[String],
+        expected_generation: &str,
+        committed_generation: Option<&str>,
+    ) -> Result<Self, GraphIndexError> {
+        if committed_generation != Some(expected_generation) {
+            return Err(GraphIndexError::Harvest(format!(
+                "index generation mismatch: expected {expected_generation}"
+            )));
+        }
+        Self::build_from_rows(known_files, edges, symbols, roots)
+    }
+
     fn assemble(
         per_file: &[(String, crate::extractor::code::HarvestedFile)],
         roots: &[String],
@@ -354,6 +410,7 @@ impl GraphIndex {
                     importer: path.clone(),
                     specifier: specifier.clone(),
                     resolved_file: resolved,
+                    tier: EdgeTier::Syntactic,
                 });
             }
         }
@@ -389,6 +446,7 @@ impl GraphIndex {
                         callee: callee.clone(),
                         callee_files,
                         resolution,
+                        tier: EdgeTier::Syntactic,
                     });
                 }
             }
@@ -456,6 +514,7 @@ impl GraphIndex {
                         family: ContextFamily::Import,
                         via: edge.specifier.clone(),
                         resolution: ResolutionMethod::Unique,
+                        tier: edge.tier,
                     });
                 }
                 for edge in self.call_edges.iter().filter(|edge| {
@@ -469,6 +528,7 @@ impl GraphIndex {
                         family: ContextFamily::Call,
                         via: edge.callee.clone(),
                         resolution: edge.resolution,
+                        tier: edge.tier,
                     });
                 }
             }
@@ -482,6 +542,7 @@ impl GraphIndex {
                     family: ContextFamily::Import,
                     via: edge.specifier.clone(),
                     resolution: ResolutionMethod::Unique,
+                    tier: edge.tier,
                 });
             }
             for edge in self
@@ -497,6 +558,7 @@ impl GraphIndex {
                         family: ContextFamily::Call,
                         via: edge.callee.clone(),
                         resolution: edge.resolution,
+                        tier: edge.tier,
                     });
                 }
             }

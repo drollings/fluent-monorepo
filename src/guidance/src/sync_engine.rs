@@ -5,7 +5,7 @@ use fluent_wvr::wrapper::Pipeline;
 use thiserror::Error;
 
 use crate::ast_parser::AstParser;
-use crate::enhancer::{enhance_doc, Enhancer};
+use crate::components::ComponentVector;
 use crate::offload::is_test_path;
 use crate::sync::comments;
 use crate::sync::json_store;
@@ -41,11 +41,17 @@ pub struct SyncEngine {
     pub guidance_dir: PathBuf,
     pub workspace_root: PathBuf,
     pub source_dir: PathBuf,
-    pub enhancer: Option<Enhancer>,
     /// Stored source-content hashes (absolute path → sha256 at last
     /// ingest) feeding the member-JSON clock gate. Empty disables the
     /// gate: staleness falls back to mtime behavior exactly as before.
     pub source_hashes: std::collections::HashMap<String, String>,
+    /// Input components stamped into every sidecar receipt this engine
+    /// writes. Defaults to the current vector under a default policy.
+    pub components: ComponentVector,
+    /// Filesystem timestamp granularity behind the guidance dir, probed
+    /// at construction (nearest existing ancestor; 1s when unmeasurable).
+    /// Feeds the staleness window and the completion touch.
+    pub timestamp_granularity: std::time::Duration,
 }
 
 struct SyncContext {
@@ -56,6 +62,8 @@ struct SyncContext {
     source_dir: PathBuf,
     guidance_dir: PathBuf,
     comments_wrote_source: bool,
+    components: ComponentVector,
+    granularity: std::time::Duration,
 }
 
 impl SyncEngine {
@@ -65,13 +73,15 @@ impl SyncEngine {
         let workspace_root = guidance_dir
             .parent()
             .map_or_else(|| source_dir.clone(), Path::to_path_buf);
+        let timestamp_granularity = crate::freshness::probe_timestamp_granularity(&guidance_dir);
         Self {
             ast_parser: AstParser::new(),
             guidance_dir,
             workspace_root,
             source_dir,
-            enhancer: None,
             source_hashes: std::collections::HashMap::new(),
+            components: ComponentVector::current(&crate::policy::MaintenancePolicy::default()),
+            timestamp_granularity,
         }
     }
 
@@ -81,13 +91,15 @@ impl SyncEngine {
         let workspace_root = guidance_dir
             .parent()
             .map_or_else(|| source_dir.clone(), Path::to_path_buf);
+        let timestamp_granularity = crate::freshness::probe_timestamp_granularity(&guidance_dir);
         Self {
             ast_parser,
             guidance_dir,
             workspace_root,
             source_dir,
-            enhancer: None,
             source_hashes: std::collections::HashMap::new(),
+            components: ComponentVector::current(&crate::policy::MaintenancePolicy::default()),
+            timestamp_granularity,
         }
     }
 
@@ -100,6 +112,13 @@ impl SyncEngine {
         source_hashes: std::collections::HashMap<String, String>,
     ) -> Self {
         self.source_hashes = source_hashes;
+        self
+    }
+
+    /// Attach the component vector stamped into sidecar receipts.
+    #[must_use]
+    pub fn with_components(mut self, components: ComponentVector) -> Self {
+        self.components = components;
         self
     }
 
@@ -128,12 +147,6 @@ impl SyncEngine {
                 ));
             }
         }
-    }
-
-    #[must_use]
-    pub fn with_enhancer(mut self, enhancer: Enhancer) -> Self {
-        self.enhancer = Some(enhancer);
-        self
     }
 
     pub fn gen(&mut self, source_path: &Path) -> Result<GuidanceDoc, SyncEngineError> {
@@ -198,10 +211,12 @@ impl SyncEngine {
             source_dir: self.source_dir.clone(),
             guidance_dir: self.guidance_dir.clone(),
             comments_wrote_source: false,
+            components: self.components.clone(),
+            granularity: self.timestamp_granularity,
         };
 
         let mut pipeline =
-            Self::build_pipeline(self.enhancer.as_ref(), &mut self.ast_parser, config.db_sync);
+            Self::build_pipeline(&mut self.ast_parser, config.db_sync);
         pipeline.run(&mut ctx)?;
         // The pipeline borrows the parser; release it before touching self.
         drop(pipeline);
@@ -215,24 +230,19 @@ impl SyncEngine {
         Ok(ctx.doc)
     }
 
-    fn build_pipeline<'a>(
-        enhancer: Option<&'a Enhancer>,
-        ast_parser: &'a mut AstParser,
+    fn build_pipeline(
+        ast_parser: &mut AstParser,
         db_sync: bool,
-    ) -> Pipeline<'a, SyncContext, SyncEngineError> {
+    ) -> Pipeline<'_, SyncContext, SyncEngineError> {
         let mut p = Pipeline::new()
-            .step(move |ctx: &mut SyncContext| {
-                if let Some(enhancer) = enhancer {
-                    if let Err(e) = enhance_doc(enhancer, &mut ctx.doc, &ctx.source) {
-                        tracing::warn!("LLM enhancement failed for {:?}: {e}", ctx.source_path);
-                    }
-                }
-                Ok(())
-            })
             .step(|ctx: &mut SyncContext| {
                 let json_path =
                     guidance_json_path(&ctx.source_path, &ctx.source_dir, &ctx.guidance_dir);
-                json_store::save_guidance(&json_path, &ctx.doc)?;
+                let receipt = crate::components::SidecarReceipt::new(
+                    ctx.components.clone(),
+                    Some(common_core::hash::sha256_hex(ctx.source.as_bytes())),
+                );
+                json_store::save_guidance(&json_path, &ctx.doc, &receipt)?;
                 Ok(())
             })
             .step(move |ctx: &mut SyncContext| {
@@ -242,6 +252,15 @@ impl SyncEngine {
                         tracing::warn!("comment sync failed for {:?}: {e}", ctx.source_path);
                     }
                 }
+                Ok(())
+            })
+            .step(|ctx: &mut SyncContext| {
+                // Completion always touches, even on a no-op save: the
+                // stamp is what makes the next pass a stat-only verdict.
+                let json_path =
+                    guidance_json_path(&ctx.source_path, &ctx.source_dir, &ctx.guidance_dir);
+                crate::freshness::completion_touch(&json_path, &ctx.source_path, ctx.granularity)
+                    .map_err(common_core::error::IoError)?;
                 Ok(())
             });
 
@@ -286,16 +305,57 @@ impl SyncEngine {
         Ok(true)
     }
 
-    /// Staleness for one source file: the mtime gate, with the
-    /// content-aware clock fallback when stored source hashes are
-    /// attached (files without stored evidence keep mtime behavior).
+    /// Staleness for one source file. The sidecar's own header receipt
+    /// is self-contained evidence: when it names the source hash,
+    /// bytes decide (moved bytes re-process, identical bytes never
+    /// do) at one header read plus one source hash. The external
+    /// stored map says the same thing when attached and wins on
+    /// conflict by being the fresher record. Headerless legacy files
+    /// keep legacy mtime behavior byte-identically. Component and
+    /// policy staleness stays with the header sweep, which owns those
+    /// inputs; the completion touch keeps the stat-only verdict honest
+    /// for legacy files.
     fn should_generate_for(&self, source_path: &Path, json_path: &Path) -> bool {
-        let Some(stored) = self.stored_hash(source_path) else {
-            return staleness::should_generate(json_path, source_path);
+        if !json_path.exists() {
+            return true;
+        }
+        if let Some(stored) = self.stored_hash(source_path) {
+            return crate::diff::hash_file(source_path).as_deref() != Some(stored);
+        }
+        if let Some(recorded) = header_source_hash(json_path) {
+            if crate::diff::hash_file(source_path).as_deref() != Some(recorded.as_str()) {
+                return true;
+            }
+            // Bytes match: the receipt is reusable only when every input
+            // it consumed still matches. Default engines record the same
+            // four keys they compare, so legacy trees decide exactly as
+            // before; wider receipts narrow correctly.
+            return !self.receipt_consumed_current(json_path);
+        }
+        staleness::should_generate(json_path, source_path)
+    }
+
+    /// Whether the sidecar receipt's consumed inputs still match this
+    /// engine's vector. Headerless receipts carry no evidence and fail
+    /// closed toward regeneration.
+    fn receipt_consumed_current(&self, json_path: &Path) -> bool {
+        use std::io::BufRead as _;
+        let Ok(file) = std::fs::File::open(json_path) else {
+            return false;
         };
-        staleness::should_generate_with_stored(json_path, source_path, Some(stored), || {
-            crate::diff::hash_file(source_path)
-        })
+        let mut lines = std::io::BufReader::new(file).lines();
+        let Some(Ok(line)) = lines.next() else {
+            return false;
+        };
+        let Some(header) = fluent_types::sidecar::SidecarHeader::parse_line(&line) else {
+            return false;
+        };
+        let names: Vec<&str> = header.components.keys().map(String::as_str).collect();
+        crate::components::receipt_reusable(
+            &header.components,
+            &self.components.components,
+            &names,
+        )
     }
 
     pub fn load_doc(&self, source_path: &Path) -> Result<Option<GuidanceDoc>, SyncEngineError> {
@@ -382,6 +442,19 @@ impl SyncEngine {
         Ok(())
     }
 
+    /// Generation gate for one index directory against this engine's
+    /// sidecar tree: refuse before reading when the committed marker
+    /// differs, so the caller rebuilds from sidecars. Additive;
+    /// `check_store` keeps its table-only shape.
+    pub fn check_index_generation(&self, index_dir: &Path) -> Result<(), SyncEngineError> {
+        match crate::index_generation::verify_generation(index_dir, &self.guidance_dir) {
+            crate::index_generation::GenerationVerdict::Current => Ok(()),
+            crate::index_generation::GenerationVerdict::Mismatch => Err(SyncEngineError::Parse(
+                "index generation mismatch: refuse and rebuild from sidecars".to_string(),
+            )),
+        }
+    }
+
     fn walk_source_files<F>(&self, mut callback: F)
     where
         F: FnMut(&Path),
@@ -398,6 +471,15 @@ impl SyncEngine {
     }
 }
 
+/// Source hash recorded in a sidecar header receipt, if any. Reads
+/// the first line only; headerless files report no evidence.
+fn header_source_hash(json_path: &Path) -> Option<String> {
+    use std::io::BufRead as _;
+    let file = std::fs::File::open(json_path).ok()?;
+    let line = std::io::BufReader::new(file).lines().next()?.ok()?;
+    fluent_types::sidecar::SidecarHeader::parse_line(&line)?.src_hash
+}
+
 /// Lexical absolutization (no I/O, no symlink resolution): relative
 /// roots compare equal with the absolute paths discovery yields, so
 /// `strip_prefix` relativization and `meta` derivation agree no matter
@@ -408,7 +490,10 @@ impl SyncEngine {
 /// normalization for stored-hash lookups (DB keys are absolute).
 #[must_use]
 pub fn absolute_or(path: PathBuf) -> PathBuf {
-    std::path::absolute(&path).unwrap_or(path)
+    // Single shared cwd-join; unreadable directory falls back to input.
+    common_core::io::make_path_absolute(&path.to_string_lossy())
+        .map(PathBuf::from)
+        .unwrap_or(path)
 }
 
 /// Compute the guidance JSON path for a source file: the path relative to
@@ -561,11 +646,11 @@ mod regen_determinism_tests {
     use fluent_wvr_testutil::tempdir;
 
     #[test]
-    fn test_regen_is_byte_identical_and_mtime_neutral() {
-        // The M3 propagation contract: reprocessing an unchanged file
-        // (e.g. via a fresh pool-regen engine, as the single-file path
-        // does) must neither change bytes nor bump the mtime — otherwise
-        // every sync would flap downstream fingerprints.
+    fn test_regen_is_byte_identical_and_touch_forward() {
+        // Regen determinism: reprocessing an unchanged file (e.g. via a
+        // fresh pool-regen engine, as the single-file path does) must not
+        // change bytes; the completion touch moves the mtime forward so
+        // the next pass is a stat-only verdict, and content converges.
         let dir = tempdir();
         let source_dir = dir.path().join("src");
         std::fs::create_dir(&source_dir).expect("mkdir");
@@ -592,13 +677,13 @@ mod regen_determinism_tests {
             bytes,
             "regen must be byte-identical"
         );
-        assert_eq!(
+        assert!(
             std::fs::metadata(&json)
                 .expect("stat")
                 .modified()
-                .expect("mtime"),
-            mtime,
-            "identical regen must not bump the mtime"
+                .expect("mtime")
+                >= mtime,
+            "completion always touches, even on a no-op save"
         );
     }
 }
@@ -639,9 +724,8 @@ mod clock_gate_calibration_tests {
                 )
             })
             .collect();
-        // Control arm first (read-only): without stored evidence the gate
-        // keeps today's mtime behavior — inside-window edits skip. The
-        // stored map is the evidence channel that enables firing.
+        // Bare engine: header receipts are self-contained evidence, so
+        // touches skip and edits fire with no stored map attached.
         let mut bare = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
         for file in &paths[5..] {
             std::fs::write(
@@ -657,12 +741,34 @@ mod clock_gate_calibration_tests {
             let bytes = std::fs::read(file).expect("read");
             std::fs::write(file, &bytes).expect("touch");
         }
-        for file in &paths[5..] {
+        for file in &paths[..5] {
             assert!(
                 !bare.gen_if_stale(file).expect("gate"),
-                "control: no stored evidence means mtime behavior (skip): {file:?}"
+                "bare: touched-identical must NOT re-process: {file:?}"
             );
         }
+        for file in &paths[5..] {
+            assert!(
+                bare.gen_if_stale(file).expect("gate"),
+                "bare: edit MUST re-process through the header receipt: {file:?}"
+            );
+        }
+        // Control arm: headerless legacy sidecars keep today's mtime
+        // behavior — a newer sidecar skips without any hash evidence.
+        let legacy_source = &paths[0];
+        let legacy_json = guidance_dir.join("src").join(format!(
+            "{}.json",
+            legacy_source.file_name().unwrap().to_string_lossy()
+        ));
+        let raw = std::fs::read_to_string(&legacy_json).expect("read sidecar");
+        let (_, body) = fluent_types::sidecar::strip_header(&raw);
+        std::fs::write(&legacy_json, body).expect("write body");
+        std::fs::write(legacy_source, std::fs::read(legacy_source).expect("read"))
+            .expect("touch");
+        assert!(
+            !bare.gen_if_stale(legacy_source).expect("gate"),
+            "control: headerless keeps mtime behavior (skip): {legacy_source:?}"
+        );
         // Gated arms: precision then recall.
         let mut gated =
             SyncEngine::new(guidance_dir.clone(), source_dir.clone()).with_source_hashes(hashes);

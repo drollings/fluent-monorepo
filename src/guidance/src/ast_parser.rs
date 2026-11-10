@@ -180,6 +180,245 @@ impl AstParser {
         };
         tree.root_node().has_error()
     }
+
+    /// Names of top-level items carrying `#[cfg(...)]` attributes, with
+    /// their 1-based lines. Rust-only; cfg-gated items are never
+    /// claimed clean without a matrix cell that exercises them.
+    pub(crate) fn rust_cfg_gated(&mut self, text: &str) -> Vec<(String, u32)> {
+        let Ok(tree) = self.parse_tree("rust", text) else {
+            return Vec::new();
+        };
+        let root = tree.root_node();
+        let mut cursor = root.walk();
+        let nodes: Vec<tree_sitter::Node> =
+            root.children(&mut cursor).filter(tree_sitter::Node::is_named).collect();
+        let mut out = Vec::new();
+        let mut pending_cfg = false;
+        for node in nodes {
+            if node.kind() == "attribute_item" {
+                if node
+                    .utf8_text(text.as_bytes())
+                    .is_ok_and(|attr| attr.starts_with("#[cfg"))
+                {
+                    pending_cfg = true;
+                }
+                continue;
+            }
+            if pending_cfg || has_cfg_attr(&node, text) {
+                let name = node
+                    .child_by_field_name("name")
+                    .and_then(|name| name.utf8_text(text.as_bytes()).ok())
+                    .unwrap_or(node.kind())
+                    .to_string();
+                let line = node.start_position().row + 1;
+                out.push((name, line as u32));
+            }
+            pending_cfg = false;
+        }
+        out
+    }
+
+    /// One parsed top-level Rust item with its test status.
+    /// Leading attributes merge into their item (the grammar splits
+    /// `#[test]` into a sibling node); test status folds the whole run.
+    pub(crate) fn rust_top_items(&mut self, text: &str) -> Vec<TopItem> {
+        let Ok(tree) = self.parse_tree("rust", text) else {
+            return Vec::new();
+        };
+        let root = tree.root_node();
+        let mut cursor = root.walk();
+        let nodes: Vec<tree_sitter::Node> =
+            root.children(&mut cursor).filter(tree_sitter::Node::is_named).collect();
+        let mut items = Vec::new();
+        let mut pending: Vec<(u64, u64, bool)> = Vec::new();
+        for node in nodes {
+            if node.kind() == "attribute_item" {
+                let testy = node.utf8_text(text.as_bytes()).is_ok_and(|attr| {
+                    attr.starts_with("#[test") || attr.starts_with("#[cfg(test")
+                });
+                pending.push((node.start_byte() as u64, node.end_byte() as u64, testy));
+                continue;
+            }
+            let start = pending.first().map_or(node.start_byte() as u64, |attr| attr.0);
+            let is_test =
+                pending.iter().any(|attr| attr.2) || item_is_test(&node, text);
+            pending.clear();
+            items.push(TopItem {
+                start,
+                end: node.end_byte() as u64,
+                kind: node.kind().to_string(),
+                is_test,
+            });
+        }
+        for (start, end, _) in pending {
+            items.push(TopItem {
+                start,
+                end,
+                kind: "attribute_item".to_string(),
+                is_test: false,
+            });
+        }
+        items
+    }
+
+    /// Byte spans of Rust test regions: `#[test]`/`#[cfg(test)]` items
+    /// and test modules, merged and sorted.
+    pub(crate) fn rust_test_spans(&mut self, text: &str) -> Vec<(u64, u64)> {
+        let mut spans: Vec<(u64, u64)> = self
+            .rust_top_items(text)
+            .into_iter()
+            .filter(|item| item.is_test)
+            .map(|item| (item.start, item.end))
+            .collect();
+        spans.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::new();
+        for span in spans {
+            if let Some(last) = merged.last_mut() {
+                if span.0 <= last.1 {
+                    last.1 = last.1.max(span.1);
+                    continue;
+                }
+            }
+            merged.push(span);
+        }
+        merged
+    }
+
+    /// Count of ERROR and MISSING nodes: a fix must never raise it.
+    pub(crate) fn rust_error_count(&mut self, text: &str) -> usize {
+        let Ok(tree) = self.parse_tree("rust", text) else {
+            return usize::MAX;
+        };
+        count_error_nodes(&tree.root_node())
+    }
+
+    /// Prose units in order: comments and string literals, trimmed.
+    /// Code between them never enters; prose equality is multiset.
+    pub(crate) fn rust_prose_units(&mut self, text: &str) -> Vec<String> {
+        let Ok(tree) = self.parse_tree("rust", text) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        collect_prose(&tree.root_node(), text, &mut out);
+        out.into_iter().map(|unit| unit.trim_start().to_string()).collect()
+    }
+
+    /// Normalized headers of public items and impl blocks: the API
+    /// surface a patch must not move without an explicit flag.
+    pub(crate) fn rust_pub_headers(&mut self, text: &str) -> Vec<String> {
+        let Ok(tree) = self.parse_tree("rust", text) else {
+            return Vec::new();
+        };
+        let root = tree.root_node();
+        let mut cursor = root.walk();
+        let mut headers = Vec::new();
+        for node in root.children(&mut cursor).filter(tree_sitter::Node::is_named) {
+            let node_text = node.utf8_text(text.as_bytes()).unwrap_or("").to_string();
+            let header = header_before_body(&node_text);
+            let is_pub = header.split_whitespace().any(|token| token == "pub")
+                || node.kind() == "impl_item" && header.contains(" for ");
+            if is_pub {
+                headers.push(crate::item_hashes::normalize_signature_text(&header));
+            }
+        }
+        headers.sort();
+        headers
+    }
+}
+
+/// One top-level item span with its test status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopItem {
+    /// Byte start of the item (attributes included).
+    pub(crate) start: u64,
+    /// Byte end (exclusive).
+    pub(crate) end: u64,
+    /// Grammar node kind (`function_item`, `mod_item`, …).
+    pub(crate) kind: String,
+    /// Test region (`#[test]`, `#[cfg(test)]`, or test module).
+    pub(crate) is_test: bool,
+}
+
+/// Whether a top-level node carries its own `#[cfg]` attribute child
+/// (some shapes nest attributes instead of splitting siblings).
+fn has_cfg_attr(node: &tree_sitter::Node, text: &str) -> bool {
+    (0..node.child_count()).filter_map(|i| node.child(i)).any(|child| {
+        child.kind() == "attribute_item"
+            && child
+                .utf8_text(text.as_bytes())
+                .is_ok_and(|attr| attr.starts_with("#[cfg"))
+    })
+}
+
+/// Whether a top-level node is a test region.
+fn item_is_test(node: &tree_sitter::Node, text: &str) -> bool {
+    let mut cursor = node.walk();
+    let test_attr = node.children(&mut cursor).any(|child| {
+        child.kind() == "attribute_item"
+            && child
+                .utf8_text(text.as_bytes())
+                .is_ok_and(|attr| attr.starts_with("#[test") || attr.starts_with("#[cfg(test"))
+    });
+    if test_attr {
+        return true;
+    }
+    if node.kind() == "mod_item" {
+        let mut inner = node.walk();
+        let name = node
+            .child_by_field_name("name")
+            .and_then(|name| name.utf8_text(text.as_bytes()).ok())
+            .unwrap_or_default();
+        if name == "tests" {
+            return true;
+        }
+        return node.children(&mut inner).any(|child| {
+            child.kind() == "attribute_item"
+                && child
+                    .utf8_text(text.as_bytes())
+                    .is_ok_and(|attr| attr.starts_with("#[cfg(test"))
+        });
+    }
+    false
+}
+
+/// Header text before the first body opener: signatures, even multiline,
+/// end where the body starts. Attributes rarely brace, and a miss only
+/// widens the header (safe toward refusal).
+fn header_before_body(item_text: &str) -> String {
+    let mut depth = 0usize;
+    for (index, c) in item_text.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            '{' | ';' if depth == 0 => return item_text[..index].to_string(),
+            _ => {}
+        }
+    }
+    item_text.to_string()
+}
+
+/// Recursively count ERROR and MISSING nodes.
+fn count_error_nodes(node: &tree_sitter::Node) -> usize {
+    let mut count = usize::from(node.is_error() || node.is_missing());
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        count += count_error_nodes(&child);
+    }
+    count
+}
+
+/// Collect comment and string-literal node texts in source order.
+fn collect_prose(node: &tree_sitter::Node, text: &str, out: &mut Vec<String>) {
+    if node.kind() == "line_comment" || node.kind() == "block_comment" || node.kind() == "string_literal" || node.kind() == "char_literal" {
+        if let Ok(unit) = node.utf8_text(text.as_bytes()) {
+            out.push(unit.to_string());
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_prose(&child, text, out);
+    }
 }
 
 fn extract_module_comment(root: &tree_sitter::Node, source: &str) -> Option<String> {
@@ -345,6 +584,30 @@ fn extract_var_decl(
     None
 }
 
+/// Span and item hashes for one member from its node slice: byte span,
+/// normalized item identity, and the byte-exact range hash citations
+/// re-hash live bytes against. `None` fields when the slice is invalid.
+fn span_hashes(
+    language: &str,
+    node: &tree_sitter::Node,
+    source: &str,
+    sig: &str,
+    doc: Option<&str>,
+) -> (Option<u64>, Option<u64>, Option<String>, Option<String>) {
+    let start = node.start_byte() as u64;
+    let end = node.end_byte() as u64;
+    let Some(body) = source.get(start as usize..end as usize) else {
+        return (None, None, None, None);
+    };
+    let parts = crate::item_hashes::item_hashes_for(language, sig, body, doc);
+    (
+        Some(start),
+        Some(end),
+        Some(parts.item),
+        Some(common_core::hash::blake3_hex(body.as_bytes())),
+    )
+}
+
 fn extract_function(
     node: &tree_sitter::Node,
     source: &str,
@@ -388,6 +651,8 @@ fn extract_function(
 
     let is_pub = check_visibility(node, source, language);
     let line = node.start_position().row + 1;
+    let (span_start, span_end, item_hash, range_hash) =
+        span_hashes(language, node, source, &sig, doc_comment.as_deref());
 
     Some(Member {
         type_name: if is_pub {
@@ -397,6 +662,11 @@ fn extract_function(
         },
         name: name.into(),
         signature: Some(sig.as_str().into()),
+        match_hash: Some(crate::sync::staleness::match_hash_from_signature(&sig).as_str().into()),
+        span_start,
+        span_end,
+        item_hash: item_hash.as_deref().map(Into::into),
+        range_hash: range_hash.as_deref().map(Into::into),
         params: parameters,
         returns: return_type.map(|r| r.as_str().into()),
         comment: doc_comment.map(|c| c.as_str().into()),
@@ -614,11 +884,18 @@ fn extract_struct_or_class(
     );
 
     let line = node.start_position().row + 1;
+    let (span_start, span_end, item_hash, range_hash) =
+        span_hashes(language, node, source, &sig, doc_comment.as_deref());
 
     Some(Member {
         type_name: member_type,
         name: name.into(),
         signature: Some(sig.as_str().into()),
+        match_hash: Some(crate::sync::staleness::match_hash_from_signature(&sig).as_str().into()),
+        span_start,
+        span_end,
+        item_hash: item_hash.as_deref().map(Into::into),
+        range_hash: range_hash.as_deref().map(Into::into),
         comment: doc_comment.map(|c| c.as_str().into()),
         is_pub,
         members: child_members,
@@ -660,6 +937,13 @@ fn extract_body_members(
                     _ => None,
                 };
                 let sig = build_signature("fn", name, &params, return_type.as_deref());
+                let (span_start, span_end, item_hash, range_hash) = span_hashes(
+                    language,
+                    &child_node,
+                    source,
+                    &sig,
+                    dc.as_deref(),
+                );
                 members.push(Member {
                     type_name: if is_pub {
                         MemberType::Method
@@ -668,6 +952,13 @@ fn extract_body_members(
                     },
                     name: name.into(),
                     signature: Some(sig.as_str().into()),
+                    match_hash: Some(
+                        crate::sync::staleness::match_hash_from_signature(&sig).as_str().into(),
+                    ),
+                    span_start,
+                    span_end,
+                    item_hash: item_hash.as_deref().map(Into::into),
+                    range_hash: range_hash.as_deref().map(Into::into),
                     comment: dc.map(|c| c.as_str().into()),
                     is_pub,
                     line: Some(line as u32),
@@ -1112,3 +1403,4 @@ pub fn main() void {
         assert_eq!(file_type_from_extension("xyz"), FileType::Unknown);
     }
 }
+

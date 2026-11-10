@@ -66,14 +66,6 @@ fn batch_shape_serves_chunked_recall() {
 }
 
 #[test]
-fn file_level_shapes_agree() {
-    assert!(crate::redteam::file_level_parity(
-        vec!["a".to_string(), "b".to_string()],
-        vec!["b".to_string(), "a".to_string()],
-    ));
-}
-
-#[test]
 fn backfill_clears_rebuild_flag() {
     let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
     let file = live_file("live-b");

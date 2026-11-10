@@ -15,6 +15,7 @@ pub mod model_ref;
 pub mod openai_wire;
 pub mod provenance;
 pub mod rounds;
+pub mod sidecar;
 
 pub use file_kind::FileKind;
 pub use interlingua::{
@@ -237,6 +238,19 @@ pub struct Member {
     pub equivalents: Vec<SmolStr>,
     #[serde(skip)]
     pub line: Option<u32>,
+    /// Byte start of the member's source span, when parsed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_start: Option<u64>,
+    /// Byte end (exclusive) of the member's source span, when parsed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_end: Option<u64>,
+    /// Normalized item identity (`sig`/`body`/`doc` split), when parsed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_hash: Option<SmolStr>,
+    /// Hash of the exact span bytes at parse time; citations re-hash
+    /// live bytes against this, so a wrong excerpt is impossible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range_hash: Option<SmolStr>,
     #[serde(default)]
     pub comment_generated: bool,
 }
@@ -995,6 +1009,10 @@ mod tests {
             members: vec![],
             equivalents: vec![],
             line: Some(10),
+            span_start: None,
+            span_end: None,
+            item_hash: None,
+            range_hash: None,
             comment_generated: false,
         };
         let json = serde_json::to_string(&m).unwrap();

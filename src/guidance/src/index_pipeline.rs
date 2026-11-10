@@ -118,6 +118,9 @@ pub struct IndexStats {
     pub image_skipped: usize,
     /// Fragments truncated by the model (P4a providers report these).
     pub truncated_fragment_count: usize,
+    /// Clean files reprocessed without an invalidation cause. Converged
+    /// trees read zero; anything else trips the ratchet.
+    pub reprocessed_clean: usize,
 }
 
 /// Index failure (stored per-file data surfaces as `FilesFailed`; the run
@@ -164,6 +167,35 @@ pub fn index_workspace<P>(
 where
     P: EmbeddingProvider + Sync + 'static,
 {
+    index_workspace_with_components(
+        db,
+        provider,
+        selection,
+        options,
+        nlp,
+        cancel,
+        on_progress,
+        &crate::components::ComponentVector::default(),
+    )
+}
+
+/// Index with an explicit input-component vector: follow-up reuse
+/// binds symbol signatures plus these components in one work-key
+/// comparison. Default callers pass an empty vector, which decides
+/// exactly like the pure signature gate.
+pub fn index_workspace_with_components<P>(
+    db: Arc<GuidanceDb>,
+    provider: P,
+    selection: &FileSelection,
+    options: &IndexOptions,
+    nlp: Option<Arc<spacy_rs::pipeline::NlpPipeline>>,
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(IndexProgress),
+    components: &crate::components::ComponentVector,
+) -> Result<IndexStats, IndexError>
+where
+    P: EmbeddingProvider + Sync + 'static,
+{
     let mut stats = IndexStats::default();
     let mut diag = ScanDiagnostics::default();
     let selected = select_files(selection, &mut diag).map_err(|e| IndexError::Db(e.to_string()))?;
@@ -205,12 +237,31 @@ where
         stats.files_deleted += 1;
     }
 
+    let bytes_changed: std::collections::HashSet<String> = diff
+        .added
+        .iter()
+        .chain(diff.modified.iter())
+        .map(|file| file.id.clone())
+        .collect();
     let mut work: Vec<ScannedFile> = diff
         .added
         .into_iter()
         .chain(diff.modified)
         .chain(diff.pending)
         .collect();
+    // Clean files scheduled without an invalidation cause trip the
+    // ratchet: indexed files whose content hash already matches. Pending
+    // retries carry their failure as cause and never count.
+    for file in &work {
+        let clean = by_id.get(file.id.as_str()).is_some_and(|stored| {
+            stored.content_hash.is_some()
+                && stored.content_hash == file.content_hash
+                && stored.index_status.as_deref().is_some_and(|s| s != "failed")
+        });
+        if clean {
+            stats.reprocessed_clean += 1;
+        }
+    }
     // Deterministic file order via the dependency graph (P2 registers file
     // nodes; P3 adds symbol edges; cancellation rides `dependents_of`).
     let mut graph = DependencyGraph::<String>::new();
@@ -229,6 +280,37 @@ where
     });
 
     let total = work.len();
+    // Stored identity hashes per scheduled file, read before waves
+    // commit fresh rows: the sig-gated follow-up compares against this.
+    let mut before: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    for file in &work {
+        if let Ok(rows) = db.symbols_for_file(&file.id) {
+            before.insert(
+                file.id.clone(),
+                rows.iter()
+                    .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
+                    .collect(),
+            );
+        }
+    }
+    // Stored work keys per scheduled file: the follow-up reuses a file
+    // whose key (signatures plus consumed components) still matches, so
+    // over-approximate syntactic edges cost work only on real change.
+    // Pairs frame as `id=hash` so a rename never collides as a bare
+    // multiset; sorting keeps the comparison order-insensitive like the
+    // signature gate below.
+    let mut work_keys: HashMap<String, String> = HashMap::new();
+    for file in &work {
+        if let Some(rows) = before.get(&file.id) {
+            let framed: Vec<String> =
+                rows.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+            let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
+            work_keys.insert(
+                file.id.clone(),
+                crate::item_hashes::work_key(&file.id, &sigs, &components.components),
+            );
+        }
+    }
     let shared = Arc::new(SharedPipeline {
         db,
         provider: Arc::new(CachedEmbeddingProvider::new(provider)),
@@ -289,6 +371,137 @@ where
         )?;
         failed = retry_failed;
         stats.files_failed = failed.len();
+    }
+
+    // Sig-gated follow-up: interfaces committed above may move
+    // dependents, macro definitions widen to their package, and
+    // dependents of failures re-verify against missing symbols. Only
+    // never-scheduled files join; visited-set growth always terminates
+    // the loop. Follow-up failures land in the final failed list with
+    // no second retry.
+    {
+        use crate::invalidation::{dependents_of, file_sig_changed, macro_expansion};
+        let mut scheduled: std::collections::HashSet<String> =
+            work.iter().map(|file| file.id.clone()).collect();
+        let mut followup_n = 0usize;
+        loop {
+            let edges: Vec<(String, String, Option<String>)> = shared
+                .db
+                .graph_edge_rows()
+                .map(|rows| {
+                    rows.iter()
+                        .map(|row| {
+                            (row.importer.clone(), row.specifier.clone(), row.resolved.clone())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut sig_moved: Vec<String> = Vec::new();
+            let mut macro_moved: Vec<String> = Vec::new();
+            for file in &work {
+                let fresh: Vec<(String, String)> = shared
+                    .db
+                    .symbols_for_file(&file.id)
+                    .map(|rows| {
+                        rows.iter()
+                            .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if file_sig_changed(before.get(&file.id).map_or(&[], Vec::as_slice), &fresh) {
+                    // The pure signature gate fired; confirm with the
+                    // component-bound work key so a matching key (same
+                    // signatures, same consumed inputs) still reuses.
+                    let framed: Vec<String> =
+                        fresh.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+                    let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
+                    let reusable = work_keys.get(&file.id).is_some_and(|stored| {
+                        crate::item_hashes::work_key_matches(
+                            &file.id,
+                            &sigs,
+                            &components.components,
+                            Some(stored),
+                        )
+                    });
+                    if !reusable {
+                        sig_moved.push(file.absolute_path.clone());
+                    }
+                }
+                if bytes_changed.contains(&file.id)
+                    && common_core::io::read_to_string_err(Path::new(&file.absolute_path))
+                        .as_deref()
+                        .ok()
+                        .is_some_and(crate::invalidation::defines_macros)
+                {
+                    macro_moved.push(file.absolute_path.clone());
+                }
+                before.insert(file.id.clone(), fresh.clone());
+                let framed: Vec<String> =
+                    fresh.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+                let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
+                work_keys.insert(
+                    file.id.clone(),
+                    crate::item_hashes::work_key(&file.id, &sigs, &components.components),
+                );
+            }
+            let failed_abs: Vec<String> =
+                failed.iter().map(|(file, _)| file.absolute_path.clone()).collect();
+            let scanned_roots: Vec<(String, String)> = scanned
+                .iter()
+                .map(|file| (file.absolute_path.clone(), file.root_path.clone()))
+                .collect();
+            let mut wanted: Vec<String> = dependents_of(&edges, &sig_moved);
+            wanted.extend(macro_expansion(&scanned_roots, &macro_moved));
+            wanted.extend(dependents_of(&edges, &failed_abs));
+            wanted.sort();
+            wanted.dedup();
+            let fresh: Vec<ScannedFile> = scanned
+                .iter()
+                .filter(|file| {
+                    wanted.contains(&file.absolute_path) && !scheduled.contains(&file.id)
+                })
+                .cloned()
+                .collect();
+            if fresh.is_empty() {
+                break;
+            }
+            for file in &fresh {
+                scheduled.insert(file.id.clone());
+                // Baseline seeded pre-commit: the next comparison sees
+                // genuine old rows, never an empty adopt-and-flag.
+                if !before.contains_key(&file.id) {
+                    if let Ok(rows) = shared.db.symbols_for_file(&file.id) {
+                        let pairs: Vec<(String, String)> = rows
+                            .iter()
+                            .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
+                            .collect();
+                        let framed: Vec<String> =
+                            pairs.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+                        let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
+                        work_keys.insert(
+                            file.id.clone(),
+                            crate::item_hashes::work_key(&file.id, &sigs, &components.components),
+                        );
+                        before.insert(file.id.clone(), pairs);
+                    }
+                }
+            }
+            followup_n += 1;
+            let mut followup_failed = Vec::new();
+            run_wave(
+                &format!("index-wave-followup-{followup_n}"),
+                None,
+                fresh,
+                Arc::clone(&shared),
+                total,
+                &mut stats,
+                &mut followup_failed,
+                failed.len(),
+                on_progress,
+            )?;
+            failed.append(&mut followup_failed);
+            stats.files_failed = failed.len();
+        }
     }
 
     for (file, reason) in &failed {
@@ -389,7 +602,7 @@ where
     // Fail-fast aborts surface from the outcomes (the unit records the
     // abort before failing); infrastructure failures surface from the
     // batch summary.
-    let guard = outcomes.lock().expect("outcomes");
+    let guard = common_core::sync::lock(&outcomes);
     if let Some(reason) = guard.iter().find_map(|outcome| match outcome {
         FileOutcome::Abort { reason } => Some(reason.clone()),
         _ => None,
@@ -404,7 +617,7 @@ where
             summary.panicked.len()
         )));
     }
-    let mut outcomes_guard = outcomes.lock().expect("outcomes");
+    let mut outcomes_guard = common_core::sync::lock(&outcomes);
     let mut drained: Vec<FileOutcome> = outcomes_guard.drain(..).collect();
     drop(outcomes_guard);
     for outcome in drained.drain(..) {
@@ -492,7 +705,9 @@ where
         for (index, file) in self.files.iter().enumerate() {
             match prepare_one_file(&mut parser, &self.shared, index, file) {
                 PrepareOutcome::Ready(prepared) => ready.push(prepared),
-                PrepareOutcome::Done(outcome) => outcomes.lock().expect("outcomes").push(outcome),
+                PrepareOutcome::Done(outcome) => {
+                    common_core::sync::lock(&outcomes).push(outcome);
+                }
             }
         }
         // Embed phase: cross-file packing (zvec batch parity) with
@@ -500,10 +715,7 @@ where
         let (mut by_index, failures) = match embed_ready_files(&self.shared, &ready) {
             Ok((ok, failed)) => (ok.into_iter().collect::<HashMap<_, _>>(), failed),
             Err(reason) => {
-                outcomes
-                    .lock()
-                    .expect("outcomes")
-                    .push(FileOutcome::Abort { reason });
+                common_core::sync::lock(&outcomes).push(FileOutcome::Abort { reason });
                 return Err(WorkError::Execution(format!("{} aborted", self.name)));
             }
         };
@@ -513,27 +725,19 @@ where
                 .find(|prepared| prepared.index == index)
                 .map(|prepared| prepared.file.clone())
                 .expect("failed file is prepared");
-            outcomes
-                .lock()
-                .expect("outcomes")
-                .push(FileOutcome::Failed { file, reason });
+            common_core::sync::lock(&outcomes).push(FileOutcome::Failed { file, reason });
         }
         // Commit phase: per-file replace + vector-count validation.
         for prepared in &ready {
-            if outcomes
-                .lock()
-                .expect("outcomes")
-                .iter()
-                .any(|outcome| match outcome {
-                    FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
-                    _ => false,
-                })
-            {
+            if common_core::sync::lock(&outcomes).iter().any(|outcome| match outcome {
+                FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
+                _ => false,
+            }) {
                 continue;
             }
             let vectors = by_index.remove(&prepared.index).unwrap_or_default();
             let outcome = commit_prepared(&self.shared, prepared, &vectors);
-            outcomes.lock().expect("outcomes").push(outcome);
+            common_core::sync::lock(&outcomes).push(outcome);
         }
         Ok(WorkOutput::ok(format!("{} done", self.name)))
     }
@@ -604,7 +808,7 @@ where
             },
         });
     }
-    let text = match std::fs::read_to_string(&file.absolute_path) {
+    let text = match common_core::io::read_to_string_err(Path::new(&file.absolute_path)) {
         Ok(text) => text,
         Err(e) => {
             return PrepareOutcome::Done(FileOutcome::Failed {
@@ -951,7 +1155,8 @@ fn commit_file(
 }
 
 /// Persist identity rows derived from the same harvest pass as the
-/// fragments above. Write-only: recall still reads fragments.
+/// fragments above. The invalidation follow-up reads these back to
+/// detect interface moves without re-parsing.
 fn commit_symbols(db: &GuidanceDb, rows: &[SymbolRecord]) -> Result<(), String> {
     db.replace_symbols(rows).map_err(|e| format!("symbols: {e}"))?;
     Ok(())
@@ -1039,3 +1244,7 @@ fn prepared_metadata(metadata: &FragmentMetadata) -> EntityMetadata {
 #[cfg(test)]
 #[path = "../tests/index_pipeline.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/m4_cutoff.rs"]
+mod m4_cutoff_tests;

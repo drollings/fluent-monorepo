@@ -364,8 +364,8 @@ mod tests {
     // `fluent_types::model_ref` extraction. Forecast drift note: the
     // roadmap's `normalize_model_ref`, markdown model mentions, and
     // knowledge provenance parsers do not exist — this trio
-    // (`model_name`, `parse_model_ref`, `resolve_model_url`) plus the
-    // enhancer `<comment>` tag are the actual duplication surface.
+    // (`model_name`, `parse_model_ref`, `resolve_model_url`) is the
+    // actual duplication surface.
 
     #[test]
     fn m8_model_name_edge_matrix() {

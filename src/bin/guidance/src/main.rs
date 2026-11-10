@@ -9,7 +9,6 @@ use common_core::shell::run_command;
 use fluent_concurrency::pool::ResultPoolError;
 use guidance_core::config;
 use guidance_core::runtime;
-use guidance_core::sync::json_store::walk_guidance_docs;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_core::walk;
 use search_vector::GuidanceDb;
@@ -64,17 +63,6 @@ enum Commands {
         filter: String,
     },
     Test,
-    Telemetry {
-        #[arg(short = 'o', long, default_value = ".guidance.db")]
-        db: String,
-
-        #[arg(long)]
-        reset: bool,
-    },
-    CacheStats {
-        #[arg(short = 'o', long, default_value = ".guidance.db")]
-        db: String,
-    },
     Init {
         #[arg(default_value = ".")]
         dir: String,
@@ -156,60 +144,9 @@ enum Commands {
         #[arg(long)]
         fixpoint: bool,
     },
-    Todo,
-    Diary {
-        #[arg(default_value = "")]
-        text_or_path: String,
-    },
-    Benchmark {
-        query: Option<String>,
-
-        #[arg(short = 'g', long, default_value = ".guidance")]
-        guidance: String,
-
-        #[arg(short = 'o', long, default_value = ".guidance.db")]
-        db: String,
-
-        #[arg(short = 'w', long, default_value = ".")]
-        workspace: String,
-
-        #[arg(short = 'n', long)]
-        num: Option<usize>,
-
-        #[arg(long)]
-        no_llm: bool,
-
-        #[arg(short = 'v', long)]
-        verbose: bool,
-
-        #[arg(long)]
-        api_url: Option<String>,
-
-        #[arg(short = 'm', long)]
-        model: Option<String>,
-
-        #[arg(long, default_value_t = 300)]
-        timeout: u64,
-
-        #[arg(long, default_value_t = 2)]
-        concurrency: usize,
-    },
     Structure {
         #[arg(long, default_value = ".guidance")]
         json_dir: String,
-    },
-    Health {
-        #[arg(short = 'w', long, default_value = ".")]
-        workspace: String,
-
-        #[arg(long, default_value_t = 30)]
-        min_age: u32,
-
-        #[arg(long, default_value = "ai")]
-        format: String,
-
-        #[arg(short = 'o', long, default_value = ".guidance.db")]
-        db: String,
     },
     Mcp {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
@@ -279,9 +216,6 @@ enum Commands {
 
         #[arg(long)]
         mtime_before: Option<i64>,
-
-        #[arg(long)]
-        no_enrich: bool,
     },
     Index {
         #[arg(default_value = ".")]
@@ -340,6 +274,97 @@ enum Commands {
         #[arg(long)]
         bound: Vec<String>,
     },
+    Seal {
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+    },
+    Impact {
+        /// Symbol name or file path whose impact to report.
+        target: String,
+
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+    },
+    /// Post one unit of work to the queue (validated; never touches
+    /// running items). Prints the resulting queue snapshot as JSON.
+    QueuePost {
+        /// Stable id (also the graph key).
+        #[arg(long)]
+        id: String,
+
+        /// Component scope the narrowest gate covers.
+        #[arg(long, default_value = "")]
+        scope: String,
+
+        /// Fix class (closed set: rustfmt, clippy-fix, index,
+        /// commentary-refresh, plan-item).
+        #[arg(long)]
+        kind: String,
+
+        /// Dependency ids, comma-separated; every one must be queued.
+        #[arg(long, default_value = "")]
+        deps: String,
+
+        /// Queue snapshot file to load and save (created when absent).
+        #[arg(long, default_value = ".guidance-queue.json")]
+        queue: String,
+    },
+    /// File one escalation as open in the ledger file (created when absent).
+    EscalationFile {
+        #[arg(long)]
+        id: String,
+
+        #[arg(long, default_value = ".guidance-escalations.json")]
+        ledger: String,
+    },
+    /// Claim an open escalation for an owner.
+    EscalationClaim {
+        #[arg(long)]
+        id: String,
+
+        #[arg(long)]
+        owner: String,
+
+        #[arg(long, default_value = ".guidance-escalations.json")]
+        ledger: String,
+    },
+    /// Resolve a claimed (or open, with owner) escalation.
+    EscalationResolve {
+        #[arg(long)]
+        id: String,
+
+        #[arg(long)]
+        owner: String,
+
+        #[arg(long, default_value = ".guidance-escalations.json")]
+        ledger: String,
+    },
+    /// Import plan items from a JSON array file into a reviewable plan.
+    PlanImport {
+        /// Plan identity.
+        #[arg(long)]
+        id: String,
+
+        /// JSON array of `{id, target, package, test?}` items.
+        #[arg(long)]
+        file: String,
+    },
+    /// Tail the journal ledger: last groups at or after a cursor.
+    LedgerTail {
+        #[arg(long, default_value = ".guidance/journal")]
+        journal_dir: String,
+
+        #[arg(long, default_value_t = 0)]
+        since: usize,
+
+        #[arg(long, default_value_t = 10)]
+        count: usize,
+    },
+    /// Request a context pack from a JSON `PackInput` file.
+    Pack {
+        #[arg(long)]
+        file: String,
+    },
 }
 
 #[tokio::main]
@@ -372,9 +397,6 @@ async fn main() {
             cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter).await;
         }
         Some(Commands::Test) => cmd_test(),
-        Some(Commands::Telemetry { .. }) | Some(Commands::CacheStats { .. }) => {
-            removed_command("telemetry/cache-stats", "guidance status or guidance scorecard");
-        }
         Some(Commands::Init {
             dir,
             guidance_dir: _,
@@ -418,24 +440,7 @@ async fn main() {
             check_ready,
             fixpoint,
         }) => cmd_check(workspace, *check_ready, *fixpoint),
-        Some(Commands::Todo) => {
-            removed_command("todo", "guidance status");
-        }
-        Some(Commands::Diary { .. }) => {
-            removed_command("diary", "guidance status");
-        }
-        Some(Commands::Benchmark { .. }) => {
-            removed_command("benchmark", "guidance scorecard");
-        }
         Some(Commands::Structure { json_dir }) => cmd_structure(json_dir),
-        Some(Commands::Health {
-            workspace,
-            min_age,
-            format,
-            db,
-        }) => {
-            cmd_health(workspace, *min_age, format, db);
-        }
         Some(Commands::Mcp {
             db,
             workspace,
@@ -463,14 +468,12 @@ async fn main() {
             context,
             mtime_after,
             mtime_before,
-            no_enrich,
         }) => {
             let rg_options = search::RgDisplayOptions {
                 before: (*before).max(*context),
                 after: (*after).max(*context),
                 mtime_after_ms: *mtime_after,
                 mtime_before_ms: *mtime_before,
-                enrich: !no_enrich,
             };
             search::cmd_search(
                 query,
@@ -501,6 +504,23 @@ async fn main() {
             index_cmd::cmd_index(workspace, json_dir, Some(path), *force);
         }
         Some(Commands::ComponentGate { path }) => cmd_component_gate(path),
+        Some(Commands::Seal { workspace }) => cmd_seal(workspace),
+        Some(Commands::Impact { target, workspace }) => cmd_impact(target, workspace),
+        Some(Commands::QueuePost { id, scope, kind, deps, queue }) => {
+            cmd_queue_post(id, scope, kind, deps, queue)
+        }
+        Some(Commands::EscalationFile { id, ledger }) => cmd_escalation_file(id, ledger),
+        Some(Commands::EscalationClaim { id, owner, ledger }) => {
+            cmd_escalation_claim(id, owner, ledger)
+        }
+        Some(Commands::EscalationResolve { id, owner, ledger }) => {
+            cmd_escalation_resolve(id, owner, ledger)
+        }
+        Some(Commands::PlanImport { id, file }) => cmd_plan_import(id, file),
+        Some(Commands::LedgerTail { journal_dir, since, count }) => {
+            cmd_ledger_tail(journal_dir, *since, *count)
+        }
+        Some(Commands::Pack { file }) => cmd_pack(file),
         Some(Commands::Scorecard {
             format,
             deep,
@@ -547,7 +567,6 @@ async fn main() {
                         after: 0,
                         mtime_after_ms: None,
                         mtime_before_ms: None,
-                        enrich: false,
                     },
                 );
             } else {
@@ -1422,6 +1441,291 @@ fn find_source_dir(path: &Path, src_dirs: &[PathBuf]) -> Option<PathBuf> {
     None
 }
 
+/// Seal the workspace for human review or CI: matrix clippy, full
+/// build, full tests, and a witness pass. Reports and exits; never
+/// fixes, never runs inside `run` or `watch`.
+fn cmd_seal(workspace: &str) {
+    use guidance_core::fidelity::CfgMatrix;
+    use guidance_core::seal::{run_seal, SealCtx};
+    use std::sync::Arc;
+    let root = PathBuf::from(workspace);
+    let clippy = guidance_core::fidelity::live_matrix_runner(
+        None,
+        guidance_core::clippy::shaping_for(false),
+    );
+    let build = Arc::new(|package: &Path| {
+        let output = std::process::Command::new("cargo")
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(package.join("Cargo.toml"))
+            .output()
+            .map_err(std::io::Error::other)?;
+        Ok::<_, std::io::Error>(guidance_core::seal::BuildVerdict {
+            package: package.to_string_lossy().into_owned(),
+            clean: output.status.success(),
+            output: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    });
+    let test = Arc::new(|package: &Path| {
+        let output = std::process::Command::new("cargo")
+            .arg("test")
+            .arg("--quiet")
+            .arg("--manifest-path")
+            .arg(package.join("Cargo.toml"))
+            .output()
+            .map_err(std::io::Error::other)?;
+        let mut new_failures = Vec::new();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !output.status.success() {
+            for line in stdout.lines().chain(String::from_utf8_lossy(&output.stderr).lines()) {
+                let line = line.trim_start_matches("test ").trim_start();
+                if let Some((name, rest)) = line.split_once(' ') {
+                    if rest.trim_start().starts_with("FAILED") {
+                        new_failures.push(name.to_string());
+                    }
+                }
+            }
+            if new_failures.is_empty() {
+                new_failures.push("cargo test failed".to_string());
+            }
+        }
+        Ok::<_, std::io::Error>(guidance_core::gates::TestReport {
+            new_failures,
+            output: stdout.into_owned(),
+        })
+    });
+    let report = run_seal(&SealCtx {
+        workspace_root: root,
+        cells: CfgMatrix::default_cells(),
+        clippy,
+        build,
+        test,
+        target_dir: None,
+    });
+    println!("Seal: {} packages, {} cells", report.packages.len(), report.cells.len());
+    println!("  build: {}", if report.build_ok { "clean" } else { "FAILED" });
+    println!("  tests: {}", if report.tests_ok { "clean" } else { "FAILED" });
+    println!("  witness: {}", if report.witness_clean { "clean" } else { "DIRTY" });
+    for detail in &report.details {
+        println!("  - {detail}");
+    }
+    std::process::exit(report.exit.as_i32());
+}
+
+/// Report what a change touches: dependents, owners, narrowest gates,
+/// edge tiers, and the tests exercising it.
+fn cmd_impact(target: &str, workspace: &str) {
+    use guidance_core::graph_index::GraphIndex;
+    use guidance_core::query::context_pack::impact_report_with_tests;
+    let root = PathBuf::from(workspace);
+    let inputs = harvest_watch_inputs(std::slice::from_ref(&root));
+    let mut test_files = Vec::new();
+    walk::walk_files(&root, &["rs"], |path| {
+        if guidance_core::offload::is_test_path(path) {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                test_files.push((path.to_string_lossy().into_owned(), text));
+            }
+        }
+    });
+    let roots = vec![root.to_string_lossy().into_owned()];
+    let graph = GraphIndex::build(&inputs, &roots).unwrap_or_else(|_| {
+        GraphIndex::build(&[], &roots).expect("empty graph builds")
+    });
+    let target_path = PathBuf::from(target);
+    let changed: Vec<String> = if target_path.exists() {
+        vec![target.to_string()]
+    } else {
+        let mut files: Vec<String> = graph
+            .definitions_of(target)
+            .iter()
+            .map(|def| def.file.clone())
+            .collect();
+        files.sort();
+        files.dedup();
+        if files.is_empty() {
+            eprintln!("No definitions found for {target} (none found in covered index)");
+            std::process::exit(1);
+        }
+        files
+    };
+    let report = impact_report_with_tests(&graph, &changed, &test_files, &[target.to_string()]);
+    println!("Impact for {target}:");
+    for dependent in &report.dependents {
+        println!("  dependent: {dependent}");
+    }
+    for (owner, gate) in &report.owners {
+        println!("  owner: {owner} (gate: {})", gate.gate);
+    }
+    for test in &report.tests {
+        println!("  test: {test}");
+    }
+    println!("  tiers: {}", if report.tiers.is_empty() {
+        "(no edges)".to_string()
+    } else {
+        report.tiers.join(", ")
+    });
+}
+
+/// Narrow inbound surface: validated queue posts. The queue snapshot
+/// loads from `queue_path` (empty when absent), validates, enqueues as
+/// queued work only, and saves back. Prints the snapshot as JSON.
+fn cmd_queue_post(id: &str, scope: &str, kind: &str, deps: &str, queue_path: &str) {
+    use guidance_core::orchestrator::{post_work, PostWork};
+    let mut queue = load_queue_snapshot(queue_path);
+    let req = PostWork {
+        id: id.to_string(),
+        scope: scope.to_string(),
+        kind: kind.to_string(),
+        deps: deps.split(',').map(str::trim).filter(|dep| !dep.is_empty()).map(str::to_string).collect(),
+    };
+    if let Err(error) = post_work(&mut queue, &req) {
+        eprintln!("refused: {error}");
+        std::process::exit(2);
+    }
+    save_queue_snapshot(queue_path, &queue);
+    println!("{}", serde_json::to_string_pretty(&queue.snapshot()).unwrap_or_default());
+}
+
+/// Load a queue snapshot file; absent or unreadable means an empty queue.
+fn load_queue_snapshot(path: &str) -> guidance_core::maintenance::MaintenanceQueue {
+    use guidance_core::maintenance::MaintenanceQueue;
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return MaintenanceQueue::new();
+    };
+    let Ok(items) = serde_json::from_str::<Vec<guidance_core::maintenance::WorkItem>>(&raw) else {
+        return MaintenanceQueue::new();
+    };
+    let mut queue = MaintenanceQueue::new();
+    if queue.restore(&items).is_err() {
+        return MaintenanceQueue::new();
+    }
+    queue
+}
+
+/// Save a queue snapshot file (atomic write).
+fn save_queue_snapshot(path: &str, queue: &guidance_core::maintenance::MaintenanceQueue) {
+    let raw = serde_json::to_string_pretty(&queue.snapshot()).unwrap_or_default();
+    if common_core::io::write_atomic(Path::new(path), raw.as_bytes()).is_err() {
+        eprintln!("could not save {path}");
+        std::process::exit(3);
+    }
+}
+
+/// Load an escalation ledger file; absent means empty.
+fn load_ledger(path: &str) -> guidance_core::orchestrator::EscalationLedger {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Save an escalation ledger file (atomic write).
+fn save_ledger(path: &str, ledger: &guidance_core::orchestrator::EscalationLedger) {
+    let raw = serde_json::to_string_pretty(ledger).unwrap_or_default();
+    if common_core::io::write_atomic(Path::new(path), raw.as_bytes()).is_err() {
+        eprintln!("could not save {path}");
+        std::process::exit(3);
+    }
+}
+
+fn cmd_escalation_file(id: &str, ledger: &str) {
+    let mut entries = load_ledger(ledger);
+    if let Err(error) = entries.file(id) {
+        eprintln!("refused: {error}");
+        std::process::exit(2);
+    }
+    save_ledger(ledger, &entries);
+    println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_default());
+}
+
+fn cmd_escalation_claim(id: &str, owner: &str, ledger: &str) {
+    let mut entries = load_ledger(ledger);
+    if let Err(error) = entries.claim(id, owner) {
+        eprintln!("refused: {error}");
+        std::process::exit(2);
+    }
+    save_ledger(ledger, &entries);
+    println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_default());
+}
+
+fn cmd_escalation_resolve(id: &str, owner: &str, ledger: &str) {
+    let mut entries = load_ledger(ledger);
+    if let Err(error) = entries.resolve(id, owner) {
+        eprintln!("refused: {error}");
+        std::process::exit(2);
+    }
+    save_ledger(ledger, &entries);
+    println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_default());
+}
+
+/// Import plan items from a JSON array file into a reviewable plan.
+fn cmd_plan_import(id: &str, file: &str) {
+    let Ok(raw) = std::fs::read_to_string(file) else {
+        eprintln!("cannot read {file}");
+        std::process::exit(2);
+    };
+    let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) else {
+        eprintln!("cannot parse {file} as a JSON array");
+        std::process::exit(2);
+    };
+    let mut plan_items = Vec::new();
+    for value in items {
+        let (Some(item_id), Some(target)) = (
+            value.get("id").and_then(serde_json::Value::as_str),
+            value.get("target").and_then(serde_json::Value::as_str),
+        ) else {
+            eprintln!("refused: plan items need string id and target");
+            std::process::exit(2);
+        };
+        plan_items.push(guidance_core::plans::PlanItem {
+            id: item_id.to_string(),
+            target: target.to_string(),
+            acceptance: guidance_core::plans::AcceptanceGate {
+                package: value
+                    .get("package")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(".")
+                    .to_string(),
+                test_name: value
+                    .get("test")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
+            },
+            state: guidance_core::plans::PlanItemState::Open,
+        });
+    }
+    match guidance_core::orchestrator::import_plan(id, plan_items) {
+        Ok(plan) => println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default()),
+        Err(error) => {
+            eprintln!("refused: {error}");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Tail the journal ledger from a cursor.
+fn cmd_ledger_tail(journal_dir: &str, since: usize, count: usize) {
+    for line in guidance_core::orchestrator::tail_ledger(Path::new(journal_dir), since, count) {
+        println!("{line}");
+    }
+}
+
+/// Request a context pack from a JSON PackInput file.
+fn cmd_pack(file: &str) {
+    let Ok(raw) = std::fs::read_to_string(file) else {
+        eprintln!("cannot read {file}");
+        std::process::exit(2);
+    };
+    let Ok(input) = serde_json::from_str::<guidance_core::query::context_pack::PackInput>(&raw)
+    else {
+        eprintln!("cannot parse {file} as a pack input");
+        std::process::exit(2);
+    };
+    let (pack, manifest) = guidance_core::orchestrator::request_pack(&input);
+    let out = serde_json::json!({ "pack": pack, "manifest": manifest });
+    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+}
+
 fn cmd_status(guidance_dir: &str) {
     let gdir = PathBuf::from(guidance_dir);
     let workspace_path = std::env::current_dir().unwrap_or_default();
@@ -1785,83 +2089,6 @@ fn cmd_structure(json_dir: &str) {
         }
         Err(e) => {
             eprintln!("error generating structure: {e}");
-        }
-    }
-}
-
-fn cmd_health(workspace: &str, _min_age: u32, format: &str, _db: &str) {
-    let ws = PathBuf::from(workspace);
-    let gdir = PathBuf::from(".guidance");
-    let src_dir = gdir.join("src");
-    let mut total_members = 0usize;
-    let mut without_comments = 0usize;
-    let mut files: Vec<String> = Vec::new();
-
-    if src_dir.is_dir() {
-        collect_health_stats(
-            &src_dir,
-            &mut total_members,
-            &mut without_comments,
-            &mut files,
-        );
-    }
-
-    match format {
-        "json" => {
-            // Additive `decision` key (zero until live traffic flows):
-            // existing keys are untouched, so parsers keep working.
-            let report = serde_json::json!({
-                "files_analyzed": files.len(),
-                "total_members": total_members,
-                "without_comments": without_comments,
-                "comment_coverage_pct": if total_members > 0 {
-                    100.0 - (without_comments as f64 / total_members as f64) * 100.0
-                } else { 100.0 },
-                "decision": guidance_core::query::decision_points::DecisionMetrics::new().snapshot(),
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&report).unwrap_or_default()
-            );
-        }
-        "human" => {
-            println!("Health Report ({})", ws.display());
-            println!("  Files analyzed:    {}", files.len());
-            println!("  Total members:     {total_members}");
-            println!("  Without comments:  {without_comments}");
-            if total_members > 0 {
-                let pct = (without_comments as f64 / total_members as f64) * 100.0;
-                println!("  Comment coverage:  {:.1}%", 100.0 - pct);
-            }
-        }
-        _ => {
-            println!("## Health Report\n");
-            println!("| Metric | Value |");
-            println!("|--------|-------|");
-            println!("| Files analyzed | {} |", files.len());
-            println!("| Total members | {total_members} |");
-            println!("| Without comments | {without_comments} |");
-            if total_members > 0 {
-                let pct = (without_comments as f64 / total_members as f64) * 100.0;
-                println!("| Comment coverage | {:.1}% |", 100.0 - pct);
-            }
-        }
-    }
-}
-
-fn collect_health_stats(
-    dir: &Path,
-    total: &mut usize,
-    no_comments: &mut usize,
-    files: &mut Vec<String>,
-) {
-    for (_path, doc) in walk_guidance_docs(dir) {
-        files.push(doc.meta.source.as_str().to_string());
-        for member in &doc.members {
-            *total += 1;
-            if member.comment.is_none() {
-                *no_comments += 1;
-            }
         }
     }
 }

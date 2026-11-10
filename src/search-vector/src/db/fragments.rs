@@ -79,23 +79,52 @@ pub struct FragmentFreshness {
 /// skipped. Same risk class as all mtime discipline here: a delete+add
 /// pair that keeps the count with an older-or-equal max mtime reads as
 /// fresh (change detection, not content addressing).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// `gen` is the disposable-index marker: a hash over the sidecar header
+/// manifest (one first line per file, so the gate never pays for bodies)
+/// that refuses a mismatched index and rebuilds. Headerless legacy files
+/// contribute path, mtime, and size instead, documented as content-blind.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NodeSyncFingerprint {
     /// Newest member-doc mtime (ns epoch), 0 when unreadable.
     pub(crate) max_mtime_ns: i64,
     /// Member-doc file count.
     pub(crate) file_count: usize,
+    /// GEN manifest hash over the sidecar headers.
+    pub(crate) gen: String,
+}
+
+/// First line of a file without parsing it: the GEN manifest reads
+/// headers only, never bodies.
+fn first_line_raw(path: &std::path::Path) -> Option<String> {
+    use std::io::BufRead as _;
+    let file = std::fs::File::open(path).ok()?;
+    std::io::BufReader::new(file).lines().next()?.ok()
 }
 
 pub(crate) fn node_sync_fingerprint(json_files: &[std::path::PathBuf]) -> NodeSyncFingerprint {
     let mut max_mtime_ns = 0i64;
-    for path in json_files {
+    let mut manifest = String::new();
+    let mut sorted: Vec<&std::path::PathBuf> = json_files.iter().collect();
+    sorted.sort();
+    for path in sorted {
+        use std::fmt::Write as _;
         let ns = common_core::io::mtime(path).map_or(0, common_core::io::system_time_ns);
         max_mtime_ns = max_mtime_ns.max(ns.min(i64::MAX as u64) as i64);
+        manifest.push_str(&path.to_string_lossy());
+        manifest.push('\0');
+        if let Some(line) = first_line_raw(path) {
+            manifest.push_str(&line);
+        } else {
+            let size = std::fs::metadata(path).map_or(0, |m| m.len());
+            let _ = write!(manifest, "{ns}:{size}");
+        }
+        manifest.push('\n');
     }
     NodeSyncFingerprint {
         max_mtime_ns,
         file_count: json_files.len(),
+        gen: common_core::hash::blake3_hex(manifest.as_bytes()),
     }
 }
 

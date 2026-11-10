@@ -304,7 +304,7 @@ pub fn render_json(card: &Scorecard) -> String {
 /// files still load; missing or unparseable files are not violations.
 #[must_use]
 pub fn load_baseline(path: &Path) -> Option<Baseline> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = common_core::io::read_to_string_err(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     let table = |key: &str| {
         value
@@ -629,7 +629,8 @@ struct NavQuery {
 
 fn load_nav_queries() -> Vec<NavQuery> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("corpora/nav_seed.json");
-    let text = std::fs::read_to_string(&path).expect("nav corpus reads");
+    let text =
+        common_core::io::read_to_string_err(&path).expect("nav corpus reads");
     let value: serde_json::Value = serde_json::from_str(&text).expect("nav corpus parses");
     value["queries"]
         .as_array()
@@ -796,12 +797,13 @@ fn measure_graph() -> Vec<Measured> {
         .map(|file| HarvestInput {
             path: file.to_string_lossy().into_owned(),
             format: "rust".to_string(),
-            text: std::fs::read_to_string(file).expect("fixture reads"),
+            text: common_core::io::read_to_string_err(file).expect("fixture reads"),
         })
         .collect();
     let graph = GraphIndex::build(&inputs, std::slice::from_ref(&root_str)).expect("build");
     let truth: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(root.join("ground_truth.json")).expect("truth reads"),
+        &common_core::io::read_to_string_err(&root.join("ground_truth.json"))
+            .expect("truth reads"),
     )
     .expect("truth parses");
     let relative = |absolute: &str| {
@@ -1189,7 +1191,7 @@ pub fn run_deep_extra() -> Vec<Measured> {
     let (_root, docs) = stage_fixture_docs();
     let queries = load_nav_queries();
     let engine = QueryEngine::new();
-    let mut out: Vec<Measured> = queries
+    let out: Vec<Measured> = queries
         .iter()
         .map(|query| {
             let stages = explain_all(&engine, &docs, &query.query);
@@ -1206,51 +1208,7 @@ pub fn run_deep_extra() -> Vec<Measured> {
             }
         })
         .collect();
-    out.extend(redteam_deep_extra());
     out
-}
-
-/// Read-only storage probes for drill-down: fixed-fixture math, no database.
-#[must_use]
-pub fn redteam_deep_extra() -> Vec<Measured> {
-    use crate::redteam::{file_level_parity, lemma_density, replace_file_cost, size_probe_for_fragment};
-    let cost = replace_file_cost(4, 12);
-    let probe = size_probe_for_fragment("fn f() {}", "fn f", 768);
-    vec![
-        Measured {
-            name: "deep.redteam.fts_writes_per_replace".to_string(),
-            value: cost.fts_writes as f64,
-            repro: "cargo test -p guidance-core --lib redteam".to_string(),
-            higher_is_better: false,
-        },
-        Measured {
-            name: "deep.redteam.total_row_writes_per_replace".to_string(),
-            value: cost.total_row_writes as f64,
-            repro: "cargo test -p guidance-core --lib redteam".to_string(),
-            higher_is_better: false,
-        },
-        Measured {
-            name: "deep.redteam.embedding_q8_bytes".to_string(),
-            value: probe.embedding_q8_bytes as f64,
-            repro: "cargo test -p guidance-core --lib redteam".to_string(),
-            higher_is_better: false,
-        },
-        Measured {
-            name: "deep.redteam.lemma_density".to_string(),
-            value: lemma_density(12, 4),
-            repro: "cargo test -p guidance-core --lib redteam".to_string(),
-            higher_is_better: false,
-        },
-        Measured {
-            name: "deep.redteam.writer_parity".to_string(),
-            value: f64::from(file_level_parity(
-                vec!["a".to_string()],
-                vec!["a".to_string()],
-            )),
-            repro: "cargo test -p guidance-core --lib redteam".to_string(),
-            higher_is_better: true,
-        },
-    ]
 }
 
 #[cfg(test)]

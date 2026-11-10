@@ -10,6 +10,15 @@ fn member_to_json(member: &Member) -> Value {
     if let Some(h) = &member.match_hash {
         obj["match_hash"] = json!(h.as_str());
     }
+    if let Some(start) = member.span_start {
+        obj["span"] = json!([start, member.span_end.unwrap_or(start)]);
+    }
+    if let Some(h) = &member.item_hash {
+        obj["item_hash"] = json!(h.as_str());
+    }
+    if let Some(h) = &member.range_hash {
+        obj["range_hash"] = json!(h.as_str());
+    }
     if let Some(sig) = &member.signature {
         obj["signature"] = json!(sig.as_str());
     }

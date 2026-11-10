@@ -6,8 +6,8 @@ use std::time::Duration;
 use crate::supervisor::{
     boot_with_binary, build_args, find_on_path, free_port, recovery_action, resolve_binary,
     resolve_binary_candidates, resolve_binary_validated, resolve_with_override, slot_save_flag,
-    HealthProbe, RecoveryAction, Supervisor, SupervisorConfig, GPU_OFFLOAD_LAYERS,
-    LLAMA_SERVER_ENV,
+    spawn_busy_marker, HealthProbe, RecoveryAction, Supervisor, SupervisorConfig,
+    GPU_OFFLOAD_LAYERS, LLAMA_SERVER_ENV,
 };
 
 /// Process env is shared across test threads: the tests below
@@ -861,5 +861,23 @@ fn failed_boot_reaps_the_spawned_child() {
     assert!(
         !std::path::Path::new(&format!("/proc/{pid}")).exists(),
         "failed boot reaps the child: /proc/{pid} must be gone"
+    );
+}
+
+#[test]
+fn text_busy_spawn_marks_transient() {
+    assert_eq!(
+        spawn_busy_marker(&std::io::Error::from_raw_os_error(26)),
+        "text-busy "
+    );
+    assert_eq!(
+        spawn_busy_marker(&std::io::Error::from(
+            std::io::ErrorKind::ExecutableFileBusy
+        )),
+        "text-busy "
+    );
+    assert_eq!(
+        spawn_busy_marker(&std::io::Error::from(std::io::ErrorKind::NotFound)),
+        ""
     );
 }

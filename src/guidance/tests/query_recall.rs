@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 // Verbatim ports of `test/unit/search.test.mjs` against a fixture-faithful
 // fake storage (`createFixture` role): `:160` validation, `:215` hybrid,
-// `:262` short-circuit, `:302` ordered globs, `:286` diagnosis.
+// `:262` short-circuit, `:302` ordered globs.
 
 #[derive(Debug, Clone)]
 struct FixtureEntity {
@@ -463,76 +463,6 @@ fn ordered_globs_match_nested_basenames_with_overrides() {
         .map(|hit| hit.file.relative_path.as_str())
         .collect();
     assert_eq!(paths, vec!["src/a.ts"]);
-}
-
-// --- :286 diagnosis ---
-
-#[test]
-fn diagnosis_handles_missing_targets_and_fallback_selection() {
-    let storage = FakeStorage::new();
-    let err = diagnose_entity("query", "missing", &storage, None, None).unwrap_err();
-    assert!(matches!(err, RecallError::EntityNotFound(_)));
-
-    assert!(
-        diagnose_file("query", "/repo/missing.ts", &storage, None, None)
-            .expect("diagnose")
-            .is_none()
-    );
-    let diagnosis = diagnose_file("query", "/repo/src/a.ts", &storage, None, None)
-        .expect("diagnose")
-        .expect("found");
-    assert_eq!(diagnosis.entity.id, "entity-a");
-    assert_eq!(diagnosis.file.id, "file-a");
-
-    // Empty search falls back to the file's first entity.
-    let empty = EmptySearchStorage;
-    let fallback = diagnose_file("query", "/repo/src/b.test.ts", &empty, None, None)
-        .expect("diagnose")
-        .expect("found");
-    assert_eq!(fallback.entity.id, "entity-b");
-}
-
-struct EmptySearchStorage;
-
-impl RecallStorage for EmptySearchStorage {
-    fn list_files(&self) -> Result<Vec<FileInfo>, RecallError> {
-        Ok(FILES.iter().map(fixture_file).collect())
-    }
-
-    fn search_fts(
-        &self,
-        _query: &str,
-        _limit: usize,
-        _filter: &StorageFilter,
-    ) -> Result<Vec<StorageHit>, RecallError> {
-        Ok(Vec::new())
-    }
-
-    fn search_vector(
-        &self,
-        _embedding: &[f32],
-        _limit: usize,
-        _filter: &StorageFilter,
-    ) -> Result<Vec<StorageHit>, RecallError> {
-        Ok(Vec::new())
-    }
-
-    fn search_lemmas(
-        &self,
-        _lemmas: &[String],
-        _limit: usize,
-        _filter: &StorageFilter,
-    ) -> Result<Vec<StorageHit>, RecallError> {
-        Ok(Vec::new())
-    }
-
-    fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, RecallError> {
-        FakeStorage::new().get_entity(entity_id)
-    }
-
-    fn list_entities_by_file(&self, file_id: &str) -> Result<Vec<(Entity, FileInfo)>, RecallError> {
-        FakeStorage::new().list_entities_by_file(file_id)
-    }
 }
 
 // --- service:747 fused groups equivalent ---

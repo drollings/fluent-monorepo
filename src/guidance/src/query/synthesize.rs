@@ -22,6 +22,10 @@ pub struct Stage {
 pub struct StageTrace {
     /// zvec `matchedBy` vocabulary (`fts` / `vector` / `fts+vector`).
     pub matched_by: String,
+    /// Additive retrieval tier (`exact` / `lexical` / `fusion` /
+    /// `semantic`). Absent on rows built before tiers existed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
     /// Fused RRF score (ordinal composite — see [`crate::search_types::RrfScore`]).
     pub score: crate::search_types::RrfScore,
     /// 1-based fused rank.

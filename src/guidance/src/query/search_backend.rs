@@ -57,6 +57,12 @@ pub trait SearchBackend: Send + Sync {
         false
     }
 
+    /// Additive tier label for this rung. Pure naming; dispatch and
+    /// fallback never consult it.
+    fn retrieval_tier(&self) -> crate::search_types::RetrievalTier {
+        crate::search_types::RetrievalTier::Lexical
+    }
+
     /// Execute the search and return synthesized stages.
     fn search(
         &self,
@@ -75,6 +81,10 @@ impl SearchBackend for IdentifierBackend {
             intent,
             QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier
         )
+    }
+
+    fn retrieval_tier(&self) -> crate::search_types::RetrievalTier {
+        crate::search_types::RetrievalTier::Exact
     }
 
     fn search(
@@ -164,6 +174,10 @@ impl SearchBackend for ConceptBackend {
         true
     }
 
+    fn retrieval_tier(&self) -> crate::search_types::RetrievalTier {
+        crate::search_types::RetrievalTier::Semantic
+    }
+
     fn search(
         &self,
         query: &str,
@@ -208,6 +222,10 @@ pub struct FilePathBackend;
 impl SearchBackend for FilePathBackend {
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(intent, QueryIntent::FilePath)
+    }
+
+    fn retrieval_tier(&self) -> crate::search_types::RetrievalTier {
+        crate::search_types::RetrievalTier::Exact
     }
 
     fn search(

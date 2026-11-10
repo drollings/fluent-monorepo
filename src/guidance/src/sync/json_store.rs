@@ -4,6 +4,7 @@ use fluent_types::{CapabilityEval, GuidanceDoc, Member, MemberType, Meta, Param,
 use smol_str::SmolStr;
 use thiserror::Error;
 
+use crate::components::SidecarReceipt;
 use crate::walk;
 
 #[derive(Error, Debug)]
@@ -17,6 +18,9 @@ pub enum JsonError {
 }
 
 common_core::impl_from_io_error!(JsonError);
+
+/// Sidecar layout version stamped into every header receipt.
+pub const SIDECAR_SCHEMA_VERSION: u32 = 1;
 
 fn parse_member_type(s: &str) -> Option<MemberType> {
     Some(match s {
@@ -90,6 +94,20 @@ fn parse_member(v: &serde_json::Value) -> Option<Member> {
         name: name.into(),
         match_hash: obj
             .get("match_hash")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
+        span_start: obj.get("span").and_then(|v| v.as_array()).and_then(|pair| {
+            pair.first().and_then(serde_json::Value::as_u64)
+        }),
+        span_end: obj.get("span").and_then(|v| v.as_array()).and_then(|pair| {
+            pair.get(1).and_then(serde_json::Value::as_u64)
+        }),
+        item_hash: obj
+            .get("item_hash")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
+        range_hash: obj
+            .get("range_hash")
             .and_then(|v| v.as_str())
             .map(SmolStr::from),
         signature: obj
@@ -206,10 +224,11 @@ fn load_guidance_from_value(v: &serde_json::Value) -> Option<GuidanceDoc> {
 
 pub fn load_guidance(path: &Path) -> Result<Option<GuidanceDoc>, JsonError> {
     let content = common_core::io::read_to_string_err(path)?;
-    if content.trim().is_empty() {
+    let (_header, body) = fluent_types::sidecar::strip_header(&content);
+    if body.trim().is_empty() {
         return Ok(None);
     }
-    let v: serde_json::Value = serde_json::from_str(&content)?;
+    let v: serde_json::Value = serde_json::from_str(body)?;
     Ok(load_guidance_from_value(&v))
 }
 
@@ -226,12 +245,24 @@ pub fn walk_guidance_docs(dir: &Path) -> impl Iterator<Item = (PathBuf, Guidance
 
 /// Merge existing member data into a new member when match_hash is unchanged.
 /// Preserves user-created content: comment, tags, equivalents, comment_generated flag.
+/// Hashless members merge on a stable interface instead (same name, kind,
+/// and whitespace-normalized signature): the lazy-migration bridge for
+/// receipts that predate hash stamping.
 pub fn merge_member(existing: &Member, new: &mut Member) {
     let hash_match = match (&existing.match_hash, &new.match_hash) {
         (Some(eh), Some(nh)) => eh == nh,
         _ => false,
     };
-    if !hash_match {
+    let interface_match = existing.type_name == new.type_name
+        && existing.name == new.name
+        && match (&existing.signature, &new.signature) {
+            (Some(old), Some(new)) => {
+                crate::item_hashes::normalize_signature_text(old.as_str())
+                    == crate::item_hashes::normalize_signature_text(new.as_str())
+            }
+            _ => false,
+        };
+    if !hash_match && !interface_match {
         return;
     }
     // Preserve existing comment if the new one is empty/generated
@@ -281,16 +312,33 @@ pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
     if new.capability_eval.is_none() {
         new.capability_eval.clone_from(&existing.capability_eval);
     }
-    // Merge members by match_hash
+    // Merge members by match_hash, falling back to a stable interface
+    // for hashless members (same path merge_member takes on its own).
     for new_member in &mut new.members {
-        if let Some(ref new_hash) = new_member.match_hash {
-            if let Some(existing_member) = existing
-                .members
-                .iter()
-                .find(|em| em.match_hash.as_ref() == Some(new_hash))
-            {
-                merge_member(existing_member, new_member);
-            }
+        let found = new_member
+            .match_hash
+            .as_ref()
+            .and_then(|new_hash| {
+                existing
+                    .members
+                    .iter()
+                    .find(|em| em.match_hash.as_ref() == Some(new_hash))
+            })
+            .or_else(|| {
+                existing.members.iter().find(|em| {
+                    em.type_name == new_member.type_name
+                        && em.name == new_member.name
+                        && match (&em.signature, &new_member.signature) {
+                            (Some(old), Some(new)) => {
+                                crate::item_hashes::normalize_signature_text(old.as_str())
+                                    == crate::item_hashes::normalize_signature_text(new.as_str())
+                            }
+                            _ => false,
+                        }
+                })
+            });
+        if let Some(existing_member) = found {
+            merge_member(existing_member, new_member);
         }
     }
 }
@@ -298,8 +346,14 @@ pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
 /// Save guidance doc, preserving existing metadata when hashes are unchanged.
 /// Byte-identical content skips the write: regen is mtime-neutral when
 /// nothing changed, so staleness gates and content fingerprints downstream
-/// never flap on a no-op reprocessing pass.
-pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
+/// never flap on a no-op reprocessing pass. The receipt header (source hash
+/// plus consumed components) rides on the first line; old headerless files
+/// still load, and the identical-write skip compares the full bytes.
+pub fn save_guidance(
+    path: &Path,
+    doc: &GuidanceDoc,
+    receipt: &SidecarReceipt,
+) -> Result<(), JsonError> {
     if let Some(parent) = path.parent() {
         common_core::io::ensure_dir(parent)?;
     }
@@ -308,11 +362,18 @@ pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
     if let Ok(Some(existing)) = load_guidance(path) {
         merge_doc(&existing, &mut doc_to_save);
     }
-    let json_str = super::json_writer::doc_to_json_string(&doc_to_save);
-    if common_core::io::read_to_string_err(path).as_deref().ok() == Some(json_str.as_str()) {
+    let body = super::json_writer::doc_to_json_string(&doc_to_save);
+    let header = fluent_types::sidecar::SidecarHeader {
+        src: doc_to_save.meta.source.to_string(),
+        body: common_core::hash::sha256_hex(body.as_bytes()),
+        src_hash: receipt.source_hash.clone(),
+        components: receipt.components.components.clone(),
+    };
+    let full = format!("{}\n{body}", header.render());
+    if common_core::io::read_to_string_err(path).as_deref().ok() == Some(full.as_str()) {
         return Ok(());
     }
-    common_core::io::write_atomic(path, json_str.as_bytes())?;
+    common_core::io::write_atomic(path, full.as_bytes())?;
     Ok(())
 }
 
@@ -375,7 +436,7 @@ mod tests {
             )],
             ..GuidanceDoc::default()
         };
-        save_guidance(&path, &doc1).expect("first save");
+        save_guidance(&path, &doc1, &SidecarReceipt::default()).expect("first save");
 
         // Second save: same member, same hash, no comment
         let doc2 = GuidanceDoc {
@@ -388,7 +449,7 @@ mod tests {
             members: vec![make_test_member("foo", "fn foo() void", "hash1", None)],
             ..GuidanceDoc::default()
         };
-        save_guidance(&path, &doc2).expect("second save");
+        save_guidance(&path, &doc2, &SidecarReceipt::default()).expect("second save");
 
         // Reload and verify comment preserved
         let loaded = load_guidance(&path).expect("load").expect("should exist");
@@ -423,7 +484,7 @@ mod tests {
             )],
             ..GuidanceDoc::default()
         };
-        save_guidance(&path, &doc1).expect("first save");
+        save_guidance(&path, &doc1, &SidecarReceipt::default()).expect("first save");
 
         // Different hash = signature changed = don't preserve
         let doc2 = GuidanceDoc {
@@ -440,7 +501,7 @@ mod tests {
             )],
             ..GuidanceDoc::default()
         };
-        save_guidance(&path, &doc2).expect("second save");
+        save_guidance(&path, &doc2, &SidecarReceipt::default()).expect("second save");
 
         let loaded = load_guidance(&path).expect("load").expect("should exist");
         assert!(
@@ -490,7 +551,7 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        save_guidance(&path, &doc).expect("should save");
+        save_guidance(&path, &doc, &SidecarReceipt::default()).expect("should save");
         let loaded = load_guidance(&path)
             .expect("should load")
             .expect("should be Some");
@@ -520,7 +581,7 @@ mod identical_write_tests {
             },
             ..GuidanceDoc::default()
         };
-        save_guidance(&path, &doc).expect("first save");
+        save_guidance(&path, &doc, &SidecarReceipt::default()).expect("first save");
         let before = std::fs::metadata(&path)
             .expect("stat")
             .modified()
@@ -528,7 +589,7 @@ mod identical_write_tests {
         // Ensure the clock could advance: without the skip, the atomic
         // rewrite lands on a new timestamp.
         std::thread::sleep(std::time::Duration::from_millis(5));
-        save_guidance(&path, &doc).expect("second save");
+        save_guidance(&path, &doc, &SidecarReceipt::default()).expect("second save");
         let after = std::fs::metadata(&path)
             .expect("stat")
             .modified()

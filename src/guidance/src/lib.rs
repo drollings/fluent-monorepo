@@ -14,9 +14,6 @@
 //! |--------|---------------|---------------|
 //! | `ast_parser` | Tree-sitter AST parsing (Zig, Python) | `fluent-types`, `tree-sitter`, `tree-sitter-zig`, `tree-sitter-python` |
 //! | `config` | ProjectConfig loading/serialization | `serde`, `serde_json`, `dirs` |
-//! | `enhancer` | LLM comment generation | `fluent-llm`, `fluent-types` |
-//! | `plugin` | External subprocess plugin loader | `fluent-types` |
-//! | `scanner` | Pattern detection (GoF, ringbuf, etc.) | `common-core` (string utils only) |
 //! | `sync_engine` | Gen/status/clean orchestration | `fluent-types`, `search-vector`, `ast_parser`, `sync/*` |
 //! | `query_engine` | Explain/query orchestration | `fluent-types`, `search-vector`, `fluent-knowledge`, `query/*` |
 //! | `query` sub-modules | Query pipeline: identifier, strategy, filters, synthesizer, snapshot | `fluent-types`, `regex` |
@@ -25,37 +22,46 @@
 //! | `search_constants` | Tested search/index constants + pure budget helpers | none |
 //!
 //! ## Extraction Candidates (when other consumers exist)
-//! - `scanner` — pure pattern detection, zero domain coupling
 //! - `config` — pure config types, zero domain coupling
-//! - `plugin` — clean async subprocess runner
 //! - `query/snapshot` — pure file-reading snapshot type
-//! - `enhancer` — generic LLM comment generation trait
 pub mod ast_parser;
 pub mod change_set;
+pub mod clippy;
 pub mod component_map;
+pub mod components;
 pub mod config;
 pub mod coordinator;
 pub mod diff;
-pub mod enhancer;
 pub mod extractor;
+pub mod fidelity;
+pub mod fix;
 pub mod freshness;
+pub mod gates;
 pub mod graph_index;
 pub mod grounding;
 pub mod index_pipeline;
+pub mod index_generation;
+pub mod invalidation;
+pub mod item_hashes;
+pub mod journal;
 pub mod maintenance;
 pub mod model_lanes;
 pub mod offload;
+pub mod orchestrator;
+pub mod pipeline;
+pub mod plans;
 pub mod policy;
-pub mod plugin;
 pub mod query_engine;
-pub mod redteam;
 pub mod runtime;
-pub mod scanner;
 pub mod scheduler;
 pub mod scorecard;
+pub mod seal;
 pub mod selection;
+pub mod shadow;
 pub mod sync_engine;
+pub mod triage;
 pub mod watcher;
+pub mod waves;
 pub use common_core::walk;
 pub mod search_constants;
 pub mod search_types;

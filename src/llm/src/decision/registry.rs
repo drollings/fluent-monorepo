@@ -118,6 +118,10 @@ pub struct CorpusProvenance {
     pub source: String,
     pub labeller: String,
     pub date: String,
+    /// Hash of the labelled cases the entry was calibrated from.
+    /// Empty means unpinned (legacy): rotation cannot be detected.
+    #[serde(default)]
+    pub dataset: String,
 }
 
 /// A labelled corpus on disk: the unit the registry calibrates from.
@@ -155,6 +159,10 @@ pub struct RegistryEntry {
     pub thresholds: ThresholdSet,
     pub gate: GateReport,
     pub provenance: CorpusProvenance,
+    /// Dataset hash this entry was calibrated from. Rotating the
+    /// dataset reverts the point to measuring until recalibrated.
+    #[serde(default)]
+    pub dataset: String,
 }
 
 impl RegistryEntry {
@@ -218,6 +226,7 @@ impl RegistryEntry {
                 date: corpus.provenance.date.clone(),
             },
             provenance: corpus.provenance.clone(),
+            dataset: corpus.provenance.dataset.clone(),
         })
     }
 }
@@ -225,14 +234,26 @@ impl RegistryEntry {
 /// Fail-closed authorization (`CalibrationStatus`): calibrated thresholds or shadow-only.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CalibrationStatus {
+    /// Authorized: may steer behavior (side effects gated elsewhere).
     Calibrated(ThresholdSet),
+    /// Advisory: may affect ordering and priority only, never side
+    /// effects. Same evidence bar as authorized; narrower authority.
+    Advisory(ThresholdSet),
+    /// Measuring only: never obeyed, never cached as a verdict.
     ShadowOnly { reason: String },
 }
 
 impl CalibrationStatus {
+    /// Authorized to steer behavior (side effects still gated elsewhere).
     #[must_use]
     pub fn is_calibrated(&self) -> bool {
         matches!(self, Self::Calibrated(_))
+    }
+
+    /// Allowed to affect ordering and priority only, never side effects.
+    #[must_use]
+    pub fn is_advisory(&self) -> bool {
+        matches!(self, Self::Advisory(_))
     }
 
     #[must_use]
@@ -345,6 +366,53 @@ pub fn authorize(
 ) -> CalibrationStatus {
     match registry.lookup(point, model_fingerprint, question_version) {
         Some(entry) => CalibrationStatus::Calibrated(entry.thresholds),
+        None => CalibrationStatus::ShadowOnly {
+            reason: format!(
+                "no passing calibration for ({point}, {model_fingerprint}, v{question_version})"
+            ),
+        },
+    }
+}
+
+/// Advisory authorization: a passing entry on all three keys yields
+/// ordering-and-priority-only authority, never side-effect authority.
+/// Same evidence bar as `authorize`; narrower grant.
+#[must_use]
+pub fn authorize_advisory(
+    registry: &CalibrationRegistry,
+    point: &str,
+    model_fingerprint: &str,
+    question_version: u64,
+) -> CalibrationStatus {
+    match registry.lookup(point, model_fingerprint, question_version) {
+        Some(entry) => CalibrationStatus::Advisory(entry.thresholds),
+        None => CalibrationStatus::ShadowOnly {
+            reason: format!(
+                "no passing calibration for ({point}, {model_fingerprint}, v{question_version})"
+            ),
+        },
+    }
+}
+
+/// Dataset-pinned authorization: the passing entry must additionally
+/// record the expected dataset hash. Rotating the dataset (or asking
+/// with an unpinned expectation against a pinned entry) reverts the
+/// point to measuring until recalibrated.
+#[must_use]
+pub fn authorize_pinned(
+    registry: &CalibrationRegistry,
+    point: &str,
+    model_fingerprint: &str,
+    question_version: u64,
+    dataset: &str,
+) -> CalibrationStatus {
+    match registry.lookup(point, model_fingerprint, question_version) {
+        Some(entry) if entry.dataset == dataset => {
+            CalibrationStatus::Calibrated(entry.thresholds)
+        }
+        Some(_) => CalibrationStatus::ShadowOnly {
+            reason: format!("dataset rotated for ({point}, {model_fingerprint}, v{question_version})"),
+        },
         None => CalibrationStatus::ShadowOnly {
             reason: format!(
                 "no passing calibration for ({point}, {model_fingerprint}, v{question_version})"

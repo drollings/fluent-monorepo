@@ -6,8 +6,9 @@
 //! and the deterministic result remains authoritative.
 
 use fluent_llm::decision::{
-    authorize, decide_with_ladder, CacheKeyInput, CalibrationRegistry, CalibrationStatus, Decision,
-    DecisionBreaker, DecisionCache, DecisionError, QuestionSpec, ThresholdSet,
+    authorize, authorize_advisory, authorize_pinned, decide_with_ladder, CacheKeyInput,
+    CalibrationRegistry, CalibrationStatus, Decision, DecisionBreaker, DecisionCache,
+    DecisionError, QuestionSpec, ThresholdSet,
 };
 
 use super::shadow::{sufficiency_shadow, ShadowRecord};
@@ -113,6 +114,25 @@ pub fn staleness_spec() -> QuestionSpec {
 #[must_use]
 pub fn authorize_point(point: &str, fingerprint: &str, version: u64) -> CalibrationStatus {
     authorize(&CalibrationRegistry::empty(), point, fingerprint, version)
+}
+
+/// Advisory authorization: ordering and priority only, never side
+/// effects. Same evidence bar as `authorize_point`, narrower grant.
+#[must_use]
+pub fn authorize_point_advisory(point: &str, fingerprint: &str, version: u64) -> CalibrationStatus {
+    authorize_advisory(&CalibrationRegistry::empty(), point, fingerprint, version)
+}
+
+/// Dataset-pinned authorization: the entry must record the expected
+/// dataset hash or the point stays measuring.
+#[must_use]
+pub fn authorize_point_pinned(
+    point: &str,
+    fingerprint: &str,
+    version: u64,
+    dataset: &str,
+) -> CalibrationStatus {
+    authorize_pinned(&CalibrationRegistry::empty(), point, fingerprint, version, dataset)
 }
 
 /// Fingerprint-scoped cache key for one decision evaluation.

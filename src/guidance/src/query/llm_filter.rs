@@ -33,9 +33,7 @@ pub struct RelevanceScore {
 /// async-ify every search backend — and no real LLM-backed scoring
 /// backend exists today (only the keyword `NoopLlmFilter` fail-open
 /// default plus test stubs), so there is nothing to route through the
-/// queue. The enhancer (the real LLM caller) already composes the
-/// canonical async path (`retry_async` + `chat_complete_async`). When a
-/// genuine async scoring backend arrives it composes `LlmRequestQueue`
+/// queue. When a genuine async scoring backend arrives it composes `LlmRequestQueue`
 /// with `NoopLlmFilter` kept as the fail-open default; `BatchLlmFilter`
 /// batching belongs to M11.2 (`ResultPool`), not this milestone. Stays —
 /// pinned by the noop-score goldens and the ConceptBackend 0.5 gate.

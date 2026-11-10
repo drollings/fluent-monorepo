@@ -436,11 +436,14 @@ impl GuidanceDb {
                 let content = common_core::io::read_to_string_err(path).map_err(|e| {
                     DbError::Other(format!("failed to read {}: {e}", path.display()))
                 })?;
-                if content.trim().is_empty() {
+                // Sidecar receipts ride on the first line; only the JSON
+                // body parses here. The header manifest feeds the GEN gate.
+                let (_header, body) = fluent_types::sidecar::strip_header(&content);
+                if body.trim().is_empty() {
                     continue;
                 }
 
-                let doc: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+                let doc: serde_json::Value = serde_json::from_str(body).map_err(|e| {
                     DbError::Other(format!("failed to parse {}: {e}", path.display()))
                 })?;
 
@@ -519,10 +522,11 @@ impl GuidanceDb {
             )
             .map_err(VectorDbError::from)?;
         Ok(value.and_then(|value| {
-            let (mtime, count) = value.split_once(':')?;
+            let mut parts = value.splitn(3, ':');
             Some(NodeSyncFingerprint {
-                max_mtime_ns: mtime.parse().ok()?,
-                file_count: count.parse().ok()?,
+                max_mtime_ns: parts.next()?.parse().ok()?,
+                file_count: parts.next()?.parse().ok()?,
+                gen: parts.next()?.to_string(),
             })
         }))
     }
@@ -532,7 +536,10 @@ impl GuidanceDb {
         &self,
         fingerprint: &NodeSyncFingerprint,
     ) -> Result<(), VectorDbError> {
-        let value = format!("{}:{}", fingerprint.max_mtime_ns, fingerprint.file_count);
+        let value = format!(
+            "{}:{}:{}",
+            fingerprint.max_mtime_ns, fingerprint.file_count, fingerprint.gen
+        );
         self.store
             .execute(
                 "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('node_sync', ?1)",

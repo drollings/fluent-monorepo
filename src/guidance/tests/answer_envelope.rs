@@ -81,7 +81,10 @@ fn ungrounded_prose_withholds_synthesis() {
     assert!(!envelope.is_answerable());
     assert_eq!(envelope.citations, Vec::<String>::new());
     assert!(citations_of(&[]).is_empty());
-    assert_eq!(gaps_of(&[], false), vec!["no results for query".to_string()]);
+    assert_eq!(
+        gaps_of(&[], false),
+        vec!["no results for query (none found in covered index)".to_string()]
+    );
 }
 
 #[test]

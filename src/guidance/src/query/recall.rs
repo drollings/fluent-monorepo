@@ -27,7 +27,6 @@ use crate::search_types::{
     SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry,
 };
 
-pub use super::diagnose::{diagnose_entity, diagnose_file, EntityDiagnosis};
 pub use super::plan::{codes, validate_search_plan, RecallError};
 
 /// Index storage contract for the recall loop: lexical + vector + lemma
@@ -61,6 +60,12 @@ pub trait RecallStorage: Send + Sync {
     fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, RecallError>;
     /// Entities + files for one file id (diagnosis fallback).
     fn list_entities_by_file(&self, file_id: &str) -> Result<Vec<(Entity, FileInfo)>, RecallError>;
+    /// Committed index generation, when the backend records one.
+    /// Defaults to unknown so fakes and legacy adapters keep working;
+    /// guarded reads refuse on unknown only when a caller requires it.
+    fn stored_generation(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Resolve the storage file allow-list: include matchers, exclude matchers,
@@ -237,6 +242,29 @@ pub fn run_recall(
         tracked_hit,
         timings: timings.finish(),
     })
+}
+
+/// Guarded recall: refuse before reading when the backend reports a
+/// generation different from the caller-computed expected value.
+/// The check happens before any row is in hand, so a crash between
+/// sidecar write and index commit can cost work but never serve a
+/// mixed pair. `run_recall` keeps its shape for existing callers.
+pub fn run_recall_guarded(
+    plan: &SearchPlan,
+    storage: &dyn RecallStorage,
+    embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
+    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+    expected_generation: &str,
+) -> Result<RecallOutput, RecallError> {
+    match storage.stored_generation() {
+        Some(committed) if committed == expected_generation => {}
+        _ => {
+            return Err(RecallError::Db(format!(
+                "index generation mismatch: expected {expected_generation}"
+            )));
+        }
+    }
+    run_recall(plan, storage, embedder, nlp)
 }
 
 fn plan_uses_vector(plan: &ResolvedSearchPlan) -> bool {

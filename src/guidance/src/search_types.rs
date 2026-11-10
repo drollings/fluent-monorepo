@@ -416,6 +416,18 @@ impl From<SearchPlanRouteMode> for RecallPath {
     }
 }
 
+impl RecallPath {
+    /// Additive tier label for this recall path. Pure naming; the
+    /// recall loop never consults it.
+    #[must_use]
+    pub fn retrieval_tier(self) -> RetrievalTier {
+        match self {
+            Self::Fts | Self::Lemma => RetrievalTier::Lexical,
+            Self::Vector => RetrievalTier::Semantic,
+        }
+    }
+}
+
 /// Per-route recall trace (mirrors `SearchRecallTrace`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -511,6 +523,69 @@ pub enum SearchMatchedBy {
     /// Both paths.
     #[serde(rename = "fts+vector")]
     FtsAndVector,
+}
+
+impl SearchMatchedBy {
+    /// Additive tier label for this provenance. Pure naming over the
+    /// existing value; dispatch never consults it.
+    #[must_use]
+    pub fn retrieval_tier(self) -> RetrievalTier {
+        RetrievalTier::from(self)
+    }
+}
+
+/// Retrieval tier: which machinery produced a hit, edge, or excerpt.
+/// Additive labels only; routing and fallback never consult them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RetrievalTier {
+    /// Exact symbol or edge lookup (parse-built, name-resolved).
+    #[serde(rename = "exact")]
+    Exact,
+    /// Lexical search over names, signatures, docs, or paths.
+    #[serde(rename = "lexical")]
+    Lexical,
+    /// Fused ranking over exact, lexical, and graph proximity.
+    #[serde(rename = "fusion")]
+    Fusion,
+    /// Embedding-backed semantic recall.
+    #[serde(rename = "semantic")]
+    Semantic,
+}
+
+impl RetrievalTier {
+    /// Stable tier name for answers, packs, and reports.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Lexical => "lexical",
+            Self::Fusion => "fusion",
+            Self::Semantic => "semantic",
+        }
+    }
+}
+
+impl From<&str> for RetrievalTier {
+    /// Parse a tier name; unknown names fall back to lexical so legacy
+    /// rows keep a valid label without inventing precision.
+    fn from(name: &str) -> Self {
+        match name {
+            "exact" => Self::Exact,
+            "fusion" => Self::Fusion,
+            "semantic" => Self::Semantic,
+            _ => Self::Lexical,
+        }
+    }
+}
+
+impl From<SearchMatchedBy> for RetrievalTier {
+    fn from(matched_by: SearchMatchedBy) -> Self {
+        match matched_by {
+            SearchMatchedBy::Fts => Self::Lexical,
+            SearchMatchedBy::Vector => Self::Semantic,
+            SearchMatchedBy::FtsAndVector => Self::Fusion,
+        }
+    }
 }
 
 /// A fused search hit (mirrors `SearchHit`).
@@ -793,3 +868,7 @@ pub trait LanguageAdapter: Send + Sync {
 #[cfg(test)]
 #[path = "../tests/search_types.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/tier_labels.rs"]
+mod tier_labels_tests;

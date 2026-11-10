@@ -10,7 +10,10 @@ use fluent_llm::tokens::TokenBudget;
 
 use super::strategy::{QueryClass, QueryIntent};
 use super::synthesize::Stage;
-use crate::grounding::can_synthesize;
+use crate::grounding::{
+    can_synthesize, retrieval_tier_for_stage_tier, CitationFreshness, StageCitation,
+};
+use crate::search_types::RetrievalTier;
 
 /// Which axis a confidence value stands on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,8 +50,14 @@ pub struct AnswerEnvelope {
     pub citations: Vec<String>,
     /// Honest gaps (no results, ungrounded, ambiguous).
     pub gaps: Vec<String>,
+    /// Worst citation freshness across the emitted lines: any stale
+    /// line downgrades the envelope, unverified only when nothing stale.
+    pub citation_freshness: CitationFreshness,
     /// How the answer was resolved, including precheck notes.
     pub resolution: String,
+    /// Additive retrieval tiers behind the results, sorted and distinct.
+    /// Naming only; routing never consults them.
+    pub tiers: Vec<String>,
 }
 
 impl AnswerEnvelope {
@@ -75,10 +84,86 @@ impl AnswerEnvelope {
             stages,
             citations,
             gaps,
+            citation_freshness: CitationFreshness::Unverified,
             resolution: if prechecked {
                 format!("{route} (deterministic precheck)")
             } else {
                 route.to_string()
+            },
+            tiers: vec![tier_for_intent(class.intent).as_str().to_string()],
+        }
+    }
+
+    /// Build an envelope from hash-verified citations: emitted lines
+    /// carry ranges plus hashes, the summary is worst-of, and stale or
+    /// unverified lines file explicit gaps. Negatives stay
+    /// coverage-qualified, never absolute.
+    #[must_use]
+    pub fn from_verified_stages(
+        class: &QueryClass,
+        route: &str,
+        stages: Vec<Stage>,
+        cited: &[StageCitation],
+    ) -> Self {
+        let grounded = can_synthesize(&stages);
+        let citations: Vec<String> = cited.iter().map(|c| c.cite.clone()).collect();
+        let mut gaps = gaps_of(&stages, grounded);
+        let stale = cited
+            .iter()
+            .filter(|c| c.freshness == CitationFreshness::Stale)
+            .count();
+        let unverified = cited
+            .iter()
+            .filter(|c| c.freshness == CitationFreshness::Unverified)
+            .count();
+        if stale > 0 {
+            gaps.push(format!(
+                "{stale} stale citations queued for reprocessing; macro-expanded, cfg-disabled, and build-script code not covered"
+            ));
+        }
+        if unverified > 0 {
+            gaps.push(format!(
+                "{unverified} citations unverified against stored rows (legacy receipts)"
+            ));
+        }
+        let citation_freshness = if stale > 0 {
+            CitationFreshness::Stale
+        } else if unverified > 0 {
+            CitationFreshness::Unverified
+        } else {
+            CitationFreshness::Fresh
+        };
+        let prechecked = super::strategy::intent_precheck(class).is_some();
+        Self {
+            intent: class.intent,
+            route: route.to_string(),
+            confidence: AnswerConfidence {
+                value: f64::from(class.confidence),
+                axis: if grounded && stale == 0 {
+                    ConfidenceAxis::TaskCertified
+                } else {
+                    ConfidenceAxis::ProducerOrderOnly
+                },
+            },
+            stages,
+            citations,
+            gaps,
+            citation_freshness,
+            tiers: tiers_for_cited(class, cited),
+            resolution: {
+                let mut tiers: Vec<&str> = cited.iter().map(|c| c.tier.as_str()).collect();
+                tiers.sort_unstable();
+                tiers.dedup();
+                let method = if tiers.is_empty() {
+                    route.to_string()
+                } else {
+                    format!("{route} (tiers: {})", tiers.join(", "))
+                };
+                if prechecked {
+                    format!("{method} (deterministic precheck)")
+                } else {
+                    method
+                }
             },
         }
     }
@@ -135,7 +220,7 @@ pub fn citations_of(stages: &[Stage]) -> Vec<String> {
 pub fn gaps_of(stages: &[Stage], grounded: bool) -> Vec<String> {
     let mut gaps = Vec::new();
     if stages.is_empty() {
-        gaps.push("no results for query".to_string());
+        gaps.push("no results for query (none found in covered index)".to_string());
         return gaps;
     }
     if !grounded {
@@ -177,6 +262,38 @@ pub fn fit_stages_to_budget(stages: &[Stage], max_tokens: usize) -> Vec<Stage> {
     out
 }
 
+/// Tier label for a legacy fallback answer: exact intents resolve by
+/// identifier or path, lexical intents by keyword, semantic intents by
+/// model-backed concept recall. Pure naming over the classified intent.
+#[must_use]
+pub fn tier_for_intent(intent: QueryIntent) -> RetrievalTier {
+    match intent {
+        QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier | QueryIntent::FilePath => {
+            RetrievalTier::Exact
+        }
+        QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword | QueryIntent::GeneralSearch => {
+            RetrievalTier::Lexical
+        }
+        QueryIntent::HowTo | QueryIntent::Conceptual => RetrievalTier::Semantic,
+    }
+}
+
+/// Distinct tier names across cited stages, falling back to the intent
+/// tier when no citation carries a known tier.
+#[must_use]
+pub fn tiers_for_cited(class: &QueryClass, cited: &[StageCitation]) -> Vec<String> {
+    let mut tiers: Vec<String> = cited
+        .iter()
+        .filter_map(|c| retrieval_tier_for_stage_tier(&c.tier))
+        .map(|tier| tier.as_str().to_string())
+        .collect();
+    tiers.sort();
+    tiers.dedup();
+    if tiers.is_empty() {
+        tiers.push(tier_for_intent(class.intent).as_str().to_string());
+    }
+    tiers
+}
 /// Whether an exact precheck verdict restricts dispatch to its primary
 /// rung. Producer-side gate: high-confidence deterministic intents never
 /// pay vector recall; ambiguous queries keep the full ladder.

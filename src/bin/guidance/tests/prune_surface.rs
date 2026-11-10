@@ -15,22 +15,14 @@ fn stderr(output: &std::process::Output) -> String {
 #[test]
 fn removed_subcommands_exit_pointed() {
     let dir = workspace();
-    for args in [
-        vec!["commit"],
-        vec!["todo"],
-        vec!["diary", "note"],
-        vec!["benchmark"],
-        vec!["telemetry"],
-        vec!["cache-stats"],
-    ] {
-        let out = run(dir.path(), &args);
-        assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
-        assert!(
-            stderr(&out).contains("removed:"),
-            "{args:?}: {}",
-            stderr(&out)
-        );
-    }
+    let args = vec!["commit"];
+    let out = run(dir.path(), &args);
+    assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
+    assert!(
+        stderr(&out).contains("removed:"),
+        "{args:?}: {}",
+        stderr(&out)
+    );
 }
 
 #[test]

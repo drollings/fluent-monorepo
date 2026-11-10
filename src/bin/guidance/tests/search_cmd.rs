@@ -4,7 +4,6 @@
 
 use super::*;
 use guidance_core::query::rg_backend::RgHit;
-use guidance_core::query::structure_enrich::EnrichedRgHit;
 use guidance_core::search_types::SearchPlanRouteMode;
 
 fn rg_opts() -> RgDisplayOptions {
@@ -100,24 +99,21 @@ fn single_route_plans_select_exactly_one_mode() {
 
 #[test]
 fn rg_hits_render_as_path_line_col() {
-    let hits = vec![EnrichedRgHit {
-        hit: RgHit {
-            path: "src/a.ts".to_string(),
-            line: 3,
-            column: 7,
-            text: "const Needle = 1;\n".to_string(),
-            context_before: vec!["const Before = 0;\n".to_string()],
-            context_after: Vec::new(),
-        },
-        symbol: Some("holder_fn".to_string()),
+    let hits = vec![RgHit {
+        path: "src/a.ts".to_string(),
+        line: 3,
+        column: 7,
+        text: "const Needle = 1;\n".to_string(),
+        context_before: vec!["const Before = 0;\n".to_string()],
+        context_after: Vec::new(),
     }];
     assert_eq!(
         render_rg_hits(&hits, 10),
-        "coverage: rg_exhaustive\nsrc/a.ts:3:7 [holder_fn]: const Needle = 1;\n  const Before = 0;\n"
+        "coverage: rg_exhaustive\nsrc/a.ts:3:7: const Needle = 1;\n  const Before = 0;\n"
     );
     assert_eq!(
         render_rg_hits(&hits, 1),
-        "coverage: rg_truncated\nsrc/a.ts:3:7 [holder_fn]: const Needle = 1;\n  const Before = 0;\n"
+        "coverage: rg_truncated\nsrc/a.ts:3:7: const Needle = 1;\n  const Before = 0;\n"
     );
 }
 
@@ -182,7 +178,6 @@ async fn rg_route_reports_context_and_symbols() {
         after: 1,
         mtime_after_ms: None,
         mtime_before_ms: None,
-        enrich: true,
     };
     let rendered = run_search(
         "CtxNeedle",
@@ -202,7 +197,8 @@ async fn rg_route_reports_context_and_symbols() {
     )
     .expect("rg route");
     assert!(rendered.contains("coverage: rg_exhaustive"), "{rendered}");
-    assert!(rendered.contains("b.rs:3:9 [ctx_holder]:"), "{rendered}");
+    assert!(rendered.contains("b.rs:3:9:"), "{rendered}");
+    assert!(!rendered.contains("[ctx_holder]"), "{rendered}");
     assert!(rendered.contains("let a = 1;"), "{rendered}");
     assert!(rendered.contains("let z = 2;"), "{rendered}");
 }
@@ -413,7 +409,9 @@ async fn vector_mode_declines_without_embedder() {
     );
 }
 
-use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily, ResolutionMethod};
+use guidance_core::graph_index::{
+    ContextDirection, ContextEdge, ContextFamily, EdgeTier, ResolutionMethod,
+};
 use guidance_core::search_types::{
     Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan, SearchHit, SearchHitEvidence,
     SearchMatchedBy,
@@ -500,6 +498,7 @@ fn context_edge(file: &str, anchor: &str) -> ContextEdge {
         family: ContextFamily::Import,
         via: "mod:base".to_string(),
         resolution: ResolutionMethod::Unique,
+        tier: EdgeTier::Syntactic,
     }
 }
 
@@ -594,6 +593,7 @@ fn context_lines_merge_families_per_file() {
             family: ContextFamily::Call,
             via: "b".to_string(),
             resolution: ResolutionMethod::Unique,
+            tier: EdgeTier::Syntactic,
         },
         ContextEdge {
             file: "/repo/b.rs".to_string(),
@@ -602,6 +602,7 @@ fn context_lines_merge_families_per_file() {
             family: ContextFamily::Import,
             via: "mod:b".to_string(),
             resolution: ResolutionMethod::Unique,
+            tier: EdgeTier::Syntactic,
         },
     ];
     let lines = build_context_lines(&edges, 10, "/repo");
@@ -622,6 +623,7 @@ fn context_lines_name_ambiguity_and_silence_certainty() {
             family: ContextFamily::Call,
             via: "dup".to_string(),
             resolution: RM::Homonym { count: 3 },
+            tier: EdgeTier::Syntactic,
         },
         ContextEdge {
             file: "/repo/lost.rs".to_string(),
@@ -630,6 +632,7 @@ fn context_lines_name_ambiguity_and_silence_certainty() {
             family: ContextFamily::Call,
             via: "ghost".to_string(),
             resolution: RM::Unresolved,
+            tier: EdgeTier::Syntactic,
         },
     ];
     let lines = build_context_lines(&edges, 10, "/repo");

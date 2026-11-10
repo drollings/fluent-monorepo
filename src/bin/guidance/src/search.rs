@@ -12,9 +12,8 @@ use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::{plan_from_query, stages_from_hits};
 use guidance_core::query::ingest::LazyNlp;
 use guidance_core::query::recall::run_recall;
-use guidance_core::query::rg_backend::{RgBackend, RgOptions};
+use guidance_core::query::rg_backend::{RgBackend, RgHit, RgOptions};
 use guidance_core::query::strategy::FsmEngine;
-use guidance_core::query::structure_enrich::{enrich_hits, EnrichedRgHit};
 use guidance_core::query_engine::{OutputFormat, QueryEngine};
 use guidance_core::search_types::{
     CodeSymbolType, SearchHit, SearchPlan, SearchPlanRoute, SearchPlanRouteMode,
@@ -144,7 +143,7 @@ pub fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
-/// L0 display options: context capture, mtime post-filter, enrichment.
+/// L0 display options: context capture and mtime post-filter.
 #[derive(Debug, Clone, Default)]
 pub struct RgDisplayOptions {
     /// `-B` lines of leading context.
@@ -155,41 +154,28 @@ pub struct RgDisplayOptions {
     pub mtime_after_ms: Option<i64>,
     /// Modification-time ceiling (ms epoch).
     pub mtime_before_ms: Option<i64>,
-    /// Attach enclosing symbols (best-effort).
-    pub enrich: bool,
 }
 
 /// Render standalone L0 hits in the shared `path:line:col` shape, headed by
 /// the coverage vocabulary (`rg_exhaustive` when the sweep completed,
-/// `rg_truncated` when early-kill cut it at the limit). Enriched hits carry
-/// their symbol (`path:line:col [symbol]:`); context lines follow indented.
+/// `rg_truncated` when early-kill cut it at the limit). Context lines
+/// follow indented.
 #[must_use]
-pub fn render_rg_hits(hits: &[EnrichedRgHit], limit: usize) -> String {
+pub fn render_rg_hits(hits: &[RgHit], limit: usize) -> String {
     let coverage = if hits.len() < limit {
         crate::mcp::Coverage::RgExhaustive
     } else {
         crate::mcp::Coverage::RgTruncated
     };
     let mut out = format!("coverage: {}\n", coverage.as_str());
-    for item in hits {
-        let hit = &item.hit;
-        match &item.symbol {
-            Some(symbol) => out.push_str(&format!(
-                "{}:{}:{} [{}]: {}\n",
-                hit.path,
-                hit.line,
-                hit.column,
-                symbol,
-                hit.text.trim_end()
-            )),
-            None => out.push_str(&format!(
-                "{}:{}:{}: {}\n",
-                hit.path,
-                hit.line,
-                hit.column,
-                hit.text.trim_end()
-            )),
-        }
+    for hit in hits {
+        out.push_str(&format!(
+            "{}:{}:{}: {}\n",
+            hit.path,
+            hit.line,
+            hit.column,
+            hit.text.trim_end()
+        ));
         for line in &hit.context_before {
             out.push_str(&format!("  {line}"));
             if !line.ends_with('\n') {
@@ -656,7 +642,6 @@ fn run_rg_search(
     let after = rg_options.after;
     let mtime_after_ms = rg_options.mtime_after_ms;
     let mtime_before_ms = rg_options.mtime_before_ms;
-    let enrich = rg_options.enrich;
     let caps = fluent_concurrency::capability::default_capability_set();
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(fluent_concurrency::scope::CURRENT_CAPS.scope(
@@ -669,24 +654,16 @@ fn run_rg_search(
                     mtime_before_ms,
                 };
                 let hits = backend.search_with_options(&rg_query, rg_limit, &options)?;
-                if enrich {
-                    let (enriched, _) = enrich_hits(&root, &hits);
-                    Ok::<_, guidance_core::query::rg_backend::RgError>(enriched)
-                } else {
-                    Ok(hits
-                        .into_iter()
-                        .map(|hit| EnrichedRgHit { hit, symbol: None })
-                        .collect())
-                }
+                Ok::<_, guidance_core::query::rg_backend::RgError>(hits)
             },
         ))
     });
     match result {
-        Ok(enriched) => {
-            if enriched.is_empty() {
+        Ok(hits) => {
+            if hits.is_empty() {
                 Ok("No results found.\n".to_string())
             } else {
-                Ok(render_rg_hits(&enriched, limit))
+                Ok(render_rg_hits(&hits, limit))
             }
         }
         Err(error) => Err(format!("rg search failed: {error}")),
