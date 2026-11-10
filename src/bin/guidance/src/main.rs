@@ -8,17 +8,12 @@ use common_core::ensure_dir_or_panic;
 use common_core::shell::run_command;
 use fluent_concurrency::pool::ResultPoolError;
 use guidance_core::config;
-use guidance_core::memory::MemoryBridge;
 use guidance_core::runtime;
 use guidance_core::sync::json_store::walk_guidance_docs;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_core::walk;
 use search_vector::GuidanceDb;
-use time::OffsetDateTime;
 
-mod benchmark;
-mod commit;
-mod editor;
 mod embed;
 mod index_cmd;
 mod mcp;
@@ -154,6 +149,12 @@ enum Commands {
         /// carries the verdict.
         #[arg(long)]
         check_ready: bool,
+
+        /// Converge the mirror to a fixpoint before checking: regenerate
+        /// stale sidecars in bounded passes and report what, if anything,
+        /// remains. Baseline stages still verify only.
+        #[arg(long)]
+        fixpoint: bool,
     },
     Todo,
     Diary {
@@ -220,7 +221,7 @@ enum Commands {
         #[arg(long, default_value = ".guidance")]
         json_dir: String,
 
-        #[arg(long, default_value = "full")]
+        #[arg(long, default_value = "agent")]
         toolset: String,
     },
     Search {
@@ -344,6 +345,7 @@ enum Commands {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    let _ = cli.show_prompts;
 
     if cli.debug {
         tracing_subscriber::fmt()
@@ -367,22 +369,12 @@ async fn main() {
             no_llm,
             filter,
         }) => {
-            let memory = guidance_core::memory::init_memory_bridge();
-            cmd_explain(
-                query,
-                guidance,
-                db,
-                workspace,
-                *limit,
-                *no_llm,
-                filter,
-                memory.as_ref(),
-            )
-            .await;
+            cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter).await;
         }
         Some(Commands::Test) => cmd_test(),
-        Some(Commands::Telemetry { db, .. }) => cmd_db_stats(db, "Telemetry stats"),
-        Some(Commands::CacheStats { db }) => cmd_db_stats(db, "Cache statistics"),
+        Some(Commands::Telemetry { .. }) | Some(Commands::CacheStats { .. }) => {
+            removed_command("telemetry/cache-stats", "guidance status or guidance scorecard");
+        }
         Some(Commands::Init {
             dir,
             guidance_dir: _,
@@ -418,49 +410,22 @@ async fn main() {
         }
         Some(Commands::Status { guidance_dir }) => cmd_status(guidance_dir),
         Some(Commands::Clean { json_dir, db }) => cmd_clean(json_dir, db),
-        Some(Commands::Commit {
-            dry_run,
-            debug,
-            force,
-        }) => cmd_commit(*dry_run, *debug, *force).await,
+        Some(Commands::Commit { .. }) => {
+            removed_command("commit", "guidance check or guidance status");
+        }
         Some(Commands::Check {
             workspace,
             check_ready,
-        }) => cmd_check(workspace, *check_ready),
-        Some(Commands::Todo) => cmd_todo(),
-        Some(Commands::Diary { text_or_path }) => cmd_diary(text_or_path),
-        Some(Commands::Benchmark {
-            query,
-            guidance,
-            db,
-            workspace,
-            num,
-            no_llm,
-            verbose,
-            api_url,
-            model,
-            timeout,
-            concurrency,
-        }) => {
-            let config = benchmark::BenchmarkConfig::from_cli(
-                query.clone(),
-                guidance,
-                db,
-                workspace,
-                *num,
-                *no_llm,
-                *verbose,
-                cli.debug,
-                cli.show_prompts,
-                api_url.clone(),
-                model.clone(),
-                *timeout,
-                *concurrency,
-            );
-            if let Err(e) = benchmark::run_benchmark(config).await {
-                eprintln!("benchmark error: {e}");
-                std::process::exit(1);
-            }
+            fixpoint,
+        }) => cmd_check(workspace, *check_ready, *fixpoint),
+        Some(Commands::Todo) => {
+            removed_command("todo", "guidance status");
+        }
+        Some(Commands::Diary { .. }) => {
+            removed_command("diary", "guidance status");
+        }
+        Some(Commands::Benchmark { .. }) => {
+            removed_command("benchmark", "guidance scorecard");
         }
         Some(Commands::Structure { json_dir }) => cmd_structure(json_dir),
         Some(Commands::Health {
@@ -617,14 +582,7 @@ async fn cmd_explain(
     limit: usize,
     _no_llm: bool,
     _filter: &str,
-    memory: Option<&MemoryBridge>,
 ) {
-    // Pre-fetch memory context for injection into the system prompt
-    let memory_context = if let Some(bridge) = memory {
-        bridge.prefetch_context(query).await
-    } else {
-        String::new()
-    };
 
     // Fused recall (the M1 port: the legacy `hybrid_search` + member-JSON
     // fallback legs are gone — explain reads the same fused index as
@@ -659,24 +617,6 @@ async fn cmd_explain(
     let rows = search::build_explain_rows(&hits);
 
     print!("{}", search::render_explain_table(query, &rows, &context));
-    if !memory_context.is_empty() {
-        // Memory context renders after the table (legacy order placed it
-        // before results — declared move, keeps one header).
-        println!("### Memory Context");
-        println!("{memory_context}");
-    }
-
-    // Sync turn with memory plugin after synthesis
-    if let Some(bridge) = memory {
-        let assistant_output = format!(
-            "Explain: {query}\n\nResults:\n{}",
-            rows.iter()
-                .map(|r| format!("- {} ({})", r.name, r.source))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        bridge.sync_turn(query, &assistant_output).await;
-    }
 }
 
 fn cmd_test() {
@@ -685,28 +625,6 @@ fn cmd_test() {
     let ok = run_command(&args);
     if !ok {
         std::process::exit(1);
-    }
-}
-
-fn cmd_db_stats(db_path: &str, label: &str) {
-    println!("{label}:");
-    let db = PathBuf::from(db_path);
-    if db.exists() {
-        match GuidanceDb::open(&db) {
-            Ok(gdb) => {
-                match gdb.get_node_count() {
-                    Ok(count) => println!("  Nodes: {count}"),
-                    Err(_) => println!("  Could not query node count"),
-                }
-                match gdb.get_embedding_count() {
-                    Ok(count) => println!("  Embeddings: {count}"),
-                    Err(_) => println!("  Could not query embedding count"),
-                }
-            }
-            Err(e) => println!("  Could not open database: {e}"),
-        }
-    } else {
-        println!("  No database found at {db_path}");
     }
 }
 
@@ -1222,6 +1140,11 @@ fn harvest_watch_inputs(src_dirs: &[PathBuf]) -> Vec<guidance_core::graph_index:
             files.push(p.to_path_buf());
         });
         for path in files {
+            // Test code never enters the graph: it is neither indexed nor
+            // described, so it must not drive invalidation either.
+            if guidance_core::offload::is_test_path(&path) {
+                continue;
+            }
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let Some(format) = format_for_extension(ext) else {
                 continue;
@@ -1547,119 +1470,19 @@ fn cmd_clean(json_dir: &str, db_path: &str) {
     println!("Clean complete.");
 }
 
-async fn cmd_commit(dry_run: bool, debug: bool, force: bool) {
-    // All work runs inside spawn_blocking because reqwest::blocking::Client
-    // cannot be used from a tokio worker thread (it creates its own internal
-    // runtime and calls block_on during construction and request dispatch).
-    let result = tokio::task::spawn_blocking(move || cmd_commit_inner(dry_run, debug, force)).await;
-    match result {
-        Ok(()) => {}
-        Err(e) => {
-            eprintln!("commit task failed: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_commit_inner(dry_run: bool, debug: bool, force: bool) {
-    let workspace = std::env::current_dir().unwrap_or_else(|e| {
-        eprintln!("Failed to get current directory: {e}");
-        std::process::exit(1);
-    });
-    let cfg = load_project_config(&workspace);
-
-    // 1. Get staged diff.
-    let diff = common_core::git::diff_staged(&workspace).unwrap_or_else(|e| {
-        eprintln!("git diff failed: {e}");
-        std::process::exit(1);
-    });
-    if diff.is_empty() {
-        println!("No staged changes to commit. Use 'git add' to stage files first.");
-        return;
-    }
-
-    // 2. Load guidance context for code files.
-    let guidance_dir = workspace.join(&cfg.guidance_dir);
-    let context = commit::load_guidance_context(&diff, &guidance_dir);
-
-    // 3. Resolve commit model from config.
-    let (api_url, model) = commit::resolve_commit_model(&cfg);
-
-    // 4. Generate initial commit message via LLM.
-    let initial_msg = commit::generate_commit_message(&diff, &context, &api_url, &model, debug)
-        .unwrap_or_else(|e| {
-            if debug {
-                eprintln!("[commit] LLM error: {e}");
-            }
-            "* Update codebase".to_string()
-        });
-
-    if debug {
-        eprintln!("[commit] generated message:\n{initial_msg}");
-    }
-
-    // 5. Write to temp file.
-    let tmp_path = editor::write_temp_file(&initial_msg, "guidance_commit_").unwrap_or_else(|e| {
-        eprintln!("Failed to create temp file: {e}");
-        std::process::exit(1);
-    });
-
-    // 6. Record mtime before opening editor.
-    let mtime_before = editor::file_mtime(&tmp_path);
-
-    // 7. Open editor.
-    if let Err(e) = editor::open_editor(&tmp_path) {
-        eprintln!("Failed to open editor: {e}");
-        editor::cleanup_temp(&tmp_path);
-        std::process::exit(1);
-    }
-
-    // 8. Compare mtime — if unchanged, user didn't save.
-    let mtime_after = editor::file_mtime(&tmp_path);
-    if mtime_before == mtime_after {
-        editor::cleanup_temp(&tmp_path);
-        println!("Commit message not saved. Aborting.");
-        return;
-    }
-
-    // 9. Read cleaned message (strip # comments, trim whitespace).
-    let final_msg = match editor::read_cleaned(&tmp_path) {
-        Ok(msg) if !msg.is_empty() => msg,
-        _ => {
-            editor::cleanup_temp(&tmp_path);
-            println!("Commit message is empty. Aborting.");
-            return;
-        }
-    };
-    editor::cleanup_temp(&tmp_path);
-
-    // 10. Dry run — print and exit.
-    if dry_run {
-        println!("--- Commit message ---\n{final_msg}\n---");
-        return;
-    }
-
-    // 11. Commit.
-    match common_core::git::commit(&workspace, &final_msg) {
-        Ok(true) => println!("Committed successfully."),
-        Ok(false) => {
-            eprintln!("git commit failed (nothing to commit or hook rejected)");
-            if !force {
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("git commit failed: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_check(workspace: &str, check_ready: bool) {
+fn cmd_check(workspace: &str, check_ready: bool, fixpoint: bool) {
     let workspace_path = PathBuf::from(workspace);
     let cfg = load_project_config(&workspace_path);
     let guidance_dir = workspace_path.join(".guidance");
     let mut all_passed = true;
+
+    // Pre-commit convergence: bring the mirror to a fixpoint for the
+    // changed set in bounded passes before the stages verify. Baseline
+    // stages (test/lint/fmt) still verify only — the loop reports what,
+    // if anything, remains instead of spinning.
+    if fixpoint && !check_ready && !converge_mirror(&workspace_path, &cfg) {
+        all_passed = false;
+    }
 
     let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
     let present_exts = walk::collect_extensions(&src_dirs);
@@ -1804,23 +1627,42 @@ fn cmd_check(workspace: &str, check_ready: bool) {
     }
 }
 
-fn cmd_todo() {
-    let todo_path = Path::new(".guidance/doc/TODO.md");
-    if todo_path.exists() {
-        match common_core::io::read_to_string_err(todo_path) {
-            Ok(content) => {
-                println!("TODO items:\n");
-                for line in content.lines() {
-                    if line.trim().starts_with("- [") {
-                        println!("  {line}");
-                    }
+fn converge_mirror(workspace_path: &Path, cfg: &config::ProjectConfig) -> bool {
+    const MAX_PASSES: u32 = 5;
+    for pass in 1..=MAX_PASSES {
+        let mut generated = 0usize;
+        let mut failed = 0usize;
+        for src_dir in src_dirs_from_config_with(workspace_path, cfg) {
+            if !src_dir.is_dir() {
+                continue;
+            }
+            let mut engine =
+                SyncEngine::new(workspace_path.join(".guidance"), src_dir.clone());
+            match engine.gen_scoped(&src_dir) {
+                Ok((made, bad)) => {
+                    generated += made;
+                    failed += bad;
+                }
+                Err(error) => {
+                    println!("fixpoint pass {pass}: scope error: {error}");
+                    return false;
                 }
             }
-            Err(e) => println!("Could not read TODO.md: {e}"),
         }
-    } else {
-        println!("TODO items:\n  No TODO.md found — create .guidance/doc/TODO.md");
+        println!("fixpoint pass {pass}: {generated} generated, {failed} failed");
+        if failed > 0 {
+            println!("fixpoint: {failed} files failed, remainder reported by check");
+            return false;
+        }
+        if generated == 0 {
+            if pass > 1 {
+                println!("fixpoint: mirror clean");
+            }
+            return true;
+        }
     }
+    println!("fixpoint: still converging after {MAX_PASSES} passes");
+    false
 }
 
 fn cmd_component_gate(path: &str) {
@@ -1932,54 +1774,6 @@ async fn cmd_scorecard(
     }
 }
 
-fn cmd_diary(text_or_path: &str) {
-    let diary_dir = Path::new(".guidance/doc");
-    ensure_dir_or_panic(diary_dir);
-    let diary_path = diary_dir.join("DIARY.md");
-    let timestamp = OffsetDateTime::now_utc()
-        .format(
-            &time::format_description::parse_borrowed::<3>(
-                "[year]-[month]-[day] [hour]:[minute] UTC",
-            )
-            .unwrap_or(
-                time::format_description::parse_borrowed::<3>("[year]-[month]-[day]").unwrap(),
-            ),
-        )
-        .unwrap_or_else(|_| "unknown date".to_string());
-
-    // If the argument is a readable file path, read its contents.
-    // Otherwise, treat it as inline text.
-    let content = if !text_or_path.is_empty() {
-        let p = Path::new(text_or_path);
-        if p.is_file() {
-            match common_core::io::read_to_string_err(p) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("Could not read {text_or_path}: {e}");
-                    return;
-                }
-            }
-        } else {
-            text_or_path.to_string()
-        }
-    } else {
-        text_or_path.to_string()
-    };
-
-    let entry = if content.is_empty() {
-        format!("\n## {timestamp}\n\n(empty entry)\n")
-    } else {
-        format!("\n## {timestamp}\n\n{content}\n")
-    };
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&diary_path)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()))
-        .unwrap_or_else(|e| eprintln!("Could not write diary: {e}"));
-    println!("Diary entry appended to {:?}", diary_path);
-}
-
 fn cmd_structure(json_dir: &str) {
     let gdir = PathBuf::from(json_dir);
     match structure::generate(&gdir) {
@@ -2070,6 +1864,14 @@ fn collect_health_stats(
             }
         }
     }
+}
+
+/// Removed surface: the subcommand is parsed so existing scripts get a
+/// pointed message instead of a bare usage error. State lives in files
+/// and the mirror database; nothing here writes history or metrics.
+fn removed_command(name: &str, use_instead: &str) {
+    eprintln!("removed: `guidance {name}` is not part of the navigation engine; use {use_instead}");
+    std::process::exit(2);
 }
 
 fn cmd_mcp(db_path: &str, workspace: &str, json_dir: &str, toolset: &str) {

@@ -34,17 +34,35 @@ impl FrozenSnapshot {
     }
 
     pub fn format_for_system_prompt(&self) -> String {
-        let mut parts = Vec::new();
+        self.format_for_system_prompt_budgeted(super::context_pack::DEFAULT_PACK_TOKENS)
+    }
+
+    /// Budgeted prompt assembly through the shared pack core: sections
+    /// that fit render byte-identically to the unbounded join; oversized
+    /// snapshots drop the largest sections first, never silently.
+    #[must_use]
+    pub fn format_for_system_prompt_budgeted(&self, max_tokens: usize) -> String {
+        use super::context_pack::{pack_context, ContextItem};
+        let mut sections = Vec::new();
         if !self.memory.is_empty() {
-            parts.push(format!("## Memory\n{}", self.memory));
+            sections.push(ContextItem {
+                text: format!("## Memory\n{}", self.memory),
+                source: "memory".to_string(),
+            });
         }
         if !self.skills.is_empty() {
-            parts.push(format!("## Skills\n{}", self.skills));
+            sections.push(ContextItem {
+                text: format!("## Skills\n{}", self.skills),
+                source: "skills".to_string(),
+            });
         }
         if !self.context_files.is_empty() {
-            parts.push(format!("## Context\n{}", self.context_files));
+            sections.push(ContextItem {
+                text: format!("## Context\n{}", self.context_files),
+                source: "context".to_string(),
+            });
         }
-        parts.join("\n\n")
+        pack_context(&sections, max_tokens).items.into_iter().map(|item| item.text).collect::<Vec<_>>().join("\n\n")
     }
 }
 

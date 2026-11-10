@@ -103,6 +103,7 @@ fn test_path_heuristic_names_guarded_shapes() {
     use std::path::Path;
     assert!(is_test_path(Path::new("src/tests/foo.rs")));
     assert!(is_test_path(Path::new("src/testing/foo.rs")));
+    assert!(is_test_path(Path::new("src/e2e/login.rs")));
     assert!(is_test_path(Path::new("src/test_foo.rs")));
     assert!(is_test_path(Path::new("src/foo_test.rs")));
     assert!(is_test_path(Path::new("src/foo_tests.rs")));

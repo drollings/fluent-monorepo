@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::ast_parser::AstParser;
 use crate::enhancer::{enhance_doc, Enhancer};
+use crate::offload::is_test_path;
 use crate::sync::comments;
 use crate::sync::json_store;
 use crate::sync::staleness;
@@ -149,6 +150,15 @@ impl SyncEngine {
         // reverse) — relativization must compare like with like, or
         // `meta` carries the raw prefix spelling (`./lib.rs`, `..lib`).
         let source_path = absolute_or(source_path.to_path_buf());
+        // Never index or describe unit tests or e2e tests, even on an
+        // explicit single-file request: fail closed instead of writing a
+        // sidecar for a path the mirror must not contain.
+        if is_test_path(&source_path) {
+            return Err(SyncEngineError::Parse(format!(
+                "test path skipped: {}",
+                source_path.display()
+            )));
+        }
         let source = common_core::io::read_to_string_err(&source_path)?;
 
         let module_rel = source_path
@@ -261,6 +271,11 @@ impl SyncEngine {
     }
 
     pub fn gen_if_stale(&mut self, source_path: &Path) -> Result<bool, SyncEngineError> {
+        // Unit tests and e2e tests are never described: the loop treats
+        // them as up to date because there is nothing to generate.
+        if is_test_path(source_path) {
+            return Ok(false);
+        }
         let json_path = self.guidance_json_path(source_path);
 
         if !self.should_generate_for(source_path, &json_path) {
@@ -374,7 +389,11 @@ impl SyncEngine {
         walk::walk_files(
             &self.source_dir,
             fluent_types::file_kind::SOURCE_EXTENSIONS,
-            &mut callback,
+            &mut |path: &Path| {
+                if !is_test_path(path) {
+                    callback(path);
+                }
+            },
         );
     }
 }
@@ -428,6 +447,10 @@ mod offload_stale_only_tests;
 #[cfg(test)]
 #[path = "../tests/sync_fixpoint.rs"]
 mod sync_fixpoint_tests;
+
+#[cfg(test)]
+#[path = "../tests/test_skip.rs"]
+mod test_skip_tests;
 
 #[cfg(test)]
 mod tests {

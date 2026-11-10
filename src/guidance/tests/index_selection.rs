@@ -438,3 +438,52 @@ fn select_files_explicit_glob_restores_hidden_files() {
         "explicit include restores hidden files"
     );
 }
+
+#[test]
+fn select_files_skips_test_paths() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("src/tests")).expect("mkdir");
+    std::fs::create_dir_all(root.join("e2e")).expect("mkdir");
+    std::fs::write(root.join("src/lib.rs"), "fn lib() {}\n").expect("write");
+    std::fs::write(root.join("src/tests/e2e_flow.rs"), "fn t() {}\n").expect("write");
+    std::fs::write(root.join("src/test_helpers.rs"), "fn h() {}\n").expect("write");
+    std::fs::write(root.join("e2e/login_test.py"), "def test_x(): pass\n").expect("write");
+    std::fs::write(root.join("src/widget_test.go"), "package x\n").expect("write");
+    let sel = selection(root);
+    let mut diag = ScanDiagnostics::default();
+    let files = select_files(&sel, &mut diag).expect("select");
+    let names: Vec<String> = files
+        .iter()
+        .map(|f| {
+            f.path
+                .file_name()
+                .expect("name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(names, vec!["lib.rs".to_string()], "{names:?}");
+    assert_eq!(diag.skipped_test, 4, "{diag:?}");
+}
+
+#[test]
+fn select_files_test_skip_ignores_explicit_globs() {
+    // Must-NOT-fire control inverted: unlike the hidden-file precedent,
+    // explicit includes do NOT restore test paths — the skip is absolute
+    // so test code can neither pollute recall nor draw commentary.
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join("unit_test.rs"), "fn t() {}\n").expect("write");
+    let sel = FileSelection {
+        roots: vec![dir.path().to_path_buf()],
+        include_globs: vec!["*.rs".to_string()],
+        exclude_globs: Vec::new(),
+        extra_skip_dirs: Vec::new(),
+        honor_gitignore: false,
+        max_bytes_override: None,
+    };
+    let mut diag = ScanDiagnostics::default();
+    let files = select_files(&sel, &mut diag).expect("select");
+    assert!(files.is_empty(), "test paths never restore");
+    assert_eq!(diag.skipped_test, 1, "{diag:?}");
+}

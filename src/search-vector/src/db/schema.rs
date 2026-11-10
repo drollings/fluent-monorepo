@@ -105,7 +105,18 @@ pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
                     calls_json TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (name, file));
                 CREATE INDEX IF NOT EXISTS idx_graph_symbols_name ON graph_symbols(name);
-                CREATE INDEX IF NOT EXISTS idx_graph_symbols_file ON graph_symbols(file);",
+                CREATE INDEX IF NOT EXISTS idx_graph_symbols_file ON graph_symbols(file);
+                CREATE TABLE IF NOT EXISTS symbols (
+                    symbol_id TEXT PRIMARY KEY,
+                    file_id TEXT NOT NULL,
+                    name TEXT,
+                    scope TEXT,
+                    signature TEXT,
+                    interface_hash TEXT NOT NULL DEFAULT '',
+                    content_hash TEXT NOT NULL DEFAULT '',
+                    range_json TEXT NOT NULL DEFAULT '{}');
+                CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_id);
+                CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);",
             )
             .map_err(DbError::from)?;
             ensure_file_status_columns(conn)?;

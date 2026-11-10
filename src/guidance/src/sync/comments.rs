@@ -15,6 +15,48 @@ pub enum SyncError {
 
 common_core::impl_from_io_error!(SyncError);
 
+/// Certified write gate for generated prose: the prose lands only when
+/// every deterministic check passes — the target line resolves in the
+/// source, every backticked symbol it names exists, and it fits the
+/// token budget. Human prose never passes through here; curated comments
+/// keep their byte-identical path in `sync_comments`.
+#[must_use]
+pub fn certified_write(
+    source: &str,
+    prose: &str,
+    line: Option<u32>,
+    known_symbols: &[&str],
+    max_tokens: usize,
+) -> Option<String> {
+    if prose.trim().is_empty() {
+        return None;
+    }
+    let line_count = source.lines().count() as u32;
+    match line {
+        Some(number) if number >= 1 && number <= line_count.max(1) => {}
+        _ => return None,
+    }
+    if fluent_llm::tokens::estimate_tokens(prose) as usize > max_tokens {
+        return None;
+    }
+    for name in backticked_names(prose) {
+        if !known_symbols.contains(&name.as_str()) {
+            return None;
+        }
+    }
+    Some(prose.to_string())
+}
+
+fn backticked_names(prose: &str) -> Vec<String> {
+    prose
+        .split('`')
+        .enumerate()
+        .filter(|(index, _)| index % 2 == 1)
+        .map(|(_, name)| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
 /// Backfill curated comments into source. Returns whether bytes changed.
 pub fn sync_comments(
     source_path: &Path,
@@ -106,6 +148,10 @@ fn apply_insertions(source: &str, mut insertions: Vec<(usize, Vec<String>)>) -> 
 
     result.trim_end().to_string()
 }
+
+#[cfg(test)]
+#[path = "../../tests/certified_commentary.rs"]
+mod certified_commentary_tests;
 
 #[cfg(test)]
 mod tests {

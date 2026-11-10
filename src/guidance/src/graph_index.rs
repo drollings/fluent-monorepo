@@ -822,6 +822,10 @@ pub(crate) fn normalize_separators(path: &str) -> String {
 mod tests;
 
 #[cfg(test)]
+#[path = "../tests/graph_single_harvest.rs"]
+mod single_harvest_tests;
+
+#[cfg(test)]
 #[path = "../tests/graph_resolution_labels.rs"]
 mod resolution_labels_tests;
 

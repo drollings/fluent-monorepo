@@ -7,6 +7,7 @@
 /// - `fluent-router` `transforms::DecomposeToAnonymizedHypothetical`
 /// - `fluent-router` `dispatch::escalation` question mode (hypotheticals)
 /// - `coral` `tier_units` (pre-LLM query scrub)
+/// - `guidance-core` `enhancer::redact_prompt` (pre-LLM prompt scrub)
 ///
 /// Deliberately SEPARATE vocabularies (not this function — do not merge;
 /// each is locked by its own goldens):

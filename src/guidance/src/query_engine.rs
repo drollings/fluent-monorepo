@@ -4,9 +4,10 @@ use thiserror::Error;
 use fluent_concurrency::ladder::first_accept_in_order_sync;
 use fluent_wvr::{Component, WorkContext, WorkUnit};
 
-use crate::ast_parser;
-use crate::memory::MemoryBridge;
-use crate::query::formatter::{CompactFormatter, DebugFormatter, JsonFormatter, MarkdownFormatter};
+use crate::ast_parser::AstParser;
+use fluent_concurrency::thread_resource::with_tlr;
+
+fluent_concurrency::thread_local_resource!(static FORMAT_PARSER: AstParser);use crate::query::formatter::{CompactFormatter, DebugFormatter, JsonFormatter, MarkdownFormatter};
 use crate::query::hybrid::{plan_from_query, stages_from_hits};
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::recall::{run_recall, RecallStorage};
@@ -46,7 +47,6 @@ pub struct QueryEngine {
     pub aliases: Option<SemanticAliases>,
     pub no_llm: bool,
     backends: Vec<RegisteredBackend>,
-    memory: Option<MemoryBridge>,
 }
 
 impl Default for QueryEngine {
@@ -62,7 +62,6 @@ impl QueryEngine {
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
-            memory: None,
         }
     }
 
@@ -72,7 +71,6 @@ impl QueryEngine {
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
-            memory: None,
         }
     }
 
@@ -115,31 +113,6 @@ impl QueryEngine {
         self
     }
 
-    /// Attach a memory bridge for prefetch injection and post-synthesis sync.
-    #[must_use]
-    pub fn with_memory(mut self, memory: MemoryBridge) -> Self {
-        self.memory = Some(memory);
-        self
-    }
-
-    /// Pre-fetch memory context for injection into the system prompt.
-    /// Returns formatted text to prepend to the LLM system prompt.
-    /// Returns empty string if no memory bridge is attached.
-    pub async fn prefetch_memory_context(&self, query: &str) -> String {
-        match &self.memory {
-            Some(bridge) => bridge.prefetch_context(query).await,
-            None => String::new(),
-        }
-    }
-
-    /// Sync a completed turn with the active memory plugin.
-    /// Call this after LLM synthesis completes to persist the interaction.
-    pub async fn sync_memory_turn(&self, user_content: &str, assistant_content: &str) {
-        if let Some(ref bridge) = self.memory {
-            bridge.sync_turn(user_content, assistant_content).await;
-        }
-    }
-
     /// Dispatch a query through the tiered search pipeline.
     ///
     /// G1: Uses `FsmEngine` for richer classification (intent + domain + confidence)
@@ -172,11 +145,14 @@ impl QueryEngine {
         };
 
         let mut fsm = strategy::FsmEngine::new();
-        let primary_intent = fsm.run(query).intent;
+        let class = fsm.run(query);
+        let primary_intent = class.intent;
 
         // Build owned rungs: (intent, &dyn SearchBackend) pairs that match — primary first,
         // then fallbacks deduped by construction (no `tried` set needed).
         // Native dispatch views out of the uniform registrations.
+        // Exact precheck verdicts short-circuit: a high-confidence
+        // deterministic intent never pays the fallback rungs.
         let mut rungs: Vec<(QueryIntent, &dyn SearchBackend)> = Vec::new();
         for registration in &self.backends {
             let backend = registration.backend.as_ref();
@@ -184,6 +160,12 @@ impl QueryEngine {
                 rungs.push((primary_intent, backend));
             }
         }
+        // Fallback order is fixed and shared by both arms: exact precheck
+        // verdicts additionally skip model-backed rungs (LLM scoring,
+        // embedding inference) while keeping every deterministic rung, so
+        // `NoResults` still falls through and hard errors still
+        // short-circuit exactly as the ladder pins.
+        let short_circuit = super::query::envelope::should_short_circuit(&class);
         for intent in [
             QueryIntent::SingleIdentifier,
             QueryIntent::IdentifierLookup,
@@ -199,7 +181,7 @@ impl QueryEngine {
             }
             for registration in &self.backends {
                 let backend = registration.backend.as_ref();
-                if backend.matches(intent) {
+                if backend.matches(intent) && !(short_circuit && backend.uses_model()) {
                     rungs.push((intent, backend));
                 }
             }
@@ -221,11 +203,7 @@ impl QueryEngine {
         }
     }
 
-    /// Explain a query with automatic memory integration.
-    ///
-    /// G6: If a MemoryBridge is attached, prefetches memory context before
-    /// search and syncs the turn after synthesis — callers no longer need
-    /// to manually invoke prefetch/sync.
+    /// Explain a query over the configured backends.
     pub fn explain(&self, query: &str, doc: &GuidanceDoc) -> Result<Vec<Stage>, QueryEngineError> {
         // Expand query with semantic aliases if available
         let expanded_query = if let Some(ref aliases) = self.aliases {
@@ -239,6 +217,19 @@ impl QueryEngine {
         };
 
         self.dispatch_search(&expanded_query, doc)
+    }
+
+    /// Answer a query with the unified envelope: intent, axis-labeled
+    /// confidence, stages, citations, gaps, and resolution method.
+    /// Additive: `explain` keeps its stage shape byte-identically.
+    pub fn answer(&self, query: &str, doc: &GuidanceDoc) -> super::query::envelope::AnswerEnvelope {
+        let mut fsm = strategy::FsmEngine::new();
+        let class = fsm.run(query);
+        let route = fsm.route(&class).to_string();
+        match self.explain(query, doc) {
+            Ok(stages) => super::query::envelope::AnswerEnvelope::from_stages(&class, &route, stages),
+            Err(_) => super::query::envelope::AnswerEnvelope::from_stages(&class, &route, Vec::new()),
+        }
     }
 
     /// Fuse-always hybrid explain over the fragment index (P1): builds a
@@ -281,8 +272,9 @@ impl QueryEngine {
     /// The handoff is infallible (encoded from `Serialize` stages here).
     pub fn format_stages(stages: &[Stage], format: OutputFormat) -> String {
         let mut resolved = stages.to_vec();
-        let mut parser = ast_parser::AstParser::new();
-        resolve_stage_lines(&mut resolved, &mut parser);
+        with_tlr(&FORMAT_PARSER, |parser| {
+            resolve_stage_lines(&mut resolved, parser);
+        });
         let handle: std::sync::Arc<dyn Component> = match format {
             OutputFormat::Markdown => std::sync::Arc::new(MarkdownFormatter),
             OutputFormat::Json => std::sync::Arc::new(JsonFormatter),
@@ -359,7 +351,7 @@ impl QueryEngine {
 
 /// Resolve line numbers for stages that have member metadata but no lines.
 /// Re-parses the source file with tree-sitter to get fresh positions.
-fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser) {
+fn resolve_stage_lines(stages: &mut [Stage], parser: &mut AstParser) {
     let mut cache: Option<(std::path::PathBuf, String, fluent_types::GuidanceDoc)> = None;
 
     for stage in stages.iter_mut() {

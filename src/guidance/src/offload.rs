@@ -96,6 +96,11 @@ pub enum OffloadError {
     /// Policy refused the draft before anything was staged.
     #[error("policy refused: {0}")]
     Policy(String),
+    /// Target changed since the loop read it: nothing was written, the
+    /// item requeues and the loop re-reads. A human editing a file is
+    /// never overwritten, neither by write-back nor by revert-restore.
+    #[error("target changed since read, requeue: {0}")]
+    Changed(String),
 }
 
 common_core::impl_from_io_error!(OffloadError);
@@ -115,15 +120,20 @@ pub fn is_whitespace_only(before: &str, after: &str) -> bool {
     strip(before) == strip(after)
 }
 
-/// Whether `path` is a test target drafts must never touch: a `tests` or
-/// `testing` directory, or a `test_`/`_test`/`_tests` file stem. Guards by
-/// shape, never by content — a draft touching tests is refused outright.
+/// Whether `path` is a test target the engine must never touch: a
+/// `tests`, `testing`, or `e2e` directory, or a `test_`/`_test`/`_tests`
+/// file stem. Guards by shape, never by content — test code is neither
+/// indexed, nor described, nor drafted. Stems stay conservative on
+/// purpose: a bare `test` stem (e.g. `test.zig` fixtures) is production
+/// code until it says otherwise.
 #[must_use]
 pub fn is_test_path(path: &Path) -> bool {
-    if path
-        .components()
-        .any(|component| matches!(component.as_os_str().to_str(), Some("tests" | "testing")))
-    {
+    if path.components().any(|component| {
+        matches!(
+            component.as_os_str().to_str(),
+            Some("tests" | "testing" | "e2e")
+        )
+    }) {
         return true;
     }
     let stem = path
@@ -133,6 +143,16 @@ pub fn is_test_path(path: &Path) -> bool {
     stem.starts_with("test_") || stem.ends_with("_test") || stem.ends_with("_tests")
 }
 
+/// Re-read the target and refuse to touch it when it moved since the
+/// loop read it. Called before every write-back and every revert-restore:
+/// a human editing a file is never overwritten either way.
+fn unchanged_since(source: &Path, expected: &[u8]) -> Result<(), OffloadError> {
+    let current = common_core::io::read_to_string_err(source)?;
+    if current.as_bytes() != expected {
+        return Err(OffloadError::Changed(source.to_string_lossy().into_owned()));
+    }
+    Ok(())
+}
 /// Run the verify command, capturing combined output. Green is exit zero;
 /// spawn failure is a tool error (the gate never ran).
 fn capture_gate(argv: &[&str]) -> Result<(bool, String), OffloadError> {
@@ -232,6 +252,10 @@ fn apply_tool(copy_path: &Path, tool: ApplyTool) -> Result<bool, OffloadError> {
 
 /// Stage, apply, verify, keep-or-restore one file. Green writes back via
 /// `write_atomic`; red restores the exact original bytes. No model calls.
+///
+/// Optimistic concurrency: every write to the source first re-reads it.
+/// A target that changed since the loop read it is never touched — the
+/// call fails with `Changed` and the item requeues for a fresh read.
 pub fn apply_verified(
     source: &Path,
     tool: ApplyTool,
@@ -242,6 +266,27 @@ pub fn apply_verified(
         return Err(OffloadError::EmptyCommand);
     }
     let original = common_core::io::read_to_string_err(source)?;
+    apply_verified_expected(source, tool, verify_command, max_attempts, original.as_bytes())
+}
+
+/// Same as [`apply_verified`], but the loop's earlier read pins the
+/// expected bytes: a target that moved since is left untouched and the
+/// item requeues. This is the optimistic-concurrency seam — the plain
+/// entry point delegates with a fresh read.
+pub fn apply_verified_expected(
+    source: &Path,
+    tool: ApplyTool,
+    verify_command: &[String],
+    max_attempts: u32,
+    expected: &[u8],
+) -> Result<ApplyReport, OffloadError> {
+    if verify_command.is_empty() {
+        return Err(OffloadError::EmptyCommand);
+    }
+    let original = common_core::io::read_to_string_err(source)?;
+    if original.as_bytes() != expected {
+        return Err(OffloadError::Changed(source.to_string_lossy().into_owned()));
+    }
     let before_hash = common_core::hash::sha256_hex(original.as_bytes());
     let staged = StagedCopy::stage(source, original.as_bytes())?;
     let attempts = max_attempts.max(1);
@@ -262,10 +307,12 @@ pub fn apply_verified(
             });
         }
         let patched = common_core::io::read_to_string_err(&staged.copy_path)?;
+        unchanged_since(source, original.as_bytes())?;
         common_core::io::write_atomic(source, patched.as_bytes())?;
         let (green, output) = capture_gate(&argv)?;
         gate_output = output;
         if green {
+            unchanged_since(source, patched.as_bytes())?;
             return Ok(ApplyReport {
                 file: source.to_string_lossy().into_owned(),
                 tool: tool.name(),
@@ -277,6 +324,7 @@ pub fn apply_verified(
                 after_hash: common_core::hash::sha256_hex(patched.as_bytes()),
             });
         }
+        unchanged_since(source, patched.as_bytes())?;
         common_core::io::write_atomic(source, original.as_bytes())?;
     }
     Ok(ApplyReport {
@@ -338,10 +386,12 @@ pub fn apply_draft(
     let mut gate_output = String::new();
     for attempt in 1..=attempts {
         staged.reset(draft.as_bytes())?;
+        unchanged_since(source, original.as_bytes())?;
         common_core::io::write_atomic(source, draft.as_bytes())?;
         let (green, output) = capture_gate(&argv)?;
         gate_output = output;
         if green {
+            unchanged_since(source, draft.as_bytes())?;
             return Ok(ApplyReport {
                 file: source.to_string_lossy().into_owned(),
                 tool: "draft",
@@ -353,6 +403,7 @@ pub fn apply_draft(
                 after_hash: common_core::hash::sha256_hex(draft.as_bytes()),
             });
         }
+        unchanged_since(source, draft.as_bytes())?;
         common_core::io::write_atomic(source, original.as_bytes())?;
     }
     Ok(ApplyReport {
@@ -365,6 +416,24 @@ pub fn apply_draft(
         before_hash: before_hash.clone(),
         after_hash: before_hash,
     })
+}
+
+/// Same as [`apply_draft`], but the loop's earlier read pins the expected
+/// bytes: a target that moved since is left untouched and the item
+/// requeues. The plain entry point delegates with a fresh read.
+pub fn apply_draft_expected(
+    source: &Path,
+    class: TriageClass,
+    draft: &str,
+    verify_command: &[String],
+    max_attempts: u32,
+    expected: &[u8],
+) -> Result<ApplyReport, OffloadError> {
+    let current = common_core::io::read_to_string_err(source)?;
+    if current.as_bytes() != expected {
+        return Err(OffloadError::Changed(source.to_string_lossy().into_owned()));
+    }
+    apply_draft(source, class, draft, verify_command, max_attempts)
 }
 
 #[cfg(test)]

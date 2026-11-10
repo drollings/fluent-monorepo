@@ -149,6 +149,43 @@ pub struct FragmentLemma {
     pub confidence: f64,
 }
 
+/// Identity row for one definition: the stable symbol key plus the two
+/// fingerprints that separate interface edits from body edits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolRecord {
+    /// Stable symbol id (fragment id of the defining chunk).
+    pub symbol_id: String,
+    /// Owning file id.
+    pub file_id: String,
+    /// Declared name, if any.
+    pub name: Option<String>,
+    /// Lexical scope breadcrumb.
+    pub scope: Option<String>,
+    /// One-line signature.
+    pub signature: Option<String>,
+    /// Hash of the interface (name, type, scope, signature).
+    pub interface_hash: String,
+    /// Hash of the full fragment text.
+    pub content_hash: String,
+    /// Serialized range.
+    pub range_json: String,
+}
+
+impl SymbolRecord {
+    pub(crate) fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            symbol_id: row.get(0)?,
+            file_id: row.get(1)?,
+            name: row.get(2)?,
+            scope: row.get(3)?,
+            signature: row.get(4)?,
+            interface_hash: row.get(5)?,
+            content_hash: row.get(6)?,
+            range_json: row.get(7)?,
+        })
+    }
+}
+
 /// Full fragment row for hit materialization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FragmentRow {

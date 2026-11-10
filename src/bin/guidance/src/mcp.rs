@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common_core::jsonrpc::{JsonRpcError, JsonRpcHandler, JsonRpcRequest, JsonRpcResponse};
-use guidance_core::memory::MemoryBridge;
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::LazyNlp;
@@ -39,7 +38,6 @@ impl From<std::io::Error> for McpError {
 
 pub struct McpServer {
     db: Arc<GuidanceDb>,
-    memory: Option<MemoryBridge>,
     workspace: Option<PathBuf>,
     json_dir: Option<PathBuf>,
     toolset: Toolset,
@@ -49,9 +47,9 @@ pub struct McpServer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Toolset {
     /// Search-only (`guidance_explain`).
+    #[default]
     Agent,
     /// Search + status/lifecycle (`guidance_explain`, `guidance_status`).
-    #[default]
     Full,
 }
 
@@ -442,20 +440,9 @@ impl McpServer {
     pub fn new(db: Arc<GuidanceDb>) -> Self {
         Self {
             db,
-            memory: None,
             workspace: None,
             json_dir: None,
-            toolset: Toolset::Full,
-        }
-    }
-
-    pub fn with_memory(db: Arc<GuidanceDb>, memory: MemoryBridge) -> Self {
-        Self {
-            db,
-            memory: Some(memory),
-            workspace: None,
-            json_dir: None,
-            toolset: Toolset::Full,
+            toolset: Toolset::Agent,
         }
     }
 
@@ -590,19 +577,6 @@ impl McpServer {
             }));
         }
 
-        if let Some(ref memory) = self.memory {
-            let schemas = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(memory.tool_schemas())
-            });
-            for schema in schemas {
-                tools.push(serde_json::json!({
-                    "name": schema.name,
-                    "description": schema.description,
-                    "inputSchema": schema.parameters,
-                }));
-            }
-        }
-
         JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: request.id.clone(),
@@ -630,31 +604,6 @@ impl McpServer {
             "guidance_explain" => self.handle_guidance_explain(request, &arguments),
             "guidance_status" if self.toolset == Toolset::Full => {
                 self.handle_guidance_status(request)
-            }
-            other if self.memory.is_some() => {
-                let memory = self.memory.as_ref().unwrap();
-                match tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(memory.handle_tool_call(other, &arguments))
-                }) {
-                    Ok(result) => JsonRpcResponse {
-                        jsonrpc: "2.0".into(),
-                        id: request.id.clone(),
-                        result: Some(serde_json::json!({
-                            "content": [{"type": "text", "text": result}]
-                        })),
-                        error: None,
-                    },
-                    Err(e) => JsonRpcResponse {
-                        jsonrpc: "2.0".into(),
-                        id: request.id.clone(),
-                        error: Some(JsonRpcError {
-                            code: -32000,
-                            message: e.to_string(),
-                        }),
-                        result: None,
-                    },
-                }
             }
             _ => JsonRpcResponse {
                 jsonrpc: "2.0".into(),
@@ -865,12 +814,8 @@ pub fn serve_stdio_with_options(
         GuidanceDb::open_in_memory().map_err(|e| McpError::Db(e.to_string()))?
     };
 
-    let memory = guidance_core::memory::init_memory_bridge();
-    let server = match memory {
-        Some(m) => McpServer::with_memory(Arc::new(db), m),
-        None => McpServer::new(Arc::new(db)),
-    }
-    .with_workspace(workspace, json_dir, toolset);
+    let server =
+        McpServer::new(Arc::new(db)).with_workspace(workspace, json_dir, toolset);
     common_core::jsonrpc::serve_stdio(&server).map_err(McpError::Io)
 }
 
@@ -913,7 +858,19 @@ mod tests {
         let response = server.handle_request(req).expect("handle");
         let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");
         let tools = resp["result"]["tools"].as_array().expect("tools array");
-        assert!(tools.len() >= 2);
+        assert_eq!(tools.len(), 1, "agent default is search-only: {tools:?}");
+        assert_eq!(tools[0]["name"], "guidance_explain");
+    }
+
+    #[test]
+    fn test_tools_list_full_adds_status() {
+        let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+        let server = McpServer::new(db).with_workspace(None, None, Toolset::Full);
+        let req = r#"{"jsonrpc":"2.0","method":"tools/list","id":1,"params":{}}"#;
+        let response = server.handle_request(req).expect("handle");
+        let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");
+        let tools = resp["result"]["tools"].as_array().expect("tools array");
+        assert_eq!(tools.len(), 2, "full adds lifecycle: {tools:?}");
     }
 
     #[test]
@@ -927,8 +884,19 @@ mod tests {
     }
 
     #[test]
-    fn test_guidance_status() {
+    fn test_guidance_status_rejected_under_agent_default() {
         let server = make_server();
+        let req = r#"{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"guidance_status","arguments":{}}}"#;
+        let response = server.handle_request(req).expect("handle");
+        let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");
+        assert!(resp["result"].is_null(), "agent default rejects status: {resp:?}");
+        assert!(resp["error"].is_object());
+    }
+
+    #[test]
+    fn test_guidance_status_full_toolset() {
+        let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+        let server = McpServer::new(db).with_workspace(None, None, Toolset::Full);
         let req = r#"{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"guidance_status","arguments":{}}}"#;
         let response = server.handle_request(req).expect("handle");
         let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");

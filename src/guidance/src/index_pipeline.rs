@@ -23,7 +23,7 @@ use fluent_wvr::{
     WorkUnit,
 };
 use internment::ArcIntern;
-use search_vector::db::{FileRecord, FragmentLemma, GuidanceDb};
+use search_vector::db::{FileRecord, FragmentLemma, GuidanceDb, SymbolRecord};
 
 use crate::ast_parser::AstParser;
 use crate::diff::{compute_diff, hash_file, make_file_id, ScannedFile};
@@ -927,6 +927,7 @@ fn commit_file(
 ) -> Result<usize, String> {
     let record = scanned_record(file);
     let mut fragment_records = Vec::with_capacity(fragments.len());
+    let mut symbol_rows: Vec<SymbolRecord> = Vec::new();
     let mut lemmas: Vec<FragmentLemma> = Vec::new();
     for (fragment, vector) in fragments.iter().zip(vectors.iter()) {
         let entity = prepared_to_entity(file, fragment);
@@ -934,6 +935,9 @@ fn commit_file(
         row.cjk_text = common_core::string::cjk_bigrams(&fragment.content_text).join(" ");
         row.embedding = Some(vector.clone());
         fragment_records.push(row);
+        if let Some(symbol) = crate::query::db_storage::symbol_record(&entity) {
+            symbol_rows.push(symbol);
+        }
         for lemma in query_lemmas(nlp, &fragment.content_text) {
             lemmas.push(fragment_lemma(&fragment.id, &lemma, 1.0));
         }
@@ -942,7 +946,15 @@ fn commit_file(
         .replace_file(&record, &fragment_records, &lemmas)
         .map_err(|e| format!("commit: {e}"))?;
     commit_graph(db, &file.absolute_path, harvest)?;
+    commit_symbols(db, &symbol_rows)?;
     Ok(count)
+}
+
+/// Persist identity rows derived from the same harvest pass as the
+/// fragments above. Write-only: recall still reads fragments.
+fn commit_symbols(db: &GuidanceDb, rows: &[SymbolRecord]) -> Result<(), String> {
+    db.replace_symbols(rows).map_err(|e| format!("symbols: {e}"))?;
+    Ok(())
 }
 
 /// Persist one file's graph inputs from the extract pass's harvest (the

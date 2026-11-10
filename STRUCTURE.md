@@ -41,7 +41,7 @@ Then you you must read
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
-├── README.md  # # Fluent Monorepo - deterministic-first 
+├── README.md  # # Fluent Monorepo
 ├── STRUCTURE.md  # # AST-Guidance Project Structure
 ├── audit/
 │   ├── FINDINGS.md  # # Audit Findings — fluent-wvr / flu...
@@ -190,9 +190,9 @@ Then you you must read
     │   ├── guidance/
     │   │   ├── Cargo.toml
     │   │   ├── src/
-    │   │   │   ├── benchmark.rs  # //! `guidance benchmark` — query ac...
-    │   │   │   ├── commit.rs  # //! Commit message generation — LLM...
-    │   │   │   ├── editor.rs  # //! Editor interaction utilities for hum
+    │   │   │   ├── benchmark.rs
+    │   │   │   ├── commit.rs
+    │   │   │   ├── editor.rs
     │   │   │   ├── embed.rs  # //! Embedding-backend resolution from pr
     │   │   │   ├── index_cmd.rs  # //! `index` command (P5): thin shell ove
     │   │   │   ├── main.rs  # #![forbid(unsafe_code)]
@@ -383,6 +383,7 @@ Then you you must read
     │       ├── scan_sort_equiv.rs  # //! Equivalence + golden coverage for th
     │       ├── target.rs  # use super::*;
     │       ├── target_work_unit.rs  # use super::*;
+    │       ├── target_work_unit_wave.rs  # //! Parallel-wave batch test: independen
     │       ├── type_inference.rs  # use super::*;
     │       ├── version.rs  # use crate::resolver::{DependencyResolver
     │       ├── work_unit.rs  # use super::*;
@@ -709,7 +710,7 @@ Then you you must read
     │   │   ├── grounding.rs  # //! Grounding enforcement — ensures...
     │   │   ├── index_pipeline.rs  # //! P2 incremental index pipeline: scan 
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── memory.rs  # //! Memory integration for the guidance 
+    │   │   ├── memory.rs
     │   │   ├── model_lanes.rs  # //! Model-call priority lanes: interacti
     │   │   ├── offload.rs  # //! Deterministic offload applier: the n
     │   │   ├── plugin.rs  # use std::path::{Path, PathBuf};
@@ -1320,6 +1321,7 @@ Then you you must read
     │       ├── protocol.rs  # //! Wire-codec tests: WAV bytes, message
     │       ├── session.rs  # //! Session tests: scripted SSE turns (t
     │       ├── voice.rs  # //! Voice-server tests: resolution order
+    │       ├── voice_readiness.rs  # //! Voice readiness probes over loopback
     │       └── worker.rs  # //! Worker tests: stub-binary synthesis 
     ├── orator-store/
     │   ├── Cargo.toml
@@ -1512,6 +1514,7 @@ Then you you must read
     │       │   ├── pivot_calibration.json
     │       │   └── terminal_mock_check.txt
     │       ├── delta_volume_profile.rs  # //! Native Delta Volume Profile: binning
+    │       ├── demo_contract.rs  # //! Shell-contract E2E: the built `demo`
     │       ├── demo_shell.rs  # //! Shell-contract pins for the demo col
     │       ├── derived_panes.rs  # use super::*;
     │       ├── export.rs  # use super::*;
@@ -1562,6 +1565,7 @@ Then you you must read
     │       ├── widgets.rs  # use super::*;
     │       ├── window_alignment.rs  # use super::*;
     │       ├── workspace.rs  # //! Central chart workspace: boot state,
+    │       ├── workspace_store.rs  # //! Store-backed gateway switch: switchi
     │       ├── workspace_symbols.rs  # //! Gateway-less symbol switches: the de
     │       └── workspace_tape.rs  # //! The workspace seeds and paints headl
     ├── protopyne-kernels/

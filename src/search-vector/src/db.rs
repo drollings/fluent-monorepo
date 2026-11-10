@@ -18,7 +18,7 @@ use fragments::{
 };
 pub use fragments::{
     build_fts_match, FileRecord, FragmentFilter, FragmentFreshness, FragmentLemma, FragmentRecord,
-    FragmentRow, ScoredFragment,
+    FragmentRow, ScoredFragment, SymbolRecord,
 };
 pub use graph_rows::{GraphEdgeRow, GraphSymbolRow};
 
@@ -961,6 +961,7 @@ impl GuidanceDb {
                     "files",
                     "graph_edges",
                     "graph_symbols",
+                    "symbols",
                 ] {
                     fluent_db::query::execute(
                         tx,
@@ -1014,8 +1015,65 @@ impl GuidanceDb {
                         rusqlite::params![path],
                     )?;
                 }
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM symbols WHERE file_id = ?1",
+                    rusqlite::params![file_id],
+                )?;
                 Ok(())
             })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Replace one file's identity rows (delete + insert in one
+    /// transaction). Write-only this milestone: readers stay on fragments.
+    pub fn replace_symbols(&self, rows: &[SymbolRecord]) -> Result<usize, VectorDbError> {
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        let file_id = rows[0].file_id.clone();
+        self.store
+            .transaction(|tx| {
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM symbols WHERE file_id = ?1",
+                    rusqlite::params![file_id],
+                )?;
+                for row in rows {
+                    fluent_db::query::execute(
+                        tx,
+                        "INSERT OR REPLACE INTO symbols
+                         (symbol_id, file_id, name, scope, signature,
+                          interface_hash, content_hash, range_json)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        rusqlite::params![
+                            row.symbol_id,
+                            row.file_id,
+                            row.name,
+                            row.scope,
+                            row.signature,
+                            row.interface_hash,
+                            row.content_hash,
+                            row.range_json,
+                        ],
+                    )?;
+                }
+                Ok(rows.len())
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Identity rows for one file, ordered by symbol id.
+    pub fn symbols_for_file(&self, file_id: &str) -> Result<Vec<SymbolRecord>, VectorDbError> {
+        use crate::db::fragments::SymbolRecord;
+        self.store
+            .query_rows(
+                "SELECT symbol_id, file_id, name, scope, signature,
+                        interface_hash, content_hash, range_json
+                 FROM symbols WHERE file_id = ?1 ORDER BY symbol_id",
+                params![file_id],
+                SymbolRecord::from_row,
+            )
             .map_err(VectorDbError::from)
     }
 

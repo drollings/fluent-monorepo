@@ -29,6 +29,10 @@ path = "tests/explain_cli.rs"
 name = "component_gate_cli"
 path = "tests/component_gate_cli.rs"
 
+[[test]]
+name = "prune_surface"
+path = "tests/prune_surface.rs"
+
 [dependencies]
 common-core = { path = "../../common-core" }
 guidance-core = { path = "../../guidance" }

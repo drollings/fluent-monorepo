@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use common_core::walk::{walk_files_filtered, SkipReason, WalkEntry, WalkFilter};
 
+use crate::offload::is_test_path;
 use crate::query::glob::path_pattern_matches;
 use crate::search_constants::{
     MAX_CODE_FILE_SIZE_BYTES, MAX_DATA_FILE_SIZE_BYTES, MAX_IMAGE_FILE_SIZE_BYTES,
@@ -67,6 +68,8 @@ pub struct ScanDiagnostics {
     pub skipped_kind: usize,
     /// Skipped: include/exclude globs.
     pub skipped_glob: usize,
+    /// Skipped: unit-test or e2e-test path (never indexed, never described).
+    pub skipped_test: usize,
     /// Image files in the selection (kind-tagged, skipped at embed time).
     pub image_files: usize,
 }
@@ -214,6 +217,13 @@ fn select_walk_entry(
     diag: &mut ScanDiagnostics,
     out: &mut Vec<SelectedFile>,
 ) {
+    // Unit tests and e2e tests are never indexed and never described:
+    // the skip is absolute (explicit globs do not override it) so test
+    // code can neither pollute recall nor draw model-backed commentary.
+    if is_test_path(&entry.path) {
+        diag.skipped_test += 1;
+        return;
+    }
     let Some((kind, format)) = detect_file_type(&entry.path) else {
         diag.skipped_kind += 1;
         return;

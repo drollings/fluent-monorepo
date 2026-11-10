@@ -1189,7 +1189,7 @@ pub fn run_deep_extra() -> Vec<Measured> {
     let (_root, docs) = stage_fixture_docs();
     let queries = load_nav_queries();
     let engine = QueryEngine::new();
-    queries
+    let mut out: Vec<Measured> = queries
         .iter()
         .map(|query| {
             let stages = explain_all(&engine, &docs, &query.query);
@@ -1205,7 +1205,52 @@ pub fn run_deep_extra() -> Vec<Measured> {
                 higher_is_better: true,
             }
         })
-        .collect()
+        .collect();
+    out.extend(redteam_deep_extra());
+    out
+}
+
+/// Read-only storage probes for drill-down: fixed-fixture math, no database.
+#[must_use]
+pub fn redteam_deep_extra() -> Vec<Measured> {
+    use crate::redteam::{file_level_parity, lemma_density, replace_file_cost, size_probe_for_fragment};
+    let cost = replace_file_cost(4, 12);
+    let probe = size_probe_for_fragment("fn f() {}", "fn f", 768);
+    vec![
+        Measured {
+            name: "deep.redteam.fts_writes_per_replace".to_string(),
+            value: cost.fts_writes as f64,
+            repro: "cargo test -p guidance-core --lib redteam".to_string(),
+            higher_is_better: false,
+        },
+        Measured {
+            name: "deep.redteam.total_row_writes_per_replace".to_string(),
+            value: cost.total_row_writes as f64,
+            repro: "cargo test -p guidance-core --lib redteam".to_string(),
+            higher_is_better: false,
+        },
+        Measured {
+            name: "deep.redteam.embedding_q8_bytes".to_string(),
+            value: probe.embedding_q8_bytes as f64,
+            repro: "cargo test -p guidance-core --lib redteam".to_string(),
+            higher_is_better: false,
+        },
+        Measured {
+            name: "deep.redteam.lemma_density".to_string(),
+            value: lemma_density(12, 4),
+            repro: "cargo test -p guidance-core --lib redteam".to_string(),
+            higher_is_better: false,
+        },
+        Measured {
+            name: "deep.redteam.writer_parity".to_string(),
+            value: f64::from(file_level_parity(
+                vec!["a".to_string()],
+                vec!["a".to_string()],
+            )),
+            repro: "cargo test -p guidance-core --lib redteam".to_string(),
+            higher_is_better: true,
+        },
+    ]
 }
 
 #[cfg(test)]

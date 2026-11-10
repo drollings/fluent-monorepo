@@ -50,6 +50,13 @@ pub trait SearchBackend: Send + Sync {
     /// Returns true if this backend handles the given intent.
     fn matches(&self, intent: QueryIntent) -> bool;
 
+    /// Whether this rung spends model inference (LLM scoring, embedding).
+    /// Deterministic rungs return false. Exact precheck verdicts skip
+    /// model-backed fallback rungs; ambiguous queries keep the full ladder.
+    fn uses_model(&self) -> bool {
+        false
+    }
+
     /// Execute the search and return synthesized stages.
     fn search(
         &self,
@@ -151,6 +158,10 @@ pub struct ConceptBackend;
 impl SearchBackend for ConceptBackend {
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(intent, QueryIntent::Conceptual | QueryIntent::HowTo)
+    }
+
+    fn uses_model(&self) -> bool {
+        true
     }
 
     fn search(

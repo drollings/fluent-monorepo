@@ -25,6 +25,10 @@ impl SearchBackend for VectorBackend<'_> {
         true
     }
 
+    fn uses_model(&self) -> bool {
+        true
+    }
+
     fn search(
         &self,
         query: &str,

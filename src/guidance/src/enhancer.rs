@@ -284,6 +284,13 @@ impl Enhancer {
         if self.debug {
             tracing::debug!("[enhancer] sending prompt (len={})", prompt.len());
         }
+        // Every model call passes the shared redaction seam first:
+        // indexed source is untrusted data, so PII-shaped spans never
+        // reach the endpoint. `redact_text` only (not the locality gate):
+        // the user explicitly configured this endpoint, so refusing
+        // remote hosts here would break the generative role.
+        let prompt = redact_prompt(prompt);
+        let prompt = prompt.as_str();
         if self.show_prompts {
             tracing::debug!("[enhancer] prompt:\n{prompt}");
         }
@@ -348,6 +355,15 @@ impl Enhancer {
         );
         fluent_llm::client::block_on(fut)
     }
+}
+
+/// Redact one model-bound prompt through the shared decision-transport
+/// seam (`anonymize_hook`). Locality gating stays out: the endpoint is
+/// user-configured, so only PII-shaped spans are removed, never the call.
+#[must_use]
+pub fn redact_prompt(prompt: &str) -> String {
+    use fluent_llm::decision::{anonymize_hook, DecisionTransport};
+    DecisionTransport::local_only().with_redact(anonymize_hook()).redact_text(prompt)
 }
 
 /// Generate missing comments for all members in a doc using the enhancer.
@@ -482,6 +498,15 @@ mod tests {
             common_core::string::extract_tag(response, "comment"),
             Some("Parses input and produces output.")
         );
+    }
+
+    #[test]
+    fn test_redact_prompt_scrubs_pii_keeps_code() {
+        let scrubbed = super::redact_prompt("contact ada@example.com about fn render");
+        assert!(!scrubbed.contains("ada@example.com"), "{scrubbed}");
+        assert!(scrubbed.contains("fn render"), "{scrubbed}");
+        let plain = "fn render(x: u8) { body }";
+        assert_eq!(super::redact_prompt(plain), plain);
     }
 
     // M8.1 characterization: `<comment>` tag behavior pinned verbatim

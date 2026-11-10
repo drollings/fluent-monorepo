@@ -12,7 +12,7 @@
 //! by the `query_db_storage` round-trip tests.
 
 use search_vector::db::{
-    FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceDb,
+    FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceDb, SymbolRecord,
 };
 
 use crate::query::plan::RecallError;
@@ -315,6 +315,81 @@ pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> Fragme
         confidence,
     }
 }
+
+/// Interface fingerprint: name, type, scope, and normalized signature.
+/// Body text never enters this hash, so a body-only edit keeps it stable.
+#[must_use]
+pub fn interface_hash_for_entity(fragment: &EntityFragment) -> String {
+    let parts = match &fragment.metadata {
+        Some(EntityMetadata::Code { symbol_type, symbol_name, scope, signature, .. }) => {
+            let kind = match symbol_type {
+                CodeSymbolType::Module => "module",
+                CodeSymbolType::Class => "class",
+                CodeSymbolType::Interface => "interface",
+                CodeSymbolType::Function => "function",
+                CodeSymbolType::Value => "value",
+                CodeSymbolType::Alias => "alias",
+            };
+            let sig: String = signature.as_deref().unwrap_or("").split_whitespace().collect();
+            format!(
+                "{kind}\0{}\0{}\0{sig}",
+                symbol_name.as_deref().unwrap_or(""),
+                scope.as_deref().unwrap_or("")
+            )
+        }
+        Some(EntityMetadata::Markdown { heading, level, scope }) => format!(
+            "markdown\0{}\0{}\0{}",
+            heading.as_deref().unwrap_or(""),
+            level.map(|level| level.to_string()).unwrap_or_default(),
+            scope.as_deref().unwrap_or("")
+        ),
+        None => String::new(),
+    };
+    common_core::hash::blake3_hex(parts.as_bytes())
+}
+
+/// Content fingerprint: the full fragment text as stored.
+#[must_use]
+pub fn content_hash_for_entity(fragment: &EntityFragment) -> String {
+    let text = match &fragment.content {
+        FragmentContent::Text { text } => text.as_str(),
+        FragmentContent::Image { .. } => "",
+    };
+    common_core::hash::blake3_hex(text.as_bytes())
+}
+
+/// Identity row for one definition; `None` for chunks without metadata.
+/// Callers persist the returned rows alongside fragments from the same
+/// harvest pass; reads stay on fragments this milestone.
+#[must_use]
+pub fn symbol_record(fragment: &EntityFragment) -> Option<SymbolRecord> {
+    let (name, scope, signature) = match &fragment.metadata {
+        Some(EntityMetadata::Code { symbol_name, scope, signature, .. }) => {
+            (symbol_name.clone(), scope.clone(), signature.clone())
+        }
+        Some(EntityMetadata::Markdown { heading, scope, level }) => (
+            heading.clone(),
+            scope.clone(),
+            level.map(|level| format!("h{level}")),
+        ),
+        None => return None,
+    };
+    let range_json = serde_json::to_string(&fragment.range).unwrap_or_else(|_| "{}".to_string());
+    Some(SymbolRecord {
+        symbol_id: fragment.id.clone(),
+        file_id: fragment.file_id.clone(),
+        name,
+        scope,
+        signature,
+        interface_hash: interface_hash_for_entity(fragment),
+        content_hash: content_hash_for_entity(fragment),
+        range_json,
+    })
+}
+
+#[cfg(test)]
+#[path = "../../tests/symbol_identity.rs"]
+mod symbol_identity_tests;
 
 pub(crate) fn file_info(file: &FileRecord) -> FileInfo {
     FileInfo {

@@ -198,6 +198,13 @@ pub struct ProjectConfig {
     #[serde(default = "crate::model_lanes::default_lane_config")]
     #[builder(default = crate::model_lanes::default_lane_config())]
     pub lanes: crate::model_lanes::LaneConfig,
+
+    /// Versioned maintenance policy: scope, mechanical classes,
+    /// human-owned documents, attempt limits, approvals. The version is
+    /// a staleness input — changing it re-derives affected work.
+    #[serde(default)]
+    #[builder(default)]
+    pub policy: crate::policy::MaintenancePolicy,
 }
 
 fn default_guidance_dir() -> PathBuf {
@@ -232,6 +239,7 @@ impl Default for ProjectConfig {
             decision_thresholds: HashMap::new(),
             calibration_registry: None,
             lanes: crate::model_lanes::LaneConfig::default(),
+            policy: crate::policy::MaintenancePolicy::default(),
         }
     }
 }
