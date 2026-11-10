@@ -114,7 +114,7 @@ impl VoiceError {
 }
 
 struct VoiceState {
-    server: Option<orator_agent::llm::Supervisor>,
+    server: Option<orator_supervise::Supervisor>,
     last_used: Instant,
     booting: bool,
     /// Task-value outcome of the last voice request: a real turn
@@ -462,7 +462,7 @@ impl VoiceOwner {
         self.clear();
     }
 
-    async fn boot(&self) -> Result<orator_agent::llm::Supervisor, VoiceError> {
+    async fn boot(&self) -> Result<orator_supervise::Supervisor, VoiceError> {
         // Explicit binaries pin exactly one candidate below; the
         // resolved path boots only when the file opts in. Off means
         // the voice server is independently started: absence fails
@@ -515,11 +515,11 @@ impl VoiceOwner {
                 if self.config.s2s.gpu {
                     config.extra_args.extend([
                         "--n-gpu-layers".to_string(),
-                        orator_agent::llm::GPU_OFFLOAD_LAYERS.to_string(),
+                        orator_supervise::GPU_OFFLOAD_LAYERS.to_string(),
                     ]);
                 }
                 async move {
-                    match orator_agent::llm::boot_with_binary(config, &binary).await {
+                    match orator_supervise::boot_with_binary(config, &binary).await {
                         Ok(server) => Ok(Some(server)),
                         Err(error) => Err(error.to_string()),
                     }
@@ -1221,10 +1221,10 @@ impl Default for VoiceOwner {
 
 /// Whether `url` answers the readiness probe right now.
 async fn is_alive(url: &str) -> bool {
-    orator_agent::llm::probe_voice_ready(
+    orator_supervise::probe_voice_ready(
         common_core::http::shared_http_client(),
         url,
-        orator_agent::llm::HealthProbe::OptionsCompletions,
+        orator_supervise::HealthProbe::OptionsCompletions,
     )
     .await
     .is_ok()

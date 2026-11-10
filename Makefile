@@ -541,7 +541,7 @@ guidance_PKGS           := guidance-core guidance guidance-ontology
 coral_PKGS              := coral-context coral
 protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
 protopyne-egui_PKGS     := protopyne-egui
-orator_PKGS            := orator orator-audio orator-voice orator-agent orator-models orator-memory orator-desktop orator-testkit orator-daemon orator-cli
+orator_PKGS            := orator orator-audio orator-voice orator-agent orator-models orator-memory orator-supervise orator-desktop orator-testkit orator-daemon orator-cli
 # The trading terminal's golden/contract tests compile only under these
 # features, so its gates carry them (its `demo_shell` golden suite is skipped
 # without them).

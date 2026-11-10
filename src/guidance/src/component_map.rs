@@ -166,6 +166,11 @@ const ENTRIES: &[Entry] = &[
         component: Some("orator"),
     },
     Entry {
+        prefix: "src/orator-supervise",
+        package: "orator-supervise",
+        component: Some("orator"),
+    },
+    Entry {
         prefix: "src/orator-models",
         package: "orator-models",
         component: Some("orator"),

@@ -10,14 +10,14 @@
 //! name on `$PATH`/managed home, then stock `llama-server`
 //! (`LLAMA_SERVER`/`$PATH`); readiness is an `OPTIONS` probe against
 //! `/v1/chat/completions`. The child is owned by
-//! `orator_agent::llm::Supervisor` — the single supervised-child
+//! `orator_supervise::Supervisor` — the single supervised-child
 //! implementation — configured with the audio probe; this module keeps
 //! only the audio-specific argv/probe wrapper.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
-use orator_agent::llm::{HealthProbe, SupervisorConfig};
+use orator_supervise::{HealthProbe, SupervisorConfig};
 
 use crate::s2s::session::S2sError;
 use orator::AudioBundle;
@@ -51,7 +51,7 @@ fn audio_server_search_table() -> Vec<PathBuf> {
             table.push(home);
         }
     }
-    table.extend(orator_agent::llm::resolve_binary_candidates());
+    table.extend(orator_supervise::resolve_binary_candidates());
     table
 }
 
@@ -108,7 +108,7 @@ pub fn resolve_audio_server() -> Option<PathBuf> {
 /// backbone, `--mmproj` projector) plus the legacy `-mv`/
 /// `--tts-speaker-file` pair only when the bundle carries them
 /// (LFM2.5). The supervised spawn renders the same bytes through
-/// [`orator_agent::llm::build_args`] over [`audio_supervisor_config`].
+/// [`orator_supervise::build_args`] over [`audio_supervisor_config`].
 #[must_use]
 pub fn voice_server_args(bundle: &AudioBundle, port: u16) -> Vec<String> {
     let mut args = vec![
@@ -162,7 +162,7 @@ pub fn audio_supervisor_config(bundle: &AudioBundle, port: u16) -> SupervisorCon
 /// so the completions route itself is the readiness signal; the
 /// probe costs no inference.
 pub async fn wait_ready(base: &str, timeout: Duration) -> Result<(), S2sError> {
-    let probe = orator_agent::llm::Supervisor::attach_with_probe(
+    let probe = orator_supervise::Supervisor::attach_with_probe(
         base.to_string(),
         HealthProbe::OptionsCompletions,
     );

@@ -47,7 +47,11 @@ fn probe_retries_with_v1_prefix() {
 #[test]
 fn probe_refused_is_unreachable_not_a_hang() {
     // A bound-then-dropped port refuses fast: the probe must report, fast.
-    let port = crate::llm::supervisor::free_port().expect("port");
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .expect("loopback binds")
+        .local_addr()
+        .expect("bound port")
+        .port();
     let base = format!("http://127.0.0.1:{port}");
     let started = std::time::Instant::now();
     let error = common_core::runtime::block_on_shared(probe_models(

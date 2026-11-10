@@ -87,3 +87,7 @@ async fn probe_once(
     })?;
     Ok(fluent_llm::openai::model_ids(&body))
 }
+
+#[cfg(test)]
+#[path = "../../tests/llm_probe.rs"]
+mod tests;

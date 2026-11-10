@@ -20,7 +20,8 @@ commands or forward control calls over either transport.
 | `orator` | Shared types, config schema, wire codec, traits, paths, GPU probe |
 | `orator-audio` | Capture/playout backends, resampling, jitter, archive, codec seam |
 | `orator-voice` | Realtime pipeline: `vad` gate, `stt` engines, `turn` policy, `tts` voices, `s2s` native adapter |
-| `orator-agent` | Thinking: `llm` supervised endpoint + session, `tools` registry/loop/sandbox/policy |
+| `orator-agent` | Thinking: `llm` endpoint session + probe, `tools` registry/loop/sandbox/policy |
+| `orator-supervise` | Single supervised-child home: binary resolution, free port, readiness probe, bounded reap |
 | `orator-models` | Model catalog, verification, residency, plus `lfm` LFM3 reference knowledge (dependency leaf) |
 | `orator-memory` | Durability + knowledge: `store` event log, `diary` diarization pipeline, `notes` summarizer/search |
 | `orator-desktop` | Probes, injection ladder, refine chain, clipboard, hotkeys, tray, D-Bus, KRunner |
@@ -56,7 +57,10 @@ Shared foundations (never reimplemented here; compose them):
 Dependency edges enforced by `it_source_guard` plus `cargo tree`:
 `orator-models` is a leaf (config/foundation only); the `s2s`
 stage never names the sibling `stt`/`tts` engine backends (module
-rule inside `orator-voice`); `common-core` stays zero-domain (no
+rule inside `orator-voice`); `orator-voice` and `orator-agent`
+never depend on each other in either direction (both compose the
+leafward `orator-supervise` home, so a cycle cannot form);
+`common-core` stays zero-domain (no
 `fluent-*`, `guidance`, `router`, `coral`, `wasm_ipc` imports);
 `fluent-concurrency` consumes `fluent-wvr` control-plane types
 without redefining them; all Orator roots carry
@@ -121,7 +125,7 @@ fades 20 ms; history commits only DAC-confirmed words + marker.
 ```
 
 The LLM serving detail: the turn queue is an `LlmRequestQueue`
-fronting the supervised endpoint in `orator-agent::llm`; per-turn prefill
+fronting a supervised endpoint (`orator-supervise`); per-turn prefill
 is chunked, speculative prefixes re-request after abort (the
 server keeps its KV cache — no client-side KV surgery), and slot
 snapshots bound the cost of a wrong guess.
@@ -204,13 +208,22 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   `TtsStream` (all `Component`s).
 - `src/gpu.rs`: `require_gpu`, `device_present`.
 
-### `orator-agent::llm` — session plus supervised children (single home)
+### `orator-agent::llm` — session plus endpoint probe
 
 - `src/session.rs`: `HttpSession::{open, with_queue, push_text,
   step, plan_task, pack_user_text}` via
   `delegate_component_fields!(HttpSession, config)`; stored-prefix
   roll with loud truncation marker; packing under `ctx_tokens` via
   `TokenBudget`.
+- `src/probe.rs`: `probe_models` walks
+  `["/models", "/v1/models"]` via `first_accept_in_order`
+  (stop only on `ProbeError::Unreachable`; first-path transport
+  failure sanitized to `Unreachable(base, "connection failed")`
+  so no `/v1` request fires); `ProbeInfo.via_v1_fallback`;
+  ID extraction composes `fluent_llm::openai::model_ids`.
+
+### `orator-supervise` — one supervised child per model (single home)
+
 - `src/supervisor.rs`: `Supervisor::{boot, attach,
   attach_with_probe, stop, stop_child, is_stopped, base_url}`
   (`boot` walks owned candidates via `first_accept_in_order`,
@@ -221,13 +234,9 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   `recovery_action`; `HealthProbe::{GetHealth,
   OptionsCompletions}`. Spawns use `env_clear` + pinned
   `PATH`/`LANG` + process group + `kill_on_drop`; `stop_child`
-  reaps boundedly.
-- `src/probe.rs`: `probe_models` walks
-  `["/models", "/v1/models"]` via `first_accept_in_order`
-  (stop only on `ProbeError::Unreachable`; first-path transport
-  failure sanitized to `Unreachable(base, "connection failed")`
-  so no `/v1` request fires); `ProbeInfo.via_v1_fallback`;
-  ID extraction composes `fluent_llm::openai::model_ids`.
+  reaps boundedly. Composed by `orator-agent` (LLM fleet) and
+  `orator-voice::s2s` (audio endpoint); owned by neither, so no
+  voice↔agent edge exists in either direction.
 
 ### `orator-voice::s2s` — native adapter (thin; no second supervisor)
 
@@ -251,9 +260,10 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
 - `src/voice.rs` / `src/worker.rs`: candidate resolution,
   `voice_server_args`, `audio_supervisor_config`,
   `managed_binary`, `resolve_tts_binary`, `synth_blocking`,
-  `ScratchGuard`. Shares
-  `orator_agent::llm::{Supervisor, shared_http_client,
-  LatencyHistogram}`; owns only audio argv/probe/stream shaping.
+  `ScratchGuard`. Supervision composes `orator-supervise`
+  (the single supervised-child home, shared with `orator-agent`
+  and owned by neither); this stage owns only audio argv/probe
+  stream shaping.
 - `src/config.rs`: `S2sConfig` (`turn_window_ms`).
 
 ### `orator-daemon` — serving center

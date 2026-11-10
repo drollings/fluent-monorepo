@@ -770,9 +770,6 @@ async fn probe_health(base: &str, probe: HealthProbe) -> Result<(), String> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/llm_supervisor.rs"]
+#[path = "../tests/supervise_supervisor.rs"]
 mod tests;
 
-#[cfg(test)]
-#[path = "../../tests/llm_probe.rs"]
-mod probe_tests;

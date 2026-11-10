@@ -369,3 +369,28 @@ fn voice_s2s_stays_off_the_engine_backends() {
         violations.join("\n")
     );
 }
+
+#[test]
+fn voice_and_agent_stay_mutually_independent() {
+    // No voice↔agent edge in either direction, so a dependency cycle
+    // between the two siblings is impossible by construction rather
+    // than by convention. Both compose supervision from the single
+    // `orator-supervise` home below them in the DAG.
+    let root = crates_src();
+    let voice = std::fs::read_to_string(root.join("orator-voice/Cargo.toml"))
+        .expect("voice manifest readable");
+    let agent = std::fs::read_to_string(root.join("orator-agent/Cargo.toml"))
+        .expect("agent manifest readable");
+    assert!(
+        !has_dep(&voice, "orator-agent"),
+        "orator-voice must not depend on orator-agent (supervision lives in orator-supervise)"
+    );
+    assert!(
+        !has_dep(&agent, "orator-voice"),
+        "orator-agent must not depend on orator-voice (sessions/tools never name pipeline stages)"
+    );
+    assert!(
+        has_dep(&voice, "orator-supervise"),
+        "orator-voice supervises its audio endpoint through the single home"
+    );
+}

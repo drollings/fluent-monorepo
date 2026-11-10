@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use crate::llm::supervisor::{
+use crate::supervisor::{
     boot_with_binary, build_args, find_on_path, free_port, recovery_action, resolve_binary,
     resolve_binary_candidates, resolve_binary_validated, resolve_with_override, slot_save_flag,
     HealthProbe, RecoveryAction, Supervisor, SupervisorConfig, GPU_OFFLOAD_LAYERS,
@@ -416,7 +416,7 @@ fn audio_argv_carries_vocoder_and_speaker_without_alias() {
 
 #[test]
 fn disallowed_extra_arg_refuses_as_usage() {
-    use crate::llm::supervisor::validate_extra_args;
+    use crate::supervisor::validate_extra_args;
     validate_extra_args(&["--n-gpu-layers".to_string(), "999".to_string()])
         .expect("allowlisted flags pass");
     let error = validate_extra_args(&["--exec".to_string(), "rm -rf /".to_string()])

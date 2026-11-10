@@ -93,7 +93,7 @@ fn supervisor_argv_matches_the_reference_file_mapping() {
     // containment (same files, same host/port), not byte equality.
     let port = 18083;
     let config = audio_supervisor_config(&bundle(), port);
-    let supervised = orator_agent::llm::build_args(&config, None);
+    let supervised = orator_supervise::build_args(&config, None);
     let direct = voice_server_args(&bundle(), port);
     for argv in [&supervised, &direct] {
         assert!(argv.contains(&"/models/backbone.gguf".to_string()));
@@ -379,7 +379,7 @@ fn audio_supervisor_config_pins_probe_timeout_and_model() {
     let config = audio_supervisor_config(&bundle(), 18083);
     assert_eq!(
         config.health_probe,
-        orator_agent::llm::HealthProbe::OptionsCompletions,
+        orator_supervise::HealthProbe::OptionsCompletions,
         "audio build has no /health; completions readiness decides"
     );
     assert_eq!(config.health_timeout, VOICE_BOOT_TIMEOUT);
@@ -469,7 +469,7 @@ fn stop_kills_and_reaps_the_supervised_child() {
         .expect("stub server runs");
     let config = audio_supervisor_config(&bundle, 0);
     let server =
-        common_core::runtime::block_on_shared(orator_agent::llm::boot_with_binary(config, &script))
+        common_core::runtime::block_on_shared(orator_supervise::boot_with_binary(config, &script))
             .expect("stub server boots");
     let url = server.base_url().to_string();
     let port: u16 = url

@@ -44,6 +44,7 @@ members = [
     "src/orator-agent",
     "src/orator-voice",
     "src/orator-models",
+    "src/orator-supervise",
     "src/orator-memory",
     "src/orator-desktop",
     "src/orator-testkit",

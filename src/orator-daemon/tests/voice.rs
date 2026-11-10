@@ -56,7 +56,7 @@ fn idle_supervisor_is_stopped_and_reaped() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_agent::llm::Supervisor::attach(
+        state.server = Some(orator_supervise::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_used = std::time::Instant::now()
@@ -161,7 +161,7 @@ fn ok_outcome_reaps_when_idle() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_agent::llm::Supervisor::attach(
+        state.server = Some(orator_supervise::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_outcome = Some(RequestOutcome::Ok);
@@ -190,7 +190,7 @@ fn backend_outcome_reaps_after_idle() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_agent::llm::Supervisor::attach(
+        state.server = Some(orator_supervise::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_outcome = Some(RequestOutcome::Backend);
@@ -230,7 +230,7 @@ fn successful_use_records_ok_and_reaps_when_idle() {
     });
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_agent::llm::Supervisor::attach(format!(
+        state.server = Some(orator_supervise::Supervisor::attach(format!(
             "http://127.0.0.1:{port}"
         )));
     }
@@ -319,7 +319,7 @@ fn ejected_probe_success_drops_the_same_child() {
     );
     {
         let mut state = common_core::sync::lock(&owner.state);
-        state.server = Some(orator_agent::llm::Supervisor::attach(
+        state.server = Some(orator_supervise::Supervisor::attach(
             "http://127.0.0.1:9".to_string(),
         ));
         state.last_url = Some("http://127.0.0.1:9".to_string());
@@ -454,12 +454,12 @@ fn ensure_tries_audio_candidates_in_order_and_stops_after_success() {
     let _guard = common_core::sync::lock(&BOOT_ENV_LOCK);
     let _home_guard = common_core::sync::lock(&super::export_tests::HOME_LOCK);
     let prior_audio = std::env::var_os(orator_voice::s2s::AUDIO_SERVER_ENV);
-    let prior_llama = std::env::var_os(orator_agent::llm::LLAMA_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_supervise::LLAMA_SERVER_ENV);
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     let prior_xdg = std::env::var_os("XDG_DATA_HOME");
     std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV);
-    std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV);
+    std::env::remove_var(orator_supervise::LLAMA_SERVER_ENV);
 
     let base = fixture_base();
     std::env::set_var("HOME", base.path());
@@ -518,8 +518,8 @@ fn ensure_tries_audio_candidates_in_order_and_stops_after_success() {
         None => std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV),
     }
     match prior_llama {
-        Some(value) => std::env::set_var(orator_agent::llm::LLAMA_SERVER_ENV, value),
-        None => std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_supervise::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_supervise::LLAMA_SERVER_ENV),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),
@@ -545,12 +545,12 @@ fn ensure_maps_all_failed_candidates_to_boot_last_error() {
     let _guard = common_core::sync::lock(&BOOT_ENV_LOCK);
     let _home_guard = common_core::sync::lock(&super::export_tests::HOME_LOCK);
     let prior_audio = std::env::var_os(orator_voice::s2s::AUDIO_SERVER_ENV);
-    let prior_llama = std::env::var_os(orator_agent::llm::LLAMA_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_supervise::LLAMA_SERVER_ENV);
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     let prior_xdg = std::env::var_os("XDG_DATA_HOME");
     std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV);
-    std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV);
+    std::env::remove_var(orator_supervise::LLAMA_SERVER_ENV);
 
     let base = fixture_base();
     std::env::set_var("HOME", base.path());
@@ -603,8 +603,8 @@ fn ensure_maps_all_failed_candidates_to_boot_last_error() {
         None => std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV),
     }
     match prior_llama {
-        Some(value) => std::env::set_var(orator_agent::llm::LLAMA_SERVER_ENV, value),
-        None => std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_supervise::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_supervise::LLAMA_SERVER_ENV),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),
@@ -629,12 +629,12 @@ fn ensure_does_not_boot_while_ejected_or_contending() {
     let _guard = common_core::sync::lock(&BOOT_ENV_LOCK);
     let _home_guard = common_core::sync::lock(&super::export_tests::HOME_LOCK);
     let prior_audio = std::env::var_os(orator_voice::s2s::AUDIO_SERVER_ENV);
-    let prior_llama = std::env::var_os(orator_agent::llm::LLAMA_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_supervise::LLAMA_SERVER_ENV);
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     let prior_xdg = std::env::var_os("XDG_DATA_HOME");
     std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV);
-    std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV);
+    std::env::remove_var(orator_supervise::LLAMA_SERVER_ENV);
 
     let base = fixture_base();
     std::env::set_var("HOME", base.path());
@@ -698,8 +698,8 @@ fn ensure_does_not_boot_while_ejected_or_contending() {
         None => std::env::remove_var(orator_voice::s2s::AUDIO_SERVER_ENV),
     }
     match prior_llama {
-        Some(value) => std::env::set_var(orator_agent::llm::LLAMA_SERVER_ENV, value),
-        None => std::env::remove_var(orator_agent::llm::LLAMA_SERVER_ENV),
+        Some(value) => std::env::set_var(orator_supervise::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_supervise::LLAMA_SERVER_ENV),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),

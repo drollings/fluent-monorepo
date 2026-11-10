@@ -157,7 +157,7 @@ fn gpu_llm_args_stay_empty_on_cpu_and_pair_on_opt_in() {
         gpu_llm_args(true),
         vec![
             "--n-gpu-layers".to_string(),
-            orator_agent::llm::GPU_OFFLOAD_LAYERS.to_string()
+            orator_supervise::GPU_OFFLOAD_LAYERS.to_string()
         ]
     );
 }

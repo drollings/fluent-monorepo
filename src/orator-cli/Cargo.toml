@@ -18,6 +18,7 @@ orator = { path = "../orator" }
 orator-desktop = { path = "../orator-desktop" }
 orator-agent = { path = "../orator-agent" }
 orator-models = { path = "../orator-models" }
+orator-supervise = { path = "../orator-supervise" }
 orator-voice = { path = "../orator-voice" }
 ratatui = "0.30"
 serde = { workspace = true }

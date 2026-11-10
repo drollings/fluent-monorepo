@@ -9,7 +9,8 @@ use orator_cli::{
     ExitCode,
 };
 use orator::{LlmEndpointConfig, LlmSession, OratorConfig};
-use orator_agent::llm::{probe_models, HttpSession, Supervisor, SupervisorConfig};
+use orator_agent::llm::{probe_models, HttpSession};
+use orator_supervise::{Supervisor, SupervisorConfig};
 
 use crate::say::say_via_daemon;
 

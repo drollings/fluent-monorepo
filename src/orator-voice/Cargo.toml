@@ -15,7 +15,7 @@ internment = { workspace = true }
 kokoro-en = { version = "0.1.5", default-features = false }
 orator = { path = "../orator" }
 orator-audio = { path = "../orator-audio" }
-orator-agent = { path = "../orator-agent" }
+orator-supervise = { path = "../orator-supervise" }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

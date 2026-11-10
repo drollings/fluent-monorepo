@@ -18,7 +18,7 @@ pub enum AudioEndpoint {
         /// Base URL of the fresh server.
         base_url: String,
         /// Supervisor handle; `stop()` releases the server.
-        supervisor: Box<orator_agent::llm::Supervisor>,
+        supervisor: Box<orator_supervise::Supervisor>,
     },
 }
 
@@ -120,11 +120,11 @@ pub async fn boot_audio_server(
             if gpu {
                 config.extra_args.extend([
                     "--n-gpu-layers".to_string(),
-                    orator_agent::llm::GPU_OFFLOAD_LAYERS.to_string(),
+                    orator_supervise::GPU_OFFLOAD_LAYERS.to_string(),
                 ]);
             }
             async move {
-                match orator_agent::llm::boot_with_binary(config, &binary).await {
+                match orator_supervise::boot_with_binary(config, &binary).await {
                     Ok(supervisor) => {
                         let base_url = supervisor.base_url().to_string();
                         Ok(Some(AudioEndpoint::Owned {

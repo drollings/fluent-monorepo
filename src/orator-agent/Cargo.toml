@@ -12,12 +12,10 @@ fluent-llm = { path = "../llm" }
 fluent-wvr = { path = "../fluent-wvr" }
 internment = { workspace = true }
 orator = { path = "../orator" }
-regex = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 httpmock = { workspace = true }

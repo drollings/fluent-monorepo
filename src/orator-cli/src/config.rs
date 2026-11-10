@@ -115,7 +115,7 @@ pub fn gpu_llm_args(gpu: bool) -> Vec<String> {
     if gpu {
         vec![
             "--n-gpu-layers".to_string(),
-            orator_agent::llm::GPU_OFFLOAD_LAYERS.to_string(),
+            orator_supervise::GPU_OFFLOAD_LAYERS.to_string(),
         ]
     } else {
         Vec::new()

@@ -29,9 +29,9 @@ fn session_at(base: &str) -> AudioSession {
 }
 
 fn probe(base: &str) -> bool {
-    let supervisor = orator_agent::llm::Supervisor::attach_with_probe(
+    let supervisor = orator_supervise::Supervisor::attach_with_probe(
         base.to_string(),
-        orator_agent::llm::HealthProbe::OptionsCompletions,
+        orator_supervise::HealthProbe::OptionsCompletions,
     );
     common_core::runtime::block_on_shared(
         supervisor.wait_healthy_timeout(std::time::Duration::from_secs(2)),
