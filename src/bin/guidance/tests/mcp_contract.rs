@@ -224,14 +224,20 @@ fn graph_workspace() -> tempfile::TempDir {
     dir
 }
 
-/// Context section of the CLI `explain` output: lines after
-/// `### Context` starting with `- ` (workspace-relative, verbatim).
-fn cli_context_lines(dir: &std::path::Path) -> Vec<String> {
-    let root = dir.to_str().unwrap().to_string();
-    let json_dir = dir.join(".guidance").to_str().unwrap().to_string();
-    let db = dir.join("mcp.db").to_str().unwrap().to_string();
+#[test]
+fn explain_cli_has_no_context_section_mcp_flag_still_serves_it() {
+    // CLI contract: no `### Context` section (citations carry the live
+    // lines now). MCP keeps serving context through its flag: flag-off
+    // stays byte-identical with no `context` key, flag-on adds the
+    // array beside — never inside — the hits payload.
+    let dir = graph_workspace();
+    let dir_path = dir.path();
+    sync(dir_path, "mcp.db", false);
+    let root = dir_path.to_str().unwrap().to_string();
+    let json_dir = dir_path.join(".guidance").to_str().unwrap().to_string();
+    let db = dir_path.join("mcp.db").to_str().unwrap().to_string();
     let out = run(
-        dir,
+        dir_path,
         &[
             "explain",
             "where is foo defined",
@@ -247,27 +253,11 @@ fn cli_context_lines(dir: &std::path::Path) -> Vec<String> {
     );
     assert!(out.status.success(), "cli explain failed: {out:?}");
     let text = stdout(&out);
-    let mut lines = Vec::new();
-    let mut in_context = false;
-    for line in text.lines() {
-        if line.strip_prefix("### Context").is_some() {
-            in_context = true;
-            continue;
-        }
-        if in_context && line.starts_with("- ") {
-            lines.push(line.to_string());
-        }
-    }
-    lines
-}
-
-#[test]
-fn explain_context_flag_off_is_byte_identical_and_on_matches_cli() {
-    let dir = graph_workspace();
-    sync(dir.path(), "mcp.db", false);
-    let cli_lines = cli_context_lines(dir.path());
-    assert!(!cli_lines.is_empty(), "fixture must carry context");
-    let mut client = McpClient::spawn(dir.path(), "full");
+    assert!(
+        !text.contains("### Context"),
+        "CLI no longer renders a Context section:\n{text}"
+    );
+    let mut client = McpClient::spawn(dir_path, "full");
     let unset = client.explain(serde_json::json!({"query": "where is foo defined"}));
     let off =
         client.explain(serde_json::json!({"query": "where is foo defined", "context": false}));
@@ -288,7 +278,7 @@ fn explain_context_flag_off_is_byte_identical_and_on_matches_cli() {
         .iter()
         .map(|value| value.as_str().expect("line").to_string())
         .collect();
-    assert_eq!(context, cli_lines, "shared-builder proof");
+    assert!(!context.is_empty(), "MCP flag still serves context");
 }
 
 #[test]

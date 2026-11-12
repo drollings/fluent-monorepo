@@ -1556,7 +1556,12 @@ fn try_match_node_span(
         "struct_declaration" | "struct_item" | "class_definition" => {
             member_type == MemberType::Struct
         }
-        "enum_declaration" | "enum_item" => member_type == MemberType::Enum,
+        // The closed search set folds enums into Class, so a Struct
+        // query must also match enum nodes — otherwise every enum
+        // reads as moved or removed.
+        "enum_declaration" | "enum_item" => {
+            matches!(member_type, MemberType::Enum | MemberType::Struct)
+        }
         "union_declaration" => member_type == MemberType::Union,
         "test_declaration" => member_type == MemberType::TestDecl,
         _ => false,

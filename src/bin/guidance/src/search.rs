@@ -37,6 +37,26 @@ pub enum SearchMode {
     Rg,
 }
 
+/// How many top hits render full code snippets (the rest list lines).
+pub const EXPLAIN_SNIPPET_TOP_K: usize = 3;
+
+/// Max snippet lines per top hit (signature head first, never whole files).
+pub const EXPLAIN_SNIPPET_MAX_LINES: usize = 40;
+
+/// Top doc paragraphs per explain call.
+pub const EXPLAIN_DOC_TOP_K: usize = 3;
+
+/// Max excerpt chars per doc paragraph.
+pub const EXPLAIN_DOC_EXCERPT_CHARS: usize = 500;
+
+/// Doc-walk caps: bounded cost before any model call.
+pub const EXPLAIN_DOC_MAX_FILES: usize = 200;
+/// Doc-walk caps: bounded cost before any model call.
+pub const EXPLAIN_DOC_MAX_BYTES: u64 = 1_000_000;
+
+/// Max output tokens for the concise answer.
+pub const EXPLAIN_ANSWER_MAX_TOKENS: usize = 256;
+
 /// Resolve the mode from the `--fts` / `--vector` / `--rg` / `--fuse` flags.
 /// More than one mode flag is an error (rejected, never merged).
 pub fn resolve_mode(fts: bool, vector: bool, rg: bool, fuse: bool) -> Result<SearchMode, String> {
@@ -783,40 +803,557 @@ pub struct ExplainRow {
     pub name: String,
     /// Workspace-relative file path (absolute fallback).
     pub source: String,
-    /// Row score: the fused RRF ordinal (positions, not a magnitude).
-    /// Table rendering rounds to two decimals, lossy by design: never
-    /// feed back into ranking.
+    /// Row score: the fused RRF ordinal (positions, not a magnitude);
+    /// kept on the row for threshold decisions, never rendered.
     pub score: f64,
     /// Verified cite (`rel:Lstart-Lend @ b3:hash`) or `unverified`.
     pub cite: String,
 }
 
-/// Render explain output: stable header + hits table, then the additive
-/// context section (present only when non-empty). The table section is
-/// byte-identical with and without expansion — pinned by test. Pure.
+/// Symbol identity behind one fused hit: the first evidence (else the
+/// entity) carrying code metadata with a declared name.
 #[must_use]
-/// Render explain output: stable header + hits table, then the additive
-/// context section (present only when non-empty). The table section is
-/// byte-identical with and without expansion — pinned by test. Pure.
-pub fn render_explain_table(query: &str, rows: &[ExplainRow], context: &[String]) -> String {
+/// Symbol identity behind one fused hit: the first evidence (else the
+/// entity) carrying code metadata with a declared name.
+pub fn hit_symbol(hit: &SearchHit) -> Option<(String, CodeSymbolType)> {
+    use guidance_core::search_types::EntityMetadata;
+    let from = |meta: &EntityMetadata| match meta {
+        EntityMetadata::Code {
+            symbol_name: Some(name),
+            symbol_type,
+            ..
+        } => Some((name.clone(), *symbol_type)),
+        _ => None,
+    };
+    hit.evidence
+        .iter()
+        .filter_map(|evidence| evidence.metadata.as_ref().and_then(from))
+        .next()
+        .or_else(|| hit.entity.metadata.as_ref().and_then(from))
+}
+
+/// Tree-sitter member kind for one closed symbol type. Unmatched kinds
+/// (`Value`, `Alias`, `Module`) decline: callers fall back to the
+/// stored evidence range instead of guessing a span.
+#[must_use]
+/// Tree-sitter member kind for one closed symbol type.
+pub fn member_type_for_symbol(symbol: CodeSymbolType) -> Option<fluent_types::MemberType> {
+    use fluent_types::MemberType;
+    match symbol {
+        CodeSymbolType::Function => Some(MemberType::FnDecl),
+        CodeSymbolType::Class | CodeSymbolType::Interface => Some(MemberType::Struct),
+        _ => None,
+    }
+}
+
+/// Live line bounds for one hit, resolved by parsing the current file
+/// with tree-sitter on the fly. Stored ranges go stale when the file is
+/// edited after indexing; the parsed span never does. `None` when the
+/// hit carries no symbol or the symbol is gone.
+#[must_use]
+/// Live line bounds for one hit, resolved by parsing the current file.
+pub fn live_hit_lines(hit: &SearchHit, workspace: &std::path::Path) -> Option<(u32, u32)> {
+    // Workspace is accepted for a uniform call signature; resolution
+    // reads the hit's absolute path directly.
+    let _ = workspace;
+    let (name, symbol) = hit_symbol(hit)?;
+    let member = member_type_for_symbol(symbol)?;
+    let path = PathBuf::from(&hit.file.absolute_path);
+    guidance_core::ast_parser::resolve_span(&path, &name, member)
+        .map(|span| (span.start_line, span.end_line))
+}
+
+/// Stored evidence range for one hit (line bounds only), read live.
+/// The fallback when a hit carries no symbol metadata.
+fn stored_hit_lines(hit: &SearchHit) -> Option<(u32, u32)> {
+    use guidance_core::search_types::FragmentSpan;
+    hit.evidence
+        .iter()
+        .find_map(|evidence| match evidence.range {
+            FragmentSpan::Text {
+                start_line,
+                end_line,
+                ..
+            } => Some((start_line, end_line)),
+            FragmentSpan::File => Some((1, 1)),
+            _ => None,
+        })
+}
+
+/// Live citation for one hit, in `path : lines start-end` form over
+/// live bytes resolved by tree-sitter on the fly. No hashes, no
+/// verdicts — just where to look right now. A recorded symbol that no
+/// longer parses cites as moved or removed; hits without symbol
+/// metadata cite their stored range; unreadable files cite
+/// `unverified`.
+#[must_use]
+/// Live citation for one hit: absolute path plus live line range.
+pub fn cite_live(hit: &SearchHit, workspace: &std::path::Path) -> String {
+    let abs = hit.file.absolute_path.clone();
+    if let Some((_, symbol)) = hit_symbol(hit) {
+        if member_type_for_symbol(symbol).is_some() {
+            if let Some((start, end)) = live_hit_lines(hit, workspace) {
+                return format!("- {abs} : lines {start}-{end}");
+            }
+            if std::path::Path::new(&abs).exists() {
+                return format!("- {abs} : moved or removed since index");
+            }
+        }
+    }
+    match stored_hit_lines(hit).filter(|_| std::path::Path::new(&abs).exists()) {
+        Some((start, end)) => format!("- {abs} : lines {start}-{end}"),
+        None => format!("- {abs} : unverified"),
+    }
+}
+
+/// Display bounds for dedup: live tree-sitter positions for real
+/// symbols, stored bounds otherwise, `None` when the symbol is gone
+/// (the marker line dedupes by exact text instead).
+fn cite_bounds(hit: &SearchHit, workspace: &std::path::Path) -> Option<(u32, u32)> {
+    if let Some((_, symbol)) = hit_symbol(hit) {
+        if member_type_for_symbol(symbol).is_some() {
+            return live_hit_lines(hit, workspace);
+        }
+    }
+    stored_hit_lines(hit)
+}
+
+/// Live citations for fused hits, rank order, dual rows collapsed: the
+/// same (canonical file, bounds) cites once, identical markers cite
+/// once, and bare `unverified` lines never collapse (they carry no
+/// file identity to compare).
+#[must_use]
+/// Live citations for fused hits, rank order, deduped.
+pub fn cite_hits_live(hits: &[SearchHit], workspace: &std::path::Path) -> Vec<String> {
+    use std::collections::HashSet;
+    let mut seen_keys: HashSet<(String, u32, u32)> = HashSet::new();
+    let mut seen_lines: HashSet<String> = HashSet::new();
+    let mut out = Vec::new();
+    for hit in hits {
+        if let Some((start, end)) = cite_bounds(hit, workspace) {
+            if !seen_keys.insert((canonical_hit_path(hit, workspace), start, end)) {
+                continue;
+            }
+        }
+        let line = cite_live(hit, workspace);
+        if line != "unverified" && !seen_lines.insert(line.clone()) {
+            continue;
+        }
+        out.push(line);
+    }
+    out
+}
+
+/// Human drill-downs from the top snippets: one `callers of` query per
+/// named code symbol, capped. Module rows (`$file`) and non-code hits
+/// (docs, prose) carry no callable symbol, so they never suggest.
+#[must_use]
+/// Human drill-downs from the top snippets: one per named code symbol.
+pub fn suggest_drill_downs(
+    snippets: &[(String, String, u32, u32, String)],
+    limit: usize,
+) -> Vec<String> {
+    fn is_code(path: &str) -> bool {
+        matches!(
+            std::path::Path::new(path)
+                .extension()
+                .and_then(|ext| ext.to_str()),
+            Some("rs") | Some("zig") | Some("py")
+        )
+    }
+    snippets
+        .iter()
+        .filter(|(name, file, _, _, _)| !name.starts_with('$') && is_code(file))
+        .take(limit)
+        .map(|(name, _, _, _, _)| format!("guidance explain \"callers of {name}\""))
+        .collect()
+}
+
+/// Minimum decision score (0-100) for a doc paragraph to be cited.
+pub const EXPLAIN_DOC_MIN_SCORE: u32 = 60;
+
+/// Doc paragraphs judged per call: bounds decision cost.
+pub const EXPLAIN_DOC_JUDGE_K: usize = 5;
+
+/// Decision-gated doc paragraphs: the local decision model scores each
+/// candidate 0-100 and only items at or above the floor survive, best
+/// score first. Unparseable or failed judgments omit everything —
+/// never a cited paragraph the judge did not pass.
+pub fn judge_doc_paragraphs(
+    query: &str,
+    docs: &[(String, String)],
+    backend: &dyn fluent_llm::client::ChatBackend,
+) -> Vec<(String, String)> {
+    if docs.is_empty() {
+        return Vec::new();
+    }
+    let mut body = format!("Question: {query}\n\nParagraphs:\n");
+    for (index, (path, excerpt)) in docs.iter().enumerate() {
+        use std::fmt::Write as _;
+        let _ = write!(body, "{}. {path}\n{excerpt}\n\n", index + 1);
+    }
+    let messages = vec![
+        fluent_llm::protocol::ChatMessage::with_role(
+            fluent_llm::roles::ChatRole::System,
+            "Rate how relevant each paragraph is to the question, 0-100. \
+             Respond with ONLY a strict JSON object mapping 1-based paragraph \
+             number to integer score, e.g. {\"1\": 85}.",
+        ),
+        fluent_llm::protocol::ChatMessage::with_role(fluent_llm::roles::ChatRole::User, body),
+    ];
+    let extras = serde_json::json!({
+        "temperature": 0.0,
+        "max_tokens": 64,
+    });
+    let text = match backend.chat_complete_with_extras(&messages, &extras) {
+        Ok(text) => text,
+        Err(_) => return Vec::new(),
+    };
+    let scores: std::collections::BTreeMap<String, serde_json::Value> =
+        serde_json::from_str(text.trim()).unwrap_or_default();
+    let mut kept: Vec<(u64, usize)> = Vec::new();
+    for (key, value) in &scores {
+        let Ok(one_based) = key.parse::<usize>() else {
+            continue;
+        };
+        let Some(score) = value.as_u64() else {
+            continue;
+        };
+        if one_based >= 1 && one_based <= docs.len() && score >= u64::from(EXPLAIN_DOC_MIN_SCORE) {
+            kept.push((score, one_based - 1));
+        }
+    }
+    kept.sort_by(|a, b| b.0.cmp(&a.0));
+    kept.into_iter()
+        .map(|(_, index)| docs[index].clone())
+        .collect()
+}
+
+/// Code snippet for one top hit with live bounds: the node's current
+/// span when symbol metadata resolves, else the stored evidence range
+/// sliced from live bytes. Capped to [`EXPLAIN_SNIPPET_MAX_LINES`];
+/// unreadable files yield nothing, never a stale guess.
+#[must_use]
+/// Code snippet for one top hit with live bounds, capped.
+pub fn snippet_for_hit(hit: &SearchHit, workspace: &std::path::Path) -> Option<(String, u32, u32)> {
+    let max_lines = EXPLAIN_SNIPPET_MAX_LINES;
+    if let Some((name, symbol)) = hit_symbol(hit) {
+        if let Some(member) = member_type_for_symbol(symbol) {
+            if let Some((snippet, start, end)) = guidance_core::ast_parser::extract_code_snippet(
+                &hit.file.relative_path,
+                &name,
+                member,
+                workspace,
+                max_lines,
+            ) {
+                return Some((snippet, start, end));
+            }
+        }
+    }
+    let (mut start, mut end) = stored_hit_lines(hit)?;
+    let bytes = std::fs::read(&hit.file.absolute_path).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+    start = start.max(1).min(lines.len() as u32);
+    end = end
+        .clamp(start, lines.len() as u32)
+        .min(start + max_lines as u32 - 1);
+    let snippet = lines[(start as usize - 1)..(end as usize)].join("\n");
+    if snippet.trim().is_empty() {
+        return None;
+    }
+    Some((snippet, start, end))
+}
+
+/// Ranked doc paragraphs for one query over a markdown tree: walk once
+/// (capped), split blank-line paragraphs, score by shared query-token
+/// overlap. Returns `(doc-rel-path, excerpt)` in rank order. Pure file
+/// I/O, no index writes — the docs stay outside the fragment index.
+#[must_use]
+/// Ranked doc paragraphs for one query over a markdown tree.
+pub fn rank_doc_paragraphs(
+    query: &str,
+    docs_dir: &std::path::Path,
+    workspace: &std::path::Path,
+    limit: usize,
+) -> Vec<(String, String)> {
+    use search_vector::tokens::split_tokens;
+    let query_tokens: Vec<String> = {
+        let mut tokens = Vec::new();
+        for token in split_tokens(query) {
+            search_vector::tokens::lower_dedup_push(&mut tokens, &token);
+        }
+        tokens
+    };
+    if query_tokens.is_empty() {
+        return Vec::new();
+    }
+    let mut files = Vec::new();
+    let mut total_bytes: u64 = 0;
+    collect_markdown(docs_dir, &mut files, &mut total_bytes);
+    let mut scored: Vec<(usize, String, String)> = Vec::new();
+    for path in files {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        for (index, paragraph) in text.split("\n\n").enumerate() {
+            let paragraph = paragraph.trim();
+            if paragraph.len() < 40 {
+                continue;
+            }
+            let overlap = split_tokens(paragraph)
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+                .intersection(&query_tokens.iter().cloned().collect())
+                .count();
+            if overlap == 0 {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(workspace)
+                .map(|rel| rel.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+            let mut end = paragraph.len().min(EXPLAIN_DOC_EXCERPT_CHARS);
+            while !paragraph.is_char_boundary(end) {
+                end -= 1;
+            }
+            scored.push((
+                overlap,
+                format!("{rel}#{}", index),
+                paragraph[..end].to_string(),
+            ));
+        }
+    }
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    scored
+        .into_iter()
+        .take(limit)
+        .map(|(_, path, excerpt)| (path, excerpt))
+        .collect()
+}
+
+/// One recursive markdown walk, bounded by file and byte caps.
+fn collect_markdown(dir: &std::path::Path, out: &mut Vec<PathBuf>, total_bytes: &mut u64) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut names: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .collect();
+    names.sort();
+    for path in names {
+        if path.is_dir() {
+            if out.len() < EXPLAIN_DOC_MAX_FILES {
+                collect_markdown(&path, out, total_bytes);
+            }
+            continue;
+        }
+        if out.len() >= EXPLAIN_DOC_MAX_FILES || *total_bytes >= EXPLAIN_DOC_MAX_BYTES {
+            return;
+        }
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.len() > 100_000 {
+                continue;
+            }
+            *total_bytes += meta.len();
+        }
+        out.push(path);
+    }
+}
+
+/// Answer prompt: the question plus fenced excerpts as the only
+/// evidence. The model must answer concisely from the excerpts and
+/// cite every claim as `file:line`.
+#[must_use]
+/// Answer prompt: the question plus fenced excerpts as the only evidence.
+pub fn answer_messages(
+    query: &str,
+    context: &[(String, String, u32, u32, String)],
+) -> Vec<fluent_llm::protocol::ChatMessage> {
+    use fluent_llm::protocol::ChatMessage;
+    use fluent_llm::roles::ChatRole;
+    let system = ChatMessage::with_role(
+        ChatRole::System,
+        "You answer questions about a codebase using ONLY the provided excerpts. \
+         Be concise (150 words or fewer). Cite every claim as file:line. \
+         If the excerpts do not answer the question, say so.",
+    );
+    let mut body = format!("Question: {query}\n\nExcerpts:\n");
+    for (name, file, start, end, snippet) in context {
+        use std::fmt::Write as _;
+        let _ = write!(
+            body,
+            "## {name} ({file}:{start}-{end})\n```code\n{snippet}\n```\n"
+        );
+    }
+    vec![system, ChatMessage::with_role(ChatRole::User, body)]
+}
+
+/// Concise model answer over the excerpt context. `None` when there is
+/// no context or the model says nothing: the caller renders the
+/// unavailable line instead of an invented answer.
+pub fn answer_with_backend(
+    query: &str,
+    context: &[(String, String, u32, u32, String)],
+    backend: &dyn fluent_llm::client::ChatBackend,
+    model: &str,
+) -> Result<Option<String>, String> {
+    if context.is_empty() {
+        return Ok(None);
+    }
+    let messages = answer_messages(query, context);
+    let extras = serde_json::json!({
+        "temperature": 0.0,
+        "max_tokens": EXPLAIN_ANSWER_MAX_TOKENS,
+    });
+    let text = backend
+        .chat_complete_with_extras(&messages, &extras)
+        .map_err(|error| error.to_string())?;
+    let _ = model;
+    let trimmed = text.trim().to_string();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(trimmed))
+}
+
+/// Top snippets for fused hits, rank order, byte-identical duplicates
+/// removed: the first occurrence of one file plus live bounds wins, the
+/// rest add no new evidence. Headers reuse the row titles so citations
+/// cross-reference the snippets.
+#[must_use]
+/// Top snippets for fused hits, deduped.
+pub fn top_snippets(
+    rows: &[ExplainRow],
+    hits: &[SearchHit],
+    workspace: &std::path::Path,
+) -> Vec<(String, String, u32, u32, String)> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<(String, u32, u32)> = HashSet::new();
+    let mut snippets = Vec::new();
+    for (index, hit) in hits.iter().enumerate() {
+        if snippets.len() >= EXPLAIN_SNIPPET_TOP_K {
+            break;
+        }
+        // Display bounds once per hit: live tree-sitter positions for
+        // real symbols, stored bounds otherwise.
+        let bounds = match hit_symbol(hit) {
+            Some((_, symbol)) if member_type_for_symbol(symbol).is_some() => {
+                live_hit_lines(hit, workspace)
+            }
+            _ => stored_hit_lines(hit),
+        };
+        let Some((start, end)) = bounds else {
+            continue;
+        };
+        // Identity is the canonical absolute path: dual rows (one
+        // indexed under a relative workspace, one absolute) are the
+        // same file and must not both render.
+        if !seen.insert((canonical_hit_path(hit, workspace), start, end)) {
+            continue;
+        }
+        if let Some((text, _, _)) = snippet_for_hit(hit, workspace) {
+            let Some(row) = rows.get(index) else {
+                continue;
+            };
+            snippets.push((row.name.clone(), row.source.clone(), start, end, text));
+        }
+    }
+    snippets
+}
+
+/// Canonical identity for one hit's file: absolute paths verbatim,
+/// workspace-relative rows joined to the workspace, `/./` and interior
+/// `..` collapsed lexically. Dual rows from mixed relative/absolute
+/// invocations resolve to one identity without touching stored ids.
+fn canonical_hit_path(hit: &SearchHit, workspace: &std::path::Path) -> String {
+    use std::path::Component;
+    let abs = PathBuf::from(&hit.file.absolute_path);
+    let joined = if abs.is_absolute() {
+        abs
+    } else {
+        workspace.join(abs)
+    };
+    let mut out = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            _ => out.push(component.as_os_str()),
+        }
+    }
+    out.to_string_lossy().into_owned()
+}
+
+/// Render the full explain output in reference order: answer, docs,
+/// top snippets (fenced, blank-line separated), table, citations,
+/// drill-down footer. Empty recall keeps the legacy empty state
+/// exactly: no sections on nothing.
+pub fn render_explain_full(
+    query: &str,
+    rows: &[ExplainRow],
+    snippets: &[(String, String, u32, u32, String)],
+    citations: &[String],
+    docs: &[(String, String)],
+    answer: Option<&str>,
+    suggestions: &[String],
+) -> String {
     let mut out = format!("## Explain: {query}\n\n");
     if rows.is_empty() {
         out.push_str("No results found.\n");
         return out;
     }
-    out.push_str("| Name | Source | Score | Cite |\n");
-    out.push_str("|------|--------|-------|------|\n");
-    for row in rows {
-        out.push_str(&format!(
-            "| {} | {} | {:.2} | {} |\n",
-            row.name, row.source, row.score, row.cite
-        ));
+    if let Some(text) = answer {
+        out.push_str("### Answer\n");
+        out.push_str(text);
+        out.push('\n');
     }
-    if !context.is_empty() {
-        out.push_str("\n### Context\n");
-        for line in context {
-            out.push_str(line);
+    if !docs.is_empty() {
+        out.push_str("\n### From the docs\n");
+        for (path, excerpt) in docs {
+            out.push_str(&format!("- {path}: {excerpt}\n"));
+        }
+    }
+    if !snippets.is_empty() {
+        out.push_str("\n### Top matches\n");
+        for (index, (name, file, start, end, snippet)) in snippets.iter().enumerate() {
+            let lang = match std::path::Path::new(file)
+                .extension()
+                .and_then(|ext| ext.to_str())
+            {
+                Some("rs") => "rust",
+                Some("zig") => "zig",
+                Some("py") => "py",
+                Some("md") => "md",
+                _ => "",
+            };
+            out.push_str(&format!(
+                "#### {}. {name} — {file}:{start}-{end}\n",
+                index + 1
+            ));
+            out.push_str(&format!("```{lang}\n{snippet}\n```\n\n"));
+        }
+    }
+    if !citations.is_empty() {
+        out.push_str("\n### Citations\n");
+        for cite in citations {
+            out.push_str(cite);
             out.push('\n');
+        }
+    }
+    if !suggestions.is_empty() {
+        out.push_str("\nIf you need details, try:\n");
+        for suggestion in suggestions {
+            out.push_str(&format!("- {suggestion}\n"));
         }
     }
     out

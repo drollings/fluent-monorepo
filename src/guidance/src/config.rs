@@ -214,10 +214,20 @@ pub struct ProjectConfig {
     #[serde(default)]
     #[builder(default)]
     pub policy: crate::policy::MaintenancePolicy,
+
+    /// Documentation tree for explain's doc paragraphs,
+    /// workspace-relative (`doc` by default).
+    #[serde(default = "default_docs_dir")]
+    #[builder(default = default_docs_dir())]
+    pub docs_dir: PathBuf,
 }
 
 fn default_guidance_dir() -> PathBuf {
     PathBuf::from(".guidance")
+}
+
+fn default_docs_dir() -> PathBuf {
+    PathBuf::from("doc")
 }
 
 impl Default for ProjectConfig {
@@ -249,6 +259,7 @@ impl Default for ProjectConfig {
             calibration_registry: None,
             lanes: crate::model_lanes::LaneConfig::default(),
             policy: crate::policy::MaintenancePolicy::default(),
+            docs_dir: default_docs_dir(),
         }
     }
 }

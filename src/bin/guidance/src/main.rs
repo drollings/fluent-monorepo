@@ -801,7 +801,7 @@ async fn cmd_explain(
     db_path: &str,
     workspace: &str,
     limit: usize,
-    _no_llm: bool,
+    no_llm: bool,
     _filter: &str,
     strict: bool,
 ) {
@@ -827,26 +827,6 @@ async fn cmd_explain(
         }
     };
     drop(recall_phase);
-
-    // Query-time closure expansion over the hydrated graph (no rebuild)
-    // through the shared context assembly; context renders as an
-    // additive section with provenance (the hits table is never
-    // perturbed). Hydration failure degrades to hits only.
-    let context_phase = profile::Phase::new("explain.context");
-    let anchors = search::anchor_files(&hits, guidance_core::graph_index::CLOSURE_ANCHOR_FILES);
-    let mut context = Vec::new();
-    if !anchors.is_empty() {
-        match GuidanceDb::open(Path::new(db_path))
-            .map_err(|error| error.to_string())
-            .and_then(|db| search::context_lines_for_hits(&hits, &db, workspace))
-        {
-            Ok(lines) => context = lines,
-            Err(error) => {
-                eprintln!("Warning: explain expansion failed ({error}); hits only");
-            }
-        }
-    }
-    drop(context_phase);
 
     let cite_phase = profile::Phase::new("explain.citations");
     let cites = search::cite_hits(&hits, workspace);
@@ -887,7 +867,88 @@ async fn cmd_explain(
         }
     }
 
-    print!("{}", search::render_explain_table(query, &rows, &context));
+    if rows.is_empty() {
+        print!("## Explain: {query}\n\nNo results found.\n");
+        return;
+    }
+    let workspace_root = PathBuf::from(workspace);
+    let cfg = load_project_config(&workspace_root);
+
+    // Top-match snippets with live bounds, byte-identical duplicates
+    // removed. Tree-sitter positions resolve on the fly, so an edit
+    // after indexing moves the lines instead of serving stale ones.
+    let snippets = search::top_snippets(&rows, &hits, &workspace_root);
+    let citations: Vec<String> = search::cite_hits_live(&hits, &workspace_root);
+
+    // Doc paragraphs from the configured documentation tree, ranked by
+    // query-term overlap at query time (no index writes), then gated by
+    // the local decision model: only items at or above the floor are
+    // cited. No model call under --no-llm, so no docs either.
+    let mut docs = Vec::new();
+    if !no_llm {
+        let docs_dir = if cfg.docs_dir.is_absolute() {
+            cfg.docs_dir.clone()
+        } else {
+            workspace_root.join(&cfg.docs_dir)
+        };
+        if docs_dir.is_dir() {
+            let ranked = search::rank_doc_paragraphs(
+                query,
+                &docs_dir,
+                &workspace_root,
+                search::EXPLAIN_DOC_JUDGE_K,
+            );
+            if !ranked.is_empty() && cfg.decision.enabled {
+                let mut client =
+                    fluent_llm::client::LlmClient::new(&cfg.decision.base_url, &cfg.decision.model);
+                client.config.timeout_ms = cfg.decision.timeout_ms;
+                docs = search::judge_doc_paragraphs(query, &ranked, &client)
+                    .into_iter()
+                    .take(search::EXPLAIN_DOC_TOP_K)
+                    .collect();
+            }
+        }
+    }
+
+    // Concise local-model answer over the snippets, unless declined.
+    // No snippets means no evidence: skip the call instead of inviting
+    // an invented answer. Transport failure degrades to a labelled
+    // unavailable line, never a hard error.
+    let mut answer: Option<String> = None;
+    if !no_llm && !snippets.is_empty() {
+        let role = &cfg.generative;
+        if role.enabled {
+            let mut client = fluent_llm::client::LlmClient::new(&role.base_url, &role.model);
+            client.config.timeout_ms = role.timeout_ms;
+            match search::answer_with_backend(query, &snippets, &client, &role.model) {
+                Ok(Some(text)) => answer = Some(text),
+                Ok(None) => answer = Some("(unavailable: empty answer)".to_string()),
+                Err(error) => {
+                    let mut detail = error.trim().to_string();
+                    if detail.len() > 200 {
+                        detail.truncate(200);
+                    }
+                    answer = Some(format!("(unavailable: {detail})"));
+                }
+            }
+        } else {
+            answer = Some("(unavailable: model disabled)".to_string());
+        }
+    }
+
+    let suggestions = search::suggest_drill_downs(&snippets, 3);
+    print!(
+        "{}",
+        search::render_explain_full(
+            query,
+            &rows,
+            &snippets,
+            &citations,
+            &docs,
+            answer.as_deref(),
+            &suggestions,
+        )
+    );
 }
 
 fn cmd_test() {

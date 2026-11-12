@@ -535,31 +535,46 @@ fn context_lines_carry_provenance_and_cap() {
 }
 
 #[test]
-fn explain_table_section_ignores_expansion() {
-    // Additivity proof: the table section is byte-identical with and
-    // without context — expansion can only append the section below.
+fn render_full_has_no_table_and_orders_sections() {
+    // The table is gone: sections run Answer, From the docs, Top
+    // matches, Citations, footer — and scores stay available on the
+    // hits for threshold decisions even though they never render.
     let rows = vec![ExplainRow {
-        name: "x".to_string(),
+        name: "alpha".to_string(),
         source: "a.rs".to_string(),
         score: 0.05,
-        cite: "a.rs:1-1 @ b3:abc".to_string(),
+        cite: "a.rs:3-5 @ b3:abc".to_string(),
     }];
-    let without = render_explain_table("q", &rows, &[]);
-    let rendered = render_explain_table(
+    assert_eq!(rows[0].score, 0.05);
+    let rendered = render_explain_full(
         "q",
         &rows,
-        &["- b.rs — dependent of a.rs via import \"m\"".to_string()],
+        &[(
+            "alpha".to_string(),
+            "a.rs".to_string(),
+            3u32,
+            5u32,
+            "pub fn alpha() {}".to_string(),
+        )],
+        &["- /repo/a.rs : lines 3-5".to_string()],
+        &[("doc/notes.md#1".to_string(), "Adds one.".to_string())],
+        Some("It adds one."),
+        &["guidance explain \"callers of alpha\"".to_string()],
     );
-    assert!(rendered.starts_with(&without));
-    assert!(rendered.contains("### Context\n"));
-    assert!(rendered.starts_with("## Explain: q\n\n"));
-    assert!(rendered.contains("| Name | Source | Score | Cite |"));
-    assert!(rendered.contains("| x | a.rs | 0.05 | a.rs:1-1 @ b3:abc |"));
-    // Not-found compat: the empty state never changes across the port.
-    assert_eq!(
-        render_explain_table("q", &[], &[]),
-        "## Explain: q\n\nNo results found.\n"
+    for section in [
+        "### Answer",
+        "### From the docs",
+        "### Top matches",
+        "### Citations",
+        "If you need details, try:",
+    ] {
+        assert!(rendered.contains(section), "{section}:\n{rendered}");
+    }
+    assert!(
+        !rendered.contains("| Name | Source | Score | Cite |"),
+        "{rendered}"
     );
+    assert!(!rendered.contains("### Context"), "{rendered}");
 }
 
 #[test]
@@ -671,9 +686,8 @@ fn cited_rows_carry_verified_cites() {
     );
     let rows = crate::search::build_explain_rows(&hits, &cites);
     assert_eq!(rows[0].cite, cites[0]);
-    let rendered = crate::search::render_explain_table("q", &rows, &[]);
-    assert!(rendered.contains("| Cite |"), "{rendered}");
-    assert!(rendered.contains(&expected), "{rendered}");
+    // Scores stay on the rows for threshold decisions.
+    assert_eq!(rows[0].score, 0.05);
     // Missing file: unverified, never invented.
     let missing = vec![crate::search::hit_for_test("/nope.rs", "nope.rs", 1, 1)];
     let cites = crate::search::cite_hits(&missing, dir.path().to_str().unwrap());
@@ -772,5 +786,484 @@ async fn item_chunk_citations_verify_item_ranges() {
     assert!(
         rendered.contains(&format!("a.rs:2-4 @ b3:{expected}")),
         "item range must cite with a live-byte hash: {rendered}"
+    );
+}
+
+fn code_hit(abs: &str, rel: &str, name: &str, start: u32, end: u32) -> SearchHit {
+    use guidance_core::search_types::{
+        Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan, RecallPath,
+        SearchHitEvidence, SearchMatchedBy,
+    };
+    let meta = || {
+        Some(EntityMetadata::Code {
+            symbol_type: guidance_core::search_types::CodeSymbolType::Function,
+            symbol_name: Some(name.to_string()),
+            scope: None,
+            node_type: Some("function_item".to_string()),
+            signature: Some(format!("pub fn {name}()")),
+            doc: None,
+            modifiers: Vec::new(),
+        })
+    };
+    SearchHit {
+        entity: Entity {
+            id: abs.to_string(),
+            file_id: abs.to_string(),
+            range: FragmentSpan::Text {
+                start_line: start,
+                end_line: end,
+                start_offset: 0,
+                end_offset: 0,
+            },
+            content: FragmentContent::Text {
+                text: String::new(),
+            },
+            metadata: meta(),
+        },
+        file: FileInfo {
+            id: abs.to_string(),
+            absolute_path: abs.to_string(),
+            relative_path: rel.to_string(),
+            root_path: String::new(),
+            size_bytes: 0,
+            last_modified_time: 0,
+            content_hash: None,
+            kind: None,
+            format: "rust".to_string(),
+            index_status: None,
+        },
+        evidence: vec![SearchHitEvidence {
+            range: FragmentSpan::Text {
+                start_line: start,
+                end_line: end,
+                start_offset: 0,
+                end_offset: 0,
+            },
+            content: FragmentContent::Text {
+                text: String::new(),
+            },
+            metadata: meta(),
+            is_entity: true,
+            path: RecallPath::Fts,
+            route_id: None,
+            query: None,
+            rank: None,
+            score: None,
+            forced: None,
+        }],
+        rank: 1,
+        score: guidance_core::search_types::RrfScore::new(0.05),
+        matched_by: SearchMatchedBy::Fts,
+        trace: None,
+    }
+}
+
+#[test]
+fn snippet_caps_to_max_lines_with_live_bounds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = (0..100)
+        .map(|i| format!("    let x{i} = {i};"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let text = format!("pub fn big() -> u32 {{\n{body}\n}}\n");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(&abs, &text).expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    let hit = code_hit(&abs_str, "a.rs", "big", 1, 102);
+    let (snippet, start, end) = snippet_for_hit(&hit, dir.path()).expect("snippet");
+    assert!(
+        snippet.lines().count() <= EXPLAIN_SNIPPET_MAX_LINES,
+        "{}",
+        snippet.lines().count()
+    );
+    assert!(snippet.contains("pub fn big"), "{snippet:?}");
+    // Bounds are live tree-sitter positions, not the stale stored range.
+    assert_eq!((start, end), (1, 102));
+}
+
+#[test]
+fn snippet_falls_back_to_evidence_range_without_metadata() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(&abs, "fn a() {}\nfn b() {}\n").expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    let hit = crate::search::hit_for_test(&abs_str, "a.rs", 1, 2);
+    let (snippet, start, end) = snippet_for_hit(&hit, dir.path()).expect("snippet");
+    assert_eq!(snippet, "fn a() {}\nfn b() {}");
+    assert_eq!((start, end), (1, 2));
+}
+
+#[test]
+fn citations_resolve_live_lines_after_edit() {
+    // Stored range says lines 1-3; an edit pushes the symbol down. The
+    // citation must be the live position, never the stored one.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(&abs, "/// Adds one.\npub fn alpha() -> i32 {\n    1\n}\n").expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    std::fs::write(
+        &abs,
+        "// header\n// more\n/// Adds one.\npub fn alpha() -> i32 {\n    1\n}\n",
+    )
+    .expect("edit");
+    let hit = code_hit(&abs_str, "a.rs", "alpha", 1, 3);
+    let line = cite_live(&hit, dir.path());
+    assert_eq!(line, format!("- {} : lines 4-6", abs_str), "{line}");
+}
+
+#[test]
+fn moved_symbol_marks_unresolvable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(&abs, "pub fn other() {}\n").expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    let hit = code_hit(&abs_str, "a.rs", "alpha", 1, 3);
+    assert_eq!(
+        cite_live(&hit, dir.path()),
+        format!("- {} : moved or removed since index", abs_str)
+    );
+}
+
+#[test]
+fn docs_ranking_prefers_query_overlap() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("alpha.md"),
+        "# Alpha\n\nThe fee calculator adds one to every total.\n\nUnrelated trailing words here.\n",
+    )
+    .expect("write");
+    std::fs::write(
+        dir.path().join("beta.md"),
+        "# Beta\n\nCompletely different topic about nothing relevant.\n",
+    )
+    .expect("write");
+    let ranked = rank_doc_paragraphs("fee calculator total", dir.path(), dir.path(), 5);
+    assert!(!ranked.is_empty(), "query terms must match a paragraph");
+    assert_eq!(ranked[0].0, "alpha.md#1");
+    assert!(ranked[0].1.contains("fee calculator"), "{:?}", ranked[0]);
+}
+
+#[test]
+fn answer_prompt_fences_evidence_and_demands_cites() {
+    let ctx = vec![(
+        "alpha".to_string(),
+        "a.rs".to_string(),
+        3u32,
+        5u32,
+        "pub fn alpha() {}".to_string(),
+    )];
+    let messages = answer_messages("what does alpha do", &ctx);
+    let combined: String = messages.iter().map(|m| m.content.as_str()).collect();
+    assert!(combined.contains("pub fn alpha"), "{combined}");
+    assert!(combined.contains("a.rs:3-5"), "{combined}");
+    assert!(combined.contains("Cite every claim"), "{combined}");
+}
+
+#[test]
+fn citations_dedupe_dual_rows_but_keep_unverified() {
+    // Dual rows for one file cite once (canonical identity); bare
+    // `unverified` lines never collapse (no file identity to compare).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(&abs, "pub fn alpha() -> i32 {\n    1\n}\n").expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    let dotted = format!("{}/./a.rs", dir.path().to_string_lossy());
+    let a = code_hit(&abs_str, "a.rs", "alpha", 1, 3);
+    let mut b = code_hit(&dotted, "./a.rs", "alpha", 1, 3);
+    b.rank = 2;
+    let missing = crate::search::hit_for_test("/nope.rs", "nope.rs", 1, 1);
+    let other_missing = crate::search::hit_for_test("/gone.rs", "gone.rs", 1, 1);
+    let cites = cite_hits_live(&[a, b, missing, other_missing], dir.path());
+    assert_eq!(
+        cites,
+        vec![
+            format!("- {abs_str} : lines 1-3"),
+            "- /nope.rs : unverified".to_string(),
+            "- /gone.rs : unverified".to_string(),
+        ],
+        "{cites:?}"
+    );
+}
+
+#[test]
+fn duplicate_file_range_hits_render_once_as_single_snippet() {
+    // Same file + same range twice (dual relative forms) must not burn
+    // two snippet slots on byte-identical content.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(&abs, "/// Adds one.\npub fn alpha() -> i32 {\n    1\n}\n").expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    let a = code_hit(&abs_str, "a.rs", "alpha", 1, 3);
+    let mut b = code_hit(&abs_str, "./a.rs", "alpha", 1, 3);
+    b.rank = 2;
+    // Third row indexed with a non-canonical absolute path: same file,
+    // same range — canonical identity must still dedupe it.
+    let dotted = format!("{}/./a.rs", dir.path().to_string_lossy());
+    let mut c = code_hit(&dotted, "./a.rs", "alpha", 1, 3);
+    c.rank = 3;
+    let hits = vec![a, b, c];
+    let cites = crate::search::cite_hits(&hits, dir.path().to_str().unwrap());
+    let rows = crate::search::build_explain_rows(&hits, &cites);
+    let snippets = top_snippets(&rows, &hits, dir.path());
+    assert_eq!(snippets.len(), 1, "{snippets:?}");
+}
+
+struct FakeBackend {
+    text: String,
+    fail: bool,
+}
+
+impl fluent_llm::client::ChatBackend for FakeBackend {
+    fn chat_complete(
+        &self,
+        _messages: &[fluent_llm::protocol::ChatMessage],
+    ) -> Result<String, fluent_llm::protocol::LlmError> {
+        if self.fail {
+            return Err(fluent_llm::protocol::LlmError::Http("boom".to_string()));
+        }
+        Ok(self.text.clone())
+    }
+}
+
+#[test]
+fn docs_judge_keeps_passing_scores() {
+    // Each paragraph passes through the decision model; only items at
+    // or above the floor survive, best score first.
+    assert_eq!(EXPLAIN_DOC_MIN_SCORE, 60);
+    let backend = FakeBackend {
+        text: r#"{"1": 90, "2": 10}"#.to_string(),
+        fail: false,
+    };
+    let docs = vec![
+        ("a.md#1".to_string(), "fee calculator".to_string()),
+        ("b.md#1".to_string(), "unrelated weather".to_string()),
+    ];
+    let kept = judge_doc_paragraphs("fee calculator", &docs, &backend);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].0, "a.md#1");
+}
+
+#[test]
+fn docs_judge_malformed_or_failed_omits_all() {
+    // No parseable scores, no section: strict JSON or nothing.
+    let malformed = FakeBackend {
+        text: "very relevant, trust me".to_string(),
+        fail: false,
+    };
+    let docs = vec![("a.md#1".to_string(), "fee calculator".to_string())];
+    assert!(judge_doc_paragraphs("q", &docs, &malformed).is_empty());
+    let failing = FakeBackend {
+        text: String::new(),
+        fail: true,
+    };
+    assert!(judge_doc_paragraphs("q", &docs, &failing).is_empty());
+}
+
+#[test]
+fn live_cite_marks_moved_symbol() {
+    // Present symbol: live bounds plus hash of the live lines.
+    // Missing symbol: the moved marker, never a bare path.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(
+        &abs,
+        "// h0\n// h1\n/// Adds one.\npub fn alpha() -> i32 {\n    1\n}\n",
+    )
+    .expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    let hit = code_hit(&abs_str, "a.rs", "alpha", 1, 3);
+    let cited = cite_live(&hit, dir.path());
+    assert_eq!(cited, format!("- {abs_str} : lines 4-6"), "{cited}");
+    std::fs::write(&abs, "pub fn other() {}\n").expect("edit");
+    assert_eq!(
+        cite_live(&hit, dir.path()),
+        format!("- {abs_str} : moved or removed since index")
+    );
+}
+
+#[test]
+fn suggest_drill_downs_from_top_symbols() {
+    // One drill-down per top symbol, module rows skipped, capped.
+    let ctx = vec![
+        (
+            "alpha".to_string(),
+            "a.rs".to_string(),
+            1u32,
+            3u32,
+            "fn alpha() {}".to_string(),
+        ),
+        (
+            "$file".to_string(),
+            "b.rs".to_string(),
+            1u32,
+            2u32,
+            "// docs".to_string(),
+        ),
+        (
+            "beta".to_string(),
+            "b.rs".to_string(),
+            3u32,
+            5u32,
+            "fn beta() {}".to_string(),
+        ),
+        (
+            "gamma".to_string(),
+            "c.rs".to_string(),
+            1u32,
+            3u32,
+            "fn gamma() {}".to_string(),
+        ),
+        (
+            "delta".to_string(),
+            "d.rs".to_string(),
+            1u32,
+            3u32,
+            "fn delta() {}".to_string(),
+        ),
+    ];
+    let suggestions = suggest_drill_downs(&ctx, 3);
+    assert_eq!(
+        suggestions,
+        vec![
+            "guidance explain \"callers of alpha\"".to_string(),
+            "guidance explain \"callers of beta\"".to_string(),
+            "guidance explain \"callers of gamma\"".to_string(),
+        ],
+        "{suggestions:?}"
+    );
+}
+
+#[test]
+fn render_full_orders_answer_docs_snippets_citations() {
+    // Section order is the contract: answer, docs, snippets,
+    // citations, footer — no table, no Context section. Scores stay on
+    // the rows for threshold decisions even though they never render.
+    let rows = vec![ExplainRow {
+        name: "alpha".to_string(),
+        source: "a.rs".to_string(),
+        score: 0.05,
+        cite: "a.rs:3-5 @ b3:abc".to_string(),
+    }];
+    assert_eq!(rows[0].score, 0.05);
+    let snippets = vec![(
+        "alpha".to_string(),
+        "a.rs".to_string(),
+        3u32,
+        5u32,
+        "pub fn alpha() {}".to_string(),
+    )];
+    let rendered = render_explain_full(
+        "q",
+        &rows,
+        &snippets,
+        &["- /repo/a.rs : lines 3-5".to_string()],
+        &[(
+            "doc/notes.md#1".to_string(),
+            "Adds one to totals.".to_string(),
+        )],
+        Some("It adds one."),
+        &["guidance explain \"callers of alpha\"".to_string()],
+    );
+    let positions = [
+        "### Answer",
+        "### From the docs",
+        "### Top matches",
+        "### Citations",
+        "If you need details, try:",
+    ];
+    let mut cursor = 0usize;
+    for section in positions {
+        let found = rendered[cursor..].find(section).expect(section);
+        cursor += found + section.len();
+    }
+    assert!(!rendered.contains("| Name |"), "{rendered}");
+    assert!(!rendered.contains("### Context"), "{rendered}");
+    assert!(
+        rendered.contains("guidance explain \"callers of alpha\""),
+        "{rendered}"
+    );
+    // Snippets render fenced with a blank line between blocks.
+    assert!(
+        rendered.contains("```rust\npub fn alpha() {}\n```\n\n"),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn render_full_omits_empty_docs_answer_citations() {
+    // Empty auxiliary inputs render nothing: no hollow headers.
+    let rows = vec![ExplainRow {
+        name: "alpha".to_string(),
+        source: "a.rs".to_string(),
+        score: 0.05,
+        cite: "a.rs:3-5 @ b3:abc".to_string(),
+    }];
+    let rendered = render_explain_full("q", &rows, &[], &[], &[], None, &[]);
+    assert!(!rendered.contains("### From the docs"), "{rendered}");
+    assert!(!rendered.contains("### Answer"), "{rendered}");
+    assert!(!rendered.contains("### Citations"), "{rendered}");
+    assert!(!rendered.contains("If you need details"), "{rendered}");
+    assert!(!rendered.contains("| Name |"), "{rendered}");
+}
+
+#[test]
+fn enum_symbol_resolves_live_lines() {
+    // The closed symbol set folds Rust enums into Class: resolution
+    // must match enum nodes, or every enum reads as moved or removed.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let abs = dir.path().join("a.rs");
+    std::fs::write(&abs, "pub enum Shape {\n    Circle,\n    Square,\n}\n").expect("write");
+    let abs_str = abs.to_string_lossy().into_owned();
+    let mut hit = code_hit(&abs_str, "a.rs", "Shape", 1, 4);
+    if let Some(metadata) = hit.entity.metadata.as_mut() {
+        if let guidance_core::search_types::EntityMetadata::Code { symbol_type, .. } = metadata {
+            *symbol_type = guidance_core::search_types::CodeSymbolType::Class;
+        }
+    }
+    for evidence in hit.evidence.iter_mut() {
+        if let Some(guidance_core::search_types::EntityMetadata::Code { symbol_type, .. }) =
+            evidence.metadata.as_mut()
+        {
+            *symbol_type = guidance_core::search_types::CodeSymbolType::Class;
+        }
+    }
+    let line = cite_live(&hit, dir.path());
+    assert_eq!(
+        line,
+        format!("- {abs_str} : lines 1-4"),
+        "enum resolves: {line}"
+    );
+}
+
+#[test]
+fn suggest_drill_downs_skip_docs_and_module_rows() {
+    // Only named code symbols get drill-downs: doc paragraphs and
+    // module rows have no callers to ask about.
+    let ctx = vec![
+        (
+            "d6ac0c97".to_string(),
+            "doc/notes.md".to_string(),
+            1u32,
+            6u32,
+            "para".to_string(),
+        ),
+        (
+            "$file".to_string(),
+            "a.rs".to_string(),
+            1u32,
+            2u32,
+            "// crates".to_string(),
+        ),
+        (
+            "alpha".to_string(),
+            "a.rs".to_string(),
+            3u32,
+            5u32,
+            "fn alpha() {}".to_string(),
+        ),
+    ];
+    assert_eq!(
+        suggest_drill_downs(&ctx, 3),
+        vec!["guidance explain \"callers of alpha\"".to_string()]
     );
 }

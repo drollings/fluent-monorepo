@@ -102,10 +102,10 @@ Key user-visible rules:
 - Purpose: answer "where / what is this code?" queries from the local index.
 - Inputs: query text; `--guidance` mirror dir (default `.guidance`); `--db` path (default `.guidance.db`); `--workspace`; `--limit` (default 10 results); `--no-llm`; `--filter` (default `auto`).
 - Behavior:
-  - Prefers the DB hybrid search when the DB exists; falls back to scanning JSON mirrors with case-insensitive exact / name-substring / token matching (scored 1.0 / 0.8 / 0.5) when the DB is absent or empty; truncates to `--limit`.
-  - Prints a Markdown table (`Name | Source | Score`) under an `## Explain: <query>` heading, or `No results found.`
-  - Optionally injects memory-plugin context under a `### Memory Context` heading when a memory bridge is available, and records the turn afterward.
-  - `--no-llm` guarantees a structural-only answer with no model call.
+  - Prefers the DB hybrid search when the DB exists; falls back to scanning JSON mirrors with case-insensitive exact / name-substring / token matching (scored 1.0 / 0.8 / 0.5) when the DB is absent or empty; truncates to `--limit`. Scores stay on the hits for threshold decisions; the output shows no table and no scores.
+  - Prints an `## Explain: <query>` heading, then in order: a concise local-model `### Answer` with `file:line` cites (skipped with `--no-llm`, which guarantees a structural-only answer with no model call); `### From the docs` (top paragraphs from the configured `docs_dir`, default `./doc`, each passed through the decision model at a minimum score — omitted when none pass); `### Top matches` (fenced code snippets for the top 3, sliced from live bytes with tree-sitter-resolved line numbers, byte-identical duplicates folded); `### Citations` (one `- <absolute path> : lines <start>-<end>` line per hit, or a moved-or-removed marker when the recorded symbol no longer parses); and an `If you need details, try:` footer with suggested `guidance explain "callers of …"` drill-downs.
+  - No results: prints `No results found.` and nothing else.
+  - Unreachable or disabled models degrade to a labelled `(unavailable …)` line, never a hard error.
 - Query model (user-visible): the engine classifies queries into intents — single identifier, identifier lookup, file path, capability phrase, how-to question, conceptual description, multi-keyword, general search — tries the matching search strategy first, then falls back through the remaining strategies in priority order until one yields results. Hard errors stop the walk; empty results continue to the next strategy. An empty query currently matches broadly rather than erroring.
 
 ### 3.6 `guidance check`
