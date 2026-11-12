@@ -206,6 +206,8 @@ impl Drop for ShadowBridge {
 /// One offline replay item: identifiers plus the spec to judge with. Raw
 /// state arrives via the provider callback, never via logs.
 #[derive(Debug, Clone)]
+/// One offline replay item: identifiers plus the spec to judge with. Raw
+/// state arrives via the provider callback, never via logs.
 pub struct ReplayItem {
     pub point: String,
     pub question_id: String,
@@ -217,6 +219,8 @@ pub struct ReplayItem {
 /// One replay outcome (`ReplayOutcome`): identifiers plus the verdict against expectation.
 /// Carries no state bytes by construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One replay outcome (`ReplayOutcome`): identifiers plus the verdict against expectation.
+/// Carries no state bytes by construction.
 pub struct ReplayOutcome {
     pub question_id: String,
     pub label: Option<String>,

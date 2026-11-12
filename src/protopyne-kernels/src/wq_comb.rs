@@ -87,162 +87,192 @@ fn sign_of(value: f64) -> f64 {
 
 /// Absolute value.
 #[must_use]
+/// ---------------------------------------------------------------------------
+/// Arithmetic: unary
+/// ---------------------------------------------------------------------------
+/// Absolute value.
 pub fn comb_abs(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::abs)
 }
 
 /// Square root; negatives read `None` via the `NaN` funnel.
 #[must_use]
+/// Square root; negatives read `None` via the `NaN` funnel.
 pub fn comb_sqrt(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::sqrt)
 }
 
 /// Cube root (total: negatives stay defined).
 #[must_use]
+/// Cube root (total: negatives stay defined).
 pub fn comb_cbrt(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::cbrt)
 }
 
 /// Natural exponential; overflow reads `Some(inf)` like the reference.
 #[must_use]
+/// Natural exponential; overflow reads `Some(inf)` like the reference.
 pub fn comb_exp(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::exp)
 }
 
 /// `exp(x) - 1`, accurate near zero (transcribed, not `exp` minus one).
 #[must_use]
+/// `exp(x) - 1`, accurate near zero (transcribed, not `exp` minus one).
 pub fn comb_expm1(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::exp_m1)
 }
 
 /// Reciprocal `1 / x`; zero reads `Some(inf)` per the reference table.
 #[must_use]
+/// Reciprocal `1 / x`; zero reads `Some(inf)` per the reference table.
 pub fn comb_inverse(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| 1.0 / v)
 }
 
 /// Natural logarithm; negatives read `None`, zero reads `Some(-inf)`.
 #[must_use]
+/// Natural logarithm; negatives read `None`, zero reads `Some(-inf)`.
 pub fn comb_log(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::ln)
 }
 
 /// Base-10 logarithm, same domain contract as [`comb_log`].
 #[must_use]
+/// Base-10 logarithm, same domain contract as [`comb_log`].
 pub fn comb_log10(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::log10)
 }
 
 /// Base-2 logarithm, same domain contract as [`comb_log`].
 #[must_use]
+/// Base-2 logarithm, same domain contract as [`comb_log`].
 pub fn comb_log2(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::log2)
 }
 
 /// `ln(1 + x)`; `x = -1` reads `Some(-inf)` per the reference table.
 #[must_use]
+/// `ln(1 + x)`; `x = -1` reads `Some(-inf)` per the reference table.
 pub fn comb_log1p(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::ln_1p)
 }
 
 /// Sine.
 #[must_use]
+/// Sine.
 pub fn comb_sin(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::sin)
 }
 
 /// Cosine.
 #[must_use]
+/// Cosine.
 pub fn comb_cos(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::cos)
 }
 
 /// Tangent.
 #[must_use]
+/// Tangent.
 pub fn comb_tan(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::tan)
 }
 
 /// Cotangent as `cos / sin` in reference op order; zeros read `Some(inf)`.
 #[must_use]
+/// Cotangent as `cos / sin` in reference op order; zeros read `Some(inf)`.
 pub fn comb_cot(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| v.cos() / v.sin())
 }
 
 /// Hyperbolic sine.
 #[must_use]
+/// Hyperbolic sine.
 pub fn comb_sinh(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::sinh)
 }
 
 /// Hyperbolic cosine.
 #[must_use]
+/// Hyperbolic cosine.
 pub fn comb_cosh(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::cosh)
 }
 
 /// Hyperbolic tangent.
 #[must_use]
+/// Hyperbolic tangent.
 pub fn comb_tanh(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::tanh)
 }
 
 /// Arccosine; out-of-range reads `None` via the `NaN` funnel.
 #[must_use]
+/// Arccosine; out-of-range reads `None` via the `NaN` funnel.
 pub fn comb_arc_cos(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::acos)
 }
 
 /// Arcsine; out-of-range reads `None` via the `NaN` funnel.
 #[must_use]
+/// Arcsine; out-of-range reads `None` via the `NaN` funnel.
 pub fn comb_arc_sin(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::asin)
 }
 
 /// Arctangent.
 #[must_use]
+/// Arctangent.
 pub fn comb_arc_tan(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::atan)
 }
 
 /// Two-argument arctangent `atan2(y, x)`.
 #[must_use]
+/// Two-argument arctangent `atan2(y, x)`.
 pub fn comb_arc_tan2(y: &[f64], x: &[f64]) -> Vec<Option<f64>> {
     map_two(y, x, f64::atan2)
 }
 
 /// Radians to degrees.
 #[must_use]
+/// Radians to degrees.
 pub fn comb_degrees(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::to_degrees)
 }
 
 /// Degrees to radians.
 #[must_use]
+/// Degrees to radians.
 pub fn comb_radians(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::to_radians)
 }
 
 /// Square.
 #[must_use]
+/// Square.
 pub fn comb_square(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| v * v)
 }
 
 /// Cube.
 #[must_use]
+/// Cube.
 pub fn comb_cube(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| v * v * v)
 }
 
 /// Floor toward negative infinity.
 #[must_use]
+/// Floor toward negative infinity.
 pub fn comb_floor(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::floor)
 }
 
 /// Ceiling toward positive infinity.
 #[must_use]
+/// Ceiling toward positive infinity.
 pub fn comb_ceiling(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, f64::ceil)
 }
@@ -250,6 +280,8 @@ pub fn comb_ceiling(values: &[f64]) -> Vec<Option<f64>> {
 /// Round half away from zero to `decimals` places (the reference's
 /// documented non-banker's rounding: `4.5 -> 5`, `-4.5 -> -5`).
 #[must_use]
+/// Round half away from zero to `decimals` places (the reference's
+/// documented non-banker's rounding: `4.5 -> 5`, `-4.5 -> -5`).
 pub fn comb_round(values: &[f64], decimals: u32) -> Vec<Option<f64>> {
     let scale = 10.0_f64.powi(decimals.cast_signed());
     map_one(values, |v| (v * scale).round() / scale)
@@ -259,6 +291,9 @@ pub fn comb_round(values: &[f64], decimals: u32) -> Vec<Option<f64>> {
 /// (`x // f * f` with floor division). Non-positive or non-finite `f`
 /// refuses fail-closed as all-`None` rather than dividing by zero.
 #[must_use]
+/// Greatest multiple of `f` at or below the input, in reference op order
+/// (`x // f * f` with floor division). Non-positive or non-finite `f`
+/// refuses fail-closed as all-`None` rather than dividing by zero.
 pub fn comb_round_down(values: &[f64], f: f64) -> Vec<Option<f64>> {
     if !f.is_finite() || f <= 0.0 {
         return vec![None; values.len()];
@@ -269,24 +304,29 @@ pub fn comb_round_down(values: &[f64], f: f64) -> Vec<Option<f64>> {
 /// Signed fraction `sign(x) * (|x| % 1)`, transcribed verbatim including the
 /// float remainder (so `-1.0` reads `-0.0`, matching the reference table).
 #[must_use]
+/// Signed fraction `sign(x) * (|x| % 1)`, transcribed verbatim including the
+/// float remainder (so `-1.0` reads `-0.0`, matching the reference table).
 pub fn comb_fraction(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| sign_of(v) * (v.abs() % 1.0))
 }
 
 /// Sign function with the reference convention (`-1`/`0`/`1`); total.
 #[must_use]
+/// Sign function with the reference convention (`-1`/`0`/`1`); total.
 pub fn comb_sign(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, sign_of)
 }
 
 /// Logistic sigmoid `1 / (1 + exp(-x))`, strictly inside `(0, 1)`.
 #[must_use]
+/// Logistic sigmoid `1 / (1 + exp(-x))`, strictly inside `(0, 1)`.
 pub fn comb_sigmoid(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| 1.0 / (1.0 + (-v).exp()))
 }
 
 /// Softsign `x / (1 + |x|)`, strictly inside `(-1, 1)`.
 #[must_use]
+/// Softsign `x / (1 + |x|)`, strictly inside `(-1, 1)`.
 pub fn comb_softsign(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| v / (1.0 + v.abs()))
 }
@@ -294,6 +334,8 @@ pub fn comb_softsign(values: &[f64]) -> Vec<Option<f64>> {
 /// Transcribed log-odds `ln(x / (1 + x))` — note the plus sign is the
 /// reference's formula verbatim, not the textbook `x / (1 - x)` form.
 #[must_use]
+/// Transcribed log-odds `ln(x / (1 + x))` — note the plus sign is the
+/// reference's formula verbatim, not the textbook `x / (1 - x)` form.
 pub fn comb_logit(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| (v / (1.0 + v)).ln())
 }
@@ -301,18 +343,22 @@ pub fn comb_logit(values: &[f64]) -> Vec<Option<f64>> {
 /// Sign-preserving log compression `sign(x) * log10(1 + |x|)`; the base-10
 /// logarithm is pinned by the reference example (`9 -> 1`, `99 -> 2`).
 #[must_use]
+/// Sign-preserving log compression `sign(x) * log10(1 + |x|)`; the base-10
+/// logarithm is pinned by the reference example (`9 -> 1`, `99 -> 2`).
 pub fn comb_s_log_1p(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| sign_of(v) * (1.0 + v.abs()).log10())
 }
 
 /// Negation.
 #[must_use]
+/// Negation.
 pub fn comb_reverse(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| -v)
 }
 
 /// Identity; missing stays missing.
 #[must_use]
+/// Identity; missing stays missing.
 pub fn comb_nop(values: &[f64]) -> Vec<Option<f64>> {
     map_one(values, |v| v)
 }
@@ -324,6 +370,11 @@ pub fn comb_nop(values: &[f64]) -> Vec<Option<f64>> {
 /// Null-ignoring horizontal sum over two or more legs; delegates to the M5
 /// [`add_expr`](crate::util::add_expr) map.
 #[must_use]
+/// ---------------------------------------------------------------------------
+/// Arithmetic: binary
+/// ---------------------------------------------------------------------------
+/// Null-ignoring horizontal sum over two or more legs; delegates to the M5
+/// [`add_expr`](crate::util::add_expr) map.
 pub fn comb_add(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
     crate::util::add_expr(a, b, rest)
 }
@@ -331,6 +382,8 @@ pub fn comb_add(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
 /// Null-ignoring horizontal product; delegates to
 /// [`mul_expr`](crate::util::mul_expr).
 #[must_use]
+/// Null-ignoring horizontal product; delegates to
+/// [`mul_expr`](crate::util::mul_expr).
 pub fn comb_multiply(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
     crate::util::mul_expr(a, b, rest)
 }
@@ -338,6 +391,8 @@ pub fn comb_multiply(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> 
 /// Elementwise difference; any missing leg poisons its position via
 /// [`sub_expr`](crate::util::sub_expr).
 #[must_use]
+/// Elementwise difference; any missing leg poisons its position via
+/// [`sub_expr`](crate::util::sub_expr).
 pub fn comb_subtract(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
     crate::util::sub_expr(a, b)
 }
@@ -346,6 +401,9 @@ pub fn comb_subtract(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 /// zero and missing denominators refuse (`None`) instead of emitting `inf`,
 /// the one documented departure from the reference's raw `x / y`.
 #[must_use]
+/// Guarded elementwise division via [`div_expr`](crate::util::div_expr):
+/// zero and missing denominators refuse (`None`) instead of emitting `inf`,
+/// the one documented departure from the reference's raw `x / y`.
 pub fn comb_divide(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
     crate::util::div_expr(a, b)
 }
@@ -353,6 +411,8 @@ pub fn comb_divide(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 /// Floor division in reference op order (`(x / y).floor()`); zero and
 /// missing divisors refuse as `None`, matching the reference's null rows.
 #[must_use]
+/// Floor division in reference op order (`(x / y).floor()`); zero and
+/// missing divisors refuse as `None`, matching the reference's null rows.
 pub fn comb_div(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
     let len = a.len().min(b.len());
     (0..len)
@@ -369,6 +429,8 @@ pub fn comb_div(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 /// Python-style remainder (sign follows the divisor, so `-1 % 2 = 1` per the
 /// reference table); zero and missing divisors refuse as `None`.
 #[must_use]
+/// Python-style remainder (sign follows the divisor, so `-1 % 2 = 1` per the
+/// reference table); zero and missing divisors refuse as `None`.
 pub fn comb_mod(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
     let len = a.len().min(b.len());
     (0..len)
@@ -385,6 +447,8 @@ pub fn comb_mod(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 /// Power `x ** y`; negative bases with fractional exponents read `None` via
 /// the `NaN` funnel (`0 ** 0` reads `1`, matching the reference table).
 #[must_use]
+/// Power `x ** y`; negative bases with fractional exponents read `None` via
+/// the `NaN` funnel (`0 ** 0` reads `1`, matching the reference table).
 pub fn comb_power(x: &[f64], y: &[f64]) -> Vec<Option<f64>> {
     map_two(x, y, f64::powf)
 }
@@ -395,6 +459,10 @@ pub fn comb_power(x: &[f64], y: &[f64]) -> Vec<Option<f64>> {
 /// reference branches on the same literal equality.)
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Sign-preserving power, transcribing the reference's three arms verbatim:
+/// `y == 1` keeps `x`, `y == 0` keeps the sign, otherwise `|x|^y * sign(x)`.
+/// (Exact float comparison is intentional: these are level checks, and the
+/// reference branches on the same literal equality.)
 pub fn comb_signed_power(x: &[f64], y: &[f64]) -> Vec<Option<f64>> {
     map_two(x, y, |base, exp| {
         if exp == 1.0 {
@@ -414,6 +482,11 @@ pub fn comb_signed_power(x: &[f64], y: &[f64]) -> Vec<Option<f64>> {
 /// Horizontal maximum ignoring missing legs; `None` only where every leg is
 /// missing.
 #[must_use]
+/// ---------------------------------------------------------------------------
+/// Arithmetic: horizontal reductions
+/// ---------------------------------------------------------------------------
+/// Horizontal maximum ignoring missing legs; `None` only where every leg is
+/// missing.
 pub fn comb_max(legs: &[&[f64]]) -> Vec<Option<f64>> {
     horizontal(legs, |present| {
         present.iter().copied().fold(f64::NEG_INFINITY, f64::max)
@@ -422,6 +495,7 @@ pub fn comb_max(legs: &[&[f64]]) -> Vec<Option<f64>> {
 
 /// Horizontal minimum, same null contract as [`comb_max`].
 #[must_use]
+/// Horizontal minimum, same null contract as [`comb_max`].
 pub fn comb_min(legs: &[&[f64]]) -> Vec<Option<f64>> {
     horizontal(legs, |present| {
         present.iter().copied().fold(f64::INFINITY, f64::min)
@@ -431,6 +505,8 @@ pub fn comb_min(legs: &[&[f64]]) -> Vec<Option<f64>> {
 /// Horizontal mean ignoring missing legs; `None` only where every leg is
 /// missing.
 #[must_use]
+/// Horizontal mean ignoring missing legs; `None` only where every leg is
+/// missing.
 pub fn comb_mean(legs: &[&[f64]]) -> Vec<Option<f64>> {
     horizontal(legs, |present| {
         present.iter().sum::<f64>() / present.len() as f64
@@ -441,6 +517,9 @@ pub fn comb_mean(legs: &[&[f64]]) -> Vec<Option<f64>> {
 /// the present legs (transcribed: the reference never divides by a count),
 /// with the all-missing row reading `Some(0.0)` per the reference table.
 #[must_use]
+/// Horizontal variance as the *unnormalized* sum of squared deviations over
+/// the present legs (transcribed: the reference never divides by a count),
+/// with the all-missing row reading `Some(0.0)` per the reference table.
 pub fn comb_var(legs: &[&[f64]]) -> Vec<Option<f64>> {
     let len = legs.iter().map(|leg| leg.len()).min().unwrap_or(0);
     (0..len)
@@ -461,6 +540,7 @@ pub fn comb_var(legs: &[&[f64]]) -> Vec<Option<f64>> {
 
 /// Horizontal standard deviation: square root of [`comb_var`].
 #[must_use]
+/// Horizontal standard deviation: square root of [`comb_var`].
 pub fn comb_std(legs: &[&[f64]]) -> Vec<Option<f64>> {
     comb_var(legs)
         .iter()
@@ -494,6 +574,12 @@ fn horizontal(legs: &[&[f64]], fold: impl Fn(&[f64]) -> f64) -> Vec<Option<f64>>
 /// wins even beside missing), otherwise missing poisons. A lone leg passes
 /// through, matching the reference's single-arg early return.
 #[must_use]
+/// ---------------------------------------------------------------------------
+/// Logical
+/// ---------------------------------------------------------------------------
+/// Kleene AND over two or more legs: `false` dominates (a single false
+/// wins even beside missing), otherwise missing poisons. A lone leg passes
+/// through, matching the reference's single-arg early return.
 pub fn comb_and(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
     let len = rest.iter().fold(first.len(), |m, leg| m.min(leg.len()));
     (0..len)
@@ -522,6 +608,8 @@ pub fn comb_and(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
 /// Kleene OR: `true` dominates, otherwise missing poisons; lone leg passes
 /// through like [`comb_and`].
 #[must_use]
+/// Kleene OR: `true` dominates, otherwise missing poisons; lone leg passes
+/// through like [`comb_and`].
 pub fn comb_or(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
     let len = rest.iter().fold(first.len(), |m, leg| m.min(leg.len()));
     (0..len)
@@ -549,6 +637,7 @@ pub fn comb_or(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
 
 /// Exclusive OR; missing on either leg poisons.
 #[must_use]
+/// Exclusive OR; missing on either leg poisons.
 pub fn comb_xor(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
     let len = a.len().min(b.len());
     (0..len)
@@ -561,6 +650,7 @@ pub fn comb_xor(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 
 /// Logical negation; missing stays missing.
 #[must_use]
+/// Logical negation; missing stays missing.
 pub fn comb_not(values: &[f64]) -> Vec<Option<f64>> {
     values
         .iter()
@@ -570,12 +660,14 @@ pub fn comb_not(values: &[f64]) -> Vec<Option<f64>> {
 
 /// Alias of [`comb_not`]: the reference defines `negate` as `not_`.
 #[must_use]
+/// Alias of [`comb_not`]: the reference defines `negate` as `not_`.
 pub fn comb_negate(values: &[f64]) -> Vec<Option<f64>> {
     comb_not(values)
 }
 
 /// Equality; missing on either leg poisons (a `NaN` never equals itself).
 #[must_use]
+/// Equality; missing on either leg poisons (a `NaN` never equals itself).
 pub fn comb_equal(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
     // Exact float comparison is the operator's meaning here, not a tolerance.
     #[allow(clippy::float_cmp)]
@@ -594,6 +686,7 @@ pub fn comb_equal(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 
 /// Strict less-than; missing on either leg poisons.
 #[must_use]
+/// Strict less-than; missing on either leg poisons.
 pub fn comb_less(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
     map_two(a, b, |x, y| f64::from(u8::from(x < y)))
 }
@@ -602,6 +695,9 @@ pub fn comb_less(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 /// `else`, and a missing condition falls to `else` (the reference's
 /// `when/otherwise` shape, where null conditions miss the `then` arm).
 #[must_use]
+/// Conditional select: truthy condition takes its `then` leg, falsy takes
+/// `else`, and a missing condition falls to `else` (the reference's
+/// `when/otherwise` shape, where null conditions miss the `then` arm).
 pub fn comb_if_else(cond: &[f64], then: &[f64], els: &[f64]) -> Vec<Option<f64>> {
     let len = cond.len().min(then.len()).min(els.len());
     (0..len)
@@ -624,18 +720,21 @@ fn probe_total(values: &[f64], f: impl Fn(f64) -> bool) -> Vec<Option<f64>> {
 
 /// `true` exactly on missing (`NaN`) slots.
 #[must_use]
+/// `true` exactly on missing (`NaN`) slots.
 pub fn comb_is_nan(values: &[f64]) -> Vec<Option<f64>> {
     probe_total(values, f64::is_nan)
 }
 
 /// `true` exactly on missing slots (the slice null analog).
 #[must_use]
+/// `true` exactly on missing slots (the slice null analog).
 pub fn comb_is_null(values: &[f64]) -> Vec<Option<f64>> {
     probe_total(values, f64::is_nan)
 }
 
 /// `true` on finite values (`NaN` and both infinities read `false`).
 #[must_use]
+/// `true` on finite values (`NaN` and both infinities read `false`).
 pub fn comb_is_finite(values: &[f64]) -> Vec<Option<f64>> {
     probe_total(values, f64::is_finite)
 }
@@ -643,18 +742,22 @@ pub fn comb_is_finite(values: &[f64]) -> Vec<Option<f64>> {
 /// Transcribed quirk: the reference implements this as infiniteness, *not*
 /// the negation of finiteness, so `NaN` reads `false` here.
 #[must_use]
+/// Transcribed quirk: the reference implements this as infiniteness, *not*
+/// the negation of finiteness, so `NaN` reads `false` here.
 pub fn comb_is_not_finite(values: &[f64]) -> Vec<Option<f64>> {
     probe_total(values, f64::is_infinite)
 }
 
 /// Negation of [`comb_is_nan`].
 #[must_use]
+/// Negation of [`comb_is_nan`].
 pub fn comb_is_not_nan(values: &[f64]) -> Vec<Option<f64>> {
     probe_total(values, |v| !v.is_nan())
 }
 
 /// Negation of [`comb_is_null`].
 #[must_use]
+/// Negation of [`comb_is_null`].
 pub fn comb_is_not_null(values: &[f64]) -> Vec<Option<f64>> {
     probe_total(values, |v| !v.is_nan())
 }
@@ -666,6 +769,11 @@ pub fn comb_is_not_null(values: &[f64]) -> Vec<Option<f64>> {
 /// Clamp into `[lower, upper]`; inverted bounds refuse fail-closed as
 /// all-`None` rather than swapping the caller's intent.
 #[must_use]
+/// ---------------------------------------------------------------------------
+/// Transformational
+/// ---------------------------------------------------------------------------
+/// Clamp into `[lower, upper]`; inverted bounds refuse fail-closed as
+/// all-`None` rather than swapping the caller's intent.
 pub fn comb_clamp(values: &[f64], lower: f64, upper: f64) -> Vec<Option<f64>> {
     if lower.is_nan() || upper.is_nan() || lower > upper {
         return vec![None; values.len()];
@@ -677,6 +785,9 @@ pub fn comb_clamp(values: &[f64], lower: f64, upper: f64) -> Vec<Option<f64>> {
 /// (`None` mask writes missing), values outside pass through. Same
 /// fail-closed contract as [`comb_clamp`].
 #[must_use]
+/// Inverse clamp: values inside `[lower, upper]` are replaced with `mask`
+/// (`None` mask writes missing), values outside pass through. Same
+/// fail-closed contract as [`comb_clamp`].
 pub fn comb_clamp_inverse(
     values: &[f64],
     lower: f64,
@@ -704,6 +815,9 @@ pub fn comb_clamp_inverse(
 /// the value (right-closed bins, matching the reference's default
 /// left-open cut: `2 -> 0`, `3 -> 1`, `10 -> 2` over `[2, 5, 20]`).
 #[must_use]
+/// Bin into `breaks.len() + 1` categories counting the breaks strictly below
+/// the value (right-closed bins, matching the reference's default
+/// left-open cut: `2 -> 0`, `3 -> 1`, `10 -> 2` over `[2, 5, 20]`).
 pub fn comb_cut(values: &[f64], breaks: &[f64]) -> Vec<Option<f64>> {
     values
         .iter()
@@ -719,6 +833,7 @@ pub fn comb_cut(values: &[f64], breaks: &[f64]) -> Vec<Option<f64>> {
 
 /// Keep values at or below `maximum`; greater values read `None`.
 #[must_use]
+/// Keep values at or below `maximum`; greater values read `None`.
 pub fn comb_left_tail(values: &[f64], maximum: f64) -> Vec<Option<f64>> {
     values
         .iter()
@@ -736,6 +851,7 @@ pub fn comb_left_tail(values: &[f64], maximum: f64) -> Vec<Option<f64>> {
 
 /// Keep values at or above `minimum`; lesser values read `None`.
 #[must_use]
+/// Keep values at or above `minimum`; lesser values read `None`.
 pub fn comb_right_tail(values: &[f64], minimum: f64) -> Vec<Option<f64>> {
     values
         .iter()
@@ -754,6 +870,8 @@ pub fn comb_right_tail(values: &[f64], minimum: f64) -> Vec<Option<f64>> {
 /// Replace the strict interior `(lower, upper)` with `newval`; boundary
 /// values pass through, matching the reference table (`2` and `5` stay).
 #[must_use]
+/// Replace the strict interior `(lower, upper)` with `newval`; boundary
+/// values pass through, matching the reference table (`2` and `5` stay).
 pub fn comb_tail(values: &[f64], lower: f64, upper: f64, newval: f64) -> Vec<Option<f64>> {
     values
         .iter()
@@ -772,6 +890,8 @@ pub fn comb_tail(values: &[f64], lower: f64, upper: f64, newval: f64) -> Vec<Opt
 /// Fill missing (`NaN`) slots with `value`; a `NaN` fill stays missing
 /// through the funnel.
 #[must_use]
+/// Fill missing (`NaN`) slots with `value`; a `NaN` fill stays missing
+/// through the funnel.
 pub fn comb_fill_null(values: &[f64], value: f64) -> Vec<Option<f64>> {
     values
         .iter()
@@ -789,6 +909,9 @@ pub fn comb_fill_null(values: &[f64], value: f64) -> Vec<Option<f64>> {
 /// out-of-`i32` values read `None` (the reference's `Int32` cast has no
 /// slice-representable overflow, so overflow refuses instead of wrapping).
 #[must_use]
+/// Truncate toward zero with fail-closed refusal: missing, non-finite, and
+/// out-of-`i32` values read `None` (the reference's `Int32` cast has no
+/// slice-representable overflow, so overflow refuses instead of wrapping).
 pub fn comb_int(values: &[f64]) -> Vec<Option<f64>> {
     values
         .iter()
@@ -809,6 +932,7 @@ pub fn comb_int(values: &[f64]) -> Vec<Option<f64>> {
 
 /// Materialize truthiness (`0 -> 0`, nonzero `-> 1`); missing stays missing.
 #[must_use]
+/// Materialize truthiness (`0 -> 0`, nonzero `-> 1`); missing stays missing.
 pub fn comb_bool(values: &[f64]) -> Vec<Option<f64>> {
     values.iter().map(|v| truth(*v).map(bool_of)).collect()
 }
@@ -816,6 +940,8 @@ pub fn comb_bool(values: &[f64]) -> Vec<Option<f64>> {
 /// Widen through 32-bit float, matching the reference's `Float32` cast
 /// rounding (large magnitudes saturate to `inf` through the funnel).
 #[must_use]
+/// Widen through 32-bit float, matching the reference's `Float32` cast
+/// rounding (large magnitudes saturate to `inf` through the funnel).
 pub fn comb_float(values: &[f64]) -> Vec<Option<f64>> {
     values
         .iter()

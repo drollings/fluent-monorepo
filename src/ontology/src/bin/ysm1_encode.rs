@@ -7,6 +7,14 @@
 //! downloaded taxonomy is encoded once, at fetch time, and every boot after
 //! that decodes the binary instead of re-parsing the TTL.
 
+/// Operator tool: encode a YaGO taxonomy TTL to a YSM1 binary.
+/// 
+/// Usage: `ysm1_encode <input.ttl> <output.ysm1>`
+/// 
+/// The TTL remains the source of truth; this is the only trusted YSM1
+/// producer. Hooked into the `make yago-load` flow as a post-step so the
+/// downloaded taxonomy is encoded once, at fetch time, and every boot after
+/// that decodes the binary instead of re-parsing the TTL.
 fn main() {
     let mut args = std::env::args().skip(1);
     let input = args.next().unwrap_or_else(|| {

@@ -8,6 +8,7 @@ use thiserror::Error;
 
 /// Failures from the speech-to-text stage.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Failures from the speech-to-text stage.
 pub enum SttError {
     /// The STT backend reported a failure.
     #[error("STT backend failed: {0}")]
@@ -22,6 +23,7 @@ pub enum SttError {
 
 /// Failures from the language-model session.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Failures from the language-model session.
 pub enum LlmError {
     /// The endpoint or transport reported a failure.
     #[error("LLM backend failed: {0}")]
@@ -36,6 +38,7 @@ pub enum LlmError {
 
 /// Failures from the text-to-speech stage.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Failures from the text-to-speech stage.
 pub enum TtsError {
     /// The TTS backend reported a failure.
     #[error("TTS backend failed: {0}")]
@@ -50,6 +53,7 @@ pub enum TtsError {
 
 /// Failures from a native speech-to-speech engine.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Failures from a native speech-to-speech engine.
 pub enum DuplexError {
     /// The duplex backend reported a failure.
     #[error("duplex backend failed: {0}")]
@@ -64,6 +68,7 @@ pub enum DuplexError {
 
 /// Failures on the daemon/client wire protocol.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Failures on the daemon/client wire protocol.
 pub enum ProtocolError {
     /// The method name is not part of the wire contract.
     #[error("unknown method: {0}")]

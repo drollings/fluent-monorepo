@@ -12,6 +12,7 @@ use crate::value::{ColorHandle, EnumHandle, PineValue};
 
 /// An input declaration with its admissible range.
 #[derive(Debug, Clone, PartialEq)]
+/// An input declaration with its admissible range.
 pub enum InputDef {
     /// Float input with inclusive `[min, max]`.
     Float {
@@ -235,6 +236,7 @@ impl fluent_wvr::validate::Validate for InputDef {
 
 /// Declared inputs and their current per-run values.
 #[derive(Debug, Clone, Default)]
+/// Declared inputs and their current per-run values.
 pub struct InputSet {
     defs: HashMap<String, InputDef>,
     values: HashMap<String, PineValue>,

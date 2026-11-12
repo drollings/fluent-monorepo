@@ -24,6 +24,7 @@ pub(crate) static SERVE_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(())
 
 /// Hold the serve-loop lock for one test.
 #[cfg(test)]
+/// Hold the serve-loop lock for one test.
 pub(crate) fn serve_serial() -> std::sync::MutexGuard<'static, ()> {
     SERVE_SERIAL
         .lock()
@@ -35,6 +36,10 @@ pub(crate) fn serve_serial() -> std::sync::MutexGuard<'static, ()> {
 /// reads the credential itself; these helpers keep the pure gate
 /// pinnable with injected uids.
 #[cfg(test)]
+/// Test-only single-shot shape: gate the peer, accept, dispatch,
+/// reply, return. The production loop below accepts through tokio and
+/// reads the credential itself; these helpers keep the pure gate
+/// pinnable with injected uids.
 pub fn serve_once(
     listener: &UnixListener,
     own_uid: u32,
@@ -51,6 +56,8 @@ pub fn serve_once(
 /// Test-only already-accepted shape with an injected peer uid, so the
 /// pure gate stays pinnable without a live credential.
 #[cfg(test)]
+/// Test-only already-accepted shape with an injected peer uid, so the
+/// pure gate stays pinnable without a live credential.
 pub fn serve_stream(
     stream: &mut UnixStream,
     own_uid: u32,
@@ -82,6 +89,7 @@ pub(crate) static LISTENER_REFUSALS: std::sync::atomic::AtomicU64 =
 /// Current listener-level refusal count.
 #[cfg(test)]
 #[must_use]
+/// Current listener-level refusal count.
 pub(crate) fn listener_refusals() -> u64 {
     LISTENER_REFUSALS.load(std::sync::atomic::Ordering::SeqCst)
 }
@@ -419,6 +427,10 @@ fn own_uid_of(path: &Path) -> u32 {
 /// the accept loop to stop; session methods execute against the
 /// registry; `Reload` stays unimplemented by design.
 #[cfg(test)]
+/// Read one request, dispatch it, write the reply. `VoiceEndpoint`
+/// resolves through `voice` (booting on demand); `StopDaemon` signals
+/// the accept loop to stop; session methods execute against the
+/// registry; `Reload` stays unimplemented by design.
 fn handle(stream: &mut UnixStream, voice: &VoiceOwner) -> Result<(), String> {
     let (id, method, params) = read_request(stream)?;
     let (ok, body) = serve_call(voice, &method, &params);
@@ -678,6 +690,7 @@ fn reject_unknown_params(method: &str, params: &serde_json::Value) -> Result<(),
 
 /// Test seam for the param-rejection golden.
 #[cfg(test)]
+/// Test seam for the param-rejection golden.
 pub(crate) fn route_for_tests(
     voice: &VoiceOwner,
     method: &str,

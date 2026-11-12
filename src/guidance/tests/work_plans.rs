@@ -22,7 +22,10 @@ fn item(id: &str, target: &str) -> PlanItem {
     }
 }
 
-fn runners(build_clean: bool, failures: Vec<String>) -> (crate::seal::BuildRunner, crate::seal::TestRunner) {
+fn runners(
+    build_clean: bool,
+    failures: Vec<String>,
+) -> (crate::seal::BuildRunner, crate::seal::TestRunner) {
     let build: crate::seal::BuildRunner = Arc::new(move |package: &Path| {
         Ok(BuildVerdict {
             package: package.display().to_string(),
@@ -30,7 +33,10 @@ fn runners(build_clean: bool, failures: Vec<String>) -> (crate::seal::BuildRunne
             output: String::new(),
         })
     });
-    let report = TestReport { new_failures: failures, output: String::new() };
+    let report = TestReport {
+        new_failures: failures,
+        output: String::new(),
+    };
     let test: crate::seal::TestRunner = Arc::new(move |_: &Path| Ok(report.clone()));
     (build, test)
 }
@@ -39,7 +45,10 @@ fn runners(build_clean: bool, failures: Vec<String>) -> (crate::seal::BuildRunne
 fn import_assigns_stable_ids_with_changelog() {
     let plan = WorkPlan::import("p", vec![item("a", "t1"), item("b", "t2")]).expect("import");
     assert_eq!(plan.order, vec!["a".to_string(), "b".to_string()]);
-    assert_eq!(plan.changelog, vec!["add a".to_string(), "add b".to_string()]);
+    assert_eq!(
+        plan.changelog,
+        vec!["add a".to_string(), "add b".to_string()]
+    );
 }
 
 #[test]
@@ -48,9 +57,21 @@ fn revise_preserves_completed_merges_new_and_changed() {
     let (build, test) = runners(true, Vec::new());
     plan.verify(&build, &test);
     assert!(plan.is_complete());
-    plan.revise(vec![item("a", "t1"), item("b", "t2-changed"), item("c", "t3")]);
-    assert_eq!(plan.items["a"].state, PlanItemState::Verified, "completed preserved");
-    assert_eq!(plan.items["b"].state, PlanItemState::Open, "changed reopens");
+    plan.revise(vec![
+        item("a", "t1"),
+        item("b", "t2-changed"),
+        item("c", "t3"),
+    ]);
+    assert_eq!(
+        plan.items["a"].state,
+        PlanItemState::Verified,
+        "completed preserved"
+    );
+    assert_eq!(
+        plan.items["b"].state,
+        PlanItemState::Open,
+        "changed reopens"
+    );
     assert_eq!(plan.items["c"].state, PlanItemState::Open, "new items open");
     assert!(plan.changelog.iter().any(|line| line == "change b"));
     assert!(plan.changelog.iter().any(|line| line == "add c"));
@@ -75,10 +96,22 @@ fn revision_intent_reconciles_crash_without_loss() {
     let mut next = plan.clone();
     next.revise(vec![item("a", "t1"), item("b", "t2")]);
     let intent = plan.revision_intent(&next);
-    assert_eq!(reconcile_intent(&intent, &intent.post_hash), Reconcile::Applied);
-    assert_eq!(reconcile_intent(&intent, &intent.pre_hash), Reconcile::Requeue);
-    assert_eq!(reconcile_intent(&intent, "plan:edited-elsewhere"), Reconcile::HumanEdit);
+    assert_eq!(
+        reconcile_intent(&intent, &intent.post_hash),
+        Reconcile::Applied
+    );
+    assert_eq!(
+        reconcile_intent(&intent, &intent.pre_hash),
+        Reconcile::Requeue
+    );
+    assert_eq!(
+        reconcile_intent(&intent, "plan:edited-elsewhere"),
+        Reconcile::HumanEdit
+    );
     let roundtrip: WorkPlan =
         serde_json::from_str(&serde_json::to_string(&next).expect("json")).expect("parse");
-    assert_eq!(roundtrip, next, "persisted plans survive a restart byte-identically");
+    assert_eq!(
+        roundtrip, next,
+        "persisted plans survive a restart byte-identically"
+    );
 }

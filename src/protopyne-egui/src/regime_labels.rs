@@ -32,6 +32,9 @@ pub use protopyne_kernels::market_context::REGIME_HYSTERESIS as STABILITY_BAND;
 /// surfaces. Flicker included, hysteresis excluded. Probe-only: display and
 /// gate paths must call [`display_label`] instead.
 #[must_use]
+/// Frozen detector read: exact-`==` parity probe over the three normalized
+/// surfaces. Flicker included, hysteresis excluded. Probe-only: display and
+/// gate paths must call [`display_label`] instead.
 pub fn parity_label(
     ma_health: Option<f64>,
     volatility_ratio: Option<f64>,
@@ -46,6 +49,11 @@ pub fn parity_label(
 /// by more than [`STABILITY_BAND`]; same-surface sign flips switch at once;
 /// vanished evidence never holds a stale label.
 #[must_use]
+/// Quiet display/gate read: the frozen detector decides the fresh label,
+/// the hysteresis wrapper decides whether the switch earns the flicker.
+/// Cross-surface switches need the fresh surface to beat the held surface
+/// by more than [`STABILITY_BAND`]; same-surface sign flips switch at once;
+/// vanished evidence never holds a stale label.
 pub fn display_label(
     prev: MarketRegime,
     ma_health: Option<f64>,
@@ -60,6 +68,10 @@ pub fn display_label(
 /// so regime color follows the single theme truth instead of a second
 /// palette or label type.
 #[must_use]
+/// Existing theme style key for one regime label. Every arm resolves
+/// against `ThemeConfig :: style` today (`bull`/`bear`/`fast`/`slow`/`grid`),
+/// so regime color follows the single theme truth instead of a second
+/// palette or label type.
 pub fn regime_style_key(label: MarketRegime) -> &'static str {
     match label {
         MarketRegime::TrendingBull => "bull",
@@ -76,6 +88,11 @@ pub fn regime_style_key(label: MarketRegime) -> &'static str {
 /// [`display_label`]. Pure state, no caching — persistence stays in the
 /// plan cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Held display label across bars (producer confidence: label stability —
+/// it steadies what is on screen, never whether a label is fit to alert
+/// on): constructed with the label on screen, advanced bar-by-bar through
+/// [`display_label`]. Pure state, no caching — persistence stays in the
+/// plan cache.
 pub struct QuietLabel {
     /// Label currently on screen.
     current: MarketRegime,
@@ -143,6 +160,9 @@ pub fn label_series(
 /// local copy (keeps the one-truth rule compiler-checked at the use site).
 /// Producer confidence, not task value: the band steadies labels only.
 #[must_use]
+/// Confirm the module routes through the shared band constant rather than a
+/// local copy (keeps the one-truth rule compiler-checked at the use site).
+/// Producer confidence, not task value: the band steadies labels only.
 pub fn stability_band() -> f64 {
     REGIME_HYSTERESIS
 }

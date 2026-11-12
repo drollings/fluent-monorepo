@@ -151,6 +151,11 @@ impl CachedColbert {
 /// LFM tokenizer. We detect them via the attention mask (PAD) and the
 /// tokenizer's special token handling.
 #[cfg(feature = "onnx")]
+/// ── ColbertRetriever (behind `onnx` feature) ───────────────────────────
+/// Remove [CLS], [SEP], and [PAD] tokens from the encoded sequence.
+/// These are special tokens whose ids are typically 0, 1, 2 in the
+/// LFM tokenizer. We detect them via the attention mask (PAD) and the
+/// tokenizer's special token handling.
 fn strip_special_tokens(
     tokens: Vec<Vec<f32>>,
     encoding: &crate::tokenizer::LfmEncoding,
@@ -524,6 +529,7 @@ pub struct EntitySimilarityIndex {
 
 /// A pre-encoded concept label with its namespace and canonical name.
 #[derive(Debug, Clone)]
+/// A pre-encoded concept label with its namespace and canonical name.
 pub struct ConceptEncoding {
     /// The interlingua namespace (e.g., `YagoEntity`, `YagoClass`).
     pub namespace: String,
@@ -535,6 +541,7 @@ pub struct ConceptEncoding {
 
 /// The result of an entity-similarity lookup.
 #[derive(Debug, Clone)]
+/// The result of an entity-similarity lookup.
 pub struct EntitySimilarityHit {
     pub namespace: String,
     pub canonical: String,

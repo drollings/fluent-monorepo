@@ -42,6 +42,7 @@ use super::binding::Entity;
 /// Per-target verdict recorded in the audit trail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+/// Per-target verdict recorded in the audit trail.
 pub enum ChartTargetVerdict {
     Completed,
     Failed,
@@ -51,6 +52,7 @@ pub enum ChartTargetVerdict {
 
 /// One audit-trail entry for a chart target run (observability).
 #[derive(Debug, Clone, Serialize)]
+/// One audit-trail entry for a chart target run (observability).
 pub struct ChartAuditEntry {
     pub chart: String,
     pub target: String,
@@ -92,6 +94,7 @@ fn chart_retry_predicate(err: &WorkError) -> bool {
 
 /// Options for a supervised chart execution.
 #[derive(Clone)]
+/// Options for a supervised chart execution.
 pub struct ChartExecOptions {
     /// Async runtime driving the SupervisedBatch (production: `fluent_concurrency::tokio_runtime()`).
     pub runtime: Arc<dyn Runtime>,
@@ -135,6 +138,7 @@ impl Default for ChartExecOptions {
 
 /// Summary of a supervised chart execution.
 #[derive(Debug, Default, Clone)]
+/// Summary of a supervised chart execution.
 pub struct ChartExecutionSummary {
     /// Decisions of completed targets, in completion order.
     pub completed: Vec<StageDecision>,

@@ -62,7 +62,12 @@ impl FrozenSnapshot {
                 source: "context".to_string(),
             });
         }
-        pack_context(&sections, max_tokens).items.into_iter().map(|item| item.text).collect::<Vec<_>>().join("\n\n")
+        pack_context(&sections, max_tokens)
+            .items
+            .into_iter()
+            .map(|item| item.text)
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
 }
 

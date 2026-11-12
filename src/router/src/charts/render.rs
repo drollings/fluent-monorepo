@@ -30,6 +30,7 @@ pub const CHART_RENDERED_MAX_CHARS: usize = 32_768;
 
 /// What a target's template may reference. Nothing else is exposed.
 #[derive(Debug, Clone, Serialize)]
+/// What a target's template may reference. Nothing else is exposed.
 pub struct RenderContext {
     /// The user's message.
     pub request: String,
@@ -44,6 +45,7 @@ pub struct RenderContext {
 
 /// A single entity bound to a dep, sanitized before render.
 #[derive(Debug, Clone, Serialize)]
+/// A single entity bound to a dep, sanitized before render.
 pub struct BoundEntity {
     pub id: String,
     pub kind: String,

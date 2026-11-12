@@ -51,6 +51,14 @@ use protopyne_types::Bar;
 /// so a nonzero drop names a hand-built or misaligned input the operator
 /// should know about.
 #[must_use]
+/// Convert one successful projection's drawings to annotations: labels keep
+/// their text, areas become corner pairs, everything else is skipped.
+/// Returns the converted annotations plus the count of drawing points
+/// dropped as unplaceable (bar outside the window, or a price no decimal
+/// can hold). A drop is counted, never substituted: the projection this
+/// bridge consumes already guarantees finite prices over evaluated bars,
+/// so a nonzero drop names a hand-built or misaligned input the operator
+/// should know about.
 pub fn annotations_of(primitives: &[PlotPrimitive], bars: &[Bar]) -> Vec<Annotation> {
     annotations_of_counted(primitives, bars).0
 }
@@ -59,6 +67,9 @@ pub fn annotations_of(primitives: &[PlotPrimitive], bars: &[Bar]) -> Vec<Annotat
 /// dropped-point count. Prefer this when the caller can surface the count;
 /// [`annotations_of`] keeps the plain shape for borrow-split call sites.
 #[must_use]
+/// Counted conversion behind [`annotations_of`]: the annotations plus the
+/// dropped-point count. Prefer this when the caller can surface the count;
+/// [`annotations_of`] keeps the plain shape for borrow-split call sites.
 pub fn annotations_of_counted(
     primitives: &[PlotPrimitive],
     bars: &[Bar],

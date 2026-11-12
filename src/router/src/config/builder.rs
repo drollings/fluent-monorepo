@@ -73,6 +73,12 @@ use crate::target_match::{TargetBackends, TargetMatcher};
 /// `Static` restores today's behavior - the cheapest qualifying model is
 /// picked at route-resolution time with no self-assessment calls.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// In-group target-matching policy for a pipeline (-4.6 of the routing
+/// roadmap). `SelfAssess` (default) runs the VISION ladder: each candidate
+/// target self-assesses the prompt and defers to the next, more-intelligent
+/// group member when the assessed complexity exceeds its `intelligence`.
+/// `Static` restores today's behavior - the cheapest qualifying model is
+/// picked at route-resolution time with no self-assessment calls.
 pub enum TargetMatchMode {
     /// Run the per-candidate self-assessment ladder for 2+ member groups
     /// (single-member groups resolve statically, byte-identical to today).
@@ -91,6 +97,12 @@ pub enum TargetMatchMode {
 /// models on residuals — it is only reachable together with non-empty
 /// `overlay_models` (the two changes are inseparable in config).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// NLP annotation ordering. `LlmFirst` (the
+/// default) preserves today's behavior: the LLM annotation rung runs first
+/// when a fetch is wired, with ArcEager/rule beneath. `DeterministicFirst`
+/// skips the up-front annotation LLM call and lets the `overlay` stage consult
+/// models on residuals — it is only reachable together with non-empty
+/// `overlay_models` (the two changes are inseparable in config).
 pub enum NlpOrdering {
     /// LLM annotation rung first when a fetch is wired (today's ladder).
     #[default]
@@ -106,6 +118,10 @@ pub enum NlpOrdering {
 /// through this single view — the flat fields remain for serde backward
 /// compat but all pipeline logic goes through `nlp_config()` / `overlay_enabled()`.
 #[derive(Debug, Clone)]
+/// A1a: cohesive NLP view derived from the flat `PipelineParams` fields.
+/// The three seams (`nlp` stage, `overlay` stage, encoder) are now accessed
+/// through this single view — the flat fields remain for serde backward
+/// compat but all pipeline logic goes through `nlp_config()` / `overlay_enabled()`.
 pub struct NlpConfig {
     pub enabled: bool,
     pub ordering: NlpOrdering,
@@ -116,6 +132,7 @@ pub struct NlpConfig {
 /// Named pipeline parameters. Pipelines are stored as a map keyed by name.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::struct_excessive_bools)]
+/// Named pipeline parameters. Pipelines are stored as a map keyed by name.
 pub struct PipelineParams {
     #[serde(default = "default_true")]
     pub deterministic_prefilter: bool,
@@ -326,6 +343,12 @@ fn default_classifier_concurrency() -> usize {
 /// `Default` is fully fail-open: no resolver, in-memory strings — byte-identical
 /// to today's `NlpPipeline::en_default()`.
 #[derive(Clone, Default)]
+/// NLP dependencies threaded into the pipeline builder from the composition
+/// root. The concept store (built over the
+/// shared ledger connection **before** pipeline build) backs the interlingua
+/// resolver; the optional strings path wires the durable `StringStore` (G9).
+/// `Default` is fully fail-open: no resolver, in-memory strings — byte-identical
+/// to today's `NlpPipeline::en_default()`.
 pub struct NlpDeps {
     /// The shared concept registry over the ledger connection. `Some` wires
     /// `InterlinguaResolver` into the NLP pipeline so `NlpStage` stamps
@@ -351,6 +374,10 @@ impl std::fmt::Debug for NlpDeps {
 /// (`classifier_backend`, `onnx`, `nlp_deps`). Old overloads now delegate
 /// here (DRY — ordering + fallback logic lives in exactly one place).
 #[derive(Default)]
+/// Canonical build deps for a named pipeline (Plan B F4): one struct carries
+/// the three optional seams that previously required three overloads
+/// (`classifier_backend`, `onnx`, `nlp_deps`). Old overloads now delegate
+/// here (DRY — ordering + fallback logic lives in exactly one place).
 pub struct PipelineBuildDeps<'a> {
     pub classifier_backend: Option<Arc<dyn ChatBackend>>,
     pub onnx: Option<&'a crate::ort::OrtRegistry>,

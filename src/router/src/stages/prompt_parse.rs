@@ -26,6 +26,8 @@ use fluent_llm::{parse::parse_typed, ChatMessage};
 /// Errors produced by the [`chat_json`] round-trip: the LLM call failed, or
 /// the returned text did not coerce into the target type.
 #[derive(Debug, thiserror::Error)]
+/// Errors produced by the [`chat_json`] round-trip: the LLM call failed, or
+/// the returned text did not coerce into the target type.
 pub enum PromptParseError {
     /// The `ChatBackend` call itself failed.
     #[error("LLM call failed: {0}")]

@@ -40,6 +40,7 @@ use crate::normalize::{normalize_extracted_name, normalize_yago_name};
 
 /// One taxonomy entry: direct parents + all transitive ancestors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One taxonomy entry: direct parents + all transitive ancestors.
 pub struct TaxonomyEntry {
     /// Direct `rdfs:subClassOf` parents (normalized, sorted).
     pub parents: Vec<String>,
@@ -49,6 +50,7 @@ pub struct TaxonomyEntry {
 
 /// Expand a CURIE to a full IRI; `<...>` IRIs are returned stripped.
 #[must_use]
+/// Expand a CURIE to a full IRI; `<...>` IRIs are returned stripped.
 pub fn expand_curie(curie: &str, prefixes: &BTreeMap<String, String>) -> String {
     let curie = curie.strip_suffix([',', '.', ';']).unwrap_or(curie);
     let curie = curie.trim();
@@ -66,6 +68,7 @@ pub fn expand_curie(curie: &str, prefixes: &BTreeMap<String, String>) -> String 
 
 /// Compress a full IRI back to a CURIE via longest-prefix match.
 #[must_use]
+/// Compress a full IRI back to a CURIE via longest-prefix match.
 pub fn curie_for_iri(iri: &str, prefixes: &BTreeMap<String, String>) -> String {
     let mut best: Option<(&String, &String)> = None;
     for (pfx, ns) in prefixes {
@@ -92,6 +95,16 @@ pub fn curie_for_iri(iri: &str, prefixes: &BTreeMap<String, String>) -> String {
 /// the same formatting path with their carried text, since the open key set
 /// cannot be closed by construction.
 #[must_use]
+/// Normalize a CURIE with the unified Rust semantics: the prefix is
+/// preserved lowercased; the local name goes through
+/// [`normalize_yago_name`] (Wikidata `_Q\d+` strip, `_UXXXX` decode,
+/// `_`→space, lowercase, WS collapse). Full `<...>` IRIs normalize the
+/// inner IRI the same way.
+/// 
+/// The prefix branch matches on the closed [`crate::prefix::CuriePrefix`]
+/// set; genuinely open prefixes (arbitrary TTL `@prefix` declarations) take
+/// the same formatting path with their carried text, since the open key set
+/// cannot be closed by construction.
 pub fn normalize_taxonomy_curie(curie: &str) -> String {
     let curie = curie.trim();
     if let Some(inner) = curie.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
@@ -115,6 +128,9 @@ pub fn normalize_taxonomy_curie(curie: &str) -> String {
 /// plus the declared prefix map. Delegates to the crate's single Turtle
 /// reader ([`crate::turtle::subclass_edges`]); the former line regex is gone.
 #[must_use]
+/// Collect `(subject_iri, object_iri)` `rdfs:subClassOf` edges from TTL text
+/// plus the declared prefix map. Delegates to the crate's single Turtle
+/// reader ([`crate::turtle::subclass_edges`]); the former line regex is gone.
 pub fn collect_edges(ttl: &str) -> (BTreeMap<String, String>, Vec<(String, String)>) {
     crate::turtle::subclass_edges(ttl)
 }
@@ -122,6 +138,8 @@ pub fn collect_edges(ttl: &str) -> (BTreeMap<String, String>, Vec<(String, Strin
 /// Transitive closure of `subClassOf`: subject → sorted ancestor list.
 /// Cycle-safe via memoization + an in-progress stack.
 #[must_use]
+/// Transitive closure of `subClassOf`: subject → sorted ancestor list.
+/// Cycle-safe via memoization + an in-progress stack.
 pub fn transitive_ancestors(
     direct: &BTreeMap<String, Vec<String>>,
 ) -> BTreeMap<String, Vec<String>> {
@@ -169,6 +187,8 @@ pub const YAGO_NS: &str = "http://yago-knowledge.org/resource/";
 /// Build the `{class -> {parents, ancestors}}` map. Normalized keys merge
 /// (Q-suffix collapse); self-references after normalization are dropped.
 #[must_use]
+/// Build the `{class -> {parents, ancestors}}` map. Normalized keys merge
+/// (Q-suffix collapse); self-references after normalization are dropped.
 pub fn build_json(
     edges: &[(String, String)],
     prefixes: &BTreeMap<String, String>,
@@ -231,6 +251,7 @@ pub fn build_json(
 
 /// Convert TTL text to the taxonomy map in one call.
 #[must_use]
+/// Convert TTL text to the taxonomy map in one call.
 pub fn taxonomy_from_ttl(
     ttl: &str,
     yago_only: bool,
@@ -243,6 +264,8 @@ pub fn taxonomy_from_ttl(
 /// Serialize the map exactly as the operator JSON: pretty, 2-space indent,
 /// sorted keys, trailing newline.
 #[must_use]
+/// Serialize the map exactly as the operator JSON: pretty, 2-space indent,
+/// sorted keys, trailing newline.
 pub fn to_json_string(map: &BTreeMap<String, TaxonomyEntry>) -> String {
     format!(
         "{}\n",
@@ -252,6 +275,7 @@ pub fn to_json_string(map: &BTreeMap<String, TaxonomyEntry>) -> String {
 
 /// Flat mapping: class → ancestors list.
 #[must_use]
+/// Flat mapping: class → ancestors list.
 pub fn to_flat(map: &BTreeMap<String, TaxonomyEntry>) -> BTreeMap<String, Vec<String>> {
     map.iter()
         .map(|(k, v)| (k.clone(), v.ancestors.clone()))
@@ -280,6 +304,10 @@ fn is_meta_iri(iri: &str) -> bool {
 /// shortest distance ≤ N from any root. Shortest-distance BFS covers
 /// multiple inheritance (a class reachable shallowly via any parent is kept).
 #[must_use]
+/// BFS from roots to `num_tiers`: tier 0 = roots (classes that never appear
+/// as a subject, plus children of meta-only parents), tier N = nodes at
+/// shortest distance ≤ N from any root. Shortest-distance BFS covers
+/// multiple inheritance (a class reachable shallowly via any parent is kept).
 pub fn compute_kept_iris(edges: &[(String, String)], num_tiers: usize) -> BTreeSet<String> {
     let subjects: BTreeSet<&str> = edges.iter().map(|(s, _)| s.as_str()).collect();
     let all: BTreeSet<&str> = edges
@@ -393,6 +421,7 @@ fn first_subject_iri(line: &str, prefixes: &BTreeMap<String, String>) -> Option<
 
 /// Prune TTL text to the top `num_tiers` tiers, preserving prefix headers.
 #[must_use]
+/// Prune TTL text to the top `num_tiers` tiers, preserving prefix headers.
 pub fn prune_ttl(ttl: &str, num_tiers: usize) -> String {
     let (prefixes, edges) = collect_edges(ttl);
     let kept = compute_kept_iris(&edges, num_tiers);

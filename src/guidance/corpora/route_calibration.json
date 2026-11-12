@@ -1,0 +1,58 @@
+{
+  "provenance": {
+    "origin": "human",
+    "labeller": "guidance-team",
+    "date": "2026-11-10",
+    "note": "Hand-authored routing goldens; never model output. Control entries are questions the static router already decides (including agreed no-route); the rest need judgment."
+  },
+  "cases": [
+    {
+      "id": "file-defined",
+      "question": "where is src/main.rs defined?",
+      "expected": "def",
+      "control": true
+    },
+    {
+      "id": "callers-who",
+      "question": "who calls parse_binary?",
+      "expected": "callers",
+      "control": true
+    },
+    {
+      "id": "impl-display",
+      "question": "which type implements foo_bar",
+      "expected": "impls",
+      "control": true
+    },
+    {
+      "id": "conceptual-no-route",
+      "question": "how does caching work here?",
+      "expected": null,
+      "control": true
+    },
+    {
+      "id": "references-config",
+      "question": "show me everyone who references the config type",
+      "expected": "callers",
+      "control": false
+    },
+    {
+      "id": "construct-parser",
+      "question": "what constructs a Parser?",
+      "expected": "def",
+      "control": false
+    },
+    {
+      "id": "tests-exercising",
+      "question": "find every test exercising the router",
+      "expected": "grep",
+      "control": false
+    },
+    {
+      "id": "scheduler-outline",
+      "question": "outline of the scheduler module",
+      "expected": "outline",
+      "control": false
+    }
+  ]
+}

@@ -14,7 +14,10 @@ not json at all"#;
 fn parses_messages_and_skips_noise() {
     let report = parse_clippy_json(FIXTURE);
     assert_eq!(report.diagnostics.len(), 2);
-    assert_eq!(report.diagnostics[0].code.as_deref(), Some("unused_imports"));
+    assert_eq!(
+        report.diagnostics[0].code.as_deref(),
+        Some("unused_imports")
+    );
     assert_eq!(report.diagnostics[0].file.as_deref(), Some("src/a.rs"));
     assert_eq!(report.diagnostics[1].level, "error");
     assert!(report.diagnostics[1].suggestions.is_empty());
@@ -47,10 +50,8 @@ fn argv_carries_target_dir_jobs_and_nice() {
         shaping: shaping_for(true),
         extra_args: vec!["--all-features".to_string()],
     };
-    let (argv, env): (Vec<String>, Vec<(String, String)>) = crate::clippy::clippy_command(
-        Path::new("/pkg"),
-        &ctx,
-    );
+    let (argv, env): (Vec<String>, Vec<(String, String)>) =
+        crate::clippy::clippy_command(Path::new("/pkg"), &ctx);
     assert_eq!(&argv[..3], &["nice", "-n", "10"]);
     assert!(argv.contains(&"cargo".to_string()));
     assert!(argv.contains(&"--target-dir".to_string()));

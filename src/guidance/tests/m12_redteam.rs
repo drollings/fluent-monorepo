@@ -6,8 +6,8 @@ use fluent_wvr_testutil::tempdir;
 
 use crate::fidelity::DeleteVerdict;
 use crate::fix::{apply_suggestions, apply_verified_patch, format_rust, recipe_mut, ApplyCtx};
-use crate::journal::apply_journaled;
 use crate::gates::{run_gates, ChangedFile, GateCtx};
+use crate::journal::apply_journaled;
 use crate::triage::is_suspicious;
 
 const F1: &str = "/// Adds one.\nconst _U: &str = \"lit\";\npub fn a(x: u8) -> u8 {\n    let y = &5;\n    x + y\n}\n\n#[test]\nfn t() {\n    assert!(  true  );\n}\n";
@@ -30,6 +30,7 @@ fn ctx<'a>() -> GateCtx<'a> {
         build: None,
         tests: None,
         rustfmt_config: None,
+        source_dir: None,
     }
 }
 
@@ -58,8 +59,9 @@ fn p2_passes(before: &str, after: &str) -> bool {
 #[test]
 fn invariance_holds_across_every_applier_path() {
     let dir = tempdir();
-    for (index, (before, needle)) in
-        [(F1, Some("&5")), (F2, Some("&6")), (F3, None)].iter().enumerate()
+    for (index, (before, needle)) in [(F1, Some("&5")), (F2, Some("&6")), (F3, None)]
+        .iter()
+        .enumerate()
     {
         let path = dir.path().join(format!("f{index}.rs"));
         std::fs::write(&path, before).expect("write");
@@ -98,12 +100,24 @@ fn invariance_holds_across_every_applier_path() {
             after_diags: &[],
         };
         let report = apply_verified_patch(&path, &formatted.text, &apply_ctx);
-        assert!(report.is_kept(), "formatted patch keeps: {:?}", report.gates);
+        assert!(
+            report.is_kept(),
+            "formatted patch keeps: {:?}",
+            report.gates
+        );
         let reverted = std::fs::read_to_string(&path).expect("read");
         assert!(p3_passes(before, &reverted));
         let journal = dir.path().join(format!("j{index}"));
         let wal = dir.path().join(format!("w{index}"));
-        let report = apply_journaled(&path, &formatted.text, &apply_ctx, &journal, &wal, "m12", "D1");
+        let report = apply_journaled(
+            &path,
+            &formatted.text,
+            &apply_ctx,
+            &journal,
+            &wal,
+            "m12",
+            "D1",
+        );
         assert!(report.is_kept());
         // The `mut` recipe on a binding, where present.
         if let Some(at) = before.find("let y").or_else(|| before.find("let z")) {
@@ -175,13 +189,18 @@ fn negatives_are_coverage_qualified_and_deletion_never_yes() {
     use crate::query::envelope::{gaps_of, AnswerEnvelope};
     use crate::query::strategy::FsmEngine;
     assert!(
-        gaps_of(&[], false).iter().all(|gap| gap.contains("covered index")),
+        gaps_of(&[], false)
+            .iter()
+            .all(|gap| gap.contains("covered index")),
         "negatives name their coverage"
     );
     let class = FsmEngine::new().run("noSuchThingAnywhere");
     let envelope = AnswerEnvelope::from_stages(&class, "word_index", Vec::new());
     assert!(!envelope.is_answerable());
-    assert!(envelope.gaps.iter().any(|gap| gap.contains("covered index")));
+    assert!(envelope
+        .gaps
+        .iter()
+        .any(|gap| gap.contains("covered index")));
     // Exhaustiveness pins the guarantee: a `Yes` arm cannot compile.
     for verdict in [
         DeleteVerdict::No,
@@ -189,9 +208,8 @@ fn negatives_are_coverage_qualified_and_deletion_never_yes() {
         DeleteVerdict::UnreferencedWithCaveats,
     ] {
         match verdict {
-            DeleteVerdict::No
-            | DeleteVerdict::Unknown
-            | DeleteVerdict::UnreferencedWithCaveats => {}
+            DeleteVerdict::No | DeleteVerdict::Unknown | DeleteVerdict::UnreferencedWithCaveats => {
+            }
         }
     }
 }
@@ -206,9 +224,8 @@ fn breaker_budget_stops_waves() {
     std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"x\"\n").expect("manifest");
     let file = root.join("a.rs");
     std::fs::write(&file, "pub fn a() -> u8 {\n    1\n}\n").expect("write");
-    let clippy: ClippyRunner = Arc::new(move |_: &std::path::Path| {
-        Ok(crate::clippy::ClippyReport::default())
-    });
+    let clippy: ClippyRunner =
+        Arc::new(move |_: &std::path::Path| Ok(crate::clippy::ClippyReport::default()));
     let report = run_fix_waves(
         std::slice::from_ref(&file),
         &WaveCtx {
@@ -220,6 +237,11 @@ fn breaker_budget_stops_waves() {
             max_bytes: 1_000_000,
             max_changed_lines: 500,
             max_waves: 0,
+            max_attempts: 3,
+            decision: crate::waves::DecisionEndpoint::default(),
+            calibration: fluent_llm::decision::CalibrationRegistry::empty(),
+            mechanical_classes: &[],
+            requires_approval: &[],
             clippy,
         },
     );

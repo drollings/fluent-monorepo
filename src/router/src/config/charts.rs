@@ -13,6 +13,13 @@ use serde::{Deserialize, Serialize};
 /// used by chart-selection LLM adjudication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// -- Charts (DAG workflow library) configuration --------------------------
+/// Chart store configuration - the `charts` section of `RouterConfig`.
+/// 
+/// The store is owned by `fluent-router` (see `coral-router`/`charts/`): a
+/// directory of human-authored chart JSON files, a router-side
+/// `workflow_library` HNSW/SQLite path for retrieval, and the model key
+/// used by chart-selection LLM adjudication.
 pub struct ChartsConfig {
     /// Directory of `*.json` chart files loaded at boot. `None` - empty
     /// store (a missing directory is tolerated with a `warn!`).
@@ -78,6 +85,14 @@ const fn default_charts_entity_context() -> bool {
 /// audit + workflow extraction", extraction is opt-in and the produced chart
 /// is a draft that only becomes selectable after a rubric-validated run.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// -- Post-processing configuration ---------------------
+/// Post-processing configuration - the `post_process` section of
+/// `RouterConfig`.
+/// 
+/// Controls the VISION learning loop: whether a *successful* dispatch is
+/// distilled into a reusable draft chart. Per VISION -"Post-processing:
+/// audit + workflow extraction", extraction is opt-in and the produced chart
+/// is a draft that only becomes selectable after a rubric-validated run.
 pub struct PostProcessConfig {
     /// Whether successful dispatches are decomposed into draft charts
     /// automatically. Default `false` - the operator opts in.
@@ -94,6 +109,7 @@ pub struct PostProcessConfig {
 
 /// Extraction scope for the learning loop (see `PostProcessConfig`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Extraction scope for the learning loop (see `PostProcessConfig`).
 pub enum WorkflowExtractionMode {
     /// Only frontier-assisted dispatches (an index > 0 in the primary +
     /// fallback chain) are distilled into draft charts.

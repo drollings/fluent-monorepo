@@ -9,6 +9,15 @@
 
 /// A parsed `provider:model` reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Canonical model-reference parsing: the single home for
+/// `provider:model` references shared by config resolution and (from M11)
+/// provenance parsing.
+/// 
+/// The separator is `:` and only the first colon splits (`"a:b:c"` is
+/// provider `"a"`, model `"b:c"`). A bare name (`"model"`) carries the
+/// default provider. No dash/punctuation stripping exists anywhere in the
+/// tree — none is done here either (behavior wins over invention).
+/// A parsed `provider:model` reference.
 pub struct ModelRef {
     /// Provider segment (`"default"` when the reference carries none).
     pub provider: String,
@@ -45,12 +54,15 @@ impl ModelRef {
 /// Strip the provider prefix from a model reference.
 /// e.g. "ollama:llama3" -> "llama3", "model" -> "model"
 #[must_use]
+/// Strip the provider prefix from a model reference.
+/// e.g. "ollama:llama3" -> "llama3", "model" -> "model"
 pub fn model_name(model_ref: &str) -> &str {
     ModelRef::model_name(model_ref)
 }
 
 /// Resolve a model reference to its `(provider, model)` halves.
 #[must_use]
+/// Resolve a model reference to its `(provider, model)` halves.
 pub fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
     ModelRef::split(model_ref)
 }

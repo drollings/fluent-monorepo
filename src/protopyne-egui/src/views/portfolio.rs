@@ -11,6 +11,7 @@ use protopyne_view::{ConcentrationReport, ConcentrationShare, PortfolioView, Pos
 
 /// Read-only portfolio projection over the latest run.
 #[derive(Debug, Clone, PartialEq)]
+/// Read-only portfolio projection over the latest run.
 pub struct PortfolioModel {
     /// Net positions by underlying.
     pub positions: Vec<PositionView>,
@@ -52,6 +53,10 @@ impl PortfolioModel {
 /// model adds no numbers of its own — it echoes the report's rows in the
 /// DTO's order, so the paint edge never computes a share.
 #[derive(Debug, Clone, PartialEq)]
+/// Concentration table: a read-only echo of one
+/// [`ConcentrationReport`](protopyne_view::ConcentrationReport) DTO. The
+/// model adds no numbers of its own — it echoes the report's rows in the
+/// DTO's order, so the paint edge never computes a share.
 pub struct ConcentrationModel {
     /// Open-notional shares by underlying symbol.
     pub by_underlying: Vec<ConcentrationShare>,

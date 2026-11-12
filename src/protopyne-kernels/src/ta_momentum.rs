@@ -32,6 +32,10 @@ use crate::sma::SmaIndicator;
 /// values 0/1 select a smoothing mode, mirroring the reference's
 /// `matype == 0` branch — a near-1.0 float must not select EMA by accident.
 #[allow(clippy::float_cmp)]
+/// Resolve the reference `matype` switch (0 SMA, 1 EMA); anything else fails
+/// closed instead of silently substituting. Exact comparison: only the exact
+/// values 0/1 select a smoothing mode, mirroring the reference's
+/// `matype == 0` branch — a near-1.0 float must not select EMA by accident.
 fn resolve_matype(id: &'static str, params: &ParamSet) -> Result<bool, KernelError> {
     let matype = params.float(id, "matype").unwrap_or(0.0);
     if matype == 0.0 {

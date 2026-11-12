@@ -31,6 +31,10 @@ pub const KOKORO_VOICES_DIR: &str = "kokoro-voices";
 /// resolves. Existence is checked by the caller (`load` fails
 /// actionable when absent).
 #[must_use]
+/// Weight locations: `KOKORO_MODEL` / `KOKORO_VOICES` win when set,
+/// else the managed directory files. `None` when no home base
+/// resolves. Existence is checked by the caller (`load` fails
+/// actionable when absent).
 pub fn default_paths() -> Option<(PathBuf, PathBuf)> {
     let dir = orator::models_dir()?;
     let model =
@@ -309,6 +313,13 @@ fn trim_silence(samples: &[f32]) -> &[f32] {
 /// DAC consumers read one consistent clock. The rate carries no scaling
 /// of its own — a zero rate names no clock and yields no marks.
 #[must_use]
+/// Slice `samples` uniformly across `words`: each word owns an equal span.
+/// The honest v1 approximation without backend alignment; exact for short
+/// chunks, and timings stay ordered and monotonic by construction. Marks
+/// are sample offsets in the `sample_rate` domain passed alongside the
+/// count: callers pass the synth rate and the gapped length together, so
+/// DAC consumers read one consistent clock. The rate carries no scaling
+/// of its own — a zero rate names no clock and yields no marks.
 pub fn uniform_marks(text: &str, sample_count: usize, sample_rate: u32) -> Vec<WordMark> {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() || sample_count == 0 || sample_rate == 0 {

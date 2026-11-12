@@ -23,6 +23,7 @@ use crate::vocab::Vocab;
 
 /// The English tag → UPOS map, generated from `en_core_web_sm` 3.8.0.
 #[must_use]
+/// The English tag → UPOS map, generated from `en_core_web_sm` 3.8.0.
 pub fn tag_map() -> TagMap {
     TagMap::from_pairs(tag_map::TAG_MAP).expect("generated tag map parses")
 }
@@ -43,6 +44,10 @@ pub static ORTHO_BLOB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/en_orth
 /// and the closed-class function-word categories (attribute ids 19–47) the
 /// parser matches as bits instead of hard-coded spellings.
 #[must_use]
+/// The English `LexiconConfig`: `lang = "en"`, the stop-word set, the merged
+/// cardinal + ordinal number words (English `LIKE_NUM`), no norm overrides,
+/// and the closed-class function-word categories (attribute ids 19–47) the
+/// parser matches as bits instead of hard-coded spellings.
 pub fn lexicon_config() -> LexiconConfig {
     LexiconConfig {
         lang: hash_utf8("en"),

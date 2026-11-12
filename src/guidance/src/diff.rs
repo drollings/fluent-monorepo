@@ -7,6 +7,7 @@ use search_vector::db::FileRecord;
 
 /// A scanned file with its content hash (when computed).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A scanned file with its content hash (when computed).
 pub struct ScannedFile {
     /// Stable file id ([`make_file_id`]).
     pub id: String,
@@ -30,6 +31,7 @@ pub struct ScannedFile {
 
 /// Five-bucket diff result.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Five-bucket diff result.
 pub struct DiffResult {
     /// Never indexed before.
     pub added: Vec<ScannedFile>,
@@ -48,6 +50,10 @@ pub struct DiffResult {
 /// run's ids or every file looks deleted+added (P3 gate finding).
 /// Delegates to the canonical `common_core::hash::sha256_str`.
 #[must_use]
+/// Stable file id: the absolute path alone. Selection roots are scan
+/// scope, never identity — a scoped reconcile must reproduce the full
+/// run's ids or every file looks deleted+added (P3 gate finding).
+/// Delegates to the canonical `common_core::hash::sha256_str`.
 pub fn make_file_id(absolute_path: &str) -> String {
     common_core::hash::sha256_str(absolute_path)
 }
@@ -55,6 +61,8 @@ pub fn make_file_id(absolute_path: &str) -> String {
 /// sha256 hex of file bytes (content-hash tiebreak). Already on the
 /// canonical helper — `common_core::hash::sha256_hex` — unchanged.
 #[must_use]
+/// sha256 hex of file bytes (content-hash tiebreak). Already on the
+/// canonical helper — `common_core::hash::sha256_hex` — unchanged.
 pub fn hash_file_bytes(bytes: &[u8]) -> String {
     common_core::hash::sha256_hex(bytes)
 }
@@ -64,12 +72,17 @@ pub fn hash_file_bytes(bytes: &[u8]) -> String {
 /// Delegates to the canonical `common_core::hash::sha256_file`
 /// (streaming read, fail-open `None` — same contract as before).
 #[must_use]
+/// Hash the file at `path`; `None` when the file cannot be read
+/// (the caller treats unreadable files as modified, never as unchanged).
+/// Delegates to the canonical `common_core::hash::sha256_file`
+/// (streaming read, fail-open `None` — same contract as before).
 pub fn hash_file(path: &std::path::Path) -> Option<String> {
     common_core::hash::sha256_file(path)
 }
 
 /// Sort `scanned` against `existing` into the five buckets.
 #[must_use]
+/// Sort `scanned` against `existing` into the five buckets.
 pub fn compute_diff(scanned: &[ScannedFile], existing: &[FileRecord]) -> DiffResult {
     let mut diff = DiffResult::default();
     let by_id: std::collections::HashMap<&str, &FileRecord> = existing

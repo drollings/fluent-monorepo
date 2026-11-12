@@ -938,6 +938,66 @@ fn expand_enum_describable(input: &DeriveInput) -> TokenStream2 {
 /// `version_added` / `version_removed` are planned, not implemented: using
 /// them fails expansion under the closed-vocabulary rule.
 #[proc_macro_derive(FieldAccess, attributes(field))]
+/// Derive macro for `fluent_wvr::FieldAccess`.
+/// 
+/// Generates `set_field`, `get_field`, and `field_names` implementations
+/// that intern property names via `ArcIntern<str>` for O(1) pointer-sized
+/// key matching in routing boundaries.
+/// 
+/// Supports optional field attributes (closed vocabulary — anything else
+/// fails expansion naming the argument):
+/// - `#[field(skip)]` — exclude this field from runtime access and schema
+/// - `#[field(desc = "...")]` — field description (used by `Describable`)
+/// - `#[field(min = N)]` — minimum value constraint (numeric fields only)
+/// - `#[field(max = N)]` — maximum value constraint (numeric fields only)
+/// - `#[field(clamp)]` — clamp out-of-range numerics into `[min, max]`
+/// instead of erroring; requires both bounds; leaves an `x-clamp` trace
+/// in the schema
+/// - `#[field(required = false)]` — opt out of the `required` array
+/// (`Option<T>` fields are never required)
+/// - `#[field(format = "...")]` — JSON Schema format hint (informational)
+/// - `#[field(max_len = N)]` — maximum string length
+/// - `#[field(sanitize = "trim")]` — sanitization mode (`trim`,
+/// `lowercase`, `strip_html`, `slugify`)
+/// - `#[field(pattern = "...")]` — substring pattern, enforced by
+/// containment (not a regex); emitted under the JSON Schema `pattern`
+/// slot by deliberate vendor interpretation, documented here
+/// - `#[field(coerce = "trim,strip_quotes")]` — boundary-string shaping
+/// pipeline applied before parsing
+/// - `#[field(parse = "number")]` — tolerant numeric parse via
+/// `coerce::parse_number`
+/// - `#[field(variants = "path::to::fn")]` — live `enum` list from a
+/// zero-arg path called at `describe()` time
+/// - `#[field(tab = "inputs")]` — explicit settings tab pin, emitted as
+/// the `x-tab` hint (`inputs`, `style`, or `visibility`); wins over the
+/// painter's name heuristics
+/// - `#[field(group = "Trend Ribbon")]` — section header, emitted as
+/// `x-group`; schemas without groups paint exactly as before
+/// - `#[field(tooltip = "...")]` — hover help, emitted as `x-tooltip`,
+/// rendered after the description
+/// - `#[field(step = 0.02)]` — drag sensitivity, emitted as `x-step`;
+/// sliders stay continuous and never snap
+/// - `#[field(inline = "adaptive")]` — shared-row marker, emitted as
+/// `x-inline`; consecutive fields sharing one marker paint on one row
+/// - `#[field(empty_is_none = false)]` — keep `Some("")` for empty
+/// `Option<String>` input (default converts to `None`)
+/// - `#[field(nested)]` — the field is itself a component: `set_field`
+/// accepts dotted paths (`"child.port"`), `get_field`/`describe`
+/// delegate into the child schema
+/// - `#[field(items = N)]` — `Vec<T>` list member with at most `N` items;
+/// each item contributes dotted paths plus a synthetic `count` writer.
+/// Required on every `Vec<T>`; `[T; N]` arrays infer it (and are fixed)
+/// - `#[field(fixed)]` — the list is fixed-arity (`[T; N]`, no `count`
+/// writer) rather than open (`Vec<T>`)
+/// - `#[field(visible_when = "kind=breakout")]` — the member is editable
+/// only while the named selector holds the named value; the field layer
+/// refuses writes while inactive, so visibility is never the only guard
+/// - `#[field(axis = "task-value")]` — which axis the member measures
+/// (`correctness`, `task-value`, or `producer-confidence`); presentation
+/// members leave it unset
+/// 
+/// `version_added` / `version_removed` are planned, not implemented: using
+/// them fails expansion under the closed-vocabulary rule.
 pub fn derive_field_access(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     if matches!(input.data, Data::Enum(_)) {
@@ -1657,6 +1717,10 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
 /// Generates a `describe()` method that returns a JSON Schema representation
 /// of the struct, using `#[field(...)]` attributes for descriptions and constraints.
 #[proc_macro_derive(Describable, attributes(field))]
+/// Derive macro for `fluent_wvr::Describable`.
+/// 
+/// Generates a `describe()` method that returns a JSON Schema representation
+/// of the struct, using `#[field(...)]` attributes for descriptions and constraints.
 pub fn derive_describable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     if matches!(input.data, Data::Enum(_)) {

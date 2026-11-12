@@ -20,6 +20,11 @@ use crate::supervisor::LlamaServerSupervisor;
 /// rendering `dyn LlmWeights` residency rows. Also the surface `ps` and
 /// `POST /models/unload` route both fleets through.
 #[derive(Clone)]
+/// The unified weights facade the server builds from the llama `InstancePool`
+/// and the onnx registry. Llama rows stay **byte-identical** (delegated to
+/// [`InstancePool::aggregate`]/`list_models`); onnx rows are appended by
+/// rendering `dyn LlmWeights` residency rows. Also the surface `ps` and
+/// `POST /models/unload` route both fleets through.
 pub struct LlmFleet {
     /// The llama-only pool (unchanged aggregation + dispatch path).
     pool: InstancePool,

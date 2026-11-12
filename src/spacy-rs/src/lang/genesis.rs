@@ -56,6 +56,12 @@ pub const DEFAULT_NER_THRESHOLD: u32 = 5;
 /// accelerate NER promotion — entity type is context-variant, so the NER
 /// bar is higher and isolated.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A normalized orth → POS/NER genesis entry.
+/// 
+/// `count` is POS evidence count (kept for backward compat). `ner_count`
+/// and `ner_promoted` track NER separately so POS evidence does not
+/// accelerate NER promotion — entity type is context-variant, so the NER
+/// bar is higher and isolated.
 pub struct GenesisEntry {
     /// The promoted POS (when `promoted`).
     pub pos: Option<String>,

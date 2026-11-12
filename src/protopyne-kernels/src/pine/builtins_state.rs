@@ -32,6 +32,15 @@ use std::collections::{HashMap, HashSet};
 /// declare-once table (first execution wins), so a member read on either
 /// engine observes the same registrations in mixed runs.
 #[derive(Default)]
+/// Every builtin store that lives exactly as long as one run.
+/// 
+/// Growth discipline: stores are created on first use (`ta`) or on first
+/// present value (`fixnan`), so a purely numeric run allocates nothing here.
+/// Strategy, drawing, and request state joined this owner with their shared
+/// stores; every stateful builtin a run observes has exactly one home.
+/// Enum registration rides along too: both engines consult one
+/// declare-once table (first execution wins), so a member read on either
+/// engine observes the same registrations in mixed runs.
 pub(crate) struct RunBuiltins {
     /// Lazily bound `ta.*` bridge: kernel state and per-site histories.
     ta: Option<TaBridge>,

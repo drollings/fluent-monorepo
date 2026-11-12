@@ -32,6 +32,8 @@ fn default_unresolved_token_threshold() -> f64 {
 /// config surface never deserializes a `spacy-rs` type directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+/// Mirrors `spacy_rs::RefineMode` field-for-field, owned here so the router
+/// config surface never deserializes a `spacy-rs` type directly.
 pub enum RouterRefineMode {
     #[default]
     Off,
@@ -65,6 +67,9 @@ impl From<spacy_rs::RefineMode> for RouterRefineMode {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[allow(clippy::struct_excessive_bools)]
 #[serde(default)]
+/// Router serde surface for `spacy_rs::RefinePolicy` — field-for-field mirror
+/// (F5). `spacy_rs::RefinePolicy` is never deserialized directly from router
+/// config; the builder converts `dto.into()`.
 pub struct RouterRefinePolicy {
     #[serde(default)]
     pub mode: RouterRefineMode,

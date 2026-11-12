@@ -9,6 +9,7 @@ use std::fmt;
 
 /// How a view renders OHLCV data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// How a view renders OHLCV data.
 pub enum ChartType {
     /// Classic open/high/low/close ticks.
     Bars,

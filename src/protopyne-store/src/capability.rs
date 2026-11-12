@@ -29,6 +29,12 @@ use crate::error::StoreError;
 /// carry `VenueStorage`. For an ephemeral in-memory store the binding is
 /// the literal path `":memory:"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Capability token binding store access to one supervised session's root.
+/// 
+/// The session mints exactly one per store root and installs it in the
+/// batch/scope capability set; handlers carry it the way journal callers
+/// carry `VenueStorage`. For an ephemeral in-memory store the binding is
+/// the literal path `":memory:"`.
 pub struct StoreStorage {
     store_path: PathBuf,
 }

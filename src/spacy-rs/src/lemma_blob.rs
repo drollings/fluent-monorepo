@@ -41,6 +41,7 @@ struct ExcSection {
 
 /// A parsed lemma blob.
 #[derive(Debug, Clone)]
+/// A parsed lemma blob.
 pub struct LemmaBlob {
     pos: Vec<PosEntry>,
 }
@@ -210,6 +211,10 @@ impl LemmaBlob {
 /// `build.rs`). The word index is derived by counting NUL separators, which is
 /// exactly how the entry index maps into the exc offset table.
 #[allow(clippy::naive_bytecount)]
+/// Binary search a sorted, NUL-joined word list for `target`, returning the
+/// index of the matching word. Requires no empty tokens (guaranteed by
+/// `build.rs`). The word index is derived by counting NUL separators, which is
+/// exactly how the entry index maps into the exc offset table.
 fn bsearch_words(words: &[u8], target: &[u8]) -> Option<usize> {
     let mut lo = 0usize;
     let mut hi = words.len();

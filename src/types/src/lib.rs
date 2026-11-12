@@ -4,6 +4,7 @@
 use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
+use std::collections::BTreeMap;
 
 pub mod file_kind;
 pub mod instance_id;
@@ -46,6 +47,10 @@ pub const LAZY_LOD_RANGE: std::ops::RangeInclusive<u8> = 1..=4;
 /// verified answer/fact; `source` names the cache that produced it (e.g.
 /// "coral-context" or "ledger") for audit provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A deterministic context hit — a short-circuit fact/cached answer that
+/// lets the escalation ladder avoid a frontier call.  `content` is the
+/// verified answer/fact; `source` names the cache that produced it (e.g.
+/// "coral-context" or "ledger") for audit provenance.
 pub struct ContextHit {
     pub source: String,
     pub content: String,
@@ -317,6 +322,60 @@ pub struct GuidanceDoc {
     pub equivalents: Vec<SmolStr>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_eval: Option<CapabilityEval>,
+    /// File/module-level generated summary, when produced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<CommentSummary>,
+    /// Per-node generated summaries keyed by comment-block node key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub summaries: BTreeMap<String, CommentSummary>,
+}
+
+/// One generated comment summary: labelled generated commentary, never
+/// source. Old sidecars parse without these fields; an older binary may
+/// drop them on save, which is acceptable because summaries are derived
+/// and regenerated.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// One generated comment summary: labelled generated commentary, never
+/// source. Old sidecars parse without these fields; an older binary may
+/// drop them on save, which is acceptable because summaries are derived
+/// and regenerated.
+pub struct CommentSummary {
+    /// Generated summary text.
+    #[serde(default)]
+    pub text: SmolStr,
+    /// Blake3 of the normalized comment text summarized.
+    #[serde(default)]
+    pub comment_hash: String,
+    /// Blake3 of the node-code snippet summarized beside the comment;
+    /// empty for comment-only and legacy rows. A code-only edit changes
+    /// it, so the pass regenerates instead of serving stale text.
+    #[serde(default)]
+    pub code_hash: String,
+    /// Model identity that produced the text.
+    #[serde(default)]
+    pub model: SmolStr,
+    /// Prompt version that produced the text.
+    #[serde(default)]
+    pub prompt_version: u64,
+    /// Sampling temperature used, as evidence of what was asked.
+    #[serde(default)]
+    pub temperature: f64,
+    /// Fixed seed used, as evidence of what was asked.
+    #[serde(default)]
+    pub seed: u64,
+    /// Generation time (ms epoch).
+    #[serde(default)]
+    pub generated_at: i64,
+    /// Derivation status.
+    #[serde(default)]
+    pub status: OverlayStatus,
+    /// Failure kind distinguishing transport `unavailable` from malformed
+    /// output, without widening the shared status enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<String>,
+    /// Human-readable failure detail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,6 +396,12 @@ pub enum StepStatus {
 /// `ContentNode.metadata["overlays"]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The overlay kinds a node may carry (OVERLAYS §4.3).
+/// 
+/// The **source of truth** for each overlay's value is the corresponding node
+/// field (`annotation` / `metadata["llm_overlay"]` / `embedding`); these
+/// bookkeeping types are advisory/audit metadata stored under
+/// `ContentNode.metadata["overlays"]`.
 pub enum OverlayKind {
     /// The `NodeAnnotation` (deterministic spacy parse, cheap).
     Spacy,
@@ -347,10 +412,12 @@ pub enum OverlayKind {
 }
 
 /// The lifecycle status of one overlay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The lifecycle status of one overlay.
 pub enum OverlayStatus {
     /// Never asked for (the default).
+    #[default]
     Absent,
     /// Derivation in flight.
     Pending,
@@ -362,6 +429,7 @@ pub enum OverlayStatus {
 
 /// One overlay's bookkeeping entry (OVERLAYS §4.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One overlay's bookkeeping entry (OVERLAYS §4.3).
 pub struct OverlayState {
     pub kind: OverlayKind,
     pub status: OverlayStatus,
@@ -417,6 +485,8 @@ impl OverlayState {
 /// A rejected [`ContentNode::transition_overlay`] — a status change the
 /// overlay lifecycle forbids.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A rejected [`ContentNode::transition_overlay`] — a status change the
+/// overlay lifecycle forbids.
 pub enum OverlayTransitionError {
     /// The overlay is already `Ready`; re-derivation is forbidden (at-most-once).
     AlreadyReady(OverlayKind),
@@ -433,6 +503,10 @@ pub const OVERLAYS_META_KEY: &str = "overlays";
 /// Reads and lifecycle transitions run here; `ContentNode` only serializes
 /// the ledger in and out of its advisory metadata at the boundary.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Pure overlay bookkeeping ledger: the in-memory `Vec<OverlayState>` half of
+/// `ContentNode.metadata["overlays"]`, without the per-call JSON round-trip.
+/// Reads and lifecycle transitions run here; `ContentNode` only serializes
+/// the ledger in and out of its advisory metadata at the boundary.
 pub struct OverlayLedger(Vec<OverlayState>);
 
 impl OverlayLedger {
@@ -623,6 +697,7 @@ impl From<&str> for OriginRole {
 }
 
 // Custom deserialize that maps unknown strings to Other while preserving case.
+/// Custom deserialize that maps unknown strings to Other while preserving case.
 fn deserialize_origin_role<'de, D>(deserializer: D) -> Result<OriginRole, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -671,6 +746,15 @@ impl<'de> serde::Deserialize<'de> for OriginRole {
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default,
 )]
 #[serde(transparent)]
+/// Stable identity of a node's LOD0 text — the keying domain for ledger
+/// annotations. The wire shape is a plain `u64` (`#[serde(transparent)]`),
+/// computed with `common_core::hash::fnv1a64` so existing stored rows stay
+/// joinable. `UNSTAMPED` (the `0` value) means there is no version to key
+/// against: the node has no LOD0 content or has not yet been stamped.
+/// 
+/// A non-empty LOD0 hashes to `0` with probability 2⁻⁶⁴ and is treated as
+/// unstamped (annotations rejected). This sentinel reservation is accepted,
+/// not accidental.
 pub struct ContentHash(u64);
 
 impl ContentHash {
@@ -1044,6 +1128,8 @@ mod tests {
             members: vec![],
             equivalents: vec![],
             capability_eval: None,
+            summary: None,
+            summaries: std::collections::BTreeMap::new(),
         };
         let json = serde_json::to_string(&doc).unwrap();
         let doc2: GuidanceDoc = serde_json::from_str(&json).unwrap();

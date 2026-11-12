@@ -12,6 +12,14 @@ use serde::{Deserialize, Serialize};
 /// opts out with `enabled = false` or rolls back at runtime via
 /// `POST /admin/coordinator/rollback` (`coral-router coordinator-rollback`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// The `ledger.orchestrator` section: configures the
+/// `LedgerAgentCoordinator`'s restore-vs-re-prefill policy, its prompt budget,
+/// and the default role recorded for agent output nodes.
+/// 
+/// Default-on since M14c (M14-CAL projects a net frontier decrease):
+/// a present `ledger` section attaches the coordinator unless the operator
+/// opts out with `enabled = false` or rolls back at runtime via
+/// `POST /admin/coordinator/rollback` (`coral-router coordinator-rollback`).
 pub struct OrchestratorSection {
     /// Whether to attach the coordinator at boot. `true` (the default)
     /// attaches it wherever a ledger is configured; `false` opts out and

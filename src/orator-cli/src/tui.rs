@@ -32,6 +32,7 @@ const FRAME_SAMPLES: usize = 320;
 
 /// One transcript row.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One transcript row.
 pub enum TuiLine {
     /// User turn text.
     Said(String),
@@ -49,6 +50,7 @@ pub enum TuiLine {
 
 /// Voice-turn progress feeding the transcript.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Voice-turn progress feeding the transcript.
 pub enum TurnEvent {
     /// Transcript text arrived.
     Text(String),
@@ -61,6 +63,8 @@ pub enum TurnEvent {
 /// Keystroke meaning. Ctrl-modified keys drive session control so
 /// typing never collides with commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Keystroke meaning. Ctrl-modified keys drive session control so
+/// typing never collides with commands.
 pub enum TuiAction {
     /// Cut the in-flight turn.
     Barge,
@@ -89,6 +93,8 @@ pub enum TuiAction {
 /// Map one key event to its action. Pure: headless tests drive it
 /// without a terminal.
 #[must_use]
+/// Map one key event to its action. Pure: headless tests drive it
+/// without a terminal.
 pub fn map_key(key: KeyEvent) -> TuiAction {
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return match key.code {
@@ -113,6 +119,7 @@ pub fn map_key(key: KeyEvent) -> TuiAction {
 
 /// Slash commands mirroring the chat loop vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Slash commands mirroring the chat loop vocabulary.
 pub enum SlashCommand {
     /// Open a session.
     Start,
@@ -133,6 +140,8 @@ pub enum SlashCommand {
 /// Parse a slash command. Anything else (including unknown slashes)
 /// is spoken text, never a dispatch — the chat loop rule.
 #[must_use]
+/// Parse a slash command. Anything else (including unknown slashes)
+/// is spoken text, never a dispatch — the chat loop rule.
 pub fn parse_command(input: &str) -> Option<SlashCommand> {
     match input {
         "/start" => Some(SlashCommand::Start),
@@ -150,6 +159,9 @@ pub fn parse_command(input: &str) -> Option<SlashCommand> {
 /// the shared constructors the plain CLI prints from — one wording,
 /// two renderers.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Control failure: exit code plus the exact line shown. Built from
+/// the shared constructors the plain CLI prints from — one wording,
+/// two renderers.
 pub struct ControlError {
     /// Process exit for the failure.
     pub code: ExitCode,
@@ -227,6 +239,9 @@ impl SessionControl for LiveControl {
 /// (the calibrated constants live there, never restated here) and
 /// passes only hot spans upward. Level always tracks the frame.
 #[derive(Debug)]
+/// Mic gate: scores local capture frames with the default detector
+/// (the calibrated constants live there, never restated here) and
+/// passes only hot spans upward. Level always tracks the frame.
 pub struct MicGate {
     vad: EnergyVad,
     level: f32,
@@ -285,6 +300,8 @@ impl Default for MicGate {
 /// Meter bar of `width` cells, clamped — never overflows, never
 /// negative.
 #[must_use]
+/// Meter bar of `width` cells, clamped — never overflows, never
+/// negative.
 pub fn level_bar(level: f32, width: usize) -> String {
     let filled = (level.clamp(0.0, 1.0) * width as f32).round() as usize;
     let filled = filled.min(width);
@@ -295,6 +312,9 @@ pub fn level_bar(level: f32, width: usize) -> String {
 /// explicit push-to-talk for speaker setups where the assistant's
 /// own voice would otherwise loop back through the mic as input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Mic capture mode: continuous voice activity detection, or
+/// explicit push-to-talk for speaker setups where the assistant's
+/// own voice would otherwise loop back through the mic as input.
 pub enum MicMode {
     /// VAD-gated capture (commits suppressed while voicing, so the
     /// reply never becomes the next question).
@@ -317,6 +337,7 @@ impl MicMode {
 
 /// Live TUI state: transcript, meter, voicing, session, input line.
 #[derive(Debug, Clone, PartialEq)]
+/// Live TUI state: transcript, meter, voicing, session, input line.
 pub struct TuiState {
     /// Scrollback-capped transcript rows.
     pub lines: Vec<TuiLine>,
@@ -839,6 +860,10 @@ impl SttWorker {
 /// still shows its text: the transcript never loses words to a
 /// playback problem.
 #[derive(Debug)]
+/// One completed voice turn: the reply text plus its spoken audio.
+/// `voice` carries the `Say` outcome separately so a failed voicing
+/// still shows its text: the transcript never loses words to a
+/// playback problem.
 struct VoiceTurn {
     /// Reply text (always shown, even when voicing failed).
     reply: String,

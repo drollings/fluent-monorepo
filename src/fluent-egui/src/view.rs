@@ -19,6 +19,7 @@ use crate::error::EguiError;
 
 /// Which display pane a series belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Which display pane a series belongs to.
 pub enum PaneKind {
     /// Main candle pane (prices, ribbon).
     Price,
@@ -35,6 +36,12 @@ pub enum PaneKind {
 /// with its source rows index-for-index. `style` is a theme key (for example
 /// `"bull"`, `"bear"`, `"fast"`, `"slow"`), never a color literal.
 #[derive(Debug, Clone, PartialEq)]
+/// A named display series with warmup holes preserved.
+/// 
+/// `values` uses `None` for warmup/unavailable bars; every constructor in
+/// this module preserves input length element-wise, so a series lines up
+/// with its source rows index-for-index. `style` is a theme key (for example
+/// `"bull"`, `"bear"`, `"fast"`, `"slow"`), never a color literal.
 pub struct PaneSeries {
     /// Series name shown in legends and tables.
     pub name: String,
@@ -91,6 +98,7 @@ impl PaneSeries {
 
 /// Ribbon band between two smoothing legs.
 #[derive(Debug, Clone, PartialEq)]
+/// Ribbon band between two smoothing legs.
 pub struct RibbonView {
     /// Per-bar upper edge (`max` of the pair).
     pub upper: Vec<Option<f64>>,
@@ -154,6 +162,7 @@ pub fn ribbon_view(
 
 /// Theme style key for one ribbon bar; resolved against the theme at paint.
 #[must_use]
+/// Theme style key for one ribbon bar; resolved against the theme at paint.
 pub fn ribbon_style_key(bullish: bool) -> &'static str {
     if bullish {
         "bull"
@@ -169,6 +178,12 @@ pub fn ribbon_style_key(bullish: bool) -> &'static str {
 /// and a candle body are different chart shapes with their own theme colors.
 /// [`ribbon_style_key`] keeps candle trend polarity.
 #[must_use]
+/// Theme style key for one ribbon *fill* run.
+/// 
+/// The shaded band resolves to the dedicated `ribbon_bull`/`ribbon_bear`
+/// slots (teal/purple), never the candle `bull`/`bear` slots — a filled band
+/// and a candle body are different chart shapes with their own theme colors.
+/// [`ribbon_style_key`] keeps candle trend polarity.
 pub fn ribbon_fill_style_key(bullish: bool) -> &'static str {
     if bullish {
         "ribbon_bull"
@@ -179,6 +194,7 @@ pub fn ribbon_fill_style_key(bullish: bool) -> &'static str {
 
 /// Zero-based delta volume bars.
 #[derive(Debug, Clone, PartialEq)]
+/// Zero-based delta volume bars.
 pub struct DeltaView {
     /// Buy-side tops (`0 → buy_top`).
     pub buy_top: Vec<Option<f64>>,
@@ -255,6 +271,7 @@ pub fn delta_candle_view(
 
 /// Which threshold crossing a pivot mark decorates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Which threshold crossing a pivot mark decorates.
 pub enum PivotSide {
     /// Fast oscillator fell below `+threshold` (bear dot).
     High,
@@ -264,6 +281,7 @@ pub enum PivotSide {
 
 /// One threshold crossing on the fast oscillator.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One threshold crossing on the fast oscillator.
 pub struct PivotMark {
     /// Bar index of the confirmed crossing bar.
     pub index: usize,
@@ -313,6 +331,10 @@ pub fn pivot_marks(fast: &[Option<f64>], threshold: f64) -> Result<Vec<PivotMark
 /// display math — no series identity, no calibration; the domain crates
 /// own which constants flow through it.
 #[must_use]
+/// Unit sigmoid both band mappers share: `x / (1 + |x|)`, strictly
+/// monotonic from `(-∞, +∞)` onto `(-1, +1)`, odd, with `0 → 0`. Pure
+/// display math — no series identity, no calibration; the domain crates
+/// own which constants flow through it.
 pub fn unit_squash(x: f64) -> f64 {
     x / (1.0 + x.abs())
 }
@@ -325,6 +347,13 @@ pub fn unit_squash(x: f64) -> f64 {
 /// caller — this is the shape every calibrated band shares, not any one
 /// band's constants.
 #[must_use]
+/// Map one reading through an affine input shift plus a scaled sigmoid.
+/// 
+/// Computes `unit_squash((value + offset) * slope) * scale` in exactly that
+/// op order: shift, scale, squash, then widen to the display band. The
+/// per-series calibration (`offset`, `slope`, `scale`) stays with the
+/// caller — this is the shape every calibrated band shares, not any one
+/// band's constants.
 pub fn affine_squash(value: f64, offset: f64, slope: f64, scale: f64) -> f64 {
     unit_squash((value + offset) * slope) * scale
 }
@@ -336,6 +365,12 @@ pub fn affine_squash(value: f64, offset: f64, slope: f64, scale: f64) -> f64 {
 /// inputs yield `NaN` (series callers turn that into a hole via
 /// [`map_series_optional`]).
 #[must_use]
+/// Compress one reading onto a symmetric band through the shared sigmoid.
+/// 
+/// Computes `unit_squash(value / divisor) * scale`: `0 → 0`, `±divisor →`
+/// `±scale / 2`, finite inputs stay strictly inside `±scale`. Non-finite
+/// inputs yield `NaN` (series callers turn that into a hole via
+/// [`map_series_optional`]).
 pub fn band_squash(value: f64, divisor: f64, scale: f64) -> f64 {
     unit_squash(value / divisor) * scale
 }

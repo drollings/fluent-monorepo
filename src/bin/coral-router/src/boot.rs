@@ -128,6 +128,16 @@ pub fn build_concept_store_boot(ledger: &ContentNodeStore) -> Result<ConceptStor
 /// the loader's concepts resolve in each home (never raw row counts — a
 /// 48-bit collision must not read as drift, red-team M5/L6).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
+/// Reconciliation statistics.
+/// 
+/// The reconciliation seam (13.10) is exercised hermetically by the tests in
+/// this module and composed into the live boot (`main.rs`), which opens the
+/// coral graph home and the router's `SqliteConceptStore` over the shared
+/// ledger connection.
+/// 
+/// `coral_nodes` / `router_concepts` are **membership counts**: how many of
+/// the loader's concepts resolve in each home (never raw row counts — a
+/// 48-bit collision must not read as drift, red-team M5/L6).
 pub struct ReconcileStats {
     pub classes: usize,
     pub coral_nodes: usize,
@@ -271,6 +281,8 @@ pub fn load_yago_and_reconcile(
 /// Build a `SqliteConceptStore` over the shared ledger connection (the boot
 /// composition seam). Returns `None` when the ledger has no durable backing.
 #[allow(dead_code)]
+/// Build a `SqliteConceptStore` over the shared ledger connection (the boot
+/// composition seam). Returns `None` when the ledger has no durable backing.
 pub fn sqlite_store_from_ledger(ledger: &ContentNodeStore) -> Option<SqliteConceptStore> {
     ledger.shared_sqlite().map(SqliteConceptStore::new)
 }

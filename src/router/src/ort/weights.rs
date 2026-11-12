@@ -32,6 +32,17 @@ pub const DEFAULT_SLEEP_IDLE_SECONDS: i32 = 30;
 /// Map an onnx registry error onto the runtime-agnostic error type. A release
 /// refusal (`Always`/pinned) surfaces as [`LlmRuntimeError::UnloadRefused`].
 #[cfg(feature = "onnx")]
+/// ── The onnx half of the shared LlmWeights contract ─────────────
+/// 
+/// `OnnxWeights` presents one in-process onnx role through the shared
+/// `fluent_llm::runtime::LlmWeights` surface (the same contract the llama
+/// adapters in `instances/traits.rs` implement). It wraps the role's generative
+/// `OnnxContextPool` (built **lazily** — never forces a session load) and the
+/// `OrtSessionRegistry` entry. The residency engine (M5), the unified
+/// `/instances` + `/v1/models` facade, `ps`, and `POST /models/unload` drive
+/// the onnx fleet through it with the `LruLargest` eviction ordering.
+/// Map an onnx registry error onto the runtime-agnostic error type. A release
+/// refusal (`Always`/pinned) surfaces as [`LlmRuntimeError::UnloadRefused`].
 fn map_ort_err(e: &OrtError) -> fluent_llm::runtime::LlmRuntimeError {
     let s = e.to_string();
     if s.contains("refuses unload") {
@@ -48,6 +59,12 @@ fn map_ort_err(e: &OrtError) -> fluent_llm::runtime::LlmRuntimeError {
 /// footprint. Non-generative roles render no context rows (today's
 /// invisibility — their weights still count toward the RAM working set).
 #[cfg(feature = "onnx")]
+/// The `LlmWeights` implementor for one onnx role. Wraps the
+/// role's `OnnxContextPool` (generative roles) + the registry entry. A loaded
+/// generative role with no materialized contexts synthesizes the single
+/// `default` context row — the onnx analogue of a plain llama model's
+/// footprint. Non-generative roles render no context rows (today's
+/// invisibility — their weights still count toward the RAM working set).
 pub struct OnnxWeights {
     model_key: String,
     registry: Arc<OrtSessionRegistry>,
@@ -131,6 +148,10 @@ impl OnnxWeights {
 /// profile inheriting the role's global `max_ctx` and pin. Shared by
 /// `OnnxWeights::ensure_context` and the context-bound `OnnxChatBackend`.
 #[cfg(feature = "onnx")]
+/// Resolve an onnx role's named-context profile: the role's
+/// `instances` block (name-or-key match, `max_ctx` applied), else a default
+/// profile inheriting the role's global `max_ctx` and pin. Shared by
+/// `OnnxWeights::ensure_context` and the context-bound `OnnxChatBackend`.
 pub(crate) fn onnx_role_profile_for(
     role: &fluent_llm::onnx_config::OnnxRoleConfig,
     name: &str,
@@ -283,6 +304,13 @@ impl fluent_llm::runtime::LlmWeights for OnnxWeights {
 /// the unified `/instances`/`/v1/models` facades only when the onnx fleet is
 /// configured.
 #[cfg(feature = "onnx")]
+/// Build one `OnnxWeights` per registered onnx role. The role's
+/// `instances` block (from `config.onnx`) drives `ensure_context` profiles;
+/// the registry supplies the lifecycle + residency data. Onnx rows appear on
+/// the unified `/instances`/`/v1/models` facades only when the onnx fleet is
+/// configured.
+/// No-ort build: no onnx weights can exist — the fleet degrades to nothing
+/// (fail-open, byte-identical to today's onnx invisibility).
 pub fn onnx_weights_impls(
     registry: &OrtRegistry,
     config: &RouterConfig,

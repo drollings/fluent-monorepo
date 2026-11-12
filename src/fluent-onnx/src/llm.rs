@@ -58,6 +58,8 @@ pub const EOS_TOKEN_ID: i64 = 124900;
 /// Sampling parameters for a decode run. `do_sample=false` (or temperature 0)
 /// → greedy argmax (the determinism default); otherwise temperature sampling.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Sampling parameters for a decode run. `do_sample=false` (or temperature 0)
+/// → greedy argmax (the determinism default); otherwise temperature sampling.
 pub struct LlmParams {
     /// Sampling temperature (default `0.1`; `0.0` → argmax).
     pub temperature: f32,

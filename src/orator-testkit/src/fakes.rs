@@ -6,6 +6,12 @@
 
 /// Deterministic millisecond clock.
 #[derive(Debug, Clone, Default)]
+/// Deterministic fakes: scripted clocks, scenarios, and faults.
+/// 
+/// Every fake runs on logical time: the clock advances only when the
+/// scenario says so, so replays are bit-identical across machines and
+/// CI gates measure the script, never the scheduler.
+/// Deterministic millisecond clock.
 pub struct FakeClock {
     now_ms: u64,
 }
@@ -31,6 +37,7 @@ impl FakeClock {
 
 /// One scripted pipeline step.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One scripted pipeline step.
 pub struct ScriptStep {
     /// Stage name (`vad`, `stt`, `llm`, `tts`, `playout`).
     pub stage: String,
@@ -42,6 +49,7 @@ pub struct ScriptStep {
 
 /// A scripted scenario: ordered steps plus periodic faults.
 #[derive(Debug, Clone, Default)]
+/// A scripted scenario: ordered steps plus periodic faults.
 pub struct ScriptScenario {
     /// Steps in run order.
     pub steps: Vec<ScriptStep>,
@@ -66,6 +74,7 @@ impl ScriptScenario {
 
 /// Programmable latency multiplier for anti-tautology probes.
 #[derive(Debug, Clone)]
+/// Programmable latency multiplier for anti-tautology probes.
 pub struct SlowFake {
     /// Latency multiplier (1 = real-time script).
     pub factor: u64,

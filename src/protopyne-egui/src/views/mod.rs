@@ -33,6 +33,7 @@ use protopyne_view::{
 
 /// One pull of every gateway read, shaped for rendering.
 #[derive(Debug, Clone, PartialEq)]
+/// One pull of every gateway read, shaped for rendering.
 pub struct ViewsBundle {
     /// Health projection with its affordances.
     pub health: HealthModel,

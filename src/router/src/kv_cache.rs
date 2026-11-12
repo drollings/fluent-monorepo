@@ -33,6 +33,7 @@ type SnapshotKey = (String, Option<String>, String);
 
 /// Errors produced by KV cache operations.
 #[derive(Error, Debug)]
+/// Errors produced by KV cache operations.
 pub enum KvCacheError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -84,6 +85,13 @@ pub fn kv_snapshot_path(
 /// session_id)`; the fork-facing identity is `(snapshot_name, instance)` which
 /// the next dispatch sends as the `snapshot` / `instance` request fields.
 #[derive(Debug, Clone)]
+/// A KV cache snapshot - metadata and the fork-layout filesystem path only.
+/// 
+/// The actual KV bytes live in the fork's slot memory and on disk under
+/// `--slot-save-path`; the router records this metadata record pointing at the
+/// resulting file. Snapshot identity for the index is `(model, adapter,
+/// session_id)`; the fork-facing identity is `(snapshot_name, instance)` which
+/// the next dispatch sends as the `snapshot` / `instance` request fields.
 pub struct KvSnapshot {
     pub model: String,
     pub adapter: Option<String>,
@@ -150,6 +158,10 @@ impl KvSnapshot {
 /// no fork version reported), never a fabricated default. Built from a
 /// [`crate::config::ModelEntry`] by [`snapshot_identity_for_model`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// The live side of a snapshot-identity check: what the server runs right
+/// now. Every field is `Option` — `None` means unknowable (no weights path,
+/// no fork version reported), never a fabricated default. Built from a
+/// [`crate::config::ModelEntry`] by [`snapshot_identity_for_model`].
 pub struct SnapshotIdentity {
     /// Fingerprint of the weights file the server loaded.
     pub base_model_hash: Option<String>,
@@ -459,6 +471,14 @@ impl SnapshotStore {
 /// Clone is cheap (both tiers are `Arc`-shared), so a single manager can be
 /// attached to many `DependencySession`s.
 #[derive(Clone)]
+/// Two-tier KV cache index: checks hot tier first, falls back to cold tier.
+/// 
+/// Hot tier tracks sessions with actively-loaded fork slots (metadata only).
+/// Cold tier is the durable metadata index keyed by `(model, adapter, session)`.
+/// On a cold-tier hit, the metadata is promoted to the hot tier.
+/// 
+/// Clone is cheap (both tiers are `Arc`-shared), so a single manager can be
+/// attached to many `DependencySession`s.
 pub struct SnapshotStore {
     hot: Arc<HotSnapshotIndex>,
     cold: Arc<ColdSnapshotIndex>,

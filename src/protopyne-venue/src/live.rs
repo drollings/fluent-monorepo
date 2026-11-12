@@ -421,6 +421,11 @@ fn dry_run_outcome_of(raw: &str) -> Result<DryRunOutcome, VenueError> {
 /// mutations and stream events both fold through here, so no second
 /// averaging can drift apart from it.
 #[must_use]
+/// Refold an order book into underlying positions: signed filled quantity
+/// at the record's average price, skipping unfilled or priceless records
+/// (no basis to invent). The one home for book→position projection —
+/// mutations and stream events both fold through here, so no second
+/// averaging can drift apart from it.
 pub fn positions_of(records: impl IntoIterator<Item = OrderRecord>) -> HashMap<String, Position> {
     let mut positions: HashMap<String, Position> = HashMap::new();
     for record in records {
@@ -588,6 +593,9 @@ impl Venue for TastytradeVenue {
 /// binary construct identical bundles from explicit values.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(start_fn = new)]
+/// Production boot inputs. Built by the caller (the server binary reads
+/// environment); this module never touches `std::env`, so tests and the
+/// binary construct identical bundles from explicit values.
 pub struct LiveBoot {
     /// Session tunables (risk caps, shutdown bound).
     pub session: SessionConfig,

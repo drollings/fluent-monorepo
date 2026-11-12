@@ -1148,6 +1148,10 @@ struct TurnSpec {
 /// re-sending it. One turn runs at a time; the loop holds the other
 /// handle for `/reset` and quit release.
 #[derive(Clone)]
+/// Assured native session shared by every turn of one chat: the
+/// interleaved history lives here, so turns stay in context without
+/// re-sending it. One turn runs at a time; the loop holds the other
+/// handle for `/reset` and quit release.
 struct S2sShared {
     /// Interleaved session (locked per turn).
     session: std::sync::Arc<std::sync::Mutex<orator_voice::s2s::AudioSession>>,
@@ -1639,6 +1643,13 @@ fn spoken_for_narration_turn(
 /// (the shared fallback classifier); anything else reports with the
 /// transcript intact.
 #[allow(clippy::too_many_lines)]
+/// One native interleaved turn against the assured session: text
+/// and/or audio in, reply text plus 24 kHz audio out, history
+/// accruing on the session. Voice appends to the shared queue — the
+/// loop drains it, so native turns never play audio themselves. A
+/// voiceless or failed voice turn advances down the cascade honestly
+/// (the shared fallback classifier); anything else reports with the
+/// transcript intact.
 fn native_turn(
     spec: &TurnSpec,
     shared: &S2sShared,
@@ -2058,6 +2069,9 @@ fn narration_to_voice(
 /// Unknown keys and bad spellings stay spoken (never dispatched),
 /// so the caller logs nothing here — the parse already decided.
 #[allow(clippy::too_many_arguments)]
+/// Apply one `/set <key> <value>` line to the live session modes.
+/// Unknown keys and bad spellings stay spoken (never dispatched),
+/// so the caller logs nothing here — the parse already decided.
 fn apply_set_command(
     key: &str,
     value: &str,

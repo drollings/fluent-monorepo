@@ -9,6 +9,7 @@ pub use fluent_types::{LAZY_LOD_RANGE, LOD0_FULL_TEXT, LOD5_LABEL};
 
 /// Level of detail, 0..=5 (VISION table).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Level of detail, 0..=5 (VISION table).
 pub struct Lod(u8);
 
 impl Lod {

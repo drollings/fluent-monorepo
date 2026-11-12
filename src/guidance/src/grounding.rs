@@ -13,6 +13,7 @@ use crate::query::synthesize::Stage;
 
 /// Result of grounding verification on LLM synthesis output.
 #[derive(Debug, Clone)]
+/// Result of grounding verification on LLM synthesis output.
 pub struct GroundingResult {
     /// True if all citations in the output trace to provided stages.
     pub verified: bool,
@@ -42,6 +43,7 @@ pub use common_core::cite::{extract_citation_at, extract_citations, Citation};
 
 /// Stored byte range plus hashes for one member, as stamped at parse.
 #[derive(Debug, Clone)]
+/// Stored byte range plus hashes for one member, as stamped at parse.
 pub struct MemberRange {
     /// Byte start of the member span.
     pub start: u64,
@@ -55,6 +57,7 @@ pub struct MemberRange {
 
 /// Freshness of one citation against live bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Freshness of one citation against live bytes.
 pub enum CitationFreshness {
     /// Live range re-hashes to the stored receipt.
     Fresh,
@@ -66,6 +69,7 @@ pub enum CitationFreshness {
 
 /// One verified citation line plus its verdict.
 #[derive(Debug, Clone)]
+/// One verified citation line plus its verdict.
 pub struct StageCitation {
     /// Rendered citation (`path:Lstart-Lend @ b3:hash`, or legacy shape).
     pub cite: String,
@@ -84,6 +88,9 @@ pub struct StageCitation {
 /// map exactly; anything else returns `None` rather than inventing
 /// precision.
 #[must_use]
+/// Map a stage tier string to its retrieval label. Known vocabularies
+/// map exactly; anything else returns `None` rather than inventing
+/// precision.
 pub fn retrieval_tier_for_stage_tier(tier: &str) -> Option<crate::search_types::RetrievalTier> {
     use crate::search_types::RetrievalTier;
     match tier {
@@ -116,6 +123,11 @@ fn short_hash(hash: &str) -> &str {
 /// orchestrator can requeue exactly that unit; the read plane itself
 /// writes nothing.
 #[must_use]
+/// Re-hash every code stage's stored range against live bytes. `lookup`
+/// maps a stage to its stamped row (sidecar, index, or test fixture);
+/// `root` resolves relative sources. Mismatches name their item so the
+/// orchestrator can requeue exactly that unit; the read plane itself
+/// writes nothing.
 pub fn verify_stage_ranges(
     stages: &[Stage],
     root: &std::path::Path,
@@ -144,10 +156,10 @@ fn verify_one_stage(
 ) -> StageCitation {
     let member = stage.member_name.clone();
     let source = stage.source.clone();
-    let tier = stage.trace.as_ref().map_or_else(
-        || "doc".to_owned(),
-        |trace| trace.matched_by.clone(),
-    );
+    let tier = stage
+        .trace
+        .as_ref()
+        .map_or_else(|| "doc".to_owned(), |trace| trace.matched_by.clone());
     let Some(row) = lookup(stage) else {
         return StageCitation {
             cite: legacy_cite(stage),
@@ -158,9 +170,11 @@ fn verify_one_stage(
         };
     };
     let path = resolve_source(&stage.source, root);
-    let live = std::fs::read(&path)
-        .ok()
-        .and_then(|bytes| bytes.get(row.start as usize..row.end as usize).map(ToOwned::to_owned));
+    let live = std::fs::read(&path).ok().and_then(|bytes| {
+        bytes
+            .get(row.start as usize..row.end as usize)
+            .map(ToOwned::to_owned)
+    });
     let freshness = match live {
         Some(range) if common_core::hash::blake3_hex(&range) == row.range_hash => {
             CitationFreshness::Fresh
@@ -199,6 +213,9 @@ fn ranged_cite(stage: &Stage, range_hash: &str) -> String {
 /// orchestrator. The bytes-decide staleness gate picks them up on the
 /// next pass; this list only names them.
 #[must_use]
+/// Stale items as `(source, member)` requeue targets for the
+/// orchestrator. The bytes-decide staleness gate picks them up on the
+/// next pass; this list only names them.
 pub fn stale_members(cited: &[StageCitation]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for citation in cited {
@@ -241,13 +258,154 @@ fn extract_ranged_citations(output: &str) -> Vec<(String, u32)> {
     out
 }
 
-/// Verify that all citations in LLM output trace to provided stages.
-///
-/// Builds a set of grounded `(basename, line)` pairs from Code stages, then
-/// checks each citation in the output against this set. The match is exact
-/// on both halves: a citation to the right file at a fabricated line does
-/// NOT verify (line enforcement — the one behavior change of this
-/// comparator; basename symmetry is preserved for exact pairs).
+/// Tiered output-guard verdict: per-line freshness against live bytes,
+/// plus dropped claims and gap entries. Feeds `from_verified_stages`
+/// directly: kept lines carry Fresh/Stale, dropped claims become gaps.
+#[derive(Debug, Clone, Default)]
+/// Tiered output-guard verdict: per-line freshness against live bytes,
+/// plus dropped claims and gap entries. Feeds `from_verified_stages`
+/// directly: kept lines carry Fresh/Stale, dropped claims become gaps.
+pub struct LiveCitationReport {
+    /// Kept citations with live-byte verdicts (stale lines stay listed).
+    pub citations: Vec<StageCitation>,
+    /// Claimed `file:line` strings with no single staged excerpt.
+    pub dropped: Vec<String>,
+    /// Human-readable gap entries for dropped and stale lines.
+    pub gaps: Vec<String>,
+}
+
+impl LiveCitationReport {
+    /// Kept cite strings whose live bytes moved (stale, still listed).
+    #[must_use]
+    pub fn moved_lines(&self) -> Vec<String> {
+        self.citations
+            .iter()
+            .filter(|c| c.freshness == CitationFreshness::Stale)
+            .map(|c| c.cite.clone())
+            .collect()
+    }
+
+    /// Worst freshness across kept lines (stale outranks unverified).
+    #[must_use]
+    pub fn worst_freshness(&self) -> CitationFreshness {
+        if self
+            .citations
+            .iter()
+            .any(|c| c.freshness == CitationFreshness::Stale)
+        {
+            CitationFreshness::Stale
+        } else if self
+            .citations
+            .iter()
+            .any(|c| c.freshness == CitationFreshness::Unverified)
+        {
+            CitationFreshness::Unverified
+        } else {
+            CitationFreshness::Fresh
+        }
+    }
+}
+
+/// Claimed `(file, line)` pairs from both citation shapes, deduplicated.
+/// Shared by the location check and the live verifier (one extraction).
+fn extract_claimed_citations(output: &str) -> Vec<(String, u32)> {
+    let mut claimed: Vec<(String, u32)> = extract_citations(output)
+        .iter()
+        .map(|citation| (citation.file.clone(), citation.line))
+        .collect();
+    for (file, line) in extract_ranged_citations(output) {
+        let base = common_core::path::file_name_lexical(&file).unwrap_or(&file);
+        let pair = (base.to_string(), line);
+        if !claimed.contains(&pair) {
+            claimed.push(pair);
+        }
+    }
+    claimed
+}
+
+/// Resolve one claimed citation to its single staged excerpt. A bare
+/// basename matching several staged excerpts is ambiguous and resolves
+/// to nothing; a directory-qualified claim narrows to the suffixed
+/// source. Exactness here is what makes a wrong excerpt impossible.
+fn resolve_claimed_stage<'s>(
+    stages: &'s [Stage],
+    file: &str,
+    line: u32,
+) -> Result<&'s Stage, usize> {
+    let base = common_core::path::file_name_lexical(file).unwrap_or(file);
+    let mut candidates: Vec<&'s Stage> = stages
+        .iter()
+        .filter(|s| {
+            s.kind == fluent_types::StageKind::Code
+                && s.line == Some(line)
+                && common_core::path::file_name_lexical(&s.source).is_some_and(|b| b == base)
+        })
+        .collect();
+    if file.contains(['/', '\\']) {
+        let narrowed: Vec<&'s Stage> = candidates
+            .iter()
+            .filter(|s| s.source.ends_with(file))
+            .copied()
+            .collect();
+        if !narrowed.is_empty() {
+            candidates = narrowed;
+        }
+    }
+    match candidates.len() {
+        1 => Ok(candidates[0]),
+        n => Err(n),
+    }
+}
+
+/// Tiered output guard: exact bytes verify, moved bytes keep the line but
+/// mark it stale, and claims with no single staged excerpt are dropped
+/// with a gap entry. The location-only `verify_citations` stays for
+/// callers without live bytes; this is the honest variant.
+#[must_use]
+/// Tiered output guard: exact bytes verify, moved bytes keep the line but
+/// mark it stale, and claims with no single staged excerpt are dropped
+/// with a gap entry. The location-only `verify_citations` stays for
+/// callers without live bytes; this is the honest variant.
+pub fn verify_citations_live(
+    output: &str,
+    stages: &[Stage],
+    root: &std::path::Path,
+    lookup: impl Fn(&Stage) -> Option<MemberRange>,
+) -> LiveCitationReport {
+    let lookup_ref = &lookup;
+    let mut report = LiveCitationReport::default();
+    for (file, line) in extract_claimed_citations(output) {
+        let label = format!("{file}:{line}");
+        match resolve_claimed_stage(stages, &file, line) {
+            Ok(stage) => {
+                let citation = verify_one_stage(stage, root, lookup_ref);
+                if citation.freshness == CitationFreshness::Stale {
+                    report.gaps.push(format!(
+                        "stale citation, live bytes moved: {}",
+                        citation.cite
+                    ));
+                }
+                report.citations.push(citation);
+            }
+            Err(0) => {
+                report.dropped.push(label.clone());
+                report
+                    .gaps
+                    .push(format!("citation unverifiable, source changed: {label}"));
+            }
+            Err(n) => {
+                report.dropped.push(label.clone());
+                report.gaps.push(format!(
+                    "ambiguous citation matches {n} staged excerpts: {label}"
+                ));
+            }
+        }
+    }
+    report
+}
+/// Location-only output guard: every claimed citation must match a staged
+/// Code excerpt by basename and line. Callers with live bytes should
+/// prefer `verify_citations_live`, which additionally re-hashes ranges.
 pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
     let grounded_refs: HashSet<(String, u32)> = stages
         .iter()
@@ -258,16 +416,8 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
         })
         .collect();
 
-    let citations = extract_citations(output);
-    let mut claimed: Vec<(String, u32)> = citations
-        .iter()
-        .map(|citation| {
-            let file =
-                common_core::path::file_name_lexical(&citation.file).unwrap_or(&citation.file);
-            (file.to_string(), citation.line)
-        })
-        .collect();
-    for (file, line) in extract_ranged_citations(output) {
+    let mut claimed: Vec<(String, u32)> = Vec::new();
+    for (file, line) in extract_claimed_citations(output) {
         let base = common_core::path::file_name_lexical(&file).unwrap_or(&file);
         let pair = (base.to_string(), line);
         if !claimed.contains(&pair) {
@@ -278,7 +428,8 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
     let mut verified = Vec::new();
     let mut unverified = Vec::new();
     for (citation_file, citation_line) in &claimed {
-        let citation_str = format!("{citation_file}:{citation_line}");        let is_grounded = grounded_refs.contains(&(citation_file.clone(), *citation_line));
+        let citation_str = format!("{citation_file}:{citation_line}");
+        let is_grounded = grounded_refs.contains(&(citation_file.clone(), *citation_line));
 
         if is_grounded {
             verified.push(citation_str.clone());
@@ -301,6 +452,11 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
 /// filter output: the caller takes the pinned gap instead of
 /// synthesizing from no excerpts.
 #[must_use]
+/// Resolve requested names against current members, mirroring
+/// `Synthesizer::synthesize`'s own lookup predicate exactly (same match,
+/// no second implementation). Empty means stale index names or rogue
+/// filter output: the caller takes the pinned gap instead of
+/// synthesizing from no excerpts.
 pub fn grounded_names(doc: &GuidanceDoc, names: &[String]) -> Vec<String> {
     names
         .iter()
@@ -317,6 +473,9 @@ pub fn grounded_names(doc: &GuidanceDoc, names: &[String]) -> Vec<String> {
 /// synthesis cache keys. Changed source changes the key, so a stored
 /// summary can never override fresh bytes.
 #[must_use]
+/// Content hash over grounded stages (source + line + content) for
+/// synthesis cache keys. Changed source changes the key, so a stored
+/// summary can never override fresh bytes.
 pub fn stage_content_hash(stages: &[Stage]) -> String {
     let mut bytes = Vec::new();
     for stage in stages {

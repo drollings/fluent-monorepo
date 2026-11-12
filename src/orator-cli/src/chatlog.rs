@@ -11,6 +11,7 @@ use std::time::SystemTime;
 
 /// Log wire shape: human text on stderr, JSON lines on stdout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Log wire shape: human text on stderr, JSON lines on stdout.
 pub enum LogFormat {
     /// Colored human lines.
     Text,
@@ -34,6 +35,9 @@ pub fn parse_log_format(raw: &str) -> Result<LogFormat, String> {
 /// operation rows additionally carry latency plus the model and
 /// backend that served them so a turn names its pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One scrolling-log row. Every variant carries its display text;
+/// operation rows additionally carry latency plus the model and
+/// backend that served them so a turn names its pipeline.
 pub enum ChatEvent {
     /// Session header / mode line. Always shown.
     System {
@@ -176,6 +180,8 @@ impl ChatEvent {
 /// Format `at` as `[HH:MM:SS.mmm]` in UTC (24 h wrap). Pure and
 /// deterministic: tests pin exact strings from fixed timestamps.
 #[must_use]
+/// Format `at` as `[HH:MM:SS.mmm]` in UTC (24 h wrap). Pure and
+/// deterministic: tests pin exact strings from fixed timestamps.
 pub fn format_timestamp(at: SystemTime) -> String {
     let (secs, millis) = match at.duration_since(std::time::UNIX_EPOCH) {
         Ok(elapsed) => (elapsed.as_secs() % 86_400, elapsed.subsec_millis()),

@@ -11,6 +11,7 @@ pub const MAX_IPC_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
+/// 64 MiB
 pub enum PayloadType {
     ExecutionRequest = 1,
     ExecutionResult = 2,

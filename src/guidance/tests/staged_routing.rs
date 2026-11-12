@@ -2,7 +2,8 @@
 
 use super::should_short_circuit;
 use crate::query::search_backend::{
-    ConceptBackend, FilePathBackend, GeneralBackend, IdentifierBackend, KeywordBackend, SearchBackend,
+    ConceptBackend, FilePathBackend, GeneralBackend, IdentifierBackend, KeywordBackend,
+    SearchBackend,
 };
 use crate::query::strategy::{FsmEngine, QueryIntent};
 use crate::query_engine::QueryEngine;
@@ -17,7 +18,8 @@ fn route_maps_intent_to_cheapest_rung() {
     let file = FsmEngine::new().run("src/main.rs");
     assert_eq!(file.intent, QueryIntent::FilePath);
     assert_eq!(fsm.route(&file), "anchor_lookup");
-    let concept = FsmEngine::new().run("distributed caching architecture patterns for edge deployments today");
+    let concept = FsmEngine::new()
+        .run("distributed caching architecture patterns for edge deployments today");
     assert_eq!(concept.intent, QueryIntent::Conceptual);
     assert_eq!(fsm.route(&concept), "vector");
 }
@@ -26,9 +28,9 @@ fn route_maps_intent_to_cheapest_rung() {
 fn exact_verdicts_short_circuit_ambiguous_ones_do_not() {
     assert!(should_short_circuit(&FsmEngine::new().run("hello")));
     assert!(should_short_circuit(&FsmEngine::new().run("src/main.rs")));
-    assert!(!should_short_circuit(
-        &FsmEngine::new().run("distributed caching architecture patterns for edge deployments today")
-    ));
+    assert!(!should_short_circuit(&FsmEngine::new().run(
+        "distributed caching architecture patterns for edge deployments today"
+    )));
     assert!(!should_short_circuit(&FsmEngine::new().run("")));
 }
 

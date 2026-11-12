@@ -24,6 +24,13 @@ use fluent_egui::{affine_squash, band_squash, map_series_optional, EguiError};
 /// kernel: it parses but refuses evaluation with a reason, never substituting
 /// the default constants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Oscillator identity for the normalization catalog.
+/// 
+/// Mirrors the reference oscillator enum; the `Raw` variant covers
+/// pass-through sources (Pine `Smoothings.NA` / unlisted types), which share
+/// the default squash constants. `Cdv` is a listed Pine oscillator with no
+/// kernel: it parses but refuses evaluation with a reason, never substituting
+/// the default constants.
 pub enum OscillatorKind {
     /// Aroon up/down spread.
     Aroon,
@@ -55,6 +62,11 @@ pub enum OscillatorKind {
 /// (`1 => fastLen`, otherwise `slowLen`) and the leg content for the two
 /// multi-leg families (Aroon and Voss).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Which leg of a multi-leg oscillator `normalizeOsc` selects.
+/// 
+/// The Pine `which` axis picks the window length for single-leg families
+/// (`1 => fastLen`, otherwise `slowLen`) and the leg content for the two
+/// multi-leg families (Aroon and Voss).
 pub enum WhichLeg {
     /// `which = 1`: the fast leg (fastLen window).
     Fast,
@@ -216,6 +228,7 @@ impl OscillatorKind {
 
 /// Canonical lowercase name for one oscillator kind (settings/schema spelling).
 #[must_use]
+/// Canonical lowercase name for one oscillator kind (settings/schema spelling).
 pub fn oscillator_kind_name(kind: OscillatorKind) -> &'static str {
     kind.id()
 }
@@ -223,6 +236,8 @@ pub fn oscillator_kind_name(kind: OscillatorKind) -> &'static str {
 /// One oscillator row for catalog-backed pickers: the catalog id plus the
 /// normalization payload, so pickers list the catalog without re-spelling it.
 #[derive(Debug, Clone, PartialEq)]
+/// One oscillator row for catalog-backed pickers: the catalog id plus the
+/// normalization payload, so pickers list the catalog without re-spelling it.
 pub struct OscillatorOption {
     /// Canonical catalog id (the config value).
     pub id: String,
@@ -239,6 +254,8 @@ pub struct OscillatorOption {
 /// Every oscillator kind in Pine-dispatch order: the oscillator picker.
 /// Refused rows list with their reason — advertised, never runnable.
 #[must_use]
+/// Every oscillator kind in Pine-dispatch order: the oscillator picker.
+/// Refused rows list with their reason — advertised, never runnable.
 pub fn oscillator_options() -> Vec<OscillatorOption> {
     OscillatorKind::all()
         .iter()
@@ -260,6 +277,8 @@ pub fn oscillator_options() -> Vec<OscillatorOption> {
 /// Ids an oscillator field may hold: exactly what selection validation
 /// accepts, so selector schemas and validators read one list.
 #[must_use]
+/// Ids an oscillator field may hold: exactly what selection validation
+/// accepts, so selector schemas and validators read one list.
 pub fn evaluable_oscillator_ids() -> Vec<String> {
     OscillatorKind::all()
         .iter()
@@ -273,6 +292,10 @@ pub fn evaluable_oscillator_ids() -> Vec<String> {
 /// reason instead of substituting). A trailing space does not parse: names
 /// are exact, so a typo surfaces instead of silently matching.
 #[must_use]
+/// Parse an oscillator kind name; ASCII case-insensitive over the catalog id
+/// and Pine spelling, `None` for unknown spellings (callers refuse with a
+/// reason instead of substituting). A trailing space does not parse: names
+/// are exact, so a typo surfaces instead of silently matching.
 pub fn parse_oscillator_kind(name: &str) -> Option<OscillatorKind> {
     let lower = name.to_ascii_lowercase();
     OscillatorKind::all()
@@ -282,6 +305,7 @@ pub fn parse_oscillator_kind(name: &str) -> Option<OscillatorKind> {
 
 /// Frozen per-oscillator squash constants `(offset, k, multiplier)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Frozen per-oscillator squash constants `(offset, k, multiplier)`.
 pub struct OscParams {
     /// Shift applied before scaling.
     pub offset: f64,
@@ -368,6 +392,15 @@ pub const DISPLAY_EXTREME_BAND: f64 = 200.0;
 /// fixes 0 and ±100 exactly, so threshold crossings are identical to the
 /// unbounded squash's while overshoot past ±100 compresses toward ±200.
 #[must_use]
+/// One mapped display leg: the dialed catalog squash constrained into the
+/// extremes band.
+/// 
+/// Total over finite inputs: the catalog affine squash under `params`,
+/// scaled by `gain`, centered by `trim`, then squeezed toward the ±200
+/// asymptotes. Length-preserving with holes preserved; an out-of-band or
+/// non-finite midpoint becomes a hole, never a substituted value. The band
+/// fixes 0 and ±100 exactly, so threshold crossings are identical to the
+/// unbounded squash's while overshoot past ±100 compresses toward ±200.
 pub fn display_mapped_series(
     raw: &[Option<f64>],
     params: &OscParams,
@@ -391,6 +424,13 @@ pub fn display_mapped_series(
 /// ±CALIBRATED_BOUNDED_PIVOT_THRESHOLD`. Non-finite inputs yield `NaN` (the
 /// series-level callers turn that into a hole).
 #[must_use]
+/// Compress an unbounded reading onto the zero-centered `(-100, +100)` band.
+/// 
+/// Strictly monotonic and bijective from `(-∞, +∞)` onto
+/// `(-BOUNDED_OSC_SCALE, +BOUNDED_OSC_SCALE)` through the shared generic
+/// sigmoid; maps `0.0 → 0.0` and `±SQUASH_100_DIVISOR →
+/// ±CALIBRATED_BOUNDED_PIVOT_THRESHOLD`. Non-finite inputs yield `NaN` (the
+/// series-level callers turn that into a hole).
 pub fn squash_to_100(value: f64) -> f64 {
     band_squash(value, SQUASH_100_DIVISOR, BOUNDED_OSC_SCALE)
 }
@@ -400,6 +440,10 @@ pub fn squash_to_100(value: f64) -> f64 {
 /// Length-preserving: `None` stays `None`, and a non-finite squash result
 /// becomes a hole rather than a substituted value.
 #[must_use]
+/// Compress a series onto the bounded band, preserving warmup holes.
+/// 
+/// Length-preserving: `None` stays `None`, and a non-finite squash result
+/// becomes a hole rather than a substituted value.
 pub fn squash_series_to_100(series: &[Option<f64>]) -> Vec<Option<f64>> {
     map_series_optional(series, squash_to_100)
 }
@@ -449,6 +493,18 @@ pub fn normalize_series_bounded(
 /// every mapped leg shares its kernel's length window, which the slow leg
 /// names.
 #[must_use]
+/// One kernel output's display mapping: the catalog kind plus the leg whose
+/// window the kernel's length matches, or `None` for a leg that paints raw.
+/// 
+/// This is the taxonomy the shared pane gates on: single-output catalog
+/// kernels map their `value` leg, the stochastic family maps both legs
+/// (the %D leg lives in the same bounded 0..100 space, and the SRSI relay
+/// carries the same secondary), aroon maps both legs through the unit
+/// bridge (fractions rescale to the Pine 0..100 arm), and everything else —
+/// price bands, multi-output recipes, unmapped families — reads raw and
+/// refuses the merge. The leg is provenance: display squashes by kind, and
+/// every mapped leg shares its kernel's length window, which the slow leg
+/// names.
 pub fn oscillator_mapping_for_output(
     kernel: &str,
     output: &str,
@@ -477,6 +533,17 @@ pub fn oscillator_mapping_for_output(
 /// pass through, as the kernel batch refuses those before display ever
 /// runs.
 #[must_use]
+/// Rescale native aroon fractions into the catalog's 0..100 arm.
+/// 
+/// The kernel emits window fractions (`back/length`); the catalog row is
+/// calibrated for Pine-scale percentages, so the bridge maps each fraction
+/// to its 0..100 arm: `100 * (P * r - 1) / (P - 1)`. The bridge is exact:
+/// both engines share the window and break ties to the most recent bar, so
+/// it reproduces the shipped arm bar-for-bar (pinned by the parity test).
+/// Holes stay holes; the degenerate length-1 arm divides to `NaN`, which
+/// the lift turns into holes — exactly Pine's `0/0 = na`. Lengths below 1
+/// pass through, as the kernel batch refuses those before display ever
+/// runs.
 pub fn rescale_aroon_output(raw: &[Option<f64>], length: i64) -> Vec<Option<f64>> {
     if length < 1 {
         return raw.to_vec();

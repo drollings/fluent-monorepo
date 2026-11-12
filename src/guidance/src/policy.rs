@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 /// Declarative, versioned statement of what the loop may do.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Declarative, versioned statement of what the loop may do.
 pub struct MaintenancePolicy {
     /// Monotonic version; bumped on every policy edit.
     #[serde(default = "default_policy_version")]
@@ -28,6 +29,11 @@ pub struct MaintenancePolicy {
     /// Fix classes requiring approval before applying.
     #[serde(default)]
     pub requires_approval: Vec<String>,
+    /// Autonomy cap over the fix tiers (`L0` index only, `L1` and up run
+    /// the deterministic rungs; model drafts need `L3`, which behaves
+    /// as `L2` until a generative rung lands).
+    #[serde(default = "default_autonomy")]
+    pub autonomy: String,
 }
 
 fn default_policy_version() -> u64 {
@@ -38,22 +44,40 @@ fn default_attempt_limit() -> u32 {
     3
 }
 
+fn default_autonomy() -> String {
+    "L2".to_string()
+}
+
 impl Default for MaintenancePolicy {
     fn default() -> Self {
         Self {
             version: default_policy_version(),
             scope: Vec::new(),
-            mechanical_classes: vec!["rustfmt".to_string()],
+            mechanical_classes: vec!["rustfmt".to_string(), "clippy-fix".to_string()],
             human_owned: Vec::new(),
             attempt_limit: default_attempt_limit(),
             requires_approval: Vec::new(),
+            autonomy: default_autonomy(),
         }
     }
+}
+
+/// Whether the autonomy cap permits the fix rungs: `L0` is index-only
+/// (sync and report, never rewrite), `L1` and up run the deterministic
+/// fixers the mechanical list allows.
+#[must_use]
+/// Whether the autonomy cap permits the fix rungs: `L0` is index-only
+/// (sync and report, never rewrite), `L1` and up run the deterministic
+/// fixers the mechanical list allows.
+pub fn autonomy_allows_fix(policy: &MaintenancePolicy) -> bool {
+    policy.autonomy.as_str() != "L0"
 }
 
 /// Fingerprint of the policy for staleness keys: content, prompt version,
 /// model identity, and policy version hash together downstream.
 #[must_use]
+/// Fingerprint of the policy for staleness keys: content, prompt version,
+/// model identity, and policy version hash together downstream.
 pub fn policy_fingerprint(policy: &MaintenancePolicy) -> String {
     let canonical = serde_json::to_string(policy).unwrap_or_default();
     common_core::hash::blake3_hex(canonical.as_bytes())
@@ -62,6 +86,8 @@ pub fn policy_fingerprint(policy: &MaintenancePolicy) -> String {
 /// Fingerprint of one policy section for staleness keys: a policy edit
 /// re-derives exactly the receipts that consumed the changed section.
 #[must_use]
+/// Fingerprint of one policy section for staleness keys: a policy edit
+/// re-derives exactly the receipts that consumed the changed section.
 pub fn section_fingerprint(policy: &MaintenancePolicy, section: &str) -> String {
     let canonical = match section {
         "mechanical" => serde_json::to_string(&policy.mechanical_classes).unwrap_or_default(),
@@ -77,6 +103,8 @@ pub fn section_fingerprint(policy: &MaintenancePolicy, section: &str) -> String 
 /// Whether stored work predates the current policy: a version mismatch
 /// re-derives exactly the affected items, never the whole workspace.
 #[must_use]
+/// Whether stored work predates the current policy: a version mismatch
+/// re-derives exactly the affected items, never the whole workspace.
 pub fn policy_stale(stored_version: Option<u64>, current: &MaintenancePolicy) -> bool {
     stored_version.is_none_or(|version| version != current.version)
 }

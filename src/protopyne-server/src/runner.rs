@@ -46,6 +46,7 @@ use crate::report::{
 
 /// Per-bar economics and identity for one backtest run.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Per-bar economics and identity for one backtest run.
 pub struct RunnerConfig {
     /// Symbol traded in this run.
     pub underlying: String,
@@ -81,6 +82,7 @@ fn default_structure() -> StructureKind {
 
 // `skip_serializing_if` requires a `&T` predicate; the types are `Copy`.
 #[allow(clippy::trivially_copy_pass_by_ref)]
+/// `skip_serializing_if` requires a `&T` predicate; the types are `Copy`.
 fn is_vertical(structure: &StructureKind) -> bool {
     *structure == StructureKind::Vertical
 }
@@ -154,6 +156,11 @@ impl RunnerConfig {
 /// (warmup, unquotable bar, refused quote, denied gate, venue refusal).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::struct_excessive_bools)] // recorded verdicts, not a state machine
+/// One bar's recorded verdict: proposal, gates, and fill outcome.
+/// 
+/// `skipped` carries the reason whenever no proposal reached the venue
+/// (warmup, unquotable bar, refused quote, denied gate, venue refusal).
+/// recorded verdicts, not a state machine
 pub struct BarDecision {
     /// Index into the replayed history.
     pub bar_index: usize,
@@ -297,6 +304,14 @@ pub(crate) fn skipped_decision(
 /// price-sensitive risk rule must take this checked limit, never the proposal
 /// limit: the checked values are the submitted values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The executable order derived from a proposal: venue side plus the limit
+/// the venue will actually receive.
+/// 
+/// Proposals carry an indicative bar-close limit, but the touch side (buy at
+/// ask, sell at bid) depends on direction, which only proposing reveals — so
+/// the executable limit is derived post-proposal, after the gates. Any future
+/// price-sensitive risk rule must take this checked limit, never the proposal
+/// limit: the checked values are the submitted values.
 pub struct CheckedOrder {
     /// Venue side for the direction.
     pub side: OrderSide,
@@ -309,6 +324,10 @@ pub struct CheckedOrder {
 /// both read it, so submission and attribution can never disagree on which
 /// side a direction traded.
 #[must_use]
+/// Venue side for a signal direction: longs buy, shorts sell. The single
+/// home for the mapping — `checked_order_for` and the portfolio fill fold
+/// both read it, so submission and attribution can never disagree on which
+/// side a direction traded.
 pub fn side_for_direction(direction: Direction) -> OrderSide {
     match direction {
         Direction::Long => OrderSide::Buy,
@@ -318,6 +337,8 @@ pub fn side_for_direction(direction: Direction) -> OrderSide {
 
 /// Whether a decision's side carries no information beyond "opened the book".
 #[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference
+/// Whether a decision's side carries no information beyond "opened the book".
+/// serde passes the field by reference
 fn is_entry_side(side: &Option<ProposalSide>) -> bool {
     matches!(side, None | Some(ProposalSide::Entry))
 }
@@ -328,6 +349,11 @@ fn is_entry_side(side: &Option<ProposalSide>) -> bool {
 /// and the short book mirrors that. Reading only the direction would book an
 /// exit as a second entry, doubling the position the report folds.
 #[must_use]
+/// The order side a booked fill implies.
+/// 
+/// The proposal's own side decides it: opening a long buys, closing one sells,
+/// and the short book mirrors that. Reading only the direction would book an
+/// exit as a second entry, doubling the position the report folds.
 pub fn order_side(decision: &BarDecision) -> OrderSide {
     if decision.side == Some(ProposalSide::Exit) {
         return if decision.direction == Some(Direction::Long) {
@@ -343,6 +369,7 @@ pub fn order_side(decision: &BarDecision) -> OrderSide {
 
 /// Derive the executable order for `direction` from the current touch.
 #[must_use]
+/// Derive the executable order for `direction` from the current touch.
 pub fn checked_order_for(direction: Direction, quote: &Quote) -> CheckedOrder {
     match direction {
         Direction::Long => CheckedOrder {
@@ -364,6 +391,13 @@ pub fn checked_order_for(direction: Direction, quote: &Quote) -> CheckedOrder {
 /// trade's merit — so they disarm entries only and never alter a merit
 /// verdict, and merit outcomes never write back here.
 #[derive(Debug, Clone, Copy)]
+/// Observed producer-health facts for one bar, fed into the merit gates.
+/// 
+/// Axis: **(producer-confidence)** for staleness/skew/reconciliation doubt,
+/// **(correctness)** for what the gates do with it (refuse with reasons).
+/// These facts describe the producer (feed, clock, venue book) — never the
+/// trade's merit — so they disarm entries only and never alter a merit
+/// verdict, and merit outcomes never write back here.
 pub struct BarHealth {
     /// Age of the quote traded on this bar, in seconds.
     pub quote_age_secs: u64,
@@ -504,6 +538,9 @@ fn advance_verdict<R: SubmissionRecorder>(
 /// the checked limit come from the proposal itself, never fabricated. The
 /// caller fills the gate verdicts, lifecycle, and outcome.
 #[allow(clippy::too_many_arguments)]
+/// The decision skeleton for a bar that produced a proposal: attribution and
+/// the checked limit come from the proposal itself, never fabricated. The
+/// caller fills the gate verdicts, lifecycle, and outcome.
 fn proposed_decision(
     proposal: &Proposal,
     bar_index: usize,
@@ -631,6 +668,13 @@ pub(crate) fn decide_proposal(
 /// [`submit_decided`](submit_decided) instead, so a stateful signal advances
 /// exactly once per bar.
 #[allow(clippy::too_many_arguments)]
+/// Evaluate one bar and submit its proposal through the shared gate stack.
+/// 
+/// Direct callers own a single bar, so one instance is bound for the call.
+/// Runners hold their instance across bars and compose
+/// [`decide_proposal`](decide_proposal) with
+/// [`submit_decided`](submit_decided) instead, so a stateful signal advances
+/// exactly once per bar.
 pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     strategy: &Strategy,
     risk: &RiskEngine,
@@ -697,6 +741,11 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
 /// and the venue protocol. It never evaluates a signal, so a run's instance
 /// cannot be advanced twice on one bar.
 #[allow(clippy::too_many_arguments)]
+/// Submit a proposal the caller already decided, after the quote check.
+/// 
+/// The body every decision path shares: leg selection, risk, grant, lifecycle,
+/// and the venue protocol. It never evaluates a signal, so a run's instance
+/// cannot be advanced twice on one bar.
 pub(crate) async fn submit_decided<R: SubmissionRecorder, V: Venue>(
     mut proposal: Proposal,
     quote: Quote,
@@ -1087,6 +1136,14 @@ fn intent_for(
 /// carries its own direction, legs, and economics, so entries and exits share
 /// it.
 #[allow(clippy::too_many_arguments)]
+/// Route a human-approved proposal into the ledger + submit path.
+/// 
+/// The approval itself is journaled by `decide_proposal` on the command plane;
+/// this re-checks the risk gate against fresh facts, reserves the grant's
+/// budgets atomically, advances the lifecycle to `Submitted`, and submits
+/// through the same guarded protocol every other path uses. The proposal
+/// carries its own direction, legs, and economics, so entries and exits share
+/// it.
 pub async fn submit_approved<R: SubmissionRecorder, V: Venue>(
     proposal: &mut Proposal,
     risk: &RiskEngine,
@@ -1238,6 +1295,7 @@ fn run_mark_basis(decisions: &[BarDecision], chain: &[ChainQuote]) -> MarkBasis 
 
 /// One completed backtest run: pin, per-bar verdicts, and honest report.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One completed backtest run: pin, per-bar verdicts, and honest report.
 pub struct BacktestRun {
     /// Reproducibility pin (data, code, config).
     pub manifest: RunManifest,
@@ -1276,6 +1334,16 @@ impl BacktestRun {
 /// filled-quantity carrier — the same count the venue journaled — so sizing
 /// flows through every booked number. Pure and deterministic.
 #[must_use]
+/// Mark-to-close equity curve for filled decisions.
+/// 
+/// Cash starts at zero; buys pay `price * filled + fee`, sells receive
+/// `price * filled - fee`. The fold is keyed on `BarDecision.bar_index`:
+/// each bar marks the running state after applying only that bar's fills,
+/// so bars before any fill read flat zero and every later bar sees exactly
+/// the fills so far — never future fills. Bars with no fills carry the
+/// previous mark forward. Quantities come from the decision's
+/// filled-quantity carrier — the same count the venue journaled — so sizing
+/// flows through every booked number. Pure and deterministic.
 pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
     use std::collections::HashMap;
     fn book_fill(cash: &mut Decimal, net: &mut i64, decision: &BarDecision) {
@@ -1390,6 +1458,10 @@ fn economics_arm_note(economics: EconomicsPolicy, configured: Money) -> String {
 /// Determinism is a **(correctness)** invariant, not a tunable: same inputs
 /// always produce byte-identical manifests and decisions.
 #[allow(clippy::too_many_arguments)]
+/// Run the full decision stack over `bars` through a versioned venue.
+/// 
+/// Determinism is a **(correctness)** invariant, not a tunable: same inputs
+/// always produce byte-identical manifests and decisions.
 pub async fn run_backtest(
     strategy: &Strategy,
     risk: &RiskEngine,
@@ -1442,6 +1514,14 @@ pub async fn run_backtest(
 /// a store-backed source pins the read's digest and spans. The `store` is
 /// only consulted by the tape arm.
 #[allow(clippy::too_many_arguments)]
+/// Run the full decision stack over a [`HistorySource`].
+/// 
+/// The one difference from [`run_backtest`] is the input: the bars — and the
+/// planner provenance the tape arm carries — come from [`load_history`],
+/// then enter the identical [`run_backtest_on_venue`] decide path. A files or
+/// dynamic source pins no tape data and serializes exactly as a values run;
+/// a store-backed source pins the read's digest and spans. The `store` is
+/// only consulted by the tape arm.
 pub async fn run_backtest_from_source(
     strategy: &Strategy,
     risk: &RiskEngine,
@@ -1496,6 +1576,12 @@ pub async fn run_backtest_from_source(
 /// shapes is a bug, never a modeling choice. Config and bar validation stay
 /// with the callers (they own the input shape); the manifest arrives pinned.
 #[allow(clippy::too_many_arguments)]
+/// Run the shared decide path over `bars` through a caller-supplied venue.
+/// 
+/// The single-symbol `run_backtest` and the multi-symbol harness both enter
+/// here, so one code path stays one code path: a divergence between rehearsal
+/// shapes is a bug, never a modeling choice. Config and bar validation stay
+/// with the callers (they own the input shape); the manifest arrives pinned.
 async fn run_backtest_on_venue<V: Venue>(
     strategy: &Strategy,
     risk: &RiskEngine,
@@ -1713,6 +1799,11 @@ pub(crate) fn booked_fills_of(
 /// a pinned file through the identical decide path.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(start_fn = new)]
+/// One symbol's leg of a multi-symbol run: its configs plus its bar source.
+/// 
+/// Histories arrive from files or dynamically — the harness loads either arm
+/// through `load_history`, so a symbol with no file replays beside one with
+/// a pinned file through the identical decide path.
 pub struct MultiSymbolInput {
     /// Quote synthesis plus data-version pin for this symbol.
     pub venue_config: BacktestConfig,
@@ -1732,6 +1823,10 @@ pub struct MultiSymbolInput {
 /// shared suite seed. Serialization order is struct order, so reruns are
 /// byte-identical.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Combined reproducibility pin for a multi-symbol run: one per-symbol pin
+/// (data version, code version, config) in harness input order, under the
+/// shared suite seed. Serialization order is struct order, so reruns are
+/// byte-identical.
 pub struct MultiRunManifest {
     /// Crate version at run time, shared across symbols.
     pub code_version: String,
@@ -1754,6 +1849,8 @@ impl MultiRunManifest {
 /// One completed multi-symbol run: the combined pin plus per-symbol runs in
 /// harness input order.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One completed multi-symbol run: the combined pin plus per-symbol runs in
+/// harness input order.
 pub struct MultiBacktestRun {
     /// Combined reproducibility pin.
     pub manifest: MultiRunManifest,
@@ -1960,6 +2057,7 @@ pub async fn run_paper_decisions(
 
 /// One sweep outcome: which variant ran and what it filled.
 #[derive(Debug, Clone)]
+/// One sweep outcome: which variant ran and what it filled.
 pub struct SweepOutcome {
     /// Index into the submitted variant list (output order is by index).
     pub index: usize,
@@ -1973,6 +2071,7 @@ pub struct SweepOutcome {
 
 /// One sweep job: a full run under one grant variant.
 #[derive(Debug, Clone)]
+/// One sweep job: a full run under one grant variant.
 struct SweepJob {
     index: usize,
     grant: Grant,
@@ -2076,6 +2175,7 @@ pub async fn run_sweep(
 
 /// Per-step research state for the replay graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Per-step research state for the replay graph.
 pub struct ReplayStep {
     /// Index into the replayed history.
     pub bar_index: usize,
@@ -2157,6 +2257,18 @@ pub fn complete_replay(graph: &mut CheckpointedStepGraph<String, ReplayStep>) {
 /// non-finite barriers) read `None`: labels are future data for `y`, so a
 /// missing label refuses rather than invents. Hand-rolled loop, no numba.
 #[must_use]
+/// Triple-barrier labeling over closed bars: for each entry bar `i`, scan
+/// the next `window - 1` bars for the first touch of the profit barrier
+/// (`entry * (1 + take_profit)` on highs) or the loss barrier
+/// (`entry * (1 - stop_loss)` on lows).
+/// 
+/// Labels are `Some(1.0)` (profit first), `Some(-1.0)` (loss first), or the
+/// horizon bar's signed drift when time expires (flat expiry reads
+/// `Some(0.0)`). A bar touched on both sides resolves to whichever extreme
+/// stands farther from its close. Entries with no window left, non-finite
+/// entries, and degenerate parameters (`window < 2`, non-positive or
+/// non-finite barriers) read `None`: labels are future data for `y`, so a
+/// missing label refuses rather than invents. Hand-rolled loop, no numba.
 pub fn triple_barrier(
     closes: &[f64],
     highs: &[f64],
@@ -2227,6 +2339,11 @@ pub fn triple_barrier(
 /// whole series — never per bar. Reads through the generator's scorer, so
 /// the report and the generator can never disagree on the reading.
 #[must_use]
+/// Latest RSRS timing score over replayed bars at the upstream lookbacks
+/// (`n = 18`, `m = 600`): the last finite score, or `None` when the history
+/// is shorter than the scoring window. Called once per backtest over the
+/// whole series — never per bar. Reads through the generator's scorer, so
+/// the report and the generator can never disagree on the reading.
 pub fn report_rsrs(bars: &[Bar]) -> Option<f64> {
     rsrs_score(bars, 18, 600)
 }
@@ -2246,6 +2363,7 @@ pub fn walk_forward_split(bars: &[Bar], train_len: usize) -> Result<(&[Bar], &[B
 
 /// Positions snapshot helper kept beside the runner for report attribution.
 #[must_use]
+/// Positions snapshot helper kept beside the runner for report attribution.
 pub fn snapshot_positions<V: Venue>(venue: &V) -> Vec<Position> {
     venue.positions()
 }

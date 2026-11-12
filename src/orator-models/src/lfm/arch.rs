@@ -30,6 +30,9 @@ pub const CONV_KERNEL: usize = 7;
 /// `[C,C,F,C,S,…]` — 13 conv, 6 full, 5 sliding over 24 layers.
 /// `Lfm3DecoderLayer` naming from the reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Operator at layer `idx`: the 3-way hybrid interleave
+/// `[C,C,F,C,S,…]` — 13 conv, 6 full, 5 sliding over 24 layers.
+/// `Lfm3DecoderLayer` naming from the reference.
 pub enum LayerOperator {
     /// Width-7 gated shortconv.
     ShortConv,
@@ -41,6 +44,7 @@ pub enum LayerOperator {
 
 /// Operator for layer `idx` (0-based) of the 24-layer text backbone.
 #[must_use]
+/// Operator for layer `idx` (0-based) of the 24-layer text backbone.
 pub const fn layer_operator(idx: usize) -> LayerOperator {
     if idx % FULL_ATTENTION_MOD == FULL_ATTENTION_REM {
         LayerOperator::FullAttention
@@ -105,6 +109,8 @@ pub const MIXED_START_TOKEN_ID: u32 = 125_015;
 /// Encoder tokens per audio clip of `mel_frames` frames
 /// (`ceil(frames/8)` — the downsampler stride).
 #[must_use]
+/// Encoder tokens per audio clip of `mel_frames` frames
+/// (`ceil(frames/8)` — the downsampler stride).
 pub const fn encoder_tokens_for_frames(mel_frames: usize) -> usize {
     mel_frames.div_ceil(DOWNSAMPLE_STRIDE)
 }

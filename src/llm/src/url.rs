@@ -23,6 +23,14 @@ pub fn is_local_host(host: &str) -> bool {
 /// - `EXACT_LOOPBACK` (trim only, three exact forms): the router's
 ///   `hosts_equivalent` class (see `router/src/config/addr.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Options for the parameterized host-equivalence primitive (P5).
+/// 
+/// The two call sites keep DIFFERENT equivalence classes (different threat
+/// models — SSRF vs self-routing-loop — so the classes are never unified):
+/// - `LOCAL_SSRF` (`fold_case`, full `127/8`): the LLM-transport class that
+/// [`is_local_host`] preserves.
+/// - `EXACT_LOOPBACK` (trim only, three exact forms): the router's
+/// `hosts_equivalent` class (see `router/src/config/addr.rs`).
 pub struct HostEquivalence {
     /// Lowercase before comparing (`"LocalHost" == "localhost"`).
     pub fold_case: bool,

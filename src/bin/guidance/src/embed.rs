@@ -15,6 +15,8 @@ use guidance_core::config::ProjectConfig;
 /// Build the configured embedding provider, or `None` when no backend is
 /// configured or resolvable. Never throws for configuration reasons.
 #[must_use]
+/// Build the configured embedding provider, or `None` when no backend is
+/// configured or resolvable. Never throws for configuration reasons.
 pub fn embedder_from_config(cfg: &ProjectConfig) -> Option<Box<dyn EmbeddingProvider>> {
     let model_ref = cfg
         .models

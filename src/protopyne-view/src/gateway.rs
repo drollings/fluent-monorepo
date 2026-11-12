@@ -20,6 +20,7 @@ use crate::views::{
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Terminal-gateway failure: transport, shape, or refused submit.
 pub enum GatewayError {
     /// The gateway could not reach or read the core.
     Unavailable(String),
@@ -433,6 +434,12 @@ pub trait TerminalGateway: Send + Sync {
 /// could see it — the same shape as the core's own refusal, without the
 /// trading path.
 #[derive(Debug, Clone, Default)]
+/// Headless stand-in: deterministic canned views for terminal tests.
+/// 
+/// Every method succeeds on well-formed input; `arm` accepts any JSON
+/// object naming a string `grant_id` and refuses the rest before any core
+/// could see it — the same shape as the core's own refusal, without the
+/// trading path.
 pub struct MockGateway;
 
 impl MockGateway {

@@ -38,6 +38,7 @@ pub use crate::ledger::prompt::LodSpec;
 
 /// Errors produced by the coordinator.
 #[derive(Debug, thiserror::Error)]
+/// Errors produced by the coordinator.
 pub enum CoordinatorError {
     #[error("ledger error: {0}")]
     Ledger(#[from] crate::ledger::LedgerError),
@@ -57,6 +58,13 @@ pub enum CoordinatorError {
 /// boots open). `Clone` bumps the `Arc`, so every holder observes the same
 /// state.
 #[derive(Debug, Clone)]
+/// Runtime gate for the `LedgerAgentCoordinator` (M14c): the coordinator is
+/// default-on behind config, and this gate is the one-command rollback —
+/// closing it returns dispatch to the pre-coordinator pipeline without a
+/// restart, without a config edit, and without touching the attached
+/// coordinator (reopening restores; a restart also restores, since the gate
+/// boots open). `Clone` bumps the `Arc`, so every holder observes the same
+/// state.
 pub struct CoordinatorGate {
     open: Arc<AtomicBool>,
 }
@@ -91,6 +99,8 @@ impl Default for CoordinatorGate {
 /// Coordinator configuration: the KV restore policy, the prompt budget, the
 /// fidelity band, and the default agent role.
 #[derive(Debug, Clone)]
+/// Coordinator configuration: the KV restore policy, the prompt budget, the
+/// fidelity band, and the default agent role.
 pub struct OrchestratorConfig {
     /// The explicit restore-vs-re-prefill decision rule.
     pub kv_policy: KvSnapshotPolicy,
@@ -115,6 +125,7 @@ impl Default for OrchestratorConfig {
 
 /// The outcome of one `run_agent` synchronization step.
 #[derive(Debug, Clone)]
+/// The outcome of one `run_agent` synchronization step.
 pub struct AgentOutcome {
     /// The agent's output content (recorded as the node's LOD0).
     pub content: String,

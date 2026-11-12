@@ -32,6 +32,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Supervisor failures. Every variant names what to do next.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Supervisor failures. Every variant names what to do next.
 pub enum SupervisorError {
     /// No binary to spawn. Install it or point at it.
     #[error("{0}")]
@@ -109,6 +110,10 @@ pub fn validate_extra_args(extra: &[String]) -> Result<(), SupervisorError> {
 /// `OPTIONS /v1/chat/completions` route itself (no inference runs).
 /// Both accept 2xx only — a 405 is not success.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Readiness probe shape. Text servers answer `GET /health`; the
+/// audio build serves no `/health`, so its readiness is the
+/// `OPTIONS /v1/chat/completions` route itself (no inference runs).
+/// Both accept 2xx only — a 405 is not success.
 pub enum HealthProbe {
     /// `GET {base}/health` (text servers).
     #[default]
@@ -118,6 +123,7 @@ pub enum HealthProbe {
 }
 /// What the endpoint supervisor nanny should do after a failed probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What the endpoint supervisor nanny should do after a failed probe.
 pub enum RecoveryAction {
     /// Kill (if spawned) and start again.
     Restart,
@@ -128,6 +134,8 @@ pub enum RecoveryAction {
 /// Bounded recovery policy: restart while budget remains, then contain.
 /// Pure so the budget edge is unit-pinned without a process.
 #[must_use]
+/// Bounded recovery policy: restart while budget remains, then contain.
+/// Pure so the budget edge is unit-pinned without a process.
 pub fn recovery_action(consecutive_failures: u32, max_restarts: u32) -> RecoveryAction {
     if consecutive_failures >= max_restarts.max(1) {
         RecoveryAction::Contain
@@ -138,6 +146,7 @@ pub fn recovery_action(consecutive_failures: u32, max_restarts: u32) -> Recovery
 
 /// Resolve the binary: the explicit override first, then `$PATH`.
 #[must_use]
+/// Resolve the binary: the explicit override first, then `$PATH`.
 pub fn resolve_with_override(explicit: Option<PathBuf>) -> Option<PathBuf> {
     if let Some(path) = explicit {
         return Some(path);
@@ -154,6 +163,14 @@ pub fn resolve_with_override(explicit: Option<PathBuf>) -> Option<PathBuf> {
 /// gate lives in the validated wrapper and the candidates filter).
 /// `None` when not found or relative.
 #[must_use]
+/// Resolve the `llama-server` binary: the `LLAMA_SERVER` env override
+/// first, then a `$PATH` search. Explicit overrides require absolute
+/// paths and log their fingerprint (the user accepts responsibility);
+/// searched hits are validated by `resolve_binary_validated`.
+/// Shared override home: `orator::paths::ExplicitBinary` — the
+/// unvalidated first-hit search stays (fail-fast single resolve; the
+/// gate lives in the validated wrapper and the candidates filter).
+/// `None` when not found or relative.
 pub fn resolve_binary() -> Option<PathBuf> {
     let explicit = orator::paths::ExplicitBinary::from_env(LLAMA_SERVER_ENV);
     match explicit.path {
@@ -186,6 +203,15 @@ pub fn resolve_binary() -> Option<PathBuf> {
 /// (order-preserving, canonical-deduped); the override classification
 /// is `orator::paths::ExplicitBinary`.
 #[must_use]
+/// Resolve every `llama-server` candidate: the `LLAMA_SERVER` env
+/// override alone when set, else every validated `$PATH` hit in
+/// directory order. A stale install earlier on `$PATH` (e.g. a
+/// pre-LFM3 build shadowing the system one) fails its boot fast and
+/// the next candidate serves, instead of one shadowed binary vetoing
+/// inference.
+/// Shared filter home: `orator::paths::filter_validated_binaries`
+/// (order-preserving, canonical-deduped); the override classification
+/// is `orator::paths::ExplicitBinary`.
 pub fn resolve_binary_candidates() -> Vec<PathBuf> {
     let explicit = orator::paths::ExplicitBinary::from_env(LLAMA_SERVER_ENV);
     match explicit.path {
@@ -233,6 +259,11 @@ pub fn resolve_binary_validated(expected_uid: u32) -> Result<PathBuf, Supervisor
 /// `boot_with_binary` (port `0` → hint → retry on collision); no
 /// second port-hint implementation exists in the tree.
 #[must_use]
+/// Reserve a free localhost port (bind `:0`, read the port, drop the
+/// listener). A hint — a race is possible but negligible at boot.
+/// Single home: the s2s voice/worker paths compose this through
+/// `boot_with_binary` (port `0` → hint → retry on collision); no
+/// second port-hint implementation exists in the tree.
 pub fn free_port() -> Option<u16> {
     std::net::TcpListener::bind("127.0.0.1:0")
         .ok()
@@ -245,6 +276,10 @@ pub fn free_port() -> Option<u16> {
 /// omitted — the server rejects a nonexistent path at argv-parse time
 /// and would crash-loop on it.
 #[must_use]
+/// Guard the `--slot-save-path` flag: keep the directory only when it
+/// resolves (created when missing). A path that cannot be created is
+/// omitted — the server rejects a nonexistent path at argv-parse time
+/// and would crash-loop on it.
 pub fn slot_save_flag(dir: Option<PathBuf>) -> Option<String> {
     let dir = dir?;
     match std::fs::create_dir_all(&dir) {
@@ -269,6 +304,7 @@ pub const GPU_OFFLOAD_LAYERS: &str = "999";
 
 /// What to serve and how to run it.
 #[derive(Debug, Clone)]
+/// What to serve and how to run it.
 pub struct SupervisorConfig {
     /// Served model tag (the server `--alias`).
     pub model: String,
@@ -337,6 +373,12 @@ impl Default for SupervisorConfig {
 /// host, port — with no `--alias` (that build takes none) and no
 /// context/slot flags the reference file mapping never passes.
 #[must_use]
+/// Render the exact argv for a spawn. Unit-testable, no side effects.
+/// The server binds loopback only; snapshots ride along only when the
+/// directory resolved. An audio config (vocoder set) renders the
+/// voice-server shape — backbone, projector, vocoder, speaker file,
+/// host, port — with no `--alias` (that build takes none) and no
+/// context/slot flags the reference file mapping never passes.
 pub fn build_args(config: &SupervisorConfig, slot_save: Option<&str>) -> Vec<String> {
     if config.vocoder.is_some() || config.tts_speaker_file.is_some() {
         return build_audio_args(config);

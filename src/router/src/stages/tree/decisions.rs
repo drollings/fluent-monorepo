@@ -9,6 +9,7 @@ use crate::target_match::AssessmentRecord;
 
 /// The outcome of evaluating a node in the tree.
 #[derive(Debug)]
+/// The outcome of evaluating a node in the tree.
 pub enum TreeOutcome {
     /// Resolved dispatch target (a `terminal` node, possibly reached via
     /// `soft_redirect`). Boxed to keep the enum small (the target carries
@@ -23,6 +24,7 @@ pub enum TreeOutcome {
 
 /// The result of a full tree evaluation.
 #[derive(Debug)]
+/// The result of a full tree evaluation.
 pub struct TreeEvaluation {
     /// The final classifier `StageDecision` — carries `routing_target` or a
     /// rejection for the pipeline handoff, plus the full `tree_path` of
@@ -39,6 +41,10 @@ pub struct TreeEvaluation {
 /// (unchanged bytes); they additionally return the target so the orchestrator
 /// can publish it once through the typed store.
 #[derive(Debug)]
+/// The pipeline-handoff pair: the final `StageDecision` plus the dispatch
+/// target by value. Producers still write the JSON shim inside the decision
+/// (unchanged bytes); they additionally return the target so the orchestrator
+/// can publish it once through the typed store.
 pub struct TreeHandoff {
     /// The final classifier `StageDecision` for the pipeline handoff.
     pub decision: StageDecision,

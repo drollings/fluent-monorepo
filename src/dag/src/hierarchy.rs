@@ -42,6 +42,22 @@ use crate::dep_graph::DependencyGraph;
 /// and therefore always `true` (matching the stores' `ConceptStore`
 /// semantics).
 #[derive(Debug)]
+/// A precomputed, lazily-memoized transitive-closure index over a class
+/// hierarchy keyed by `K`.
+/// 
+/// Build one from `(child, parent)` edges ([`from_edges`](Self::from_edges)),
+/// a child → parents map ([`from_parent_map`](Self::from_parent_map)), or a
+/// `DependencyGraph` whose `deps` encode a node's children
+/// ([`from_dependency_graph`](Self::from_dependency_graph)). Query with
+/// [`ancestors`](Self::ancestors), [`descendants`](Self::descendants), and
+/// [`is_subclass_of`](Self::is_subclass_of).
+/// 
+/// Every node registered during construction (including a node that appears
+/// only as a parent, or an isolated node added with
+/// [`add_node`](Self::add_node)) is queryable. Queries on unregistered nodes
+/// return empty/`false` — except `is_subclass_of(x, x)`, which is identity
+/// and therefore always `true` (matching the stores' `ConceptStore`
+/// semantics).
 pub struct HierarchyIndex<K: Eq + Hash + Clone> {
     /// child → direct parents.
     parents: HashMap<K, Vec<K>>,

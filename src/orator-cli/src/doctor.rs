@@ -7,6 +7,7 @@ use orator_models::ModelStatus;
 
 /// One full diagnosis run.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One full diagnosis run.
 pub struct FullReport {
     /// Audio section (devices, codec, model home).
     pub audio: orator_audio::DoctorReport,
@@ -30,6 +31,9 @@ pub struct FullReport {
 /// follow the loaded configuration, so `doctor` shows the settings
 /// the commands will use. Desktop lines follow the live session.
 #[must_use]
+/// Collect the full report. Never fails. Endpoint and voice lines
+/// follow the loaded configuration, so `doctor` shows the settings
+/// the commands will use. Desktop lines follow the live session.
 pub fn full_report(config: &orator::OratorConfig) -> FullReport {
     FullReport {
         audio: orator_audio::doctor_report(),
@@ -45,6 +49,7 @@ pub fn full_report(config: &orator::OratorConfig) -> FullReport {
 
 /// Render the full report for humans.
 #[must_use]
+/// Render the full report for humans.
 pub fn render_full(report: &FullReport) -> String {
     use std::fmt::Write as _;
     let mut out = crate::render_doctor(&report.audio);
@@ -206,6 +211,11 @@ fn speech_lines(config: &orator::OratorConfig) -> Vec<String> {
 /// from the configured voice projector's directory (same home the
 /// serving bundle resolves under), never a compiled-in model path.
 #[must_use]
+/// LFM3-Audio readiness: which weight homes are servable-shaped and
+/// what is still missing. Reports layout only — no runtime exists
+/// in-tree yet, so nothing here claims serving. The home derives
+/// from the configured voice projector's directory (same home the
+/// serving bundle resolves under), never a compiled-in model path.
 pub fn lfm_readiness_lines(config: &orator::OratorConfig) -> Vec<String> {
     use std::fmt::Write as _;
     use std::path::{Path, PathBuf};
@@ -264,6 +274,9 @@ fn shortcut_lines() -> Vec<String> {
 /// its backend, and where its weights resolve (or why they don't).
 /// Pure over the loaded config so both worlds pin without hardware.
 #[must_use]
+/// Capability-role lines: role → serving model (first listed wins),
+/// its backend, and where its weights resolve (or why they don't).
+/// Pure over the loaded config so both worlds pin without hardware.
 pub fn roles_lines(config: &orator::OratorConfig) -> Vec<String> {
     use orator::{resolve_model_weights, resolve_role_model};
     let mut lines = Vec::with_capacity(3);
@@ -362,6 +375,9 @@ pub fn roles_lines(config: &orator::OratorConfig) -> Vec<String> {
 /// won rung and either the working path or the exact pending bind.
 /// Pure over the session facts, so both worlds pin without a live session.
 #[must_use]
+/// Desktop binding lines for `env`: one per surface, each naming the
+/// won rung and either the working path or the exact pending bind.
+/// Pure over the session facts, so both worlds pin without a live session.
 pub fn desktop_lines(env: &orator_desktop::DesktopEnv) -> Vec<String> {
     use orator_desktop::{
         probe_dbus, probe_hotkeys, probe_krunner, probe_notify, probe_tray, DbusRoute, HotkeyRoute,

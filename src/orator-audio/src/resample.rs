@@ -8,6 +8,8 @@ use rubato::Resampler;
 /// Linear-interpolated resample from `from_hz` to `to_hz`. Empty input
 /// yields empty output; rates must be nonzero.
 #[must_use]
+/// Linear-interpolated resample from `from_hz` to `to_hz`. Empty input
+/// yields empty output; rates must be nonzero.
 pub fn resample_linear(input: &[f32], from_hz: u32, to_hz: u32) -> Vec<f32> {
     assert!(from_hz != 0 && to_hz != 0, "rates must be nonzero");
     if input.is_empty() || from_hz == to_hz {

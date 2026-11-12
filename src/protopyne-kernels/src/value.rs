@@ -21,6 +21,11 @@ use std::sync::Arc;
 /// script collection namespaces: elements may hold absence (`None`), and
 /// neither reads as a number, an int, or a bool.
 #[derive(Debug, Clone, PartialEq)]
+/// A Pine scalar. Old numeric variants keep their exact reader behavior;
+/// `Str` and the opaque display handles travel beside numerics and never
+/// enter arithmetic. `Array` and `IntMap` are structural values for the
+/// script collection namespaces: elements may hold absence (`None`), and
+/// neither reads as a number, an int, or a bool.
 pub enum PineValue {
     /// Pine `float`.
     Float(f64),
@@ -64,6 +69,9 @@ pub enum PineValue {
 /// The shape is fixed at construction; every cell starts as the initial
 /// value (absence when the constructor is called without one).
 #[derive(Debug, Clone, PartialEq)]
+/// Owned two-dimensional grid: row-major cells under an explicit shape.
+/// The shape is fixed at construction; every cell starts as the initial
+/// value (absence when the constructor is called without one).
 pub struct MatrixValue {
     /// Row count (`matrix.rows`).
     pub rows: usize,
@@ -111,6 +119,8 @@ impl MatrixValue {
 /// Opaque display-color token. The inner packing is decided by the lowering
 /// stage that mints it; comparison and display never inspect it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Opaque display-color token. The inner packing is decided by the lowering
+/// stage that mints it; comparison and display never inspect it.
 pub struct ColorHandle(u32);
 
 impl ColorHandle {
@@ -131,6 +141,9 @@ impl ColorHandle {
 /// object it names. The engine's lifecycle log owns the properties; the
 /// handle only identifies. Comparison never inspects properties.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Opaque drawing-object token: which namespace minted it and which recorded
+/// object it names. The engine's lifecycle log owns the properties; the
+/// handle only identifies. Comparison never inspects properties.
 pub struct DrawingHandle {
     /// Minting namespace (`label`, `table`, `box`, or `line`).
     pub kind: DrawingKind,
@@ -154,6 +167,7 @@ impl DrawingHandle {
 
 /// The four recorded drawing namespaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// The four recorded drawing namespaces.
 pub enum DrawingKind {
     /// `label.*` markers.
     Label,
@@ -227,6 +241,10 @@ impl fmt::Display for EnumHandle {
 /// reference through the executor; the value itself stays a plain cloneable
 /// datum like every other variant.
 #[derive(Debug, Clone, PartialEq)]
+/// Owned user-type instance: which declared type plus its field bindings
+/// (`None` fields are Pine `na`). Methods receive the instance by mutable
+/// reference through the executor; the value itself stays a plain cloneable
+/// datum like every other variant.
 pub struct UserInstance {
     /// Declared type name (`Scheduler`).
     pub type_name: String,
@@ -325,6 +343,10 @@ impl PineValue {
 /// a distinct entry. Collections, objects, drawings, and matrices are
 /// never keys and read as `None`.
 #[must_use]
+/// Canonical encoding of one map key: scalar script values (ints by value,
+/// floats by bits, bools, strings, packed colors, enum members) each name
+/// a distinct entry. Collections, objects, drawings, and matrices are
+/// never keys and read as `None`.
 pub fn map_key_of(value: &PineValue) -> Option<String> {
     match value {
         PineValue::Int(v) => Some(format!("int:{v}")),
@@ -347,6 +369,8 @@ pub fn map_key_of(value: &PineValue) -> Option<String> {
 /// Pine `nz(value, default)`: absence (`None`) becomes `default`, presence
 /// passes through untouched.
 #[must_use]
+/// Pine `nz(value, default)`: absence (`None`) becomes `default`, presence
+/// passes through untouched.
 pub fn nz(value: Option<PineValue>, default: PineValue) -> PineValue {
     value.unwrap_or(default)
 }
@@ -355,6 +379,9 @@ pub fn nz(value: Option<PineValue>, default: PineValue) -> PineValue {
 /// leg entry counts as absent (legs use `NaN` for `na`). Leading absence —
 /// the warmup prefix — stays absent; nothing is resurrected.
 #[must_use]
+/// Pine `fixnan`: forward-fill absence with the last present value. A `NaN`
+/// leg entry counts as absent (legs use `NaN` for `na`). Leading absence —
+/// the warmup prefix — stays absent; nothing is resurrected.
 pub fn fixnan(series: &[Option<f64>]) -> Vec<Option<f64>> {
     let mut last: Option<f64> = None;
     series
@@ -435,6 +462,11 @@ impl fmt::Display for PineValue {
 /// `value` is the call value (`None` is Pine `na`). The two axes —
 /// handled-vs-declined and value-vs-absence — never share one option.
 #[derive(Debug, Clone, PartialEq)]
+/// One native method-call outcome: decline to Pine or serve with the call
+/// value. `Declined` means the engine runs the Pine body with fields
+/// untouched; `Served(value)` means the table is already updated and
+/// `value` is the call value (`None` is Pine `na`). The two axes —
+/// handled-vs-declined and value-vs-absence — never share one option.
 pub enum NativeCall {
     /// Not handled: fields untouched, the engine runs the Pine body.
     Declined,
@@ -467,6 +499,13 @@ impl NativeCall {
 /// never copies the arrays it holds — while an unmapped field still passes
 /// through byte-identical without native code ever seeing it.
 #[derive(Debug, Clone, PartialEq, Default)]
+/// Pine object field table shared with the engine bridge: field name to
+/// Pine value (`None` is Pine `na`). A cheap-to-clone handle over one
+/// resident map: cloning shares the table, and the first mutation after a
+/// share copies it (copy-on-write). So a native bridge that returns `this`
+/// hands back the resident table by handle instead of copying it — and
+/// never copies the arrays it holds — while an unmapped field still passes
+/// through byte-identical without native code ever seeing it.
 pub struct FieldTable(Arc<HashMap<String, Option<PineValue>>>);
 
 impl FieldTable {

@@ -31,6 +31,7 @@ pub const LLAMA_TTS_BIN: &str = "llama-tts";
 
 /// Worker failures. Every variant names the remedy.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Worker failures. Every variant names the remedy.
 pub enum TtsWorkerError {
     /// No binary to run.
     #[error("{0}")]
@@ -53,6 +54,15 @@ pub enum TtsWorkerError {
 /// the first `$PATH` hit for the search (same first-hit the
 /// hand-rolled loop found, now via the shared `find_on_path`).
 #[must_use]
+/// Resolve the `llama-tts` binary: the `LLAMA_TTS` override first,
+/// then a `$PATH` search. Searched hits pass the ownership gate for
+/// the current uid (owner/mode/non-`/tmp`/executable); explicit
+/// overrides require absolute paths and log their fingerprint (the
+/// user accepts responsibility). `None` when absent or untrusted.
+/// Shared homes: `orator::paths::ExplicitBinary` for the
+/// override arms, `orator::paths::resolve_validated_binary` over
+/// the first `$PATH` hit for the search (same first-hit the
+/// hand-rolled loop found, now via the shared `find_on_path`).
 pub fn resolve_tts_binary() -> Option<PathBuf> {
     let explicit = orator::paths::ExplicitBinary::from_env(LLAMA_TTS_ENV);
     match explicit.path.clone() {

@@ -12,6 +12,8 @@ use std::path::Path;
 /// One drafted patch as full texts (never a diff: replay and revert
 /// stay total without a patch language).
 #[derive(Debug, Clone)]
+/// One drafted patch as full texts (never a diff: replay and revert
+/// stay total without a patch language).
 pub struct ShadowPatch {
     /// Package-relative file path.
     pub file: String,
@@ -36,11 +38,10 @@ fn stage_patches(dir: &Path, patches: &[ShadowPatch]) {
 /// patches, run the check once, and report the single verdict. The
 /// reset keeps successive bisection probes independent.
 #[must_use]
-pub fn verify_merged(
-    dir: &Path,
-    patches: &[ShadowPatch],
-    check: &dyn Fn(&Path) -> bool,
-) -> bool {
+/// Verify one merged patch set: reset the shadow tree to exactly these
+/// patches, run the check once, and report the single verdict. The
+/// reset keeps successive bisection probes independent.
+pub fn verify_merged(dir: &Path, patches: &[ShadowPatch], check: &dyn Fn(&Path) -> bool) -> bool {
     if patches.is_empty() {
         return true;
     }
@@ -52,6 +53,7 @@ pub fn verify_merged(
 
 /// Bisection outcome for a merged patch set.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Bisection outcome for a merged patch set.
 pub enum Bisect {
     /// The merged set verifies clean; nothing to do.
     Clean,
@@ -65,7 +67,13 @@ pub enum Bisect {
 /// Bisect a failing merged set to its culprit: halve until one patch
 /// remains that fails alone. Exactly-one-culprit sets always resolve.
 #[must_use]
-pub fn bisect_culprit(dir: &Path, patches: &[ShadowPatch], check: &dyn Fn(&Path) -> bool) -> Bisect {
+/// Bisect a failing merged set to its culprit: halve until one patch
+/// remains that fails alone. Exactly-one-culprit sets always resolve.
+pub fn bisect_culprit(
+    dir: &Path,
+    patches: &[ShadowPatch],
+    check: &dyn Fn(&Path) -> bool,
+) -> Bisect {
     if patches.is_empty() || verify_merged(dir, patches, check) {
         return Bisect::Clean;
     }
@@ -81,7 +89,9 @@ pub fn bisect_culprit(dir: &Path, patches: &[ShadowPatch], check: &dyn Fn(&Path)
             return Bisect::Interaction;
         }
     }
-    suspects.first().map_or(Bisect::Clean, |patch| Bisect::Culprit(patch.file.clone()))
+    suspects
+        .first()
+        .map_or(Bisect::Clean, |patch| Bisect::Culprit(patch.file.clone()))
 }
 
 #[cfg(test)]

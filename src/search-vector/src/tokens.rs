@@ -26,6 +26,10 @@ pub fn lower_dedup_push(out: &mut Vec<String>, value: &str) {
 /// `role_overlap` does). Underscore splits (it is not alphanumeric), so
 /// `Foo.Bar` and `foo_bar` both split. Source: `graph_index::extend_tokens`.
 #[must_use]
+/// Split on non-alphanumeric separators, lowercase, drop empties.
+/// Duplicates are preserved (collect into a `HashSet` for membership, as
+/// `role_overlap` does). Underscore splits (it is not alphanumeric), so
+/// `Foo.Bar` and `foo_bar` both split. Source: `graph_index::extend_tokens`.
 pub fn split_tokens(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric())
         .map(str::to_lowercase)
@@ -37,6 +41,9 @@ pub fn split_tokens(text: &str) -> Vec<String> {
 /// Source: `pipeline/search/index.ts` (`extractSymbolNames`), via
 /// `guidance-core::search_types::extract_symbol_names` (moved, not copied).
 #[must_use]
+/// Query tokens that name code symbols, minus the keyword stoplist.
+/// Source: `pipeline/search/index.ts` (`extractSymbolNames`), via
+/// `guidance-core::search_types::extract_symbol_names` (moved, not copied).
 pub fn symbol_names(query: &str) -> Vec<String> {
     const KEYWORDS: &[&str] = &[
         "class",
@@ -87,6 +94,9 @@ pub fn symbol_names(query: &str) -> Vec<String> {
 /// Source: `pipeline/search/index.ts` (`symbolNameFromToken`), via
 /// `guidance-core::search_types::symbol_name_from_token` (moved, not copied).
 #[must_use]
+/// Owner-aware symbol name: keeps `Owner::name` only for uppercase owners.
+/// Source: `pipeline/search/index.ts` (`symbolNameFromToken`), via
+/// `guidance-core::search_types::symbol_name_from_token` (moved, not copied).
 pub fn symbol_name_from_token(token: &str) -> Option<String> {
     let parts: Vec<&str> = token.split("::").filter(|p| !p.is_empty()).collect();
     let name = parts.last().copied().unwrap_or(token);

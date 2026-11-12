@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 /// Which input a frame (or word) belongs to. Mic and system audio stay
 /// separate channels end to end so attribution never requires inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Which input a frame (or word) belongs to. Mic and system audio stay
+/// separate channels end to end so attribution never requires inference.
 pub enum Channel {
     /// The user's microphone, after echo control.
     Mic,
@@ -28,6 +30,11 @@ pub enum Channel {
 /// merged by media time. The mapping to wall-clock time is applied by the
 /// capture backend; this type only orders and measures audio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+/// Media timestamp: a sample count on the capture clock.
+/// 
+/// Mic and system channels carry a measured offset so words from both can be
+/// merged by media time. The mapping to wall-clock time is applied by the
+/// capture backend; this type only orders and measures audio.
 pub struct MediaTime {
     /// Samples since capture start on the owning clock.
     pub samples: u64,
@@ -62,6 +69,9 @@ impl MediaTime {
 /// convention; the type itself carries the rate so resampled frames stay
 /// describable.
 #[derive(Debug, Clone, PartialEq)]
+/// One analysis frame: 16 kHz mono f32 in 20 ms blocks (320 samples) by
+/// convention; the type itself carries the rate so resampled frames stay
+/// describable.
 pub struct Frame {
     /// Pooled sample storage, shared by handle. Clone shares; never copies.
     pub samples: Arc<Vec<f32>>,
@@ -107,6 +117,7 @@ impl Frame {
 
 /// One committed transcript word with timing and confidence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One committed transcript word with timing and confidence.
 pub struct Word {
     /// Surface text, already normalized for display.
     pub text: String,
@@ -124,6 +135,8 @@ pub struct Word {
 /// A streaming STT update: either a newly committed word or a revision of
 /// the provisional tail. Committed words are never revised.
 #[derive(Debug, Clone, PartialEq)]
+/// A streaming STT update: either a newly committed word or a revision of
+/// the provisional tail. Committed words are never revised.
 pub struct WordUpdate {
     /// The word this update carries.
     pub word: Word,
@@ -134,6 +147,8 @@ pub struct WordUpdate {
 /// Word-level timing inside a synthesized chunk. The playout task turns
 /// these into DAC `SpeechMark`s when samples reach the converter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Word-level timing inside a synthesized chunk. The playout task turns
+/// these into DAC `SpeechMark`s when samples reach the converter.
 pub struct WordMark {
     /// Spoken surface text.
     pub text: String,
@@ -145,6 +160,7 @@ pub struct WordMark {
 
 /// One synthesized audio chunk with its word timings.
 #[derive(Debug, Clone, PartialEq)]
+/// One synthesized audio chunk with its word timings.
 pub struct AudioChunk {
     /// Synthesized samples, shared by handle.
     pub samples: Arc<Vec<f32>>,
@@ -156,10 +172,12 @@ pub struct AudioChunk {
 
 /// One model vocabulary id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// One model vocabulary id.
 pub struct Token(pub u32);
 
 /// Output of one LLM generation step over the endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Output of one LLM generation step over the endpoint.
 pub struct StepOut {
     /// Newly generated text since the previous step.
     pub delta: String,
@@ -170,6 +188,8 @@ pub struct StepOut {
 /// Sampler settings for one generation. Kept structural; tuning lives in
 /// configuration and profiles, not in call sites.
 #[derive(Debug, Clone, PartialEq)]
+/// Sampler settings for one generation. Kept structural; tuning lives in
+/// configuration and profiles, not in call sites.
 pub struct Sampler {
     /// Sampling temperature. Lower for tools, moderate for chat.
     pub temperature: f32,
@@ -189,10 +209,13 @@ impl Default for Sampler {
 /// Reply-generation epoch. Every event and audio chunk carries one; late
 /// arrivals with an old epoch are discarded after barge-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Reply-generation epoch. Every event and audio chunk carries one; late
+/// arrivals with an old epoch are discarded after barge-in.
 pub struct Epoch(pub u64);
 
 /// One native speech-to-speech step result.
 #[derive(Debug, Clone, PartialEq)]
+/// One native speech-to-speech step result.
 pub struct DuplexOut {
     /// Reply audio produced for this input frame.
     pub audio: AudioChunk,
@@ -206,6 +229,11 @@ pub struct DuplexOut {
 /// are live-only ephemeral events: never persisted, never replayed, never
 /// advancing a reconnect cursor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A sequenced daemon event.
+/// 
+/// `seq` is monotonic per writer for durable events. Negative `seq` values
+/// are live-only ephemeral events: never persisted, never replayed, never
+/// advancing a reconnect cursor.
 pub struct Event {
     /// Sequence number. Negative means live-only.
     pub seq: i64,
@@ -251,6 +279,8 @@ impl Event {
 /// Event payloads. Durability follows the event-model table: provisional
 /// and high-rate kinds stay live-only.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Event payloads. Durability follows the event-model table: provisional
+/// and high-rate kinds stay live-only.
 pub enum EventKind {
     /// A session opened.
     SessionStarted,
@@ -324,6 +354,9 @@ pub enum EventKind {
 /// decides which degraded shape a stage failure produces. Single
 /// home; the turn driver re-exports this for compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Session kinds for the degrade table: what the session is for
+/// decides which degraded shape a stage failure produces. Single
+/// home; the turn driver re-exports this for compatibility.
 pub enum SessionKind {
     /// Speak → focused window.
     Dictation,

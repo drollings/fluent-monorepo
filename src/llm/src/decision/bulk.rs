@@ -187,6 +187,28 @@ pub async fn decide_all(
 /// assert_eq!(merged.label, "A");
 /// ```
 #[must_use]
+/// Merge per-rotation decisions by summing label masses and renormalizing.
+/// The label is the merged argmax; latency sums (total spend); the
+/// aggregate is degraded when any input is (mixed evidence is never
+/// presented as a clean majority). `None` on empty input.
+/// 
+/// ```rust
+/// use fluent_llm::decision::{aggregate_rotations, Decision};
+/// 
+/// let mk = |top: f64| {
+/// Decision::from_distribution(
+/// "A",
+/// vec![("A".to_string(), top), ("B".to_string(), 1.0 - top)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("canned")
+/// };
+/// let merged = aggregate_rotations(&[mk(0.7), mk(0.8)]).expect("merge");
+/// assert_eq!(merged.label, "A");
+/// ```
 pub fn aggregate_rotations(decisions: &[Decision]) -> Option<Decision> {
     if decisions.is_empty() {
         return None;
@@ -255,6 +277,25 @@ pub fn aggregate_rotations(decisions: &[Decision]) -> Option<Decision> {
 /// assert!(!rotation_agreement(&[mk("A"), mk("B")]));
 /// ```
 #[must_use]
+/// True when a non-empty rotation set names one label throughout.
+/// 
+/// ```rust
+/// use fluent_llm::decision::{rotation_agreement, Decision};
+/// 
+/// let mk = |label: &str| {
+/// Decision::from_distribution(
+/// label,
+/// vec![(label.to_string(), 0.9), ("other".to_string(), 0.1)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("canned")
+/// };
+/// assert!(rotation_agreement(&[mk("A"), mk("A")]));
+/// assert!(!rotation_agreement(&[mk("A"), mk("B")]));
+/// ```
 pub fn rotation_agreement(decisions: &[Decision]) -> bool {
     match decisions.first() {
         None => false,
@@ -666,6 +707,30 @@ pub async fn rank_score(
 /// assert_eq!(bulk_filter(&spec, &decisions), vec![0]);
 /// ```
 #[must_use]
+/// Indices whose verdict is `Act` or `Review` at the spec's own thresholds.
+/// Invalid thresholds fail closed to empty: no verdict is trustworthy.
+/// 
+/// ```rust
+/// use fluent_llm::decision::{bulk_filter, Decision, QuestionSpec};
+/// 
+/// # let spec = QuestionSpec::new()
+/// #     .id("q".to_string()).version(1).kind("choice".to_string())
+/// #     .prompt_template("Pick.".to_string()).options_csv("A,B".to_string())
+/// #     .act_threshold(0.9).review_threshold(0.7)
+/// #     .timeout_ms(1000).cacheable(false).build();
+/// let decisions = vec![
+/// Decision::from_distribution(
+/// "A",
+/// vec![("A".to_string(), 0.95), ("B".to_string(), 0.05)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("canned"),
+/// ];
+/// assert_eq!(bulk_filter(&spec, &decisions), vec![0]);
+/// ```
 pub fn bulk_filter(spec: &QuestionSpec, decisions: &[Decision]) -> Vec<usize> {
     let Ok(()) = spec.validate() else {
         return Vec::new();
@@ -703,6 +768,24 @@ pub fn bulk_filter(spec: &QuestionSpec, decisions: &[Decision]) -> Vec<usize> {
 /// assert_eq!(bulk_rerank(&[mk(0.6), mk(0.9)]), vec![1, 0]);
 /// ```
 #[must_use]
+/// Indices ordered by confidence descending (stable).
+/// 
+/// ```rust
+/// use fluent_llm::decision::{bulk_rerank, Decision};
+/// 
+/// let mk = |top: f64| {
+/// Decision::from_distribution(
+/// "A",
+/// vec![("A".to_string(), top), ("B".to_string(), 1.0 - top)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("canned")
+/// };
+/// assert_eq!(bulk_rerank(&[mk(0.6), mk(0.9)]), vec![1, 0]);
+/// ```
 pub fn bulk_rerank(decisions: &[Decision]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..decisions.len()).collect();
     order.sort_by(|a, b| {
@@ -738,6 +821,30 @@ pub fn bulk_rerank(decisions: &[Decision]) -> Vec<usize> {
 /// ```
 /// Invalid thresholds fail closed to `None`.
 #[must_use]
+/// Highest-confidence non-escalated decision with its index, if any.
+/// 
+/// ```rust
+/// use fluent_llm::decision::{bulk_route, Decision, QuestionSpec};
+/// 
+/// # let spec = QuestionSpec::new()
+/// #     .id("q".to_string()).version(1).kind("choice".to_string())
+/// #     .prompt_template("Pick.".to_string()).options_csv("A,B".to_string())
+/// #     .act_threshold(0.9).review_threshold(0.7)
+/// #     .timeout_ms(1000).cacheable(false).build();
+/// let decisions = vec![
+/// Decision::from_distribution(
+/// "A",
+/// vec![("A".to_string(), 0.95), ("B".to_string(), 0.05)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("canned"),
+/// ];
+/// assert!(bulk_route(&spec, &decisions).is_some());
+/// ```
+/// Invalid thresholds fail closed to `None`.
 pub fn bulk_route(spec: &QuestionSpec, decisions: &[Decision]) -> Option<(usize, Decision)> {
     if spec.validate().is_err() {
         return None;

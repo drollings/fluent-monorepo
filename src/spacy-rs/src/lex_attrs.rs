@@ -29,6 +29,7 @@ fn url_match(text: &str) -> bool {
 
 /// `str.isalpha()` — every char has the Unicode `Alphabetic` property.
 #[must_use]
+/// `str.isalpha()` — every char has the Unicode `Alphabetic` property.
 pub fn is_alpha(s: &str) -> bool {
     !s.is_empty() && s.chars().all(char::is_alphabetic)
 }
@@ -36,6 +37,8 @@ pub fn is_alpha(s: &str) -> bool {
 /// `str.isascii()` — every char is in the ASCII range. (Empty string is
 /// trivially ASCII, matching CPython.)
 #[must_use]
+/// `str.isascii()` — every char is in the ASCII range. (Empty string is
+/// trivially ASCII, matching CPython.)
 pub fn is_ascii(s: &str) -> bool {
     s.is_ascii()
 }
@@ -43,6 +46,8 @@ pub fn is_ascii(s: &str) -> bool {
 /// `str.isdigit()` — every char is a decimal digit (Nd) or one of the
 /// superscript digits CPython special-cases (U+00B2, U+00B3, U+00B9).
 #[must_use]
+/// `str.isdigit()` — every char is a decimal digit (Nd) or one of the
+/// superscript digits CPython special-cases (U+00B2, U+00B3, U+00B9).
 pub fn is_digit(s: &str) -> bool {
     !s.is_empty()
         && s.chars().all(|c| {
@@ -53,12 +58,14 @@ pub fn is_digit(s: &str) -> bool {
 
 /// `str.islower()` — at least one cased char and no uppercase chars.
 #[must_use]
+/// `str.islower()` — at least one cased char and no uppercase chars.
 pub fn is_lower(s: &str) -> bool {
     s.chars().any(char::is_lowercase) && s.chars().all(|c| !c.is_uppercase())
 }
 
 /// `str.isspace()` — every char has the Unicode `White_Space` property.
 #[must_use]
+/// `str.isspace()` — every char has the Unicode `White_Space` property.
 pub fn is_space(s: &str) -> bool {
     !s.is_empty() && s.chars().all(char::is_whitespace)
 }
@@ -66,6 +73,8 @@ pub fn is_space(s: &str) -> bool {
 /// `str.istitle()` — each word (run of cased chars) begins with an uppercase
 /// or titlecase char and continues with lowercase chars.
 #[must_use]
+/// `str.istitle()` — each word (run of cased chars) begins with an uppercase
+/// or titlecase char and continues with lowercase chars.
 pub fn is_title(s: &str) -> bool {
     let mut cased = false;
     let mut at_word_start = true;
@@ -92,12 +101,14 @@ pub fn is_title(s: &str) -> bool {
 
 /// `str.isupper()` — at least one cased char and no lowercase chars.
 #[must_use]
+/// `str.isupper()` — at least one cased char and no lowercase chars.
 pub fn is_upper(s: &str) -> bool {
     s.chars().any(char::is_uppercase) && s.chars().all(|c| !c.is_lowercase())
 }
 
 /// `is_punct` (`lex_attrs.py:25-29`) — every char has General_Category P*.
 #[must_use]
+/// `is_punct` (`lex_attrs.py:25-29`) — every char has General_Category P*.
 pub fn is_punct(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
@@ -106,12 +117,14 @@ pub fn is_punct(s: &str) -> bool {
 
 /// `is_bracket` (`lex_attrs.py:53-55`).
 #[must_use]
+/// `is_bracket` (`lex_attrs.py:53-55`).
 pub fn is_bracket(s: &str) -> bool {
     matches!(s, "(" | ")" | "[" | "]" | "{" | "}" | "<" | ">")
 }
 
 /// `is_quote` (`lex_attrs.py:58-62`).
 #[must_use]
+/// `is_quote` (`lex_attrs.py:58-62`).
 pub fn is_quote(s: &str) -> bool {
     matches!(
         s,
@@ -138,6 +151,7 @@ pub fn is_quote(s: &str) -> bool {
 
 /// `is_left_punct` (`lex_attrs.py:65-69`).
 #[must_use]
+/// `is_left_punct` (`lex_attrs.py:65-69`).
 pub fn is_left_punct(s: &str) -> bool {
     matches!(
         s,
@@ -161,6 +175,7 @@ pub fn is_left_punct(s: &str) -> bool {
 
 /// `is_right_punct` (`lex_attrs.py:72-74`).
 #[must_use]
+/// `is_right_punct` (`lex_attrs.py:72-74`).
 pub fn is_right_punct(s: &str) -> bool {
     matches!(
         s,
@@ -170,6 +185,7 @@ pub fn is_right_punct(s: &str) -> bool {
 
 /// `is_currency` (`lex_attrs.py:77-82`) — every char has General_Category Sc.
 #[must_use]
+/// `is_currency` (`lex_attrs.py:77-82`) — every char has General_Category Sc.
 pub fn is_currency(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
@@ -179,6 +195,8 @@ pub fn is_currency(s: &str) -> bool {
 /// `like_num` (`lex_attrs.py:39-50`) — leading sign stripped, optional
 /// thousands/decimal separators, integer or one-slash fraction.
 #[must_use]
+/// `like_num` (`lex_attrs.py:39-50`) — leading sign stripped, optional
+/// thousands/decimal separators, integer or one-slash fraction.
 pub fn like_num(text: &str) -> bool {
     let stripped = match text.strip_prefix(['+', '-', '±', '~']) {
         Some(rest) => rest,
@@ -205,6 +223,9 @@ pub fn like_num(text: &str) -> bool {
 /// plus the language's cardinal/ordinal number words. Replaces the base
 /// `like_num` when the lexicon config supplies `num_words`.
 #[must_use]
+/// The English `LIKE_NUM` (`spacy/lang/en/lex_attrs.py`) — the base shape
+/// plus the language's cardinal/ordinal number words. Replaces the base
+/// `like_num` when the lexicon config supplies `num_words`.
 pub fn like_num_en<S: std::hash::BuildHasher>(text: &str, num_words: &HashSet<String, S>) -> bool {
     let stripped = match text.strip_prefix(['+', '-', '±', '~']) {
         Some(rest) => rest,
@@ -260,6 +281,8 @@ const TLDS: &[&str] = &[
 /// `like_url` (`lex_attrs.py:89-114`) — scheme/`www.` prefixes, dotted TLD
 /// membership, email exclusion. Omits the `URL_MATCH` regex last resort.
 #[must_use]
+/// `like_url` (`lex_attrs.py:89-114`) — scheme/`www.` prefixes, dotted TLD
+/// membership, email exclusion. Omits the `URL_MATCH` regex last resort.
 pub fn like_url(text: &str) -> bool {
     if text.starts_with("http://") || text.starts_with("https://") {
         return true;
@@ -292,6 +315,8 @@ pub fn like_url(text: &str) -> bool {
 /// `_like_email` (`lex_attrs.py:8`) — `local@domain.tld` shape. The regex
 /// anchors at the start; we require the whole token to match.
 #[must_use]
+/// `_like_email` (`lex_attrs.py:8`) — `local@domain.tld` shape. The regex
+/// anchors at the start; we require the whole token to match.
 pub fn like_email(s: &str) -> bool {
     let Some(at) = s.find('@') else {
         return false;
@@ -321,6 +346,9 @@ pub fn like_email(s: &str) -> bool {
 /// d (digit), or the literal char; collapses runs beyond 4; returns `"LONG"`
 /// for strings ≥ 100 chars.
 #[must_use]
+/// `word_shape` (`lex_attrs.py:117-141`) — maps chars to X (upper), x (lower),
+/// d (digit), or the literal char; collapses runs beyond 4; returns `"LONG"`
+/// for strings ≥ 100 chars.
 pub fn word_shape(text: &str) -> String {
     if text.chars().count() >= 100 {
         return "LONG".to_string();
@@ -355,18 +383,21 @@ pub fn word_shape(text: &str) -> String {
 
 /// `lower` (`lex_attrs.py:144-145`) — the lowercased form.
 #[must_use]
+/// `lower` (`lex_attrs.py:144-145`) — the lowercased form.
 pub fn lower(s: &str) -> String {
     s.to_lowercase()
 }
 
 /// `prefix` (`lex_attrs.py:148-149`) — the first char.
 #[must_use]
+/// `prefix` (`lex_attrs.py:148-149`) — the first char.
 pub fn prefix(s: &str) -> String {
     s.chars().next().map_or_else(String::new, |c| c.to_string())
 }
 
 /// `suffix` (`lex_attrs.py:152-153`) — the last 3 chars.
 #[must_use]
+/// `suffix` (`lex_attrs.py:152-153`) — the last 3 chars.
 pub fn suffix(s: &str) -> String {
     s.chars()
         .rev()

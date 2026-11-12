@@ -550,6 +550,7 @@ pub struct SupertrendIndicator {
 
 /// One ratchet frame: final bands, the riding line, and its direction.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One ratchet frame: final bands, the riding line, and its direction.
 struct StFrame {
     upper: f64,
     lower: f64,

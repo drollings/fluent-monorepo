@@ -45,6 +45,7 @@ pub struct McpServer {
 
 /// MCP toolset: `agent` is search-only, `full` adds lifecycle/status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// MCP toolset: `agent` is search-only, `full` adds lifecycle/status.
 pub enum Toolset {
     /// Search-only (`guidance_explain`).
     #[default]
@@ -68,6 +69,9 @@ impl Toolset {
 /// default); `wait_for_fresh` re-checks staleness first and refreshes when
 /// `auto_update` is set and the workspace is configured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Freshness contract: `eventual` serves the index as-is (background
+/// default); `wait_for_fresh` re-checks staleness first and refreshes when
+/// `auto_update` is set and the workspace is configured.
 pub enum FreshnessMode {
     /// Serve as-is; report the observed state.
     #[default]
@@ -78,6 +82,7 @@ pub enum FreshnessMode {
 
 /// Observed index freshness, rendered as the `freshness:` header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Observed index freshness, rendered as the `freshness:` header.
 pub enum Freshness {
     /// No stale files observed.
     Fresh,
@@ -99,6 +104,7 @@ impl Freshness {
 
 /// Coverage vocabulary: how the result set was produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Coverage vocabulary: how the result set was produced.
 pub enum Coverage {
     /// Ranked recall sample (fused index search).
     RankedSample,
@@ -126,6 +132,7 @@ pub const MAX_LIMIT: usize = 50;
 
 /// Parsed `guidance_explain` arguments.
 #[derive(Debug)]
+/// Parsed `guidance_explain` arguments.
 pub struct ExplainParams {
     /// One or more queries (each ≤ [`MAX_QUERY_CHARS`], at most [`MAX_GROUPS`]).
     pub queries: Vec<String>,
@@ -325,11 +332,7 @@ pub fn build_explain_plans(params: &ExplainParams) -> Vec<SearchPlan> {
 }
 
 fn matched_by_name(matched_by: &SearchMatchedBy) -> &'static str {
-    match matched_by {
-        SearchMatchedBy::Fts => "fts",
-        SearchMatchedBy::Vector => "vector",
-        SearchMatchedBy::FtsAndVector => "fts+vector",
-    }
+    guidance_core::query::hybrid::matched_by_name(*matched_by)
 }
 
 fn range_suffix(range: &FragmentSpan) -> Option<String> {
@@ -368,6 +371,8 @@ fn truncate_chars(text: &str, max: usize) -> String {
 /// Display title for a hit: symbol name, section heading, or entity id.
 /// Shared with the CLI explain table (one title rule, two renderers).
 #[must_use]
+/// Display title for a hit: symbol name, section heading, or entity id.
+/// Shared with the CLI explain table (one title rule, two renderers).
 pub fn hit_title(hit: &SearchHit) -> String {
     for evidence in &hit.evidence {
         if let Some(metadata) = &evidence.metadata {
@@ -771,8 +776,8 @@ impl McpServer {
     }
 
     fn handle_guidance_status(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
-        let node_count = self.db.get_node_count().unwrap_or(0);
-        let embedding_count = self.db.get_embedding_count().unwrap_or(0);
+        let node_count = self.db.fragment_count().unwrap_or(0);
+        let embedding_count = self.db.embedded_fragment_count().unwrap_or(0);
 
         JsonRpcResponse {
             jsonrpc: "2.0".into(),
@@ -814,8 +819,7 @@ pub fn serve_stdio_with_options(
         GuidanceDb::open_in_memory().map_err(|e| McpError::Db(e.to_string()))?
     };
 
-    let server =
-        McpServer::new(Arc::new(db)).with_workspace(workspace, json_dir, toolset);
+    let server = McpServer::new(Arc::new(db)).with_workspace(workspace, json_dir, toolset);
     common_core::jsonrpc::serve_stdio(&server).map_err(McpError::Io)
 }
 
@@ -889,7 +893,10 @@ mod tests {
         let req = r#"{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"guidance_status","arguments":{}}}"#;
         let response = server.handle_request(req).expect("handle");
         let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");
-        assert!(resp["result"].is_null(), "agent default rejects status: {resp:?}");
+        assert!(
+            resp["result"].is_null(),
+            "agent default rejects status: {resp:?}"
+        );
         assert!(resp["error"].is_object());
     }
 
@@ -901,5 +908,68 @@ mod tests {
         let response = server.handle_request(req).expect("handle");
         let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");
         assert!(resp["result"].is_object());
+    }
+
+    #[test]
+    fn status_counts_derive_from_fragments_not_nodes() {
+        use search_vector::db::{FileRecord, FragmentRecord};
+        // No guidance_nodes rows at all: counts must come from the
+        // fragment index, with the same JSON keys as before.
+        let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+        let file = FileRecord {
+            id: "f".to_string(),
+            absolute_path: "/repo/lib.rs".to_string(),
+            relative_path: "lib.rs".to_string(),
+            root_path: "/repo".to_string(),
+            size_bytes: 10,
+            last_modified_time: 10,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        };
+        let fragment = |id: &str, embedding: Option<Vec<f32>>| FragmentRecord {
+            id: id.to_string(),
+            group: None,
+            file_id: "f".to_string(),
+            range_json: "{\"kind\":\"file\"}".to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some(format!("fn {id}() {{}}")),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some(id.to_string()),
+            scope: None,
+            signature: Some(format!("fn {id}()")),
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding,
+        };
+        db.upsert_fragments(
+            &file,
+            &[fragment("fa", Some(vec![0.5, -0.5])), fragment("fb", None)],
+            &[],
+        )
+        .expect("upsert");
+        assert_eq!(
+            db.get_node_count().expect("legacy count"),
+            0,
+            "fixture uses no legacy rows"
+        );
+        let server = McpServer::new(db).with_workspace(None, None, Toolset::Full);
+        let req = r#"{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"guidance_status","arguments":{}}}"#;
+        let response = server.handle_request(req).expect("handle");
+        let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");
+        let text = resp["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text content");
+        let payload: serde_json::Value = serde_json::from_str(text).expect("payload");
+        assert_eq!(payload["node_count"], 2, "{payload}");
+        assert_eq!(payload["embedding_count"], 1, "{payload}");
+        assert!(payload.get("hnsw_active").is_some(), "{payload}");
+        assert!(payload.get("hnsw_points").is_some(), "{payload}");
     }
 }

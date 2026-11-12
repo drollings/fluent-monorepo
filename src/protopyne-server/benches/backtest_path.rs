@@ -317,6 +317,9 @@ fn equity_path(criterion: &mut Criterion) {
 /// `pine` feature (the Pine leg drives the language runtime); the
 /// throughput benches above run on lean kernels.
 #[cfg(feature = "pine")]
+/// Native-vs-Pine comparison over one shared workload. Needs the server
+/// `pine` feature (the Pine leg drives the language runtime); the
+/// throughput benches above run on lean kernels.
 fn native_vs_pine(criterion: &mut Criterion) {
     use protopyne_kernels::{
         fetch_all, parse_pine_source, parse_program, resolve_imports, InputSet, LibraryId,

@@ -35,6 +35,10 @@ use crate::pipeline_types::{
 /// about. Unit-testable, no model in the loop — the "deterministic first
 /// pass" made concrete.
 #[derive(Debug, Clone)]
+/// The pure residual selector: from the parse signals and confidence summary,
+/// emit the residuals a deterministic-first ordering should consult a model
+/// about. Unit-testable, no model in the loop — the "deterministic first
+/// pass" made concrete.
 pub struct ResidualSelector {
     disambiguation_floor: f64,
 }
@@ -61,6 +65,10 @@ impl ResidualSelector {
 /// only when the top hint score is at/above `t`. Pure and sync so the
 /// calibration corpus can exercise it without a model in the loop.
 #[must_use]
+/// Redirect gate for the overlay top hint ([B] task-value axis).
+/// `None` (the default) means OFF — never redirect. `Some(t)` redirects
+/// only when the top hint score is at/above `t`. Pure and sync so the
+/// calibration corpus can exercise it without a model in the loop.
 pub fn should_redirect_on_hint(top_score: f64, threshold: Option<f64>) -> bool {
     threshold.is_some_and(|t| top_score >= t)
 }

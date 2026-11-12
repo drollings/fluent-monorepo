@@ -25,6 +25,7 @@ use serde::Serialize;
 
 /// Which admissions a filter applies to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which admissions a filter applies to.
 pub enum FilterScope {
     /// Every admission.
     All,
@@ -34,6 +35,7 @@ pub enum FilterScope {
 
 /// The verdict of one filter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// The verdict of one filter.
 pub enum Admission {
     /// The thesis is admissible.
     Pass,
@@ -74,6 +76,7 @@ fn side(value: f64, direction: Direction) -> bool {
 
 /// RIBBON alignment: adaptive above signal for long, below for short.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// RIBBON alignment: adaptive above signal for long, below for short.
 pub struct RibbonFilter;
 
 impl Filter for RibbonFilter {
@@ -102,6 +105,7 @@ impl Filter for RibbonFilter {
 
 /// MA-health alignment with a minimum magnitude.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// MA-health alignment with a minimum magnitude.
 pub struct MaHealthFilter {
     /// Minimum absolute health reading.
     pub minimum: f64,
@@ -127,6 +131,7 @@ impl Filter for MaHealthFilter {
 
 /// Ribbon-health alignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Ribbon-health alignment.
 pub struct RibbonHealthFilter;
 
 impl Filter for RibbonHealthFilter {
@@ -148,6 +153,7 @@ impl Filter for RibbonHealthFilter {
 
 /// Slow-oscillator side with a possibly negative floor.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Slow-oscillator side with a possibly negative floor.
 pub struct SlowSideFilter {
     /// Floor: long needs the slow leg above `+minimum`, short below
     /// `-minimum`.
@@ -182,6 +188,7 @@ impl Filter for SlowSideFilter {
 
 /// Shape-estimated delta alignment over a trailing window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Shape-estimated delta alignment over a trailing window.
 pub struct DeltaSideFilter {
     /// Bars in the trailing window (at least one).
     pub length: usize,
@@ -233,6 +240,7 @@ impl Filter for DeltaSideFilter {
 
 /// Relative-volume floor.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Relative-volume floor.
 pub struct VolumeMinFilter {
     /// Minimum volume/volume-SMA ratio.
     pub minimum: f64,
@@ -256,6 +264,7 @@ impl Filter for VolumeMinFilter {
 
 /// Distance-from-mean cap in ATRs.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Distance-from-mean cap in ATRs.
 pub struct AtrDistanceMaxFilter {
     /// Maximum `|close - mean| / atr`.
     pub maximum: f64,
@@ -293,6 +302,11 @@ impl Filter for AtrDistanceMaxFilter {
 /// hysteresis did, so a skipped regime remains a state transition rather than
 /// a stateless veto.
 #[derive(Debug)]
+/// Regime skip with hysteresis state held per filter instance.
+/// 
+/// The label is written back on every evaluation, exactly as the caller-held
+/// hysteresis did, so a skipped regime remains a state transition rather than
+/// a stateless veto.
 pub struct RegimeSkip {
     /// Skip the quiet regime.
     pub low_volume: bool,
@@ -372,6 +386,7 @@ fn regime_from_code(code: u8) -> MarketRegime {
 
 /// A closure-backed filter for a research composition.
 #[derive(Clone)]
+/// A closure-backed filter for a research composition.
 pub struct FilterFn {
     id: &'static str,
     #[allow(clippy::type_complexity)]
@@ -498,12 +513,14 @@ fn regime_factory(params: &serde_json::Value) -> Result<Arc<dyn Filter>, SlotErr
 
 /// The filter catalog.
 #[must_use]
+/// The filter catalog.
 pub fn filters() -> &'static SlotRegistry<Arc<dyn Filter>> {
     filter_registry()
 }
 
 /// The catalog ids, in schema order.
 #[must_use]
+/// The catalog ids, in schema order.
 pub fn filter_ids() -> Vec<&'static str> {
     filters().ids()
 }

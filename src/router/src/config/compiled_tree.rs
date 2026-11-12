@@ -43,6 +43,9 @@ pub(crate) static COMPILE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::ne
 /// as always-non-matching entries, never errors — but the signature stays
 /// fallible so future structural validation has a channel.
 #[derive(Debug, Clone, thiserror::Error)]
+/// Compilation failure. Unreachable today — invalid patterns are collected
+/// as always-non-matching entries, never errors — but the signature stays
+/// fallible so future structural validation has a channel.
 pub enum CompileError {
     #[error("filter pattern set failed to build: {0}")]
     RegexSet(String),
@@ -50,6 +53,7 @@ pub enum CompileError {
 
 /// The precompiled tree: same shape as the config tree, evaluation-ready.
 #[derive(Debug, Clone)]
+/// The precompiled tree: same shape as the config tree, evaluation-ready.
 pub struct CompiledTree {
     pub(crate) root: CompiledNode,
 }
@@ -102,6 +106,9 @@ impl CompiledTree {
 /// unchanged; `Filter` holds the [`RegexSet`]; `Classifier` holds the
 /// pre-rendered prompt template.
 #[derive(Debug, Clone)]
+/// One compiled node. `Terminal` carries its dispatch fields through
+/// unchanged; `Filter` holds the [`RegexSet`]; `Classifier` holds the
+/// pre-rendered prompt template.
 pub(crate) enum CompiledNode {
     Classifier {
         description: String,
@@ -160,6 +167,8 @@ pub(crate) struct CompiledChild {
 /// A filter with its valid patterns in one [`RegexSet`] and its invalid
 /// patterns kept aside as warn-and-non-match entries, in original order.
 #[derive(Debug, Clone)]
+/// A filter with its valid patterns in one [`RegexSet`] and its invalid
+/// patterns kept aside as warn-and-non-match entries, in original order.
 pub(crate) struct CompiledFilter {
     pub description: String,
     pub set: RegexSet,
@@ -173,6 +182,9 @@ pub(crate) struct CompiledFilter {
 /// [`RegexSet`], or an invalid pattern's source plus its compile error for
 /// the preserved warning.
 #[derive(Debug, Clone)]
+/// One pattern in original position: a valid pattern's index into the
+/// [`RegexSet`], or an invalid pattern's source plus its compile error for
+/// the preserved warning.
 pub(crate) enum CompiledPattern {
     Valid { set_index: usize },
     Invalid { source: String, error: String },

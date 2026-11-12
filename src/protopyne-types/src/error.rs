@@ -5,6 +5,7 @@ use thiserror::Error;
 
 /// Errors produced while parsing or validating base market-data types.
 #[derive(Error, Debug)]
+/// Errors produced while parsing or validating base market-data types.
 pub enum TypesError {
     /// Unknown timeframe code (expected one of the fixed-ms `Timeframe`
     /// codes: `S5/S10/S15/S30/M1/M3/M5/M10/M15/M30/H1/H2/H4/D1/W1`).

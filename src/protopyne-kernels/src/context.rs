@@ -15,6 +15,7 @@ use crate::vars::VarStore;
 
 /// One isolated evaluation run over closed bars.
 #[derive(Debug)]
+/// One isolated evaluation run over closed bars.
 pub struct RunCtx<'a> {
     bars: &'a [Bar],
     cursor: usize,

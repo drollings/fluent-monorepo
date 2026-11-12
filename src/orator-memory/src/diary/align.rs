@@ -10,6 +10,7 @@ use crate::diary::segment::Segment;
 
 /// Attribute each word midpoint `(word_ms)` to a segment label.
 #[must_use]
+/// Attribute each word midpoint `(word_ms)` to a segment label.
 pub fn align_words(word_mid_ms: &[u64], segments: &[Segment], labels: &[usize]) -> Vec<usize> {
     word_mid_ms
         .iter()
@@ -31,6 +32,7 @@ pub fn align_words(word_mid_ms: &[u64], segments: &[Segment], labels: &[usize]) 
 
 /// Render a cluster label as `Speaker N` (1-based for humans).
 #[must_use]
+/// Render a cluster label as `Speaker N` (1-based for humans).
 pub fn speaker_name(label: usize) -> String {
     format!("Speaker {}", label + 1)
 }
@@ -38,6 +40,8 @@ pub fn speaker_name(label: usize) -> String {
 /// Suggested names from the model for each label. Suggestions only:
 /// the transcript keeps `Speaker N` attribution regardless.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Suggested names from the model for each label. Suggestions only:
+/// the transcript keeps `Speaker N` attribution regardless.
 pub struct NameSuggestions {
     /// Suggested display name per label.
     pub names: std::collections::HashMap<usize, String>,

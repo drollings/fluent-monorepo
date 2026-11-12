@@ -108,6 +108,13 @@ impl Drop for ChartFeed {
 /// set in production wiring); a failed unit cancels its transitive
 /// dependents in the batch and nothing else.
 #[derive(Debug, Clone, FieldAccess, Describable)]
+/// One pane's recompute wave as a supervised unit.
+/// 
+/// `execute` recounts kept display points (finite `Some` legs) — the
+/// skip-policy recompute in miniature — and reports the kept/total tally.
+/// `fault` injects a deterministic failure (fault-injection surface, never
+/// set in production wiring); a failed unit cancels its transitive
+/// dependents in the batch and nothing else.
 pub struct PaneWaveUnit {
     /// Pane name (plan node).
     #[field(desc = "Pane name (plan node)")]
@@ -231,6 +238,9 @@ impl RefreshGate {
 /// of truth for "consumer gone". Feed and recompute tasks select their
 /// upstream reads against it so a closed pane never wedges a task.
 #[derive(Clone)]
+/// Pane lifetime handle: closing fires the abort signal, the single source
+/// of truth for "consumer gone". Feed and recompute tasks select their
+/// upstream reads against it so a closed pane never wedges a task.
 pub struct PaneHandle {
     abort: StreamAbort,
 }
@@ -321,6 +331,7 @@ impl CreditIntake {
 
 /// One history source on the fallback ladder.
 #[derive(Debug, Clone)]
+/// One history source on the fallback ladder.
 pub struct HistoryRung {
     /// Source name for diagnostics.
     pub name: String,
@@ -332,6 +343,7 @@ pub struct HistoryRung {
 
 /// History ladder failure: a terminal rung aborted the walk.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// History ladder failure: a terminal rung aborted the walk.
 pub enum HistoryError {
     /// A terminal rung refused; the walk aborted with this rung's name.
     #[error("terminal history failure at {0}")]
@@ -366,6 +378,7 @@ async fn run_rung(rung: HistoryRung) -> Result<Option<ChartBars>, HistoryError> 
 
 /// Transport retry policy composing the shared jittered-backoff helper.
 #[derive(Debug, Clone, Copy)]
+/// Transport retry policy composing the shared jittered-backoff helper.
 pub struct TransportRetry {
     /// Attempts per call (at least 1).
     pub attempts: u32,
@@ -432,6 +445,14 @@ impl TransportRetry {
 /// its own arm, and a pool-level fault arrives as an execution failure naming
 /// its cause.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One owned async binding: a single in-flight pool submission whose latest
+/// outcome the frame polls.
+/// 
+/// `Idle` is the rest state, `Pending` the in-flight state, `Finished` the
+/// delivered result, `Failed` the delivered taxonomy. Failures carry the
+/// `WorkError` taxonomy, never strings: a timed-out or refused job routes to
+/// its own arm, and a pool-level fault arrives as an execution failure naming
+/// its cause.
 pub enum BindState<T, E> {
     /// No job has run yet, or the last attempt never left the queue.
     Idle,

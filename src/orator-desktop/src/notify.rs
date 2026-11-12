@@ -8,6 +8,14 @@
 
 /// Notification actions.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Notifications with approve/deny/stop actions.
+/// 
+/// Summaries stay content-free by default: the notification names the
+/// tool and its effect, never the transcript or reply text that
+/// prompted it. Delivery rides an injected sink so tests and the
+/// desktop backend share the shape; the backend wires
+/// `org.freedesktop.Notifications` later.
+/// Notification actions.
 pub enum NotifyAction {
     /// Approve the pending round.
     Approve(String),
@@ -31,6 +39,7 @@ impl NotifyAction {
 
 /// One notification: title, content-free summary, and actions.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One notification: title, content-free summary, and actions.
 pub struct Notification {
     /// Short title (tool name, session state).
     pub title: String,

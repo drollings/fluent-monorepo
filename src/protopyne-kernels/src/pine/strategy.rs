@@ -27,6 +27,7 @@ const CALL_MEMBERS: &str =
 
 /// Every `strategy.*` store that lives exactly as long as one run.
 #[derive(Debug, Default)]
+/// Every `strategy.*` store that lives exactly as long as one run.
 pub(crate) struct StrategyState {
     /// Declared initial capital, once the harness declaration ran. Both
     /// `initial_capital` and `equity` read it; before it exists both read

@@ -20,6 +20,8 @@ use fluent_types::InterlinguaId;
 /// One scorable argument: the content-addressed id plus the surface lemma
 /// it resolved from (needed for the curie fallback).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One scorable argument: the content-addressed id plus the surface lemma
+/// it resolved from (needed for the curie fallback).
 pub struct ScoredLemma {
     /// The `SpacyLemma` content id for [`ScoredLemma::lemma`].
     pub id: InterlinguaId,
@@ -41,6 +43,8 @@ impl ScoredLemma {
 /// One deterministic triple in scorable form: the predicate is always
 /// present, either argument may be `None` (intransitive etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One deterministic triple in scorable form: the predicate is always
+/// present, either argument may be `None` (intransitive etc.).
 pub struct PlausibilityTriple {
     /// The subject lemma, when the sentence has an `nsubj`-role argument.
     pub subject: Option<ScoredLemma>,

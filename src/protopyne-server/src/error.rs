@@ -5,6 +5,7 @@ use thiserror::Error;
 
 /// Errors from CSV ingest and other server-side file handling.
 #[derive(Error, Debug)]
+/// Errors from CSV ingest and other server-side file handling.
 pub enum ServerError {
     /// A CSV row could not be converted to a [`Bar`](protopyne_types::Bar).
     /// `line` is 1-based and counts the header line, so the first data row

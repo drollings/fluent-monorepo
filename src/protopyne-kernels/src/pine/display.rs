@@ -25,6 +25,8 @@ use super::syntax::{
 /// Render `program` as canonical Pine source: one top-level statement per
 /// line, four-space indents, trailing newline when non-empty.
 #[must_use]
+/// Render `program` as canonical Pine source: one top-level statement per
+/// line, four-space indents, trailing newline when non-empty.
 pub fn display_program(program: &PineProgram) -> String {
     let mut renderer = Renderer::new();
     renderer.program(program);

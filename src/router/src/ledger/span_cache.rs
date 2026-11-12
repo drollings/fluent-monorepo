@@ -53,6 +53,10 @@ pub trait SpanCache: Send + Sync {
 /// `Mutex<HashMap>` — the cache is not a hot loop; a single lock per
 /// get/put is negligible compared to a model call.
 #[derive(Debug, Default)]
+/// Hermetic in-memory span cache (tests + non-ledger callers).
+/// 
+/// `Mutex<HashMap>` — the cache is not a hot loop; a single lock per
+/// get/put is negligible compared to a model call.
 pub struct InMemorySpanCache {
     map: Mutex<HashMap<u64, Vec<Correction>>>,
 }
@@ -195,6 +199,10 @@ impl SpanCache for SqliteSpanCache {
 /// consults (M2b). Each leg captures an `Arc` clone, so the seam shares the
 /// backend instead of copying it.
 #[must_use]
+/// Adapt a ledger-owned `Arc<dyn SpanCache>` into the dependency-free
+/// [`SpanCacheSeam`](spacy_rs::cache::SpanCacheSeam) the spacy-rs ladder
+/// consults (M2b). Each leg captures an `Arc` clone, so the seam shares the
+/// backend instead of copying it.
 pub fn span_cache_seam(cache: &Arc<dyn SpanCache>) -> spacy_rs::cache::SpanCacheSeam {
     let get_h = Arc::clone(cache);
     let put_h = Arc::clone(cache);

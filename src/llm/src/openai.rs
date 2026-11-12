@@ -84,6 +84,10 @@ pub fn build_openai_chat_body(
 
 /// One parsed OpenAI chat-completion stream delta.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// ---------------------------------------------------------------------------
+/// Stream-delta parser
+/// ---------------------------------------------------------------------------
+/// One parsed OpenAI chat-completion stream delta.
 pub struct OpenAiDelta {
     /// Top-level `model` field of the chunk, if present.
     pub model: Option<String>,
@@ -140,6 +144,9 @@ pub fn parse_openai_stream_delta(line: &str) -> Option<OpenAiDelta> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Error)]
+/// ---------------------------------------------------------------------------
+/// OpenAI-format normalization
+/// ---------------------------------------------------------------------------
 pub enum NormalizeError {
     #[error("missing required field: {0}")]
     MissingField(String),
@@ -151,6 +158,7 @@ pub enum NormalizeError {
 
 /// OpenAI-compatible chat completion request shape (inbound normalization).
 #[derive(Debug, Deserialize)]
+/// OpenAI-compatible chat completion request shape (inbound normalization).
 struct OpenAiChatRequest {
     pub model: String,
     pub messages: Vec<OpenAiMessage>,

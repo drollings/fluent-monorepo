@@ -26,6 +26,8 @@ fn engine_compiled() -> PineEngine {
 /// Tree-walk engine for the oracle shape only: the variant does not
 /// exist in production builds, so neither does this helper.
 #[cfg(feature = "oracle")]
+/// Tree-walk engine for the oracle shape only: the variant does not
+/// exist in production builds, so neither does this helper.
 fn engine_tree() -> PineEngine {
     let mut engine = PineEngine::new(PineRuntimeConfig::new().build());
     engine.set_bytecode_mode(BytecodeMode::TreeWalk);

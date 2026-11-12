@@ -28,6 +28,7 @@ pub const EJECTION_THRESHOLD: usize = 2;
 
 /// Named refusal when a turn arrives past the concurrency bound.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Named refusal when a turn arrives past the concurrency bound.
 pub struct AdmissionRefusal {
     /// Exact line shown: cause, inflight count, bound, remedy.
     pub reason: String,
@@ -37,6 +38,9 @@ pub struct AdmissionRefusal {
 /// past it. The counter is a plain mutex held only for
 /// increment/decrement — never across an await, never across a turn.
 #[derive(Debug)]
+/// Bounded concurrency gate: admit while under the bound, refuse fast
+/// past it. The counter is a plain mutex held only for
+/// increment/decrement — never across an await, never across a turn.
 pub struct AdmissionGate {
     max_inflight: usize,
     inflight: std::sync::Mutex<usize>,
@@ -87,6 +91,9 @@ impl AdmissionGate {
 /// other turns already in flight — the calibration harness scores it
 /// as the breach predictor.
 #[derive(Debug)]
+/// One admitted turn: releases on drop. The depth is the number of
+/// other turns already in flight — the calibration harness scores it
+/// as the breach predictor.
 pub struct AdmissionGuard<'a> {
     gate: &'a AdmissionGate,
     depth: usize,
@@ -118,6 +125,16 @@ impl Drop for AdmissionGuard<'_> {
 /// `ensure_audio_server` fail-invalidate path adopting the same
 /// consecutive-failure ejection.
 #[derive(Debug)]
+/// Endpoint ejection tracker: consecutive transport (`Backend`)
+/// turn failures eject; any responsive turn re-enters. Responsive
+/// includes voiceless (`NoAudio`) — the server answered, it just had
+/// nothing to voice — so only true transport failures count.
+/// 
+/// Single consumer (`VoiceOwner`); stays in the daemon per
+/// no-speculative-promotion. Promote to a shared home when a second
+/// consumer appears — the candidate trigger is the s2s
+/// `ensure_audio_server` fail-invalidate path adopting the same
+/// consecutive-failure ejection.
 pub struct EjectionTracker {
     threshold: usize,
     consecutive: usize,

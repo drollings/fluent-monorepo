@@ -25,6 +25,10 @@ const CORRECTION_ROLE: &str = "correction";
 /// (`ContentNodeStore::apply_review`) so the correction + `review_status` +
 /// `parse_review` node commit in one SQLite transaction (§12.6).
 #[derive(Debug, Clone)]
+/// One correction-pattern cache row. `entity_id` is `0` when
+/// the pattern is not entity-scoped. Used by the atomic review write
+/// (`ContentNodeStore::apply_review`) so the correction + `review_status` +
+/// `parse_review` node commit in one SQLite transaction (§12.6).
 pub(crate) struct CorrectionRow {
     pub lemma_id: i64,
     pub entity_id: i64,

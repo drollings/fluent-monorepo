@@ -9,6 +9,7 @@ use protopyne_view::{GatewayError, ProposalView, TerminalGateway};
 
 /// Read-only inbox split: rows awaiting a human act versus settled rows.
 #[derive(Debug, Clone, PartialEq)]
+/// Read-only inbox split: rows awaiting a human act versus settled rows.
 pub struct InboxModel {
     /// Rows in `PendingHuman`, in inbox order.
     actionable: Vec<ProposalView>,
@@ -71,6 +72,11 @@ impl InboxModel {
 /// invokes exactly one gateway verb, so a rendered click can never fan out
 /// into a second write.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One operator decision on an actionable inbox row.
+/// 
+/// The action carries only the id and (for a reject) the reason; applying it
+/// invokes exactly one gateway verb, so a rendered click can never fan out
+/// into a second write.
 pub enum InboxAction {
     /// Approve the pending proposal.
     Approve {

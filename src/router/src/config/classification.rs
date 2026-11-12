@@ -26,6 +26,9 @@ use fluent_wvr::{Describable, FieldAccess};
 /// deterministic dispatch on the request's parsed predicate/subject/object
 /// ids. Same phrasing → same ids → same route, zero tokens.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// The interlingua match for a `Filter` node: a
+/// deterministic dispatch on the request's parsed predicate/subject/object
+/// ids. Same phrasing → same ids → same route, zero tokens.
 pub struct InterlinguaMatch {
     /// A predicate (root) lemma id; `None` = don't check.
     pub predicate_id: Option<InterlinguaId>,
@@ -41,6 +44,7 @@ pub struct InterlinguaMatch {
 /// The top-level classification tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// The top-level classification tree.
 pub struct ClassificationTree {
     /// Root node — typically a `classifier` node that branches on the request's
     /// domain/coherence/safety/complexity.
@@ -142,6 +146,8 @@ pub(crate) fn default_safety_threshold() -> f64 {
 /// tree engine then evaluates that child's `node` recursively.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// A named branch of a classifier node. The LLM picks exactly one `key`; the
+/// tree engine then evaluates that child's `node` recursively.
 pub struct ClassificationChild {
     pub key: String,
     #[serde(default)]
@@ -160,6 +166,14 @@ pub struct ClassificationChild {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 #[allow(clippy::large_enum_variant)]
+/// One node in the classification tree.
+/// 
+/// | `type` | Role | LLM call? |
+/// |--------|------|-----------|
+/// | `classifier` | LLM call that picks one child branch; prompt auto-built from children | Yes |
+/// | `terminal` | Dispatch target; resolves a model via `RoutingConfig::resolve_route` | No |
+/// | `filter` | Deterministic regex check that short-circuits (`hard_reject` / `soft_redirect` / `output_filter`) | No |
+/// | `fallback` | Child evaluated when a classifier picks no named child or its LLM call fails | Only if the wrapped node is a classifier |
 pub enum ClassificationNode {
     Classifier {
         description: String,
@@ -387,6 +401,11 @@ impl ClassificationNode {
 /// modes shape the raw model value strings exactly as the repair walker does,
 /// so both decode paths share one vocabulary.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, FieldAccess, Describable)]
+/// The classifier's parsed LLM output. `FieldAccess` + the `#[field(...)]`
+/// coercions make the struct the single source of truth for the boundary
+/// decode path (`fluent_wvr::boundary::decode_boundary`): the `coerce`/`parse`
+/// modes shape the raw model value strings exactly as the repair walker does,
+/// so both decode paths share one vocabulary.
 pub struct ClassifierOutput {
     #[field(desc = "classifier action", coerce = "strip_quotes,trim")]
     pub action: String,
@@ -451,6 +470,9 @@ pub struct ClassifierOutput {
 /// must never convert a classifier outage into a maximum-confidence dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// What the classifier stage does when its LLM call fails or its response
+/// cannot be parsed. The safe default is `Reject`: the router
+/// must never convert a classifier outage into a maximum-confidence dispatch.
 pub enum ClassifierFailurePolicy {
     /// Return `StageVerdict::Rejected` with a truthful reason (no fabricated
     /// scores).

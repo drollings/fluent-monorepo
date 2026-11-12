@@ -14,6 +14,7 @@ use crate::ast_parser::{AstParser, TopItem};
 
 /// Changed file under certification.
 #[derive(Debug, Clone)]
+/// Changed file under certification.
 pub struct ChangedFile {
     /// Workspace-relative path, as cited.
     pub path: String,
@@ -26,6 +27,8 @@ pub struct ChangedFile {
 /// Pre-run build verdict across the cfg matrix (caller-supplied; the
 /// wave scheduler owns cargo).
 #[derive(Debug, Clone)]
+/// Pre-run build verdict across the cfg matrix (caller-supplied; the
+/// wave scheduler owns cargo).
 pub struct BuildReport {
     /// Clean across every matrix cell.
     pub clean: bool,
@@ -35,6 +38,7 @@ pub struct BuildReport {
 
 /// Pre-run test verdict against the recorded baseline.
 #[derive(Debug, Clone)]
+/// Pre-run test verdict against the recorded baseline.
 pub struct TestReport {
     /// Failures beyond the baseline; empty means no regression.
     pub new_failures: Vec<String>,
@@ -74,10 +78,14 @@ pub struct GateCtx<'a> {
     pub tests: Option<TestReport>,
     /// Project rustfmt config for the stability gate, when known.
     pub rustfmt_config: Option<PathBuf>,
+    /// Directory holding the file, for sibling-aware rustfmt scratch
+    /// placement (`mod` resolution). `None` falls back to a temp dir.
+    pub source_dir: Option<PathBuf>,
 }
 
 /// One gate's outcome: pass, fail with reason, or explicit skip.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One gate's outcome: pass, fail with reason, or explicit skip.
 pub enum GateOutcome {
     /// Certified.
     Pass,
@@ -89,6 +97,7 @@ pub enum GateOutcome {
 
 /// One gate's verdict with its stable ID.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One gate's verdict with its stable ID.
 pub struct GateVerdict {
     /// Stable gate ID (`P1`–`P10`).
     pub id: String,
@@ -119,6 +128,8 @@ impl GateVerdict {
 /// Run all ten gates in order, collecting every verdict. Callers decide
 /// on [`gates_passed`]; the ledger records the full list either way.
 #[must_use]
+/// Run all ten gates in order, collecting every verdict. Callers decide
+/// on [`gates_passed`]; the ledger records the full list either way.
 pub fn run_gates(file: &ChangedFile, ctx: &GateCtx) -> Vec<GateVerdict> {
     let mut parser = AstParser::new();
     vec![
@@ -169,6 +180,9 @@ pub fn run_gates(file: &ChangedFile, ctx: &GateCtx) -> Vec<GateVerdict> {
 /// (no diagnostics in scope, no runner supplied). A skip anywhere else
 /// reverts, exactly like a fail.
 #[must_use]
+/// Certification rule: every gate passes, except P6-P8 which may skip
+/// (no diagnostics in scope, no runner supplied). A skip anywhere else
+/// reverts, exactly like a fail.
 pub fn gates_passed(verdicts: &[GateVerdict]) -> bool {
     verdicts.iter().all(|verdict| match verdict.id.as_str() {
         "P6" | "P7" | "P8" => !verdict.is_fail(),
@@ -216,6 +230,43 @@ fn count_token(text: &str, token: &str) -> usize {
     text.match_indices(token).count()
 }
 
+/// Blank one prose unit wherever it occurs: comments and string literals
+/// may cite a watched token without adding a code site. Multiset removal
+/// matches the P3 prose comparison, so both gates see the same prose.
+fn strip_prose_unit(surface: &mut String, unit: &str) {
+    if unit.is_empty() {
+        return;
+    }
+    while let Some(at) = surface.find(unit) {
+        surface.replace_range(at..at + unit.len(), "");
+    }
+}
+
+/// Blank byte spans with spaces (length-preserving, boundary-safe):
+/// test regions leave the counting surface without shifting the rest.
+fn blank_spans(text: &str, spans: &[(u64, u64)]) -> String {
+    let mut bytes = text.as_bytes().to_vec();
+    for (start, end) in spans {
+        let end = (*end as usize).min(bytes.len());
+        let start = (*start as usize).min(end);
+        for byte in &mut bytes[start..end] {
+            *byte = b' ';
+        }
+    }
+    String::from_utf8(bytes).unwrap_or_else(|_| text.to_string())
+}
+
+/// Code-only surface for suppression and panic counting: test regions are
+/// already out of `remaining`; prose units come out here. Added code
+/// tokens survive; added prose does not.
+fn code_surface(parser: &mut AstParser, preserved_after: &str, full_text: &str) -> String {
+    let mut surface = preserved_after.to_string();
+    for unit in parser.rust_prose_units(full_text) {
+        strip_prose_unit(&mut surface, &unit);
+    }
+    surface
+}
+
 /// P2 scope: permitted ranges only. Test regions survive
 /// byte-identically (coordinate-free: every before-span appears in the
 /// after text), configs and protected paths refuse, suppression and
@@ -225,7 +276,11 @@ fn check_scope(file: &ChangedFile, ctx: &GateCtx, parser: &mut AstParser) -> Gat
     if is_refused_path(&file.path) {
         return GateOutcome::Fail(format!("refused path: {}", file.path));
     }
-    if ctx.protected_globs.iter().any(|glob| glob_hits(glob, &file.path)) {
+    if ctx
+        .protected_globs
+        .iter()
+        .any(|glob| glob_hits(glob, &file.path))
+    {
         return GateOutcome::Fail(format!("protected path: {}", file.path));
     }
     if ctx.language != "rust" {
@@ -249,6 +304,17 @@ fn check_scope(file: &ChangedFile, ctx: &GateCtx, parser: &mut AstParser) -> Gat
         };
         remaining.replace_range(at..at + span.len(), "");
     }
+    // Count on code surfaces: test regions blanked on both sides and
+    // prose stripped from both sides, so a new comment or string literal
+    // citing a token is not a new code site, and test-region tokens
+    // cannot mask a real addition.
+    let before_spans = parser.rust_test_spans(&file.before);
+    let before_code = code_surface(
+        parser,
+        &blank_spans(&file.before, &before_spans),
+        &file.before,
+    );
+    let after_code = code_surface(parser, &remaining, &file.after);
     for (token, name) in [
         ("unsafe", "unsafe"),
         ("#[allow", "allow"),
@@ -260,7 +326,7 @@ fn check_scope(file: &ChangedFile, ctx: &GateCtx, parser: &mut AstParser) -> Gat
         ("unwrap(", "unwrap"),
         ("expect(", "expect"),
     ] {
-        if count_token(&file.after, token) > count_token(&file.before, token) {
+        if count_token(&after_code, token) > count_token(&before_code, token) {
             return GateOutcome::Fail(format!("new {name} site"));
         }
     }
@@ -313,22 +379,43 @@ fn check_parse(file: &ChangedFile, ctx: &GateCtx, parser: &mut AstParser) -> Gat
 
 /// Format one text through rustfmt on a scratch copy: project config
 /// when found, edition 2021 otherwise. `None` when rustfmt is missing.
-fn run_rustfmt(text: &str, config: Option<&Path>) -> Option<String> {
+/// The scratch lives beside the source when its directory is known, so
+/// `mod` declarations resolve exactly as they do for the real file; a
+/// global temp dir would break every multi-module crate. Only the named
+/// scratch file is ever formatted — siblings are read-only resolution
+/// context, never rewritten. Best-effort cleanup on the way out.
+fn run_rustfmt(text: &str, config: Option<&Path>, source_dir: Option<&Path>) -> Option<String> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let slot = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "guidance-gate-{}-{slot}-{}",
+    let stem = format!(
+        ".gate-{}.guidance-fmt-{}-{slot}.rs",
         std::process::id(),
         &common_core::hash::blake3_hex(text.as_bytes())[..16]
-    ));
-    if common_core::io::ensure_dir(&dir).is_err() {
-        return None;
-    }
-    let scratch = dir.join("gate.rs");
-    if std::fs::write(&scratch, text).is_err() {
-        return None;
-    }
+    );
+    // Beside-source first (module resolution), temp dir as fallback.
+    // A caller-supplied directory that cannot hold the scratch is not
+    // an error by itself — the fallback decides.
+    let beside = source_dir
+        .map(|dir| dir.join(&stem))
+        .filter(|path| std::fs::write(path, text).is_ok());
+    let mut owned_dir = None;
+    let scratch = if let Some(path) = beside {
+        path
+    } else {
+        let dir = std::env::temp_dir().join(format!(
+            "guidance-gate-{}-{slot}-{}",
+            std::process::id(),
+            &common_core::hash::blake3_hex(text.as_bytes())[..16]
+        ));
+        if common_core::io::ensure_dir(&dir).is_err() {
+            return None;
+        }
+        let path = dir.join("gate.rs");
+        std::fs::write(&path, text).ok()?;
+        owned_dir = Some(dir);
+        path
+    };
     let path = scratch.to_string_lossy().into_owned();
     let mut argv: Vec<&str> = vec!["rustfmt", "--edition", "2021"];
     let config_str;
@@ -338,12 +425,18 @@ fn run_rustfmt(text: &str, config: Option<&Path>) -> Option<String> {
     }
     argv.push(path.as_str());
     let ran = common_core::shell::run_capture(&argv).ok()?;
-    if !ran.success {
-        return None;
+    let out = if ran.success {
+        std::fs::read_to_string(&scratch).ok()
+    } else {
+        None
+    };
+    // Best-effort cleanup: the scratch file always, the temp dir only
+    // when this call created it (never the source tree).
+    let _ = std::fs::remove_file(&scratch);
+    if let Some(dir) = owned_dir {
+        let _ = std::fs::remove_dir(&dir);
     }
-    let out = std::fs::read_to_string(&scratch).ok()?;
-    let _ = std::fs::remove_dir_all(&dir);
-    Some(out)
+    out
 }
 
 /// Splice formatted non-test items over original test regions: test
@@ -373,7 +466,9 @@ pub fn splice_formatted(
             .as_bytes()
             .get(original_cursor as usize..before.start as usize);
         let body = if before.is_test || after.is_test {
-            original.as_bytes().get(before.start as usize..before.end as usize)
+            original
+                .as_bytes()
+                .get(before.start as usize..before.end as usize)
         } else {
             formatted
                 .as_bytes()
@@ -398,8 +493,12 @@ pub fn splice_formatted(
 /// Format through rustfmt plus the test-preserving splice: the pipeline
 /// fixed point the stability gate checks. `None` when rustfmt cannot
 /// run (missing binary or unformattable input).
-pub fn format_rust_spliced(text: &str, config: Option<&Path>) -> Option<String> {
-    rustfmt_and_splice(text, config).map(|(spliced, _)| spliced)
+pub fn format_rust_spliced(
+    text: &str,
+    config: Option<&Path>,
+    source_dir: Option<&Path>,
+) -> Option<String> {
+    rustfmt_and_splice(text, config, source_dir).map(|(spliced, _)| spliced)
 }
 
 /// Raw rustfmt output plus the spliced fixed point. The rung needs both:
@@ -408,12 +507,16 @@ pub fn format_rust_spliced(text: &str, config: Option<&Path>) -> Option<String> 
 pub(crate) fn rustfmt_and_splice(
     text: &str,
     config: Option<&Path>,
+    source_dir: Option<&Path>,
 ) -> Option<(String, String)> {
-    let formatted = run_rustfmt(text, config)?;
+    let formatted = run_rustfmt(text, config, source_dir)?;
     let mut parser = AstParser::new();
     let original_items = parser.rust_top_items(text);
     let formatted_items = parser.rust_top_items(&formatted);
-    Some((splice_formatted(text, &formatted, &original_items, &formatted_items), formatted))
+    Some((
+        splice_formatted(text, &formatted, &original_items, &formatted_items),
+        formatted,
+    ))
 }
 
 /// P5 format-stable: the spliced pipeline is at a fixed point on the
@@ -423,7 +526,11 @@ fn check_format_stable(file: &ChangedFile, ctx: &GateCtx) -> GateOutcome {
     if ctx.language != "rust" {
         return GateOutcome::Skip("format gate is Rust-only".to_string());
     }
-    match format_rust_spliced(&file.after, ctx.rustfmt_config.as_deref()) {
+    match format_rust_spliced(
+        &file.after,
+        ctx.rustfmt_config.as_deref(),
+        ctx.source_dir.as_deref(),
+    ) {
         Some(stable) if stable == file.after => GateOutcome::Pass,
         Some(_) => GateOutcome::Fail("rustfmt not stable on the patch".to_string()),
         None => GateOutcome::Fail("rustfmt unavailable".to_string()),
@@ -490,10 +597,7 @@ fn changed_lines(before: &str, after: &str) -> usize {
     let before: Vec<&str> = before.lines().collect();
     let after: Vec<&str> = after.lines().collect();
     let mut prefix = 0usize;
-    while prefix < before.len()
-        && prefix < after.len()
-        && before[prefix] == after[prefix]
-    {
+    while prefix < before.len() && prefix < after.len() && before[prefix] == after[prefix] {
         prefix += 1;
     }
     let mut suffix = 0usize;

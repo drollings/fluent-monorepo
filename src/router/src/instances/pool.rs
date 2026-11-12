@@ -26,6 +26,13 @@ use super::manager::InstanceManager;
 /// single sidecar entry point (the managed servers bind to `127.0.0.1` and are
 /// never exposed directly).
 #[derive(Clone)]
+/// The router's aggregate `/instances` facade over every managed model's
+/// server. Public instance ids are `<model_id>:<instance_name>`; `total` is
+/// summed with 64-bit arithmetic with each model's shared weights counted once.
+/// 
+/// This is the public surface Coral Router exposes at its OWN address as the
+/// single sidecar entry point (the managed servers bind to `127.0.0.1` and are
+/// never exposed directly).
 pub struct InstancePool {
     /// model key -> manager.
     pub(super) managers: ConcurrentRegistry<String, Arc<InstanceManager>>,

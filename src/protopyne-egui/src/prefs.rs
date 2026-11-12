@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 /// The overlay's starred entries, split by catalog: the Favorites filter in
 /// each picker keys on the matching set.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// The overlay's starred entries, split by catalog: the Favorites filter in
+/// each picker keys on the matching set.
 pub struct Favorites {
     /// Starred ticker symbols.
     #[serde(default)]
@@ -32,6 +34,9 @@ pub struct Favorites {
 /// on, so a 5M bookmark restores its own grid even when the chart has moved
 /// on. The id is `{symbol}|{timeframe}|{time}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One bookmarked candle: the bar time plus the timeframe it was captured
+/// on, so a 5M bookmark restores its own grid even when the chart has moved
+/// on. The id is `{symbol}|{timeframe}|{time}`.
 pub struct BookmarkEntry {
     /// Bar epoch seconds.
     pub time: i64,
@@ -61,6 +66,9 @@ impl BookmarkEntry {
 /// and every declared config/style field as a string (the `FieldAccess`
 /// contract's own spelling).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// One hot-slotted indicator's persisted state: its stable id, its visibility,
+/// and every declared config/style field as a string (the `FieldAccess`
+/// contract's own spelling).
 pub struct SlotPrefs {
     /// Stable slot id (the indicator registry key).
     pub id: String,
@@ -85,6 +93,10 @@ fn default_true() -> bool {
 /// entry. Layouts never leak across tickers — switching tickers stashes the
 /// current layout and applies the incoming ticker's own.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// One ticker's saved layout: the chart settings the Save Layout button
+/// snapshots for exactly one ticker, overwriting that ticker's previous
+/// entry. Layouts never leak across tickers — switching tickers stashes the
+/// current layout and applies the incoming ticker's own.
 pub struct TickerLayout {
     /// Timeframe key label (`1M`/`5M`/…).
     #[serde(default)]
@@ -113,6 +125,11 @@ pub struct TickerLayout {
 /// like every other prefs arm: absent or partial reads leave the live form
 /// untouched.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// A stored backtest run configuration: the run params as text. The spec
+/// document itself is not persisted (it is re-seeded from the served schema
+/// on every boot); only the operator's run params round-trip. Best-effort
+/// like every other prefs arm: absent or partial reads leave the live form
+/// untouched.
 pub struct BacktestPrefs {
     /// Deterministic seed, as text.
     #[serde(default)]
@@ -137,6 +154,14 @@ pub struct BacktestPrefs {
 /// operator presses Save Layout — the composition root gates the write on
 /// [`ChartWorkspace::take_save_request`](crate::workspace::ChartWorkspace::take_save_request).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// The persisted terminal state: per-ticker layouts (written only by the Save
+/// Layout button), the session selection, the starred entries, and the
+/// per-ticker bookmarks.
+/// 
+/// Every field is optional so an absent or partial file leaves the live
+/// defaults in place; a present field wins. Nothing is written unless the
+/// operator presses Save Layout — the composition root gates the write on
+/// [`ChartWorkspace::take_save_request`](crate::workspace::ChartWorkspace::take_save_request).
 pub struct TerminalPrefs {
     /// Active ticker.
     #[serde(default)]
@@ -226,6 +251,12 @@ pub const PREFS_FILE: &str = "protopyne.json";
 /// The composition root owns the path so the workspace never does file I/O;
 /// this keeps the search rule in one place shared by every shell.
 #[must_use]
+/// The `protopyne.json` path for a history entry point: the nearest ancestor
+/// directory that carries an `indicators` or `libraries` sibling (the data
+/// root), else the entry's own parent.
+/// 
+/// The composition root owns the path so the workspace never does file I/O;
+/// this keeps the search rule in one place shared by every shell.
 pub fn prefs_path(history: &Path) -> PathBuf {
     let start = if history.is_dir() {
         history

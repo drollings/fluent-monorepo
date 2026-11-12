@@ -44,6 +44,15 @@ pub struct WriteReq {
 /// Seriality is pinned by `writer_config_stays_small_and_serial`,
 /// credit-gated order by `credit_gated_writes_land_in_order`.
 #[must_use]
+/// Feed sizing for the single writer.
+/// 
+/// M9 audit (why these numbers differ from the archive's): items here
+/// are small `WriteReq` JSON events, so the queue holds counts not
+/// bytes (256, credit 64, top-up 8). The handler is serial
+/// (`max_concurrent: 1` — SQLite takes one writer; inserts and acks
+/// stay ordered) with batch 8 at the 100 ms event-log cadence.
+/// Seriality is pinned by `writer_config_stays_small_and_serial`,
+/// credit-gated order by `credit_gated_writes_land_in_order`.
 pub fn writer_feed_config() -> FeedConfig {
     FeedConfig {
         queue_capacity: 256,
@@ -85,6 +94,7 @@ pub fn spawn_writer(
 
 /// Instance/store failures. Every variant names what to do next.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Instance/store failures. Every variant names what to do next.
 pub enum OpenError {
     /// Another live daemon holds the runtime socket.
     #[error("another instance is running at {0}")]
@@ -111,6 +121,7 @@ impl From<DbError> for OpenError {
 
 /// Single-instance guard: the bound socket while held.
 #[derive(Debug)]
+/// Single-instance guard: the bound socket while held.
 pub struct InstanceLock {
     _socket: std::os::unix::net::UnixListener,
     /// Socket path, for diagnostics.

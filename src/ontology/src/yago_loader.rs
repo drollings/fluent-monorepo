@@ -30,6 +30,7 @@ use crate::OntologyError;
 
 /// One registry entry (the `yago_classes.json` line format).
 #[derive(Debug, Clone, Deserialize)]
+/// One registry entry (the `yago_classes.json` line format).
 pub struct RegistryEntry {
     pub iri: String,
     pub label: String,
@@ -44,6 +45,7 @@ pub const EMBEDDED_YAGO_CLASSES: &str = include_str!("../data/yago_classes.json"
 
 /// Load statistics.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Load statistics.
 pub struct LoadStats {
     pub classes: usize,
     pub labels: usize,
@@ -83,6 +85,7 @@ fn to_metadata(entry: &RegistryEntry) -> ConceptMetadata {
 
 /// The YaGO taxonomy loader: registry entries → concepts + subclass edges.
 #[derive(Debug, Default)]
+/// The YaGO taxonomy loader: registry entries → concepts + subclass edges.
 pub struct YaGoLoader {
     class_iri_to_id: HashMap<String, InterlinguaId>,
     /// id → index into `concepts` (first-wins). Lets label application be O(1)

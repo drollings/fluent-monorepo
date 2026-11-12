@@ -24,6 +24,9 @@ pub const PANEL_KINDS: [&str; 7] = ["rsi", "cci", "cmo", "mfi", "stoch", "aroon"
 /// kind line keys, reused so resolution and styling never disagree on
 /// which kind a kernel belongs to.
 #[must_use]
+/// The panel kind a kernel follows, if any: the same mapping that seeds
+/// kind line keys, reused so resolution and styling never disagree on
+/// which kind a kernel belongs to.
 pub fn panel_kind_for_kernel(kernel: &str) -> Option<&'static str> {
     match kernel {
         "rsi" => Some("rsi"),
@@ -48,6 +51,9 @@ pub const PANEL_UNSHAPED_KINDS: [&str; 1] = ["adx"];
 /// period, smoothing, and color only, never gain or triple dials that
 /// cannot move their picture.
 #[must_use]
+/// Whether the dock hides one panel dial for a kind: unshaped kinds show
+/// period, smoothing, and color only, never gain or triple dials that
+/// cannot move their picture.
 pub fn hides_dial(kind: &str, field: &str) -> bool {
     PANEL_UNSHAPED_KINDS.contains(&kind) && matches!(field, "gain" | "offset" | "k" | "mult")
 }
@@ -56,6 +62,9 @@ pub fn hides_dial(kind: &str, field: &str) -> bool {
 /// catalog row to shape. Unmapped kernels keep their blanks, so the
 /// unshaped rows' placeholders never fabricate a shape.
 #[must_use]
+/// Whether a kernel's slots follow the panel triple: only kinds with a
+/// catalog row to shape. Unmapped kernels keep their blanks, so the
+/// unshaped rows' placeholders never fabricate a shape.
 pub fn panel_kind_is_shaped(kernel: &str) -> bool {
     matches!(
         panel_kind_for_kernel(kernel),
@@ -69,6 +78,7 @@ pub const LITE_LEG_KINDS: [&str; 5] = ["rsi", "cci", "cmo", "mfi", "stoch"];
 
 /// Dropdown options for the Lite leg-kind selectors, in panel order.
 #[must_use]
+/// Dropdown options for the Lite leg-kind selectors, in panel order.
 pub fn lite_leg_kind_ids() -> Vec<String> {
     LITE_LEG_KINDS
         .iter()
@@ -112,6 +122,15 @@ fn default_kind_gain() -> f64 {
     Describable,
 )]
 #[builder(start_fn = new)]
+/// One oscillator kind's defaults: the panel's input row for that kind.
+/// 
+/// Bounds mirror the MA period contract (the same 2..200 window every
+/// length dial shares); smoothing follows the leg-smoothing rules (only
+/// length-taking families arm); gain stays positive and finite; the triple
+/// follows the slot triple rules (finite offset, positive steepness and
+/// band) and stays blankable so legacy documents fall back to the catalog.
+/// All bounds apply unconditionally, like the script's own input
+/// constraints.
 pub struct KindDefaults {
     /// Default length in bars for new slots of this kind.
     #[field(desc = "Oscillator length in bars", min = 2, max = 200)]
@@ -298,6 +317,7 @@ impl_component!(KindDefaults);
 /// The whole Oscillators panel: one input row per [`PANEL_KINDS`] kind.
 #[derive(Debug, Clone, PartialEq, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
+/// The whole Oscillators panel: one input row per [`PANEL_KINDS`] kind.
 pub struct OscillatorPanelState {
     /// RSI kind defaults.
     #[builder(default = KindDefaults::for_kind("rsi"))]
@@ -388,6 +408,7 @@ impl Validate for OscillatorPanelState {
 
 /// Dock label per panel kind.
 #[must_use]
+/// Dock label per panel kind.
 pub fn panel_kind_label(kind: &str) -> &'static str {
     match kind {
         "rsi" => "RSI",

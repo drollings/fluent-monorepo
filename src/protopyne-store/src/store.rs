@@ -41,6 +41,12 @@ use crate::range::TimeRange;
 /// Open range ends mean "no bound on that side"; bounding an unbounded
 /// read is the planner's job, not this request's.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What to read: a named tape over a millisecond window.
+/// 
+/// The symbol travels as a string so an unknown symbol refuses with its
+/// name attached ([`PlanError::UnknownSymbol`](crate::error::PlanError)).
+/// Open range ends mean "no bound on that side"; bounding an unbounded
+/// read is the planner's job, not this request's.
 pub struct ReadRequest {
     /// The instrument's spelling, as registered.
     pub symbol: String,
@@ -91,6 +97,13 @@ impl Validate for ReadRequest {
 /// not this field's: an empty `bars` over a requested range is an answered
 /// read with nothing in it, distinctly from a refused one.
 #[derive(Debug, Clone, PartialEq)]
+/// The bars a read served, ascending by `ts`.
+/// 
+/// `served` is the bounded window this read answered — the request's range
+/// with every open end resolved through its limit. How much of that window
+/// was actually covered is [`provenance`](Self::provenance)'s to report,
+/// not this field's: an empty `bars` over a requested range is an answered
+/// read with nothing in it, distinctly from a refused one.
 pub struct CandleSeries {
     /// The tape that was read, at its stored spacing.
     pub key: TapeKey,
@@ -107,6 +120,7 @@ pub struct CandleSeries {
 
 /// How an append resolves a row that is already stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How an append resolves a row that is already stored.
 pub enum WritePolicy {
     /// Keep the stored row; count the collision. Stream append, backfill,
     /// and repair stay concurrently safe without a cursor or a lock
@@ -130,6 +144,9 @@ pub enum WritePolicy {
 /// batch reports `inserted == 0, conflicts == n`, which is an observable
 /// fact about the world, not a silent no-op.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// What one append did, counted rather than discarded: a re-delivered
+/// batch reports `inserted == 0, conflicts == n`, which is an observable
+/// fact about the world, not a silent no-op.
 pub struct AppendOutcome {
     /// Rows newly stored.
     pub inserted: usize,

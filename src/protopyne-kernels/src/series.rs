@@ -6,6 +6,12 @@
 
 /// A cursor-anchored read-only view over a slice of history.
 #[derive(Debug, Clone, Copy)]
+/// Backward-indexed views over closed-bar history.
+/// 
+/// `at(0)` is the current closed bar, `at(1)` the prior one. Anything out of
+/// range is `None` (Pine `na`), never a panic. The view borrows; kernels copy
+/// out the window they need instead of retaining references.
+/// A cursor-anchored read-only view over a slice of history.
 pub struct SliceSeries<'a, T> {
     values: &'a [T],
     cursor: usize,

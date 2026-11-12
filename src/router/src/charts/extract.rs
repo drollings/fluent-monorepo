@@ -26,6 +26,9 @@ use super::{ChartDef, ChartError, ChartTarget, DepSpec};
 /// transform. This is the audit-shaped record consumed by
 /// [`extract_chart_from_audit`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A single step in a solved dispatch chain — one LLM call or deterministic
+/// transform. This is the audit-shaped record consumed by
+/// [`extract_chart_from_audit`].
 pub struct ChartAuditStep {
     /// Stable step id (becomes the chart-target name).
     pub id: String,
@@ -45,6 +48,7 @@ pub struct ChartAuditStep {
 
 /// The solved chain: the original query plus its discrete steps.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// The solved chain: the original query plus its discrete steps.
 pub struct ChartAuditTranscript {
     /// The user's original request.
     pub query: String,

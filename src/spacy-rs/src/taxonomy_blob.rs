@@ -40,6 +40,7 @@ static VIEW: LazyLock<Arc<LemmaBlob>> =
 
 /// Global lemma view.
 #[must_use]
+/// Global lemma view.
 pub fn global_lemma_view() -> Arc<LemmaBlob> {
     Arc::clone(&VIEW)
 }

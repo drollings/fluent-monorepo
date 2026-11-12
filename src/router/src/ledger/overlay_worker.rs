@@ -52,6 +52,9 @@ use common_core::sync::lock_read;
 /// `LedgerTierWorker`'s `TierConfig` (and thus `FeedConfig`'s load-bearing
 /// defaults) — do not drift.
 #[derive(Debug, Clone, Copy)]
+/// Configuration for the background overlay worker. The feed knobs mirror
+/// `LedgerTierWorker`'s `TierConfig` (and thus `FeedConfig`'s load-bearing
+/// defaults) — do not drift.
 pub struct OverlayWorkerConfig {
     /// Max node ids drained per batch.
     pub batch_size: usize,

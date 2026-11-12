@@ -21,6 +21,11 @@ common_core::impl_from_io_error!(SyncError);
 /// token budget. Human prose never passes through here; curated comments
 /// keep their byte-identical path in `sync_comments`.
 #[must_use]
+/// Certified write gate for generated prose: the prose lands only when
+/// every deterministic check passes — the target line resolves in the
+/// source, every backticked symbol it names exists, and it fits the
+/// token budget. Human prose never passes through here; curated comments
+/// keep their byte-identical path in `sync_comments`.
 pub fn certified_write(
     source: &str,
     prose: &str,
@@ -60,12 +65,23 @@ fn backticked_names(prose: &str) -> Vec<String> {
 /// Backfill curated comments into source. Returns whether bytes changed.
 pub fn sync_comments(
     source_path: &Path,
+    parsed_source: &str,
     doc: &GuidanceDoc,
     parser: &mut AstParser,
 ) -> Result<bool, SyncError> {
     let source = common_core::io::read_to_string_err(source_path)?;
-    let fresh_doc = parser.parse_file(source_path, &source).ok();
-    let insertions = collect_comment_insertions(&source, doc, fresh_doc.as_ref());
+    // The common case reuses the caller's parse: identical bytes need
+    // no second walk. A concurrent edit falls back to parsing the new
+    // bytes, so comments always land on the lines they were measured
+    // against instead of clobbering a newer file with older text.
+    let reparsed;
+    let fresh_doc = if source == parsed_source {
+        doc
+    } else {
+        reparsed = parser.parse_file(source_path, &source).ok();
+        reparsed.as_ref().unwrap_or(doc)
+    };
+    let insertions = collect_comment_insertions(&source, doc, Some(fresh_doc));
     if insertions.is_empty() {
         return Ok(false);
     }

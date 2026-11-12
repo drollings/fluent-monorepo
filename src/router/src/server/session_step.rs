@@ -103,6 +103,10 @@ pub(crate) async fn record_dispatch_outcome(
 /// from whichever terminal branch the request takes. Locking is scoped to the
 /// `complete` call - never held across an await.
 #[derive(Clone)]
+/// Per-request handle into a `DependencySession` step. Holds the session
+/// `Arc` and the request's step id so the outcome can be recorded exactly once
+/// from whichever terminal branch the request takes. Locking is scoped to the
+/// `complete` call - never held across an await.
 pub(crate) struct SessionStepHandle {
     session: Arc<Mutex<DependencySession>>,
     step_id: String,

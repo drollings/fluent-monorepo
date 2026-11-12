@@ -15,6 +15,7 @@ use crate::error::OrtError;
 
 /// A single tokenized sequence with the tensors a session needs.
 #[derive(Debug, Clone)]
+/// A single tokenized sequence with the tensors a session needs.
 pub struct LfmEncoding {
     /// Token ids (`u32`), truncated to `max_seq_len`.
     pub ids: Vec<u32>,

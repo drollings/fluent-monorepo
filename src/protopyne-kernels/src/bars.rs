@@ -65,6 +65,8 @@ pub const BUFFER_PADDING: usize = 5;
 /// Percentage drift between measured and reference volume: zero reference
 /// (or absent input) guards to zero instead of dividing.
 #[must_use]
+/// Percentage drift between measured and reference volume: zero reference
+/// (or absent input) guards to zero instead of dividing.
 pub fn drift_pct(actual: f64, expected: f64) -> Option<f64> {
     if !actual.is_finite() || !expected.is_finite() {
         return None;
@@ -78,6 +80,8 @@ pub fn drift_pct(actual: f64, expected: f64) -> Option<f64> {
 /// Split a volume delta into buy volume by price direction: up takes all,
 /// down takes none, flat (or directionless input) splits neutral.
 #[must_use]
+/// Split a volume delta into buy volume by price direction: up takes all,
+/// down takes none, flat (or directionless input) splits neutral.
 pub fn estimate_buy_volume(total_volume: f64, price_delta: f64) -> f64 {
     estimate_buy_volume_estimated(total_volume, price_delta).buy_volume
 }
@@ -86,6 +90,9 @@ pub fn estimate_buy_volume(total_volume: f64, price_delta: f64) -> f64 {
 /// sign direction print by print; anything else (candle shape, the declared
 /// neutral prior) is a fallback estimate, never a measurement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a buy-volume split was produced: the input-provenance axis. Ticks
+/// sign direction print by print; anything else (candle shape, the declared
+/// neutral prior) is a fallback estimate, never a measurement.
 pub enum DeltaMethod {
     /// Split from print direction (up-tick all, down-tick none).
     TickSigned,
@@ -98,6 +105,10 @@ pub enum DeltaMethod {
 /// always `Low` — a heuristic, however well-formed. Measured accuracy is a
 /// separate table, owned by calibration, never inferred here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What a buy-volume split is worth: the coverage/validity axis, derived
+/// from coverage depth only (documented mapping, no tuning). Shape output is
+/// always `Low` — a heuristic, however well-formed. Measured accuracy is a
+/// separate table, owned by calibration, never inferred here.
 pub enum DeltaConfidence {
     /// Tick-signed with observed direction over two or more prints.
     High,
@@ -113,6 +124,9 @@ pub enum DeltaConfidence {
 /// produced it and the confidence its coverage earns. Every split the ring
 /// stores carries one of these; nothing reaches storage unlabeled.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One buy-volume split with its provenance: the volume plus the method that
+/// produced it and the confidence its coverage earns. Every split the ring
+/// stores carries one of these; nothing reaches storage unlabeled.
 pub struct DeltaEstimate {
     /// Buy volume in shares.
     pub buy_volume: f64,
@@ -127,6 +141,10 @@ pub struct DeltaEstimate {
 /// neutral prior at low confidence. Same numbers as
 /// [`estimate_buy_volume`], which delegates here.
 #[must_use]
+/// Labeled print-level split: nonzero direction signs at high confidence;
+/// directionless prints (flat or NaN delta) fall back to the declared
+/// neutral prior at low confidence. Same numbers as
+/// [`estimate_buy_volume`], which delegates here.
 pub fn estimate_buy_volume_estimated(total_volume: f64, price_delta: f64) -> DeltaEstimate {
     if price_delta.is_nan() {
         return DeltaEstimate {
@@ -158,6 +176,7 @@ pub fn estimate_buy_volume_estimated(total_volume: f64, price_delta: f64) -> Del
 
 /// Whether a volume is meaningful (finite and above [`VOLUME_EPSILON`]).
 #[must_use]
+/// Whether a volume is meaningful (finite and above [`VOLUME_EPSILON`]).
 pub fn is_valid_volume(vol: f64) -> bool {
     vol.is_finite() && vol > VOLUME_EPSILON
 }
@@ -166,6 +185,9 @@ pub fn is_valid_volume(vol: f64) -> bool {
 /// display → kernel boundary (a Pine plugin evaluating chart rows).
 /// Timestamps ride epoch seconds; legs ride chart floats.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One display bar as plain floats, for callers that must cross the
+/// display → kernel boundary (a Pine plugin evaluating chart rows).
+/// Timestamps ride epoch seconds; legs ride chart floats.
 pub struct DisplayBar {
     /// Bar close time as epoch seconds.
     pub time: i64,
@@ -221,6 +243,11 @@ pub fn bars_from_display(rows: &[DisplayBar]) -> Result<Vec<Bar>, KernelError> {
 /// provisional per asset class, pending measured calibration — it guards
 /// direction invention, never asserts it.
 #[must_use]
+/// Structural OHLCV guard behind delta estimation: every leg finite,
+/// positive volume, and a non-degenerate range (relative floor keeps dust
+/// wicks from inventing direction). The dust floor (1e-6 of low) is
+/// provisional per asset class, pending measured calibration — it guards
+/// direction invention, never asserts it.
 pub fn validate_ohlcv(open: f64, high: f64, low: f64, close: f64, vol: f64) -> bool {
     open.is_finite()
         && high.is_finite()
@@ -236,6 +263,10 @@ pub fn validate_ohlcv(open: f64, high: f64, low: f64, close: f64, vol: f64) -> b
 /// bias (±0.15), clamped to [0.02, 0.98]. Degenerate candles fall back to
 /// the neutral split. Same op order as the Pine original.
 #[must_use]
+/// Buy-volume estimate for one closed candle from its shape: a linear
+/// directional component (body ratio, full range ±0.5) plus a close-position
+/// bias (±0.15), clamped to [0.02, 0.98]. Degenerate candles fall back to
+/// the neutral split. Same op order as the Pine original.
 pub fn estimate_delta_volume(open: f64, high: f64, low: f64, close: f64, vol: f64) -> f64 {
     estimate_delta_volume_estimated(open, high, low, close, vol).buy_volume
 }
@@ -245,6 +276,10 @@ pub fn estimate_delta_volume(open: f64, high: f64, low: f64, close: f64, vol: f6
 /// neutral split, also low. Same numbers as [`estimate_delta_volume`],
 /// which delegates here.
 #[must_use]
+/// Labeled shape split: well-formed candles estimate at low confidence (a
+/// heuristic, never a measurement); degenerate candles fall back to the
+/// neutral split, also low. Same numbers as [`estimate_delta_volume`],
+/// which delegates here.
 pub fn estimate_delta_volume_estimated(
     open: f64,
     high: f64,
@@ -282,6 +317,7 @@ pub fn estimate_delta_volume_estimated(
 
 /// Fast hyperbolic-tangent approximation (`x / (1 + |x|)`).
 #[must_use]
+/// Fast hyperbolic-tangent approximation (`x / (1 + |x|)`).
 pub fn fast_tanh(x: f64) -> f64 {
     x / (1.0 + x.abs())
 }
@@ -289,6 +325,8 @@ pub fn fast_tanh(x: f64) -> f64 {
 /// One closed bar in float legs: the confirmation-side shape. Prices convert
 /// exactly at market magnitudes; volumes are share counts below 2^53.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One closed bar in float legs: the confirmation-side shape. Prices convert
+/// exactly at market magnitudes; volumes are share counts below 2^53.
 pub struct ClosedBar {
     /// Bucket-open timestamp in milliseconds.
     pub ts_ms: i64,
@@ -325,6 +363,8 @@ impl ClosedBar {
 /// One raw trade print: timestamp, price, own volume. Unlike cumulative
 /// engine legs, prints fold whole — every finite print enters its bucket.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One raw trade print: timestamp, price, own volume. Unlike cumulative
+/// engine legs, prints fold whole — every finite print enters its bucket.
 pub struct RawTick {
     /// Print timestamp in milliseconds.
     pub ts_ms: i64,
@@ -337,6 +377,8 @@ pub struct RawTick {
 /// One reconstructed lower-timeframe candle: bucket-open stamp, chained
 /// open, high/low/close, total and buy volumes.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One reconstructed lower-timeframe candle: bucket-open stamp, chained
+/// open, high/low/close, total and buy volumes.
 pub struct BarParts {
     /// Bucket-open timestamp in milliseconds.
     pub ts_ms: i64,
@@ -366,6 +408,8 @@ impl BarParts {
 /// One closed lower-timeframe row injected for reconciliation (the native
 /// stand-in for the fetched security rows): timestamp plus OHLCV.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One closed lower-timeframe row injected for reconciliation (the native
+/// stand-in for the fetched security rows): timestamp plus OHLCV.
 pub struct LtfRow {
     /// Bucket-open timestamp in milliseconds.
     pub ts_ms: i64,
@@ -383,6 +427,7 @@ pub struct LtfRow {
 
 /// One confirmed chart bar under reconciliation.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One confirmed chart bar under reconciliation.
 pub struct ConfirmedBar {
     /// Chart-bar open timestamp in milliseconds (the confirmation fence).
     pub bar_open_ms: i64,
@@ -401,6 +446,8 @@ pub struct ConfirmedBar {
 /// Fetch-timeframe check at an LTF boundary: the reference volume, plus the
 /// closed rows to rebuild from when drift trips the pull.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Fetch-timeframe check at an LTF boundary: the reference volume, plus the
+/// closed rows to rebuild from when drift trips the pull.
 pub struct FetchCheck<'a> {
     /// Reference volume for the drift check.
     pub volume: f64,
@@ -413,6 +460,10 @@ pub struct FetchCheck<'a> {
 /// branch it mirrors is named: rehearsal/paper accumulation reads the
 /// side-channel tick stamp, native `fetch` reads bar-open time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which clock stamps one tick fold's tracking writes (`last_time`,
+/// `last_time_diff`). The choice stays at the call site where the oracle
+/// branch it mirrors is named: rehearsal/paper accumulation reads the
+/// side-channel tick stamp, native `fetch` reads bar-open time.
 pub enum TickClock {
     /// Side-channel tick stamp (`timenow`).
     TickMs,
@@ -424,6 +475,9 @@ pub enum TickClock {
 /// (their volume never enters a delta), flat updates only move price
 /// tracking, rollbacks reset the accumulator.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// How one tick ingested: seeding absorbs the first updates into tracking
+/// (their volume never enters a delta), flat updates only move price
+/// tracking, rollbacks reset the accumulator.
 pub enum TickIngest {
     /// First update of the bar: tracking initialized, nothing accumulated.
     Seeded,
@@ -442,6 +496,7 @@ pub enum TickIngest {
 
 /// Outcome of one LTF boundary evaluation at a tick stamp.
 #[derive(Debug, Clone, PartialEq)]
+/// Outcome of one LTF boundary evaluation at a tick stamp.
 pub struct LtfOutcome {
     /// Grid boundaries crossed since the accumulator started.
     pub boundaries_crossed: usize,
@@ -459,6 +514,7 @@ pub struct LtfOutcome {
 
 /// Outcome of one chart-bar confirmation.
 #[derive(Debug, Clone, PartialEq)]
+/// Outcome of one chart-bar confirmation.
 pub struct ConfirmOutcome {
     /// Whether this call confirmed (the fence refuses repeats).
     pub confirmed: bool,
@@ -477,6 +533,7 @@ pub struct ConfirmOutcome {
 
 /// Outcome of one rebuild from closed rows.
 #[derive(Debug, Clone, PartialEq)]
+/// Outcome of one rebuild from closed rows.
 pub struct ReconcileOutcome {
     /// Candles in the ring after the rebuild.
     pub rebuilt: usize,
@@ -491,6 +548,11 @@ pub struct ReconcileOutcome {
 /// (`measured > threshold` pulls); unmeasurable drift never pulls, the same
 /// way Pine `na` comparisons stay quiet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Pull/no-pull verdict from a measured drift: the producer-confidence
+/// axis. `Accept` keeps the ring (remainder path); `Pull` tells the caller
+/// to reconcile against closed rows. Derived by the frozen strict rule
+/// (`measured > threshold` pulls); unmeasurable drift never pulls, the same
+/// way Pine `na` comparisons stay quiet.
 pub enum DriftDecision {
     /// Ring stands; remainder top-up may still apply.
     Accept,
@@ -505,6 +567,12 @@ pub enum DriftDecision {
 /// answer is wrong". Computed fresh on every call: nothing caches or
 /// persists a verdict.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Separated drift report: the measured drift (task-value evidence about
+/// the numbers) beside the pull/no-pull verdict (producer-confidence about
+/// the buffer). Callers read the measurement to judge the answer and the
+/// verdict to judge the ring — "I am unsure" never masquerades as "the
+/// answer is wrong". Computed fresh on every call: nothing caches or
+/// persists a verdict.
 pub struct DriftReport {
     /// Measured drift percentage (`None` when unmeasurable: non-finite
     /// legs). Task-value evidence.
@@ -555,6 +623,12 @@ impl DriftReport {
 // the four flags travel as one value by design.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Bar-state flags for one tick update in realtime emulation: `isnew` fires
+/// on the first tick of a bar-open, `isconfirmed` on the last; tick runs
+/// never report history. Four flags because the Pine `barstate` contract has
+/// four members — bundled, never constructed piecemeal.
+/// Note: `struct_excessive_bools` would split the Pine contract across types;
+/// the four flags travel as one value by design.
 pub struct BarStateFlags {
     /// First tick of the bar.
     pub is_new: bool,
@@ -568,6 +642,7 @@ pub struct BarStateFlags {
 
 /// Bar-state flags from a tick's position inside its bar-open group.
 #[must_use]
+/// Bar-state flags from a tick's position inside its bar-open group.
 pub fn tick_bar_state(first_in_bar: bool, last_in_bar: bool) -> BarStateFlags {
     BarStateFlags {
         is_new: first_in_bar,
@@ -581,6 +656,9 @@ pub fn tick_bar_state(first_in_bar: bool, last_in_bar: bool) -> BarStateFlags {
 /// buckets, or full bars anywhere uncovered. Per-bucket mixing lives in
 /// tick-covered reconciliation; this answers the wholesale question.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which input a resample should fold: tick prints where they cover the
+/// buckets, or full bars anywhere uncovered. Per-bucket mixing lives in
+/// tick-covered reconciliation; this answers the wholesale question.
 pub enum ResampleSource {
     /// Fold the tick prints.
     Ticks,
@@ -592,6 +670,9 @@ pub enum ResampleSource {
 /// every bucket, otherwise the full bars fill (shape-labeled). Zero buckets
 /// reuses bars (nothing to cover).
 #[must_use]
+/// Pick the resample input by coverage: ticks win only where they cover
+/// every bucket, otherwise the full bars fill (shape-labeled). Zero buckets
+/// reuses bars (nothing to cover).
 pub fn choose_source(covered_buckets: usize, total_buckets: usize) -> ResampleSource {
     if total_buckets > 0 && covered_buckets >= total_buckets {
         ResampleSource::Ticks
@@ -603,6 +684,8 @@ pub fn choose_source(covered_buckets: usize, total_buckets: usize) -> ResampleSo
 /// Cumulative volumes to per-tick deltas: the first value seeds tracking
 /// (never a delta), every later difference is one tick's volume.
 #[must_use]
+/// Cumulative volumes to per-tick deltas: the first value seeds tracking
+/// (never a delta), every later difference is one tick's volume.
 pub fn volume_deltas(cumulative: &[f64]) -> Vec<f64> {
     cumulative
         .windows(2)
@@ -614,6 +697,9 @@ pub fn volume_deltas(cumulative: &[f64]) -> Vec<f64> {
 /// thresholds and the gap-fill policy. Plain construction; [`Validate`]
 /// checks the spans before a ring builds.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Ring configuration: the four timeframe spans plus the drift/spike
+/// thresholds and the gap-fill policy. Plain construction; [`Validate`]
+/// checks the spans before a ring builds.
 pub struct BarsConfig {
     /// Reconstructed-candle span in milliseconds.
     pub ltf_ms: i64,
@@ -776,6 +862,12 @@ impl_component!(BarsConfig);
 /// The buy split always carries its provenance label — nothing reaches
 /// storage unlabeled.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One retained reconstructed candle. The open persists at write time
+/// (chained from the bar open or the prior close, like the library's
+/// `get`), so reads never re-derive it — eviction-safe, unlike the old
+/// read-time chain that kept serving a stale `candle_open` past eviction.
+/// The buy split always carries its provenance label — nothing reaches
+/// storage unlabeled.
 struct StoredCandle {
     ts_ms: i64,
     o: f64,
@@ -791,6 +883,8 @@ struct StoredCandle {
 /// Tick-to-bar ring: bounded reconstructed-candle buffer plus the forming
 /// accumulator, tick tracker, and reconciliation counters.
 #[derive(Debug, Clone)]
+/// Tick-to-bar ring: bounded reconstructed-candle buffer plus the forming
+/// accumulator, tick tracker, and reconciliation counters.
 pub struct BarRing {
     config: BarsConfig,
     candles: VecDeque<StoredCandle>,
@@ -1765,6 +1859,20 @@ fn nonzero_or(value: f64, default: f64) -> f64 {
 /// Physical cursor of a hydrated ring: the caller advances it with Pine's
 /// exact rules per appended candle (see [`BarRing::write_pine_fields`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ---------------------------------------------------------------------------
+/// Native engine bridge: Pine `Bars` object field tables in and out.
+/// 
+/// The engine keeps the Pine object as the single source of truth; native
+/// execution is a pure transition over its fields (hydrate, run, dehydrate),
+/// so snapshots, dumps, and later interpreted reads observe identical state
+/// under both positions. Unmapped fields (timeframe enums, ratios, pulse
+/// flags owned by the driver, diagnostic placeholders) pass through
+/// untouched: the bridge only ever writes the keys it maps, and the caller
+/// owns the table. Anything untranslatable refuses with a named reason —
+/// never a silent approximation.
+/// ---------------------------------------------------------------------------
+/// Physical cursor of a hydrated ring: the caller advances it with Pine's
+/// exact rules per appended candle (see [`BarRing::write_pine_fields`).
 pub struct RingCursor {
     /// Ring-buffer write position.
     pub head: usize,
@@ -1778,6 +1886,11 @@ pub struct RingCursor {
 /// bar-open-sourced in the oracle); `tick_ms` is the side-channel stamp
 /// Pine passes to `onConfirmLTF` as `timenow`.
 #[derive(Debug, Clone)]
+/// One native `fetch` tick: the legs and flags the Pine body would observe
+/// through its builtins. `bar_open_ms` is the `time`-leg value Pine reads
+/// for tracking (`last_time`, `last_time_diff`, accumulator stamps are all
+/// bar-open-sourced in the oracle); `tick_ms` is the side-channel stamp
+/// Pine passes to `onConfirmLTF` as `timenow`.
 pub struct NativeFetchTick {
     /// Bar-so-far OHLC plus cumulative volume legs.
     pub legs: BarTick,
@@ -1800,6 +1913,12 @@ pub struct NativeFetchTick {
 /// exhaustion reruns the proven body — so the bridge never invents rows
 /// or miscounts a cursor).
 #[derive(Debug, Clone, PartialEq)]
+/// Outcome of one native `fetch` tick: the exact `_writeCandle`-equivalent
+/// count for cursor accounting, the end-of-tick pulse flags, and the
+/// outcome signal (the pull and capacity paths both fall back to Pine —
+/// the pull raises the identical lower-tf refusal there, capacity
+/// exhaustion reruns the proven body — so the bridge never invents rows
+/// or miscounts a cursor).
 pub struct FetchNativeOut {
     /// Candles appended this tick.
     pub appended: usize,
@@ -1815,6 +1934,9 @@ pub struct FetchNativeOut {
 /// rerun the Pine body (identical refusal on pulls, proven behavior on
 /// capacity exhaustion).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Native-fetch outcome signal: commit the transition, or let the engine
+/// rerun the Pine body (identical refusal on pulls, proven behavior on
+/// capacity exhaustion).
 pub enum FetchSignal {
     /// Dehydrate and serve natively.
     Commit,
@@ -2333,6 +2455,15 @@ impl BarRing {
 /// split — print count and whether any print carried a nonzero direction
 /// (exactly the prints the labeled split signs, never an estimate).
 #[derive(Debug, Clone, Copy, Default)]
+/// Fold raw trade prints into closed lower-timeframe buckets: first open,
+/// high/low extremes, last close, summed volume, per-print directional buy
+/// splits against the previous print. Only closed buckets emit — the
+/// trailing (still-forming) bucket stays unconfirmed, and a tape that never
+/// closes a bucket refuses instead of inventing one. Sparse tapes skip
+/// empty buckets; `fill_gaps` chains zero placeholders off the last close.
+/// One folded tick bucket: OHLCV legs plus the coverage behind its buy
+/// split — print count and whether any print carried a nonzero direction
+/// (exactly the prints the labeled split signs, never an estimate).
 struct TickBucket {
     o: f64,
     h: f64,
@@ -2507,6 +2638,17 @@ pub(crate) fn bucket_ranges_of(
 /// unusable span — reports [`None`], which no visibility predicate may treat as
 /// confirmed.
 #[cfg(feature = "pine")]
+/// Close instant of each row's bucket at `span_ms`: the end of the bucket's
+/// own span, pulled back to the exchange session close when the span would
+/// cross one.
+/// 
+/// A bucket that stays inside a session closes after its own span; the final
+/// bucket of a session closes at the bell; and a daily bucket stamped at UTC
+/// midnight closes at that trading day's bell rather than at the next bucket's
+/// open. Weekend gaps and daylight transitions are the calendar's business, so
+/// no duration is assumed here. A row whose bucket cannot be bucketed — an
+/// unusable span — reports [`None`], which no visibility predicate may treat as
+/// confirmed.
 pub(crate) fn bucket_closes(times: &[i64], span_ms: i64) -> Vec<Option<i64>> {
     let calendar = SessionCalendar::us_equities();
     let mut out = vec![None; times.len()];
@@ -2600,6 +2742,16 @@ pub const MAX_EXACT_VOLUME: u64 = 1 << 53;
 /// path. The accumulator-only live tail stays separate: ticks keep folding
 /// through `ingest_tick`/`confirm_ltf` and never consult this gate.
 #[must_use]
+/// Confirmed-bar gate: a bar may feed finalized output iff its whole span
+/// sits at or before `now` under [`Lookahead::Off`] — the close fence is
+/// `open + span <= now`, so a bar closing exactly at `now` counts.
+/// 
+/// Gaps change no verdict (missing buckets neither confirm nor un-confirm
+/// their neighbors — the sparse default reports them instead of
+/// materializing them); [`Lookahead::On`] refuses outright, so future-bar
+/// data can never leak into finalized output through an enabled projection
+/// path. The accumulator-only live tail stays separate: ticks keep folding
+/// through `ingest_tick`/`confirm_ltf` and never consult this gate.
 pub fn is_confirmed_bar(bar_open_ms: i64, tf_ms: i64, now_ms: i64, lookahead: Lookahead) -> bool {
     if lookahead.require_off().is_err() || tf_ms <= 0 {
         return false;
@@ -2646,6 +2798,19 @@ fn check_row(prev: Option<&Bar>, bar: &Bar) -> Result<ClosedBar, KernelError> {
 /// [`rebuild_suffix`](Self::rebuild_suffix) write them, always together.
 /// Per-run isolation holds by construction: owned values, no globals.
 #[derive(Debug, Clone)]
+/// Backfill adapter over loaded history: confirmed rows plus the
+/// confirmed-bar gate and whole-suffix rebuild on correction.
+/// 
+/// The server owns parsing and fallback (`load_history` over either history
+/// arm) and composes that output into [`from_bars`](Self::from_bars) — this
+/// adapter never parses, never falls back, and never reaches past the
+/// kernels crate, so the crate layers stay acyclic. Stamps read as bucket
+/// opens, the exchange-CSV convention the projection goldens prove; `Bar`
+/// stamps map identically, never shifted. One owned row store (exact
+/// `Bar`s) with one converted view (closed `f64` legs, built once) — the
+/// two never drift apart because only [`from_bars`](Self::from_bars) and
+/// [`rebuild_suffix`](Self::rebuild_suffix) write them, always together.
+/// Per-run isolation holds by construction: owned values, no globals.
 pub struct BarsHistory {
     timeframe: Timeframe,
     bars: Vec<Bar>,

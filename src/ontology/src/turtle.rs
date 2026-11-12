@@ -21,6 +21,8 @@ use crate::taxonomy::expand_curie;
 /// Every `rdfs:subClassOf` `(subject_iri, object_iri)` edge in `ttl`, with
 /// prefixed names expanded to full IRIs, plus the declared `@prefix` map.
 #[must_use]
+/// Every `rdfs:subClassOf` `(subject_iri, object_iri)` edge in `ttl`, with
+/// prefixed names expanded to full IRIs, plus the declared `@prefix` map.
 pub fn subclass_edges(ttl: &str) -> (BTreeMap<String, String>, Vec<(String, String)>) {
     let mut parser = Parser::new(ttl);
     let mut edges = Vec::new();
@@ -44,6 +46,9 @@ pub fn subclass_edges(ttl: &str) -> (BTreeMap<String, String>, Vec<(String, Stri
 /// through `prefixes`. The line-oriented pruner uses this so it does not need
 /// a second parser; the canonical lexer does the tokenization.
 #[must_use]
+/// The `rdfs:subClassOf` edges declared on a single line, CURIEs expanded
+/// through `prefixes`. The line-oriented pruner uses this so it does not need
+/// a second parser; the canonical lexer does the tokenization.
 pub fn subclass_edges_in_line(
     line: &str,
     prefixes: &BTreeMap<String, String>,

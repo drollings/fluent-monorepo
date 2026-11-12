@@ -9,6 +9,9 @@ use std::collections::BTreeMap;
 /// test that must pass for the item to count as verified. Evaluated
 /// through the seal runners, never by the plan itself.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Acceptance gate for one plan item: the package check plus the named
+/// test that must pass for the item to count as verified. Evaluated
+/// through the seal runners, never by the plan itself.
 pub struct AcceptanceGate {
     /// Package directory the check covers.
     pub package: String,
@@ -19,6 +22,8 @@ pub struct AcceptanceGate {
 /// Lifecycle of one plan item. Scheduler states are never reused here:
 /// a plan records author intent, not queue position.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Lifecycle of one plan item. Scheduler states are never reused here:
+/// a plan records author intent, not queue position.
 pub enum PlanItemState {
     /// Awaiting its acceptance gate.
     #[default]
@@ -29,6 +34,7 @@ pub enum PlanItemState {
 
 /// One planned unit of non-mechanical work.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One planned unit of non-mechanical work.
 pub struct PlanItem {
     /// Stable identity across revisions.
     pub id: String,
@@ -43,6 +49,8 @@ pub struct PlanItem {
 /// A reviewable plan: ordered items plus the changelog that tells the
 /// loop what a revision added or changed.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// A reviewable plan: ordered items plus the changelog that tells the
+/// loop what a revision added or changed.
 pub struct WorkPlan {
     /// Plan identity.
     pub id: String,
@@ -58,7 +66,10 @@ impl WorkPlan {
     /// Import items as a new plan revision zero. Duplicate IDs refuse;
     /// the loop never sees a half-imported plan.
     pub fn import(id: &str, items: Vec<PlanItem>) -> Result<Self, PlanError> {
-        let mut plan = Self { id: id.to_string(), ..Self::default() };
+        let mut plan = Self {
+            id: id.to_string(),
+            ..Self::default()
+        };
         for item in items {
             if plan.items.contains_key(&item.id) {
                 return Err(PlanError::Duplicate(item.id));
@@ -80,8 +91,7 @@ impl WorkPlan {
             seen.insert(item.id.clone());
             match self.items.get(&item.id) {
                 Some(existing)
-                    if existing.target == item.target
-                        && existing.acceptance == item.acceptance =>
+                    if existing.target == item.target && existing.acceptance == item.acceptance =>
                 {
                     // Same definition: state (including Verified) survives.
                 }
@@ -90,7 +100,10 @@ impl WorkPlan {
                     self.changelog.push(format!("change {}", item.id));
                     self.items.insert(
                         item.id.clone(),
-                        PlanItem { state, ..item.clone() },
+                        PlanItem {
+                            state,
+                            ..item.clone()
+                        },
                     );
                     if !self.order.contains(&item.id) {
                         self.order.push(item.id.clone());
@@ -146,7 +159,9 @@ impl WorkPlan {
     /// Nothing open: every item verified.
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        self.items.values().all(|item| item.state == PlanItemState::Verified)
+        self.items
+            .values()
+            .all(|item| item.state == PlanItemState::Verified)
     }
 
     /// Write-ahead intent for a revision: hash the serialized plan
@@ -170,6 +185,7 @@ impl WorkPlan {
 
 /// Plan import failure: duplicate stable IDs.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Plan import failure: duplicate stable IDs.
 pub enum PlanError {
     /// Two items share one stable ID.
     #[error("duplicate plan item: {0}")]

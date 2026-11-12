@@ -17,6 +17,7 @@ use fluent_wvr::validate::Validate;
 
 /// Daylight-aware regular-hours clock over millisecond stamps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Daylight-aware regular-hours clock over millisecond stamps.
 pub struct TradingSession {
     open_min: u32,
     close_min: u32,
@@ -104,6 +105,8 @@ impl Validate for TradingSession {
 /// ET weekday of the stamp: Monday = 1 through Sunday = 7. The shared
 /// calendar reads this instead of keeping its own day math.
 #[must_use]
+/// ET weekday of the stamp: Monday = 1 through Sunday = 7. The shared
+/// calendar reads this instead of keeping its own day math.
 pub fn et_weekday(ts_ms: i64) -> u32 {
     weekday_of((ts_ms + et_offset_ms(ts_ms)).div_euclid(86_400_000)) as u32
 }
@@ -116,6 +119,10 @@ type EtDate = (i32, u32, u32);
 /// Dates are ET calendar dates; daylight flips ride the shared ET clock, so
 /// a session day never contains a transition (transitions fall on Sundays).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Weekend/holiday-aware session calendar: regular hours on weekdays, full
+/// closes on listed dates, early closes on half days. Weekends never trade.
+/// Dates are ET calendar dates; daylight flips ride the shared ET clock, so
+/// a session day never contains a transition (transitions fall on Sundays).
 pub struct SessionCalendar {
     regular: TradingSession,
     holidays: std::collections::BTreeSet<EtDate>,
@@ -268,6 +275,9 @@ fn session_bounds_ms(day: EtDate, session: TradingSession) -> (i64, i64) {
 /// second Sunday of March 07:00 UTC up to the first Sunday of November
 /// 06:00 UTC (02:00 local both ends).
 #[must_use]
+/// Whether America/New_York observes daylight saving at the stamp: from the
+/// second Sunday of March 07:00 UTC up to the first Sunday of November
+/// 06:00 UTC (02:00 local both ends).
 pub fn is_dst_et(ts_ms: i64) -> bool {
     let (year, _, _) = civil_from_days(ts_ms.div_euclid(86_400_000));
     ts_ms >= dst_spring_utc_ms(year) && ts_ms < dst_fall_utc_ms(year)
@@ -275,6 +285,7 @@ pub fn is_dst_et(ts_ms: i64) -> bool {
 
 /// UTC offset of America/New_York at the stamp, in milliseconds.
 #[must_use]
+/// UTC offset of America/New_York at the stamp, in milliseconds.
 pub fn et_offset_ms(ts_ms: i64) -> i64 {
     if is_dst_et(ts_ms) {
         -4 * 3_600_000

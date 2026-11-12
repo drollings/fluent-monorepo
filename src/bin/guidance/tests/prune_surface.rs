@@ -44,12 +44,9 @@ fn check_fixpoint_flag_is_documented() {
 }
 
 #[test]
-fn mcp_default_toolset_is_search_only() {    let dir = workspace();
+fn mcp_default_toolset_is_search_only() {
+    let dir = workspace();
     let out = run(dir.path(), &["mcp", "--help"]);
     assert!(out.status.success(), "mcp --help: {out:?}");
-    assert!(
-        stdout(&out).contains("default: agent"),
-        "{}",
-        stdout(&out)
-    );
+    assert!(stdout(&out).contains("default: agent"), "{}", stdout(&out));
 }

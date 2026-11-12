@@ -27,11 +27,13 @@ use crate::NodeId;
 
 /// The 64-bit cross-system identifier: 16-bit namespace, 48-bit local id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+/// The 64-bit cross-system identifier: 16-bit namespace, 48-bit local id.
 pub struct InterlinguaId(u64);
 
 /// The 16-bit namespace of an [`InterlinguaId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u16)]
+/// The 16-bit namespace of an [`InterlinguaId`].
 pub enum InterlinguaNamespace {
     Reserved = 0x0000,
     YagoClass = 0x0100,
@@ -50,6 +52,8 @@ pub const LOCAL_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
 /// The single truncation helper (DRY). Every namespace derives its local id
 /// through this function.
 #[must_use]
+/// The single truncation helper (DRY). Every namespace derives its local id
+/// through this function.
 pub const fn local_id_of(full_hash: i64) -> i64 {
     (full_hash as u64 & LOCAL_MASK) as i64
 }
@@ -58,6 +62,9 @@ pub const fn local_id_of(full_hash: i64) -> i64 {
 ///
 /// This is the single truncation seam — per-kind helpers delegate here.
 #[must_use]
+/// Generic helper: derive an `InterlinguaId` for `ns` from a full-width content hash.
+/// 
+/// This is the single truncation seam — per-kind helpers delegate here.
 pub fn id_for_namespace(hash: i64, ns: InterlinguaNamespace) -> InterlinguaId {
     InterlinguaId::new(ns, local_id_of(hash))
 }
@@ -134,24 +141,33 @@ fn hash_iri(iri: &str) -> i64 {
 /// stored `ConceptMetadata.node_id` cross-reference (F5). This helper is for the
 /// 48-bit `InterlinguaId` only.
 #[must_use]
+/// ─── Per-kind helpers (the primary public API) ─────────────────────────────
+/// `SpacyLemma` id for a lemma string (MurmurHash64A seed 1, 48-bit truncation).
+/// 
+/// `node_id` (the full 64-bit graph key) is **not** derived from this — it is a
+/// stored `ConceptMetadata.node_id` cross-reference (F5). This helper is for the
+/// 48-bit `InterlinguaId` only.
 pub fn lemma_id_for_str(s: &str) -> InterlinguaId {
     id_for_namespace(hash_utf8(s) as i64, InterlinguaNamespace::SpacyLemma)
 }
 
 /// `YagoClass` id for a class IRI (BLAKE3, 48-bit truncation).
 #[must_use]
+/// `YagoClass` id for a class IRI (BLAKE3, 48-bit truncation).
 pub fn yago_class_id_for_iri(iri: &str) -> InterlinguaId {
     id_for_namespace(hash_iri(iri), InterlinguaNamespace::YagoClass)
 }
 
 /// `YagoEntity` id for an entity IRI (BLAKE3, 48-bit truncation).
 #[must_use]
+/// `YagoEntity` id for an entity IRI (BLAKE3, 48-bit truncation).
 pub fn yago_entity_id_for_iri(iri: &str) -> InterlinguaId {
     id_for_namespace(hash_iri(iri), InterlinguaNamespace::YagoEntity)
 }
 
 /// `RdfProperty` id for a property IRI (BLAKE3, 48-bit truncation).
 #[must_use]
+/// `RdfProperty` id for a property IRI (BLAKE3, 48-bit truncation).
 pub fn property_id_for_iri(iri: &str) -> InterlinguaId {
     id_for_namespace(hash_iri(iri), InterlinguaNamespace::RdfProperty)
 }
@@ -263,6 +279,15 @@ impl std::fmt::Display for InterlinguaId {
 /// `InterlinguaId` to its graph node is a lookup through `ConceptMetadata.node_id`,
 /// nothing more.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// The disambiguation record for a concept: identity (`id`), the canonical
+/// string (which resolves collisions), the origin, and the cross-reference to
+/// the concept's node in Coral's durable graph.
+/// 
+/// F5 discipline: `node_id` (the **full 64-bit** `hash_iri`) is *stored,
+/// never derived* from `id.local_id()` (the **truncated 48-bit** value) — the
+/// 16 truncated-away bits cannot be recovered. The bridge from an
+/// `InterlinguaId` to its graph node is a lookup through `ConceptMetadata.node_id`,
+/// nothing more.
 pub struct ConceptMetadata {
     pub id: InterlinguaId,
     pub canonical_name: String,

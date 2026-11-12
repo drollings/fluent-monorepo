@@ -47,6 +47,13 @@ pub struct DispatchOutcome {
 /// bundles for the HTTP handler). Zero runtime cost — no vtable, no behavior
 /// change. Build once per request in the handler and borrow it.
 #[derive(Clone)]
+/// The shared, request-invariant dependencies threaded through
+/// `handle_dispatch` → `dispatch_real` → `dispatch_to_single_target`.
+/// 
+/// Pure struct bundling: collapses the former 14/12/9-argument dispatch
+/// signatures into one `&DispatchDeps` (the fields `ServerDeps` already
+/// bundles for the HTTP handler). Zero runtime cost — no vtable, no behavior
+/// change. Build once per request in the handler and borrow it.
 pub struct DispatchDeps {
     pub http_client: Arc<reqwest::Client>,
     pub cache: Option<Arc<ResponseCache>>,
@@ -85,6 +92,16 @@ pub struct DispatchDeps {
 /// (the [`Limiter`] gate) rather than failing over: under load the same
 /// model answers late, never a weaker model early.
 #[derive(Default, Clone)]
+/// Per-role admission gates for `roles.<role>.max_parallel`:
+/// one shared [`Limiter`] per capped role, built once at boot from the
+/// roles table and cloned (cheap — [`Limiter`] is internally an `Arc`) into
+/// every dispatch. Scope is per-role globally: all models serving the role
+/// draw from the same gate, so the cap bounds simultaneous dispatches *in
+/// the role* however the group ladder spreads them. Targets without a role
+/// (direct-model and qualified requests) carry no role and bypass the gate —
+/// the documented scope boundary. Excess admissions queue with backpressure
+/// (the [`Limiter`] gate) rather than failing over: under load the same
+/// model answers late, never a weaker model early.
 pub struct RoleLimiters {
     limiters: HashMap<String, Arc<Limiter>>,
 }
@@ -324,6 +341,9 @@ fn make_backend(deps: &DispatchDeps, target: &RoutingTarget) -> Arc<dyn Dispatch
 /// next dispatch sends `snapshot`/`id_slot` (and `instance` when the target
 /// has none) as request fields.
 #[cfg(test)]
+/// Apply a restored KV snapshot's fork-facing identity to a target so the
+/// next dispatch sends `snapshot`/`id_slot` (and `instance` when the target
+/// has none) as request fields.
 fn apply_pending_snapshot(
     target: &RoutingTarget,
     snapshot: String,

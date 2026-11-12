@@ -15,6 +15,7 @@ use crate::error::ServerError;
 
 /// The encodings a history file may declare by extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The encodings a history file may declare by extension.
 pub enum HistoryFormat {
     /// Comma-separated bars (`.csv`).
     Csv,

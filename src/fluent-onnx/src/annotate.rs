@@ -36,6 +36,9 @@ use crate::error::OrtError;
 /// byte offset. Plain data — no `spacy-rs` import. `pos`/`dep` are the label
 /// strings from the labels file (training order → argmax index).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One spacy token's annotation, decoded from the head logits and aligned by
+/// byte offset. Plain data — no `spacy-rs` import. `pos`/`dep` are the label
+/// strings from the labels file (training order → argmax index).
 pub struct TokenAnnotation {
     /// UPOS label (from the labels file's `upos` list).
     pub pos: String,
@@ -50,6 +53,7 @@ pub struct TokenAnnotation {
 
 /// One LFM token's decoded annotation (before spacy aggregation).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One LFM token's decoded annotation (before spacy aggregation).
 pub struct LfmAnnotation {
     /// UPOS label (from the labels file's `upos` list).
     pub pos: String,
@@ -63,6 +67,7 @@ pub struct LfmAnnotation {
 
 /// The index of the maximum element of a row of logits (the argmax class).
 #[must_use]
+/// The index of the maximum element of a row of logits (the argmax class).
 pub fn argmax(row: &[f32]) -> usize {
     row.iter()
         .enumerate()
@@ -133,6 +138,10 @@ pub fn decode_heads(
 /// subword range covering one spacy token; the logits are averaged across the
 /// range's rows and the argmax class index is returned.
 #[must_use]
+/// Pure argmax-of-mean over a contiguous range of per-token logit rows
+/// ("argmax of the mean logit"). `range` is the LFM
+/// subword range covering one spacy token; the logits are averaged across the
+/// range's rows and the argmax class index is returned.
 pub fn argmax_of_mean(logits: &[f32], classes: usize, range: Range<usize>) -> usize {
     let mut acc = vec![0.0f32; classes];
     let mut count = 0usize;

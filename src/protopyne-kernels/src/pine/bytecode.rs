@@ -30,14 +30,17 @@ use std::sync::Arc;
 
 /// Dense operand: index into the per-frame slot environment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Dense operand: index into the per-frame slot environment.
 pub struct SlotId(pub u32);
 
 /// Index into a [`ConstPool`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Index into a [`ConstPool`].
 pub struct ConstId(pub u32);
 
 /// Compile-time constant.
 #[derive(Debug, Clone, PartialEq)]
+/// Compile-time constant.
 pub enum ConstValue {
     /// Floating-point literal.
     Float(f64),
@@ -64,6 +67,7 @@ pub enum ConstValue {
 
 /// Deduplicated constant table per module.
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Deduplicated constant table per module.
 pub struct ConstPool {
     values: Vec<ConstValue>,
 }
@@ -107,6 +111,8 @@ impl ConstPool {
 /// Numeric and logical operators: the lowerable subset of
 /// `syntax::BinaryOp`, mirrored 1:1 so lowering is total over the subset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Numeric and logical operators: the lowerable subset of
+/// `syntax::BinaryOp`, mirrored 1:1 so lowering is total over the subset.
 pub enum BinOp {
     /// `+`.
     Add,
@@ -138,6 +144,7 @@ pub enum BinOp {
 
 /// Unary operators: the lowerable subset of `syntax::UnaryOp`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Unary operators: the lowerable subset of `syntax::UnaryOp`.
 pub enum UnOp {
     /// `-`.
     Negate,
@@ -148,6 +155,8 @@ pub enum UnOp {
 /// Chart-leg and cursor builtins: the lowerable subset of
 /// `syntax::BuiltinVar` plus the bar cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Chart-leg and cursor builtins: the lowerable subset of
+/// `syntax::BuiltinVar` plus the bar cursor.
 pub enum BuiltinVarKind {
     /// `open`.
     Open,
@@ -273,6 +282,15 @@ impl BuiltinVarKind {
 /// encoded before the slot form existed still decode to their documented
 /// meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Call target: an intra-module block (linked), a named callee the
+/// linker resolves across modules (imports, aliases, methods), or a
+/// builtin namespace call delegated to the existing bridges. Open names
+/// are interned [`SymbolId`]s; the namespace is a [`BuiltinNamespace`].
+/// One `plot()` title: a pool constant for statically named series, or
+/// an evaluated slot for computed titles. The wire form keeps one tag
+/// per shape (`0x0B` for the constant, `0x35` for the slot), so blocks
+/// encoded before the slot form existed still decode to their documented
+/// meaning.
 pub enum PlotTitle {
     /// Statically named series (constant pool string).
     Const(ConstId),
@@ -286,6 +304,9 @@ pub enum PlotTitle {
 /// holding one (array indices evaluate first and refuse absence, exactly
 /// like the tree-walk's index-then-array order).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// One history offset: a literal bars-back count, or an evaluated slot
+/// holding one (array indices evaluate first and refuse absence, exactly
+/// like the tree-walk's index-then-array order).
 pub enum HistOffset {
     /// Literal bars back.
     Const(i32),
@@ -328,6 +349,9 @@ pub enum CallTarget {
 /// precomputed capture site) or a variable bound from one (paired by its
 /// run-time plot tag).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One `fill()` leg: either an inline `plot()` call (paired by its
+/// precomputed capture site) or a variable bound from one (paired by its
+/// run-time plot tag).
 pub enum FillLeg {
     /// Inline `plot()` call: capture site constant.
     PlotSite(ConstId),
@@ -339,6 +363,9 @@ pub enum FillLeg {
 /// wire: names interned, structure shared. Only `map.new` reads these
 /// today; every other builtin ignores the empty list.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One explicit generic argument, mirroring `syntax::PineType` for the
+/// wire: names interned, structure shared. Only `map.new` reads these
+/// today; every other builtin ignores the empty list.
 pub struct CallTypeArg {
     /// Type name (possibly dotted, e.g. `UTIL.Smoothings`).
     pub name: SymbolId,
@@ -364,6 +391,9 @@ impl CallTypeArg {
 /// the evaluated value slot. Names resolve through the owning module's
 /// [`SymbolTable`]; values flow at run time.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One call argument: the precomputed name (for parameter binding) and
+/// the evaluated value slot. Names resolve through the owning module's
+/// [`SymbolTable`]; values flow at run time.
 pub struct CallArgSlot {
     /// Argument name (`None` for positional).
     pub name: Option<SymbolId>,
@@ -376,6 +406,10 @@ pub struct CallArgSlot {
 /// `branch_of` (`"if condition"`, `"ternary condition"`,
 /// `"while condition"`, `"switch pattern"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Branch context for conditional jumps: non-`bool` conditions refuse,
+/// and the refusal names the construct exactly like the tree-walk's
+/// `branch_of` (`"if condition"`, `"ternary condition"`,
+/// `"while condition"`, `"switch pattern"`).
 pub enum CondContext {
     /// `if` statement condition.
     If,
@@ -391,6 +425,9 @@ pub enum CondContext {
 /// including the derived legs. The discriminant order matches the
 /// reserved global column ids, so `index` doubles as the column id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Chart-leg identity: every series column addressable by history,
+/// including the derived legs. The discriminant order matches the
+/// reserved global column ids, so `index` doubles as the column id.
 pub enum LegKind {
     /// `open`.
     Open,
@@ -481,6 +518,8 @@ impl LegKind {
 /// Builtin namespace with delegated lowering: calls into exactly these
 /// namespaces lower to bridge calls; everything else falls back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Builtin namespace with delegated lowering: calls into exactly these
+/// namespaces lower to bridge calls; everything else falls back.
 pub enum BuiltinNamespace {
     /// `ta.*` (stateful indicator bridge).
     Ta,
@@ -563,6 +602,8 @@ impl BuiltinNamespace {
 /// Capture or broker-dialogue call: recorded by the tree-walk, never
 /// lowered to value position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Capture or broker-dialogue call: recorded by the tree-walk, never
+/// lowered to value position.
 pub enum CaptureKind {
     /// `fill`.
     Fill,
@@ -620,12 +661,18 @@ impl CaptureKind {
 /// module names. Identity compares by id; text resolves through the
 /// owning module's [`SymbolTable`] only at link and diagnostic time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Interned open name: user globals, titles, site suffixes, method and
+/// module names. Identity compares by id; text resolves through the
+/// owning module's [`SymbolTable`] only at link and diagnostic time.
 pub struct SymbolId(pub u32);
 
 /// Deduplicated open-name table per compiled module, built once at
 /// compile time and shared at link time. Steady-state execution never
 /// interns: every id on the hot path already exists.
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Deduplicated open-name table per compiled module, built once at
+/// compile time and shared at link time. Steady-state execution never
+/// interns: every id on the hot path already exists.
 pub struct SymbolTable {
     names: Vec<String>,
     index: HashMap<String, u32>,
@@ -673,6 +720,10 @@ impl SymbolTable {
 /// family; `display` renders the human reason at the single diagnostic
 /// site (coverage output, never a run contract).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Why a subtree runs on the tree-walk instead of the loop: the typed
+/// coverage escape hatch. Each variant names one unlowerable construct
+/// family; `display` renders the human reason at the single diagnostic
+/// site (coverage output, never a run contract).
 pub enum FallbackReason {
     /// In-function global or body binding (private frames; caller-home
     /// writes journal, see `JournalWrite`).
@@ -1019,6 +1070,11 @@ impl FallbackReason {
 /// receiver slot for `this` calls. Rvalue calls carry no home — the
 /// mutated copy drops, exactly like the tree-walk.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One receiver write-back home for a method call: a caller variable
+/// (alias search first, then frame slots, globals, and per-instance
+/// cells — mirroring the tree-walk's take order), or the innermost
+/// receiver slot for `this` calls. Rvalue calls carry no home — the
+/// mutated copy drops, exactly like the tree-walk.
 pub enum CallHome {
     /// Caller variable home, with the in-function cell ordinal when the
     /// name declares one in the calling body.
@@ -1122,6 +1178,12 @@ impl Instruction {
 /// emission sites, and the fixture ledger agree. A deterministic-headless
 /// construct may not hide behind a "retained" label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What closeout decided about one fallback family.
+/// 
+/// The audit is exhaustive: every `FallbackReason` variant is classified
+/// here, and the closeout suite asserts the registry, the compiler's
+/// emission sites, and the fixture ledger agree. A deterministic-headless
+/// construct may not hide behind a "retained" label.
 pub enum FallbackDisposition {
     /// Still emitted for shapes the compiler cannot lower but that stay
     /// tree-walk by construction (a re-lowered variant keeps its tag).
@@ -1243,6 +1305,7 @@ impl FallbackReason {
 
 /// The closeout disposition registered for one family name.
 #[must_use]
+/// The closeout disposition registered for one family name.
 pub fn fallback_disposition(name: &str) -> Option<FallbackDisposition> {
     FALLBACK_DISPOSITIONS
         .iter()
@@ -1319,6 +1382,11 @@ pub const INSTRUCTION_NAMES: &[&str] = &[
 /// `security_leg`/`binary`/`batch_security` leaves, so values and refusals
 /// agree by construction.
 #[derive(Debug, Clone, PartialEq)]
+/// One item of a headless `request.security` expression list, compiled to
+/// the dataset-tail subset the harness serves. The tree-walk walks the same
+/// subset over its AST; both sides read the tail through the shared
+/// `security_leg`/`binary`/`batch_security` leaves, so values and refusals
+/// agree by construction.
 pub enum SecurityExpr {
     /// Bare leg or named column read from the confirmed tail.
     Leg(SymbolId),
@@ -1348,6 +1416,8 @@ pub enum SecurityExpr {
 /// One executable operation. Every operand is a dense id; no instruction
 /// hashes or allocates per execution.
 #[derive(Debug, Clone, PartialEq)]
+/// One executable operation. Every operand is a dense id; no instruction
+/// hashes or allocates per execution.
 pub enum Instruction {
     /// `dst = consts[value]`.
     Const {
@@ -2038,6 +2108,8 @@ pub enum Instruction {
 /// One function body (or the module top level): a flat instruction list
 /// with its own frame layout.
 #[derive(Debug, Clone, Default, PartialEq)]
+/// One function body (or the module top level): a flat instruction list
+/// with its own frame layout.
 pub struct CompiledBlock {
     /// Instructions in execution order; jump targets index this vec.
     pub instrs: Vec<Instruction>,
@@ -2078,6 +2150,8 @@ impl CompiledBlock {
 /// One linked method body: where it runs, how to bind it, and which
 /// receiver name its body spells.
 #[derive(Debug, Clone, PartialEq)]
+/// One linked method body: where it runs, how to bind it, and which
+/// receiver name its body spells.
 pub struct MethodEntry {
     /// Body block index within the owning module.
     pub block: usize,
@@ -2094,6 +2168,8 @@ pub struct MethodEntry {
 /// One compiled module: entry block plus function blocks, the slot count,
 /// and the constant pool.
 #[derive(Debug, Clone, PartialEq)]
+/// One compiled module: entry block plus function blocks, the slot count,
+/// and the constant pool.
 pub struct CompiledModule {
     /// Module key, exactly the `LinkedModule.key` this was compiled from.
     pub key: String,
@@ -2155,6 +2231,9 @@ pub const LEG_COUNT: u32 = 10;
 /// the linker's module set instead of merging it, so per-module identity
 /// (aliases, versions, call-site keys) is preserved by construction.
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Sparse compiled program: one module per linked key. The map mirrors
+/// the linker's module set instead of merging it, so per-module identity
+/// (aliases, versions, call-site keys) is preserved by construction.
 pub struct CompiledProgram {
     modules: HashMap<String, CompiledModule>,
 }
@@ -2193,6 +2272,8 @@ impl CompiledProgram {
 /// Wire-format refusal: truncated input, unknown tag, bad text, or bytes
 /// past the end of the block.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Wire-format refusal: truncated input, unknown tag, bad text, or bytes
+/// past the end of the block.
 pub enum DecodeError {
     /// Input ends mid-instruction.
     UnexpectedEof,
@@ -2920,6 +3001,10 @@ fn decode_fallback(
 /// inline, so the bytes stay self-describing; the fallback AST linkage
 /// rides link-time side tables, never these bytes.
 #[must_use]
+/// Encode one block to the wire form: tag bytes, little-endian operands,
+/// length-prefixed text. Open names resolve through `symbols` and encode
+/// inline, so the bytes stay self-describing; the fallback AST linkage
+/// rides link-time side tables, never these bytes.
 pub fn encode_block(block: &CompiledBlock, symbols: &SymbolTable) -> Vec<u8> {
     let mut out = Vec::new();
     put_u32(&mut out, block.instrs.len() as u32);
@@ -4101,6 +4186,8 @@ pub fn decode_block(bytes: &[u8], symbols: &mut SymbolTable) -> Result<CompiledB
 /// Encode one constant pool (tag + payload per entry, count-prefixed).
 /// Open names resolve through `symbols`.
 #[must_use]
+/// Encode one constant pool (tag + payload per entry, count-prefixed).
+/// Open names resolve through `symbols`.
 pub fn encode_consts(pool: &ConstPool, symbols: &SymbolTable) -> Vec<u8> {
     let mut out = Vec::new();
     put_u32(&mut out, pool.values.len() as u32);
@@ -4127,6 +4214,7 @@ pub fn decode_consts(bytes: &[u8], symbols: &mut SymbolTable) -> Result<ConstPoo
 
 /// Encode one symbol table (count-prefixed length-framed names).
 #[must_use]
+/// Encode one symbol table (count-prefixed length-framed names).
 pub fn encode_symbols(symbols: &SymbolTable) -> Vec<u8> {
     let mut out = Vec::new();
     put_u32(&mut out, symbols.names.len() as u32);
@@ -4157,6 +4245,11 @@ pub fn decode_symbols(bytes: &[u8]) -> Result<SymbolTable, DecodeError> {
 /// Display helpers shared by every capture arm below (hoisted from
 /// per-arm closures so all families spell the same shapes).
 #[cfg(test)]
+/// Test-only disassembler: one line per instruction with resolved
+/// constants, for reviewed output shape (never a runtime path).
+/// 
+/// Display helpers shared by every capture arm below (hoisted from
+/// per-arm closures so all families spell the same shapes).
 fn show_const(consts: &ConstPool, id: ConstId) -> String {
     match consts.get(id) {
         Some(ConstValue::Str(text)) => format!("{text:?}"),
@@ -4167,6 +4260,8 @@ fn show_const(consts: &ConstPool, id: ConstId) -> String {
 /// Test-only optional-constant display: the resolved text, or the
 /// untitled default both engines fall back to.
 #[cfg(test)]
+/// Test-only optional-constant display: the resolved text, or the
+/// untitled default both engines fall back to.
 fn show_opt_const(consts: &ConstPool, id: Option<ConstId>) -> String {
     match id {
         Some(id) => show_const(consts, id),
@@ -4176,6 +4271,7 @@ fn show_opt_const(consts: &ConstPool, id: Option<ConstId>) -> String {
 
 /// Test-only optional-slot display: the slot, or nothing when absent.
 #[cfg(test)]
+/// Test-only optional-slot display: the slot, or nothing when absent.
 fn show_opt_slot(slot: Option<SlotId>) -> String {
     match slot {
         Some(slot) => format!(" s{}", slot.0),
@@ -4185,6 +4281,7 @@ fn show_opt_slot(slot: Option<SlotId>) -> String {
 
 /// Test-only symbol display: the interned name, or `?` when unknown.
 #[cfg(test)]
+/// Test-only symbol display: the interned name, or `?` when unknown.
 fn show_symbol<'a>(symbols: &'a SymbolTable, id: &'a SymbolId) -> &'a str {
     symbols.resolve(*id).unwrap_or("?")
 }
@@ -4192,6 +4289,8 @@ fn show_symbol<'a>(symbols: &'a SymbolTable, id: &'a SymbolId) -> &'a str {
 /// Render one call home for the disassembler: the same spelling for both
 /// instructions that carry a home.
 #[cfg(test)]
+/// Render one call home for the disassembler: the same spelling for both
+/// instructions that carry a home.
 fn show_home(symbols: &SymbolTable, home: &CallHome) -> String {
     match home {
         CallHome::Var { name, .. } => show_symbol(symbols, name).to_owned(),

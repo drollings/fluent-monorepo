@@ -10,6 +10,7 @@ use thiserror::Error;
 
 /// Absolute-path violation at the `add` boundary (zvec throws).
 #[derive(Debug, Error, PartialEq, Eq)]
+/// Absolute-path violation at the `add` boundary (zvec throws).
 pub enum ChangeSetError {
     /// Changed paths must be absolute.
     #[error("changed paths must be absolute: {0}")]
@@ -18,6 +19,7 @@ pub enum ChangeSetError {
 
 /// Watcher event kind (zvec `ChangeKind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Watcher event kind (zvec `ChangeKind`).
 pub enum ChangeKind {
     /// Created (rename-to or new directory tree).
     Created,
@@ -29,6 +31,7 @@ pub enum ChangeKind {
 
 /// Drained batch handed to the coordinator (zvec `ChangeSetSnapshot`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Drained batch handed to the coordinator (zvec `ChangeSetSnapshot`).
 pub struct ChangeSetSnapshot {
     /// Exact files to re-index.
     pub touched_files: Vec<String>,
@@ -42,6 +45,7 @@ pub struct ChangeSetSnapshot {
 
 /// Construction options (zvec `ChangeSetOptions`).
 #[derive(Debug, Clone)]
+/// Construction options (zvec `ChangeSetOptions`).
 pub struct ChangeSetOptions {
     /// Workspace root (anchors budget widening; `None` ⇒ overflow forces full).
     pub root: Option<String>,
@@ -60,6 +64,7 @@ impl Default for ChangeSetOptions {
 
 /// Accumulating watcher-event batch (zvec `ChangeSet`).
 #[derive(Debug)]
+/// Accumulating watcher-event batch (zvec `ChangeSet`).
 pub struct ChangeSet {
     touched_files: HashSet<String>,
     rescan_directories: HashSet<String>,

@@ -7,6 +7,9 @@ use std::path::PathBuf;
 /// usage errors (the caller mistyped the endpoint); missing weights
 /// and boot failures are errors (the machine cannot serve).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Ask boot failure with its exit-code class attached. Bad ports are
+/// usage errors (the caller mistyped the endpoint); missing weights
+/// and boot failures are errors (the machine cannot serve).
 pub enum AskFail {
     /// Caller error: exit 2.
     Usage(String),
@@ -21,6 +24,12 @@ pub enum AskFail {
 /// resolve byte-identically through either layer. Pure (no weights,
 /// no I/O) so resolution pins without hardware.
 #[must_use]
+/// Effective ask model: the `roles.chat` head wins; an empty list
+/// falls back to the `llm.model` leaf (never the top-level
+/// `default` — that tag names the audio-bundle model, not the chat
+/// model). Defaults seed head and leaf equal, so default configs
+/// resolve byte-identically through either layer. Pure (no weights,
+/// no I/O) so resolution pins without hardware.
 pub fn resolve_ask_model(config: &orator::OratorConfig) -> String {
     orator::resolve_role_model(&config.roles, "chat")
         .unwrap_or_else(|| config.llm.model.clone())
@@ -165,6 +174,8 @@ pub(crate) fn verify_pinned_ask_weights(
 /// Speak-failure note: the answer already printed, so the voice
 /// failure names itself and never reads as an answer failure.
 #[must_use]
+/// Speak-failure note: the answer already printed, so the voice
+/// failure names itself and never reads as an answer failure.
 pub fn speak_failure_note(code: crate::ExitCode) -> String {
     format!("orator: answer printed, voice delivery failed (speak: {code:?})")
 }
@@ -175,6 +186,11 @@ pub fn speak_failure_note(code: crate::ExitCode) -> String {
 /// every `--speak` path (ask, chat, TUI): full text always prints,
 /// voice stays real-time.
 #[must_use]
+/// Short spoken form of a (possibly long) reply: first two sentences
+/// plus an announcement when text was cut. Short replies pass
+/// through unchanged so small talk stays natural. Single home for
+/// every `--speak` path (ask, chat, TUI): full text always prints,
+/// voice stays real-time.
 pub fn concise_for_speech(reply: &str) -> String {
     const LIMIT: usize = 500;
     let trimmed = reply.trim();

@@ -26,6 +26,7 @@ use fluent_types::StepStatus;
 
 /// Errors produced by dependency-session operations.
 #[derive(Debug, thiserror::Error)]
+/// Errors produced by dependency-session operations.
 pub enum DagError {
     #[error("step not found: {0}")]
     StepNotFound(String),
@@ -45,6 +46,7 @@ pub enum DagError {
 
 /// The result of executing a step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// The result of executing a step.
 pub struct StepResult {
     pub content: String,
     pub accepted: bool,
@@ -55,6 +57,7 @@ pub struct StepResult {
 
 /// A single step in a dependency session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A single step in a dependency session.
 pub struct SessionStep {
     pub id: String,
     pub description: String,
@@ -96,6 +99,11 @@ impl SessionStep {
 /// from KV) or **ignored** (a different model re-prefills from the ledger).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// A step's checkpoint flag drives rewind; KV snapshots on context advance
+/// use the model's KV key. This policy is the explicit decision rule the
+/// coordinator applies when handing control between models: whether a
+/// previously-snapshotted KV state should be **restored** (same model resumes
+/// from KV) or **ignored** (a different model re-prefills from the ledger).
 pub enum KvSnapshotPolicy {
     /// Restore only when the pending snapshot belongs to the same model (KV
     /// affinity). The default — a same-model re-entry resumes from KV, a
@@ -675,6 +683,14 @@ pub const SESSION_SNAPSHOT_SWEEP_INTERVAL: Duration = Duration::from_secs(3600);
 /// mutate it from the (async) request path without holding the registry lock
 /// across an await.
 #[derive(Clone)]
+/// Process-wide registry of `DependencySession`s keyed by `session_id`.
+/// 
+/// The canonical server-side session home: sessions are
+/// created on first use, attached to a shared `SnapshotStore`, and retained
+/// for the process lifetime so checkpoint/rewind state survives across
+/// requests. Each session is individually `Mutex`-wrapped so the server can
+/// mutate it from the (async) request path without holding the registry lock
+/// across an await.
 pub struct SessionRegistry {
     inner: Arc<SessionRegistryInner>,
 }

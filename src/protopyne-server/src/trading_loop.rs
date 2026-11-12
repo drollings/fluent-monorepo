@@ -34,6 +34,9 @@ use crate::runner::{bar_quote, BarDecision, BarHealth, RunnerConfig};
 /// in the venue because the bar body is a server type; the method still reads
 /// as a session method at the call site.
 #[allow(async_fn_in_trait)]
+/// Feed-driven counterpart of the replay drivers. Implemented here rather than
+/// in the venue because the bar body is a server type; the method still reads
+/// as a session method at the call site.
 pub trait TradingLoopExt {
     /// Drive one loop to completion: consume `feed` to exhaustion, resolve a
     /// quote per bar, advance the shared body, and pace to `cadence`. Returns

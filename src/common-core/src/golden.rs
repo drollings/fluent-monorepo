@@ -21,6 +21,7 @@ use crate::metrics::LatencyHistogram;
 
 /// How one position mismatched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How one position mismatched.
 pub enum MismatchKind {
     /// Both sides present but farther apart than `eps` (or either side
     /// non-finite).
@@ -33,6 +34,7 @@ pub enum MismatchKind {
 
 /// One mismatched position.
 #[derive(Debug, Clone, PartialEq)]
+/// One mismatched position.
 pub struct Mismatch {
     /// Element index.
     pub index: usize,
@@ -58,6 +60,7 @@ impl fmt::Display for Mismatch {
 
 /// Outcome of [`compare_series`].
 #[derive(Debug, Clone, PartialEq)]
+/// Outcome of [`compare_series`].
 pub struct CompareReport {
     /// `true` when every compared position matched within `eps`.
     pub matches: bool,
@@ -77,6 +80,13 @@ pub struct CompareReport {
 /// length skew, or a non-finite actual — is one [`Mismatch`]. Empty series
 /// match empty series.
 #[must_use]
+/// Compare `actual` against a pinned `expected` series at absolute tolerance
+/// `eps`.
+/// 
+/// `None` equals `None` (warmup/`na` agreement matters as much as values);
+/// anything else unequal — value drift beyond `eps`, `None` vs `Some`,
+/// length skew, or a non-finite actual — is one [`Mismatch`]. Empty series
+/// match empty series.
 pub fn compare_series(actual: &[Option<f64>], expected: &[Option<f64>], eps: f64) -> CompareReport {
     let compared = actual.len().max(expected.len());
     let mut mismatches = Vec::new();

@@ -37,6 +37,11 @@ use crate::view::MarketView;
 /// it) and a `Refuse` row (the construct is knowingly unsupported); naming a
 /// `Correct` row records the accepted divergence.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Constructs a Pine signal declares it relies on.
+/// 
+/// Construction refuses an unknown construct (the matrix cannot vouch for
+/// it) and a `Refuse` row (the construct is knowingly unsupported); naming a
+/// `Correct` row records the accepted divergence.
 pub struct ParityClaim {
     constructs: Vec<String>,
 }
@@ -95,6 +100,13 @@ impl ParityClaim {
 /// selections report byte-identical outcomes on lowered programs.
 #[cfg(feature = "bytecode")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Execution selection for one Pine signal.
+/// 
+/// The compiled loop is the default: a signal that does not ask for the
+/// tree-walk evaluates on the one shipping path. The tree-walk opt-out
+/// exists only where the oracle does (test and `oracle` builds), so
+/// production code cannot name another engine — and where it exists both
+/// selections report byte-identical outcomes on lowered programs.
 pub enum PineExecution {
     /// The compiled slot VM (default).
     #[default]
@@ -107,6 +119,7 @@ pub enum PineExecution {
 
 /// One linked Pine program evaluated against the decision view.
 #[derive(Debug, Clone)]
+/// One linked Pine program evaluated against the decision view.
 struct PineCore {
     modules: Vec<LinkedModule>,
     plot_title: String,
@@ -181,6 +194,7 @@ impl PineCore {
 
 /// A Pine script's declared plot as a signal, behind the `pine` feature.
 #[derive(Debug)]
+/// A Pine script's declared plot as a signal, behind the `pine` feature.
 pub struct PineSignal {
     name: String,
     core: Arc<PineCore>,

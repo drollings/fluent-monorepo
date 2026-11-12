@@ -33,6 +33,9 @@ use crate::vocab::Vocab;
 /// `NORM` override (the only per-token attribute spaCy permits in special
 /// cases besides `ORTH` — `tokenizer.pyx:_validate_special_case`).
 #[derive(Debug, Clone)]
+/// One token of a special-case rule: an orth lexeme plus the token-level
+/// `NORM` override (the only per-token attribute spaCy permits in special
+/// cases besides `ORTH` — `tokenizer.pyx:_validate_special_case`).
 pub struct SpecialToken {
     /// The orth lexeme.
     pub orth: Arc<Lexeme>,
@@ -42,6 +45,7 @@ pub struct SpecialToken {
 
 /// A loaded special-case rule.
 #[derive(Debug, Clone)]
+/// A loaded special-case rule.
 pub struct SpecialRule {
     /// The rule text (the `ORTH` concatenation of its tokens).
     pub key: String,
@@ -55,6 +59,7 @@ pub struct SpecialRule {
 
 /// Tokenizer configuration: language-specific pattern strings and switches.
 #[derive(Debug, Clone)]
+/// Tokenizer configuration: language-specific pattern strings and switches.
 pub struct TokenizerConfig {
     /// Joined prefix pattern (`^p1|^p2|...`) or `None` to disable prefix
     /// splitting.
@@ -122,6 +127,8 @@ pub struct Tokenizer {
 /// The frozen rule tables: every rule the constructor registered, published
 /// once and read lock-free by the span path.
 #[derive(Default)]
+/// The frozen rule tables: every rule the constructor registered, published
+/// once and read lock-free by the span path.
 struct FrozenTables {
     /// Special-case rules keyed by span hash (`_specials`).
     specials: HashMap<u64, Arc<SpecialRule>>,
@@ -158,6 +165,11 @@ fn shard_of(key: u64) -> usize {
 /// (`tokenize` passes `Enabled`, rule-phrase tokenization passes
 /// `Disabled`); every inner fn takes the mode, never a bool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Whether the span path consults the special-case tables: the single
+/// spelling replacing the `with_special_cases: bool` threaded through the
+/// five affix-path fns. Converted once at the `tokenize_affixes` head
+/// (`tokenize` passes `Enabled`, rule-phrase tokenization passes
+/// `Disabled`); every inner fn takes the mode, never a bool.
 enum SpecialCaseMode {
     Enabled,
     Disabled,

@@ -30,6 +30,7 @@ use crate::order::OrderSide;
 
 /// Which side exposure sits on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Which side exposure sits on.
 pub enum PositionSide {
     /// Net long exposure.
     Long,
@@ -81,6 +82,9 @@ impl fmt::Display for PositionSide {
 /// the engine never reads a clock.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// One executed fill as the position engine sees it: instrument, direction,
+/// size, price, fee, identity, and time. Timestamps arrive on the fill —
+/// the engine never reads a clock.
 pub struct PositionFill {
     /// Underlying this fill belongs to; must match the position's.
     pub underlying: String,
@@ -101,6 +105,7 @@ pub struct PositionFill {
 /// One instrument's open exposure.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// One instrument's open exposure.
 pub struct SpreadPosition {
     /// Underlying this position tracks.
     pub underlying: String,
@@ -170,6 +175,7 @@ impl SpreadPosition {
 /// The closed-position record left behind by an exact close or a flip.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// The closed-position record left behind by an exact close or a flip.
 pub struct PositionExited {
     /// Underlying that closed.
     pub underlying: String,
@@ -219,6 +225,9 @@ impl PositionExited {
 /// `(current_value + fill_value) / (current_quantity + fill_quantity)`.
 /// Both-zero in means zero out — no division-by-zero, never `NaN`.
 #[must_use]
+/// Volume-weighted average entry price when a fill joins existing exposure:
+/// `(current_value + fill_value) / (current_quantity + fill_quantity)`.
+/// Both-zero in means zero out — no division-by-zero, never `NaN`.
 pub fn calculate_price_entry_average(
     current_average: Money,
     current_quantity: u32,
@@ -240,6 +249,9 @@ pub fn calculate_price_entry_average(
 /// quantity-scaled distance from entry, net of the closing fee. Long gains
 /// when the close prints above entry; short gains when it prints below.
 #[must_use]
+/// Realised PnL from closing `closed_quantity` at `closed_price`: the
+/// quantity-scaled distance from entry, net of the closing fee. Long gains
+/// when the close prints above entry; short gains when it prints below.
 pub fn calculate_pnl_realised(
     side: PositionSide,
     entry_average: Money,
@@ -262,6 +274,12 @@ pub fn calculate_pnl_realised(
 /// values that bypassed [`update_from_fill`]) estimates zero fees rather
 /// than dividing by zero.
 #[must_use]
+/// Estimated unrealised PnL from closing the whole open quantity at `price`,
+/// net of the pro-rata exit-fee estimate (`quantity / max * enter-fees`):
+/// the enter fees bought a `max`-sized position, so the per-quantity ratio
+/// prices the round trip home. A zero `quantity_abs_max` (only observable on
+/// values that bypassed [`update_from_fill`]) estimates zero fees rather
+/// than dividing by zero.
 pub fn calculate_pnl_unrealised(
     side: PositionSide,
     entry_average: Money,

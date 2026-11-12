@@ -58,6 +58,14 @@ pub fn frame_of_values(name: &str, values: &[Option<f64>]) -> Result<DataFrame, 
 /// of joining the crate-root re-exports — same name, different arity and
 /// meaning.
 #[must_use]
+/// Kaufman-style efficiency ratio over closes: net displacement over total
+/// path length, `|c[i] - c[i-p]| / sum |diff|`. Reads `None` while warming
+/// and on degenerate (flat) windows, matching the reference's null there.
+/// 
+/// Note: this deliberately shares its name with the per-bar candle measure
+/// and therefore stays module-pathed (`research::efficiency_ratio`) instead
+/// of joining the crate-root re-exports — same name, different arity and
+/// meaning.
 pub fn efficiency_ratio(closes: &[f64], period: usize) -> Vec<Option<f64>> {
     closes
         .iter()
@@ -82,6 +90,9 @@ pub fn efficiency_ratio(closes: &[f64], period: usize) -> Vec<Option<f64>> {
 /// `sum(h - l) / (max(h) - min(l))`. Flat windows read `None` on both sides
 /// of the Expr-parity comparison (the reference divides zero by zero there).
 #[must_use]
+/// Price density: summed bar ranges over the window's total extent,
+/// `sum(h - l) / (max(h) - min(l))`. Flat windows read `None` on both sides
+/// of the Expr-parity comparison (the reference divides zero by zero there).
 pub fn price_density(highs: &[f64], lows: &[f64], period: usize) -> Vec<Option<f64>> {
     let len = highs.len().min(lows.len());
     (0..len)
@@ -104,6 +115,10 @@ pub fn price_density(highs: &[f64], lows: &[f64], period: usize) -> Vec<Option<f
 /// window (including a zero extent) yields `None`, matching the reference
 /// null that its `NaN` maps to in fixtures.
 #[must_use]
+/// Fractal dimension `1 + (ln(L) + ln2) / ln(2p)` with
+/// `L = sum sqrt(1/p^2 + diff(close) / extent)`. Any non-finite leg in the
+/// window (including a zero extent) yields `None`, matching the reference
+/// null that its `NaN` maps to in fixtures.
 pub fn fractal_dimension(
     highs: &[f64],
     lows: &[f64],

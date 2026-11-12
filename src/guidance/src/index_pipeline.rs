@@ -23,23 +23,22 @@ use fluent_wvr::{
     WorkUnit,
 };
 use internment::ArcIntern;
-use search_vector::db::{FileRecord, FragmentLemma, GuidanceDb, SymbolRecord};
+use search_vector::db::GuidanceDb;
 
-use crate::ast_parser::AstParser;
+use crate::ast_parser::{AstParser, CommentBlock};
 use crate::diff::{compute_diff, hash_file, make_file_id, ScannedFile};
-use crate::extractor::code::{CodeExtractor, HarvestedFile};
+use crate::extractor::code::{module_fragment_for, CodeExtractor, HarvestedFile};
 use crate::extractor::{ChunkOptions, ExtractSource, FragmentMetadata, PreparedFragment};
-use crate::query::db_storage::{fragment_lemma, fragment_record};
-use crate::query::ingest::query_lemmas;
-use crate::search_types::{
-    CodeEntityModifier, EntityFragment, EntityMetadata, FileKind, FragmentContent, FragmentSpan,
-};
+use crate::query::writer::{scanned_record, FragmentWriter, VectorPolicy};
+use crate::search_types::FileKind;
 use crate::selection::{select_files, FileSelection, ScanDiagnostics, SelectedFile};
 
 /// Files per bounded wave (named constant, tuned in P6).
 pub const INDEX_WAVE_FILES: usize = 64;
 /// Fragment-index schema version enforced by the `SyncEngine` gate.
-pub const INDEX_SCHEMA_VERSION: u32 = 1;
+/// v5 stores item chunks from both writers: old whole-file live rows are
+/// refused and rebuilt from sidecars.
+pub const INDEX_SCHEMA_VERSION: u32 = 5;
 /// Default cross-file embed packing size.
 pub const INDEX_EMBED_BATCH: usize = 32;
 /// Transient embed retry budget (zvec C.4: 3×500ms).
@@ -51,6 +50,7 @@ pub const EMBED_RETRY_JITTER_PCT: u32 = 50;
 
 /// Pipeline options.
 #[derive(Debug, Clone)]
+/// Pipeline options.
 pub struct IndexOptions {
     /// Cross-file embed packing size.
     pub max_embed_batch: usize,
@@ -78,6 +78,7 @@ impl Default for IndexOptions {
 
 /// Progress report (phase + monotonic counts).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Progress report (phase + monotonic counts).
 pub struct IndexProgress {
     /// `scanning` | `embedding` | `retry`.
     pub phase: &'static str,
@@ -93,6 +94,7 @@ pub struct IndexProgress {
 
 /// Index run counts (mirrors zvec `IndexStats` + `IndexResult`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Index run counts (mirrors zvec `IndexStats` + `IndexResult`).
 pub struct IndexStats {
     /// Files seen by the scan.
     pub files_scanned: usize,
@@ -126,6 +128,8 @@ pub struct IndexStats {
 /// Index failure (stored per-file data surfaces as `FilesFailed`; the run
 /// still commits every sibling first).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Index failure (stored per-file data surfaces as `FilesFailed`; the run
+/// still commits every sibling first).
 pub enum IndexError {
     /// Files failed after the automatic retry (context names files +
     /// reasons, per `:1042`).
@@ -144,6 +148,7 @@ pub enum IndexError {
 
 /// Stable wave-unit name.
 #[must_use]
+/// Stable wave-unit name.
 pub fn wave_name(index: usize) -> String {
     format!("index-wave-{index}")
 }
@@ -155,6 +160,12 @@ pub fn wave_name(index: usize) -> String {
 /// embedder at all (diff fast path). Synchronous data plane; async
 /// callers drive it from `spawn_blocking`.
 #[allow(clippy::too_many_arguments)]
+/// Run the full index pass over `selection`.
+///
+/// The provider is wrapped in a content-hash `CachedEmbeddingProvider`
+/// (unchanged content never re-embeds); unchanged files never reach the
+/// embedder at all (diff fast path). Synchronous data plane; async
+/// callers drive it from `spawn_blocking`.
 pub fn index_workspace<P>(
     db: Arc<GuidanceDb>,
     provider: P,
@@ -249,16 +260,44 @@ where
         .chain(diff.modified)
         .chain(diff.pending)
         .collect();
+    // Embedder rotation backfill: files whose recorded embedder differs
+    // from the current one re-ingest even though their bytes are unchanged.
+    // Content staleness already covers input changes; unknown (status-less)
+    // files are never forced.
+    let backfilled: std::collections::HashSet<String> = {
+        let embedder = format!("{}:{}", provider.name(), provider.dimensions());
+        let rotated = db
+            .files_needing_embed_backfill(&embedder)
+            .unwrap_or_default();
+        let by_id: HashMap<&str, &ScannedFile> = scanned
+            .iter()
+            .map(|file| (file.id.as_str(), file))
+            .collect();
+        let mut forced = std::collections::HashSet::new();
+        for id in rotated {
+            if let Some(file) = by_id.get(id.as_str()) {
+                if !work.iter().any(|scheduled| scheduled.id == id) {
+                    work.push((*file).clone());
+                }
+                forced.insert(id);
+            }
+        }
+        forced
+    };
     // Clean files scheduled without an invalidation cause trip the
     // ratchet: indexed files whose content hash already matches. Pending
-    // retries carry their failure as cause and never count.
+    // retries carry their failure as cause and never count, and neither do
+    // embedder-rotation backfills (their cause is the rotated embedder).
     for file in &work {
         let clean = by_id.get(file.id.as_str()).is_some_and(|stored| {
             stored.content_hash.is_some()
                 && stored.content_hash == file.content_hash
-                && stored.index_status.as_deref().is_some_and(|s| s != "failed")
+                && stored
+                    .index_status
+                    .as_deref()
+                    .is_some_and(|s| s != "failed")
         });
-        if clean {
+        if clean && !backfilled.contains(&file.id) {
             stats.reprocessed_clean += 1;
         }
     }
@@ -288,6 +327,8 @@ where
             before.insert(
                 file.id.clone(),
                 rows.iter()
+                    // Module fragments carry comments, never interfaces.
+                    .filter(|row| row.name.as_deref() != Some("$file"))
                     .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
                     .collect(),
             );
@@ -302,8 +343,10 @@ where
     let mut work_keys: HashMap<String, String> = HashMap::new();
     for file in &work {
         if let Some(rows) = before.get(&file.id) {
-            let framed: Vec<String> =
-                rows.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+            let framed: Vec<String> = rows
+                .iter()
+                .map(|(id, hash)| format!("{id}={hash}"))
+                .collect();
             let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
             work_keys.insert(
                 file.id.clone(),
@@ -391,7 +434,11 @@ where
                 .map(|rows| {
                     rows.iter()
                         .map(|row| {
-                            (row.importer.clone(), row.specifier.clone(), row.resolved.clone())
+                            (
+                                row.importer.clone(),
+                                row.specifier.clone(),
+                                row.resolved.clone(),
+                            )
                         })
                         .collect()
                 })
@@ -404,6 +451,7 @@ where
                     .symbols_for_file(&file.id)
                     .map(|rows| {
                         rows.iter()
+                            .filter(|row| row.name.as_deref() != Some("$file"))
                             .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
                             .collect()
                     })
@@ -412,8 +460,10 @@ where
                     // The pure signature gate fired; confirm with the
                     // component-bound work key so a matching key (same
                     // signatures, same consumed inputs) still reuses.
-                    let framed: Vec<String> =
-                        fresh.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+                    let framed: Vec<String> = fresh
+                        .iter()
+                        .map(|(id, hash)| format!("{id}={hash}"))
+                        .collect();
                     let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
                     let reusable = work_keys.get(&file.id).is_some_and(|stored| {
                         crate::item_hashes::work_key_matches(
@@ -436,16 +486,20 @@ where
                     macro_moved.push(file.absolute_path.clone());
                 }
                 before.insert(file.id.clone(), fresh.clone());
-                let framed: Vec<String> =
-                    fresh.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+                let framed: Vec<String> = fresh
+                    .iter()
+                    .map(|(id, hash)| format!("{id}={hash}"))
+                    .collect();
                 let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
                 work_keys.insert(
                     file.id.clone(),
                     crate::item_hashes::work_key(&file.id, &sigs, &components.components),
                 );
             }
-            let failed_abs: Vec<String> =
-                failed.iter().map(|(file, _)| file.absolute_path.clone()).collect();
+            let failed_abs: Vec<String> = failed
+                .iter()
+                .map(|(file, _)| file.absolute_path.clone())
+                .collect();
             let scanned_roots: Vec<(String, String)> = scanned
                 .iter()
                 .map(|file| (file.absolute_path.clone(), file.root_path.clone()))
@@ -475,8 +529,10 @@ where
                             .iter()
                             .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
                             .collect();
-                        let framed: Vec<String> =
-                            pairs.iter().map(|(id, hash)| format!("{id}={hash}")).collect();
+                        let framed: Vec<String> = pairs
+                            .iter()
+                            .map(|(id, hash)| format!("{id}={hash}"))
+                            .collect();
                         let sigs: Vec<&str> = framed.iter().map(String::as_str).collect();
                         work_keys.insert(
                             file.id.clone(),
@@ -712,6 +768,9 @@ where
         }
         // Embed phase: cross-file packing (zvec batch parity) with
         // per-file / per-fragment fallback (file + one-by-one parity).
+        // A per-file embed failure degrades that file to unembedded rows
+        // (recorded in the status table) instead of failing the wave:
+        // retries happen on input or embedder change, never in a loop.
         let (mut by_index, failures) = match embed_ready_files(&self.shared, &ready) {
             Ok((ok, failed)) => (ok.into_iter().collect::<HashMap<_, _>>(), failed),
             Err(reason) => {
@@ -719,24 +778,28 @@ where
                 return Err(WorkError::Execution(format!("{} aborted", self.name)));
             }
         };
-        for (index, reason) in failures {
-            let file = ready
-                .iter()
-                .find(|prepared| prepared.index == index)
-                .map(|prepared| prepared.file.clone())
-                .expect("failed file is prepared");
-            common_core::sync::lock(&outcomes).push(FileOutcome::Failed { file, reason });
-        }
+        let failures: HashMap<usize, EmbedFileFailure> = failures.into_iter().collect();
         // Commit phase: per-file replace + vector-count validation.
         for prepared in &ready {
-            if common_core::sync::lock(&outcomes).iter().any(|outcome| match outcome {
-                FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
-                _ => false,
-            }) {
+            if common_core::sync::lock(&outcomes)
+                .iter()
+                .any(|outcome| match outcome {
+                    FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
+                    _ => false,
+                })
+            {
                 continue;
             }
-            let vectors = by_index.remove(&prepared.index).unwrap_or_default();
-            let outcome = commit_prepared(&self.shared, prepared, &vectors);
+            let outcome = match by_index.remove(&prepared.index) {
+                Some(vectors) => commit_prepared(&self.shared, prepared, &vectors),
+                None => match failures.get(&prepared.index) {
+                    Some(failure) => commit_degraded(&self.shared, prepared, failure),
+                    None => FileOutcome::Failed {
+                        file: prepared.file.clone(),
+                        reason: "missing vectors without embed failure".to_string(),
+                    },
+                },
+            };
             common_core::sync::lock(&outcomes).push(outcome);
         }
         Ok(WorkOutput::ok(format!("{} done", self.name)))
@@ -769,6 +832,8 @@ struct PreparedFile {
     index: usize,
     file: ScannedFile,
     fragments: Vec<PreparedFragment>,
+    /// Comment scopes from the same extract pass, mapped to fragments at commit.
+    blocks: Vec<CommentBlock>,
     texts: Vec<String>,
     /// Graph inputs harvested from the same extract pass (no second parse).
     harvest: HarvestedFile,
@@ -788,7 +853,6 @@ fn prepare_one_file<P>(
 where
     P: EmbeddingProvider + Sync + 'static,
 {
-    let _ = shared;
     if file.kind.as_deref() == Some("image") {
         // Images are discovered and kind-tagged with an (empty) stored
         // record, never embedded (G0.5); the record keeps re-runs clean.
@@ -833,7 +897,7 @@ where
             });
         }
     };
-    let (fragments, harvest) = match prepare_fragments(parser, &source, chunk_options) {
+    let (mut fragments, harvest, blocks) = match prepare_fragments(parser, &source, chunk_options) {
         Ok(prepared) => prepared,
         Err(e) => {
             return PrepareOutcome::Done(FileOutcome::Failed {
@@ -842,9 +906,19 @@ where
             });
         }
     };
+    if let Some(module) = module_fragment_for(&file.id, &blocks) {
+        fragments.push(module);
+    }
     let texts: Vec<String> = fragments
         .iter()
         .map(|fragment| {
+            if kind == FileKind::Code {
+                if let Some(input) =
+                    embedding_input_for_fragment(shared.db.as_ref(), fragment, &blocks)
+                {
+                    return input;
+                }
+            }
             crate::extractor::vector_content::vector_content_for_fragment(
                 &fragment.metadata,
                 fragment.embedding_source(),
@@ -856,6 +930,7 @@ where
         index,
         file: file.clone(),
         fragments,
+        blocks,
         texts,
         harvest,
     })
@@ -864,12 +939,16 @@ where
 /// Embed every prepared file with cross-file packing; a failed pack falls
 /// back to per-file, then per-fragment singles, so a poison fragment fails
 /// its file, not its wave (zvec batch/file/one-by-one parity). Returns
-/// per-file vectors plus per-file failure reasons, or a fail-fast abort.
+/// per-file vectors plus per-file failures, or a fail-fast abort.
 #[allow(clippy::type_complexity)]
+/// Embed every prepared file with cross-file packing; a failed pack falls
+/// back to per-file, then per-fragment singles, so a poison fragment fails
+/// its file, not its wave (zvec batch/file/one-by-one parity). Returns
+/// per-file vectors plus per-file failures, or a fail-fast abort.
 fn embed_ready_files<P>(
     shared: &SharedPipeline<P>,
     ready: &[PreparedFile],
-) -> Result<(Vec<(usize, Vec<Vec<f32>>)>, Vec<(usize, String)>), String>
+) -> Result<(Vec<(usize, Vec<Vec<f32>>)>, Vec<(usize, EmbedFileFailure)>), String>
 where
     P: EmbeddingProvider + Sync + 'static,
 {
@@ -880,7 +959,7 @@ where
         }
     }
     let mut per_file: HashMap<usize, Vec<Vec<f32>>> = HashMap::new();
-    let mut file_failed: HashMap<usize, String> = HashMap::new();
+    let mut file_failed: HashMap<usize, EmbedFileFailure> = HashMap::new();
     for pack in flat.chunks(shared.options.max_embed_batch.max(1)) {
         let refs: Vec<&str> = pack.iter().map(|(_, text)| *text).collect();
         match embed_with_retry(
@@ -895,7 +974,7 @@ where
                 }
             }
             Err(EmbedFailure::FailFast(reason)) => return Err(reason),
-            Err(EmbedFailure::Retryable(batch_error)) => {
+            Err(EmbedFailure::Retryable(batch_failure)) => {
                 // One-by-one fallback per contributing file.
                 let mut members: HashMap<usize, Vec<&str>> = HashMap::new();
                 for (index, text) in pack {
@@ -916,7 +995,7 @@ where
                         }
                         Err(EmbedFailure::FailFast(reason)) => return Err(reason),
                         Err(EmbedFailure::Retryable(_)) => {
-                            file_failed.insert(index, batch_error.clone());
+                            file_failed.insert(index, batch_failure.clone());
                         }
                     }
                 }
@@ -926,8 +1005,8 @@ where
     let mut ok = Vec::new();
     let mut failed = Vec::new();
     for prepared in ready {
-        if let Some(reason) = file_failed.remove(&prepared.index) {
-            failed.push((prepared.index, reason));
+        if let Some(failure) = file_failed.remove(&prepared.index) {
+            failed.push((prepared.index, failure));
         } else {
             ok.push((
                 prepared.index,
@@ -940,6 +1019,112 @@ where
 
 fn batch_vectors(batch: &BatchEmbedding) -> Vec<Vec<f32>> {
     (0..batch.count).map(|i| batch.vector(i).to_vec()).collect()
+}
+
+/// Phase budget for one embedding input: comment and summary text before
+/// the model window. Caps cost per fragment; oversize inputs truncate with
+/// a recorded gap instead of failing.
+pub const MAX_EMBEDDING_INPUT_CHARS: usize = 4000;
+
+/// Candidate embedding input source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Candidate embedding input source.
+pub enum EmbeddingInput {
+    /// Raw comment text only.
+    Comment,
+    /// Generated summary text only.
+    Summary,
+    /// Summary followed by comment text.
+    Both,
+}
+
+/// Build one fragment's embedding input from its comment and summary.
+/// Empty unless at least one side is present under the mode; oversize
+/// inputs truncate to the cap and record a gap instead of failing.
+pub fn build_embedding_input(
+    node_key: &str,
+    doc: Option<&str>,
+    summary: Option<&str>,
+    mode: EmbeddingInput,
+) -> (Option<String>, Option<crate::summary::SummaryGap>) {
+    let mut parts = Vec::new();
+    if matches!(mode, EmbeddingInput::Summary | EmbeddingInput::Both) {
+        if let Some(text) = summary.map(str::trim).filter(|text| !text.is_empty()) {
+            parts.push(text);
+        }
+    }
+    if matches!(mode, EmbeddingInput::Comment | EmbeddingInput::Both) {
+        if let Some(text) = doc.map(str::trim).filter(|text| !text.is_empty()) {
+            parts.push(text);
+        }
+    }
+    if parts.is_empty() {
+        return (None, None);
+    }
+    let mut text = parts.join("\n");
+    let mut gap = None;
+    if text.len() > MAX_EMBEDDING_INPUT_CHARS {
+        let mut end = MAX_EMBEDDING_INPUT_CHARS;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        gap = Some(crate::summary::SummaryGap {
+            node_key: node_key.to_string(),
+            reason: "truncated",
+            detail: format!("embedding input cut to {end} chars"),
+        });
+    }
+    (Some(text), gap)
+}
+
+/// Embedding input for one prepared code fragment: summary-aware text
+/// when either side exists, falling back to the existing content-derived
+/// window otherwise. Prose keeps its content-derived input. Summaries
+/// apply only when their recorded hash still matches the current block:
+/// a stale row degrades to the comment input, never silently.
+fn embedding_input_for_fragment(
+    db: &GuidanceDb,
+    fragment: &PreparedFragment,
+    blocks: &[CommentBlock],
+) -> Option<String> {
+    let (doc, name, scope) = match &fragment.metadata {
+        Some(FragmentMetadata::Code {
+            doc,
+            symbol_name,
+            scope,
+            ..
+        }) => (
+            doc.as_deref(),
+            symbol_name.as_deref().unwrap_or(""),
+            scope.as_deref().unwrap_or(""),
+        ),
+        _ => return None,
+    };
+    if name.is_empty() && doc.map_or(true, |doc| doc.trim().is_empty()) {
+        return None;
+    }
+    let node_key = if scope.is_empty() {
+        name.to_string()
+    } else {
+        format!("{scope}::{name}")
+    };
+    let block_hash = blocks
+        .iter()
+        .find(|block| block.node_key == node_key)
+        .map(|block| block.comment_hash.as_str());
+    let summary = db
+        .summaries_for_fragment(&fragment.id)
+        .ok()
+        .and_then(|rows| {
+            rows.into_iter().find(|row| {
+                row.status == "ready" && block_hash.is_some_and(|hash| hash == row.comment_hash)
+            })
+        })
+        .map(|row| row.summary);
+    let (input, _gap) =
+        build_embedding_input(&node_key, doc, summary.as_deref(), EmbeddingInput::Both);
+    input
 }
 
 /// Per-fragment singles with retry (deepest fallback rung).
@@ -968,24 +1153,19 @@ fn commit_prepared<P>(
 where
     P: EmbeddingProvider + Sync + 'static,
 {
-    if vectors.len() != prepared.fragments.len() {
-        return FileOutcome::Failed {
-            file: prepared.file.clone(),
-            reason: format!(
-                "vector-count mismatch: {} vectors for {} fragments",
-                vectors.len(),
-                prepared.fragments.len()
-            ),
-        };
-    }
     let commit_started = Instant::now();
     let result = commit_file(
         shared.db.as_ref(),
         shared.nlp.as_deref(),
         &prepared.file,
         &prepared.fragments,
+        &prepared.blocks,
         vectors,
         &prepared.harvest,
+        &prepared.texts,
+        &embedder_id(&shared.provider),
+        true,
+        false,
     );
     shared.histogram_commit.observe_duration(commit_started);
     match result {
@@ -997,11 +1177,62 @@ where
     }
 }
 
-fn prepare_fragments(
+/// Degraded commit for files whose embed failed: rows persist unembedded
+/// with a recorded status instead of failing the file. The next attempt
+/// waits for new input, a new embedder, or an explicit backfill.
+fn commit_degraded<P>(
+    shared: &SharedPipeline<P>,
+    prepared: &PreparedFile,
+    failure: &EmbedFileFailure,
+) -> FileOutcome
+where
+    P: EmbeddingProvider + Sync + 'static,
+{
+    let commit_started = Instant::now();
+    let result = commit_file(
+        shared.db.as_ref(),
+        shared.nlp.as_deref(),
+        &prepared.file,
+        &prepared.fragments,
+        &prepared.blocks,
+        &[],
+        &prepared.harvest,
+        &prepared.texts,
+        &embedder_id(&shared.provider),
+        false,
+        failure.unavailable,
+    );
+    shared.histogram_commit.observe_duration(commit_started);
+    tracing::info!(
+        file = prepared.file.relative_path.as_str(),
+        reason = failure.reason.as_str(),
+        unavailable = failure.unavailable,
+        "embedding degraded to unembedded rows",
+    );
+    match result {
+        Ok(count) => FileOutcome::Indexed { fragments: count },
+        Err(reason) => FileOutcome::Failed {
+            file: prepared.file.clone(),
+            reason,
+        },
+    }
+}
+
+/// Embedder identity bound into status rows: vectors are only reusable
+/// under the embedder (and dimensions) that produced them.
+fn embedder_id<P: EmbeddingProvider + 'static>(provider: &CachedEmbeddingProvider<P>) -> String {
+    format!("{}:{}", provider.name(), provider.dimensions())
+}
+
+/// Extractor dispatch shared by the batch pipeline and live sync: code,
+/// then markdown, then text over one fallback ladder. The code rung yields
+/// fragments, graph inputs, and comment blocks from a single parse.
+pub fn prepare_fragments(
     parser: &mut AstParser,
     source: &ExtractSource,
     options: ChunkOptions,
-) -> Result<(Vec<PreparedFragment>, HarvestedFile), crate::extractor::ExtractError> {
+) -> Result<(Vec<PreparedFragment>, HarvestedFile, Vec<CommentBlock>), crate::extractor::ExtractError>
+{
     // Extractor dispatch rides the sync fallback ladder (N.ladder): code,
     // then markdown, then text. Each rung declines sources outside its
     // contract (`Ok(None)`); an empty rung is skipped, never an error.
@@ -1010,15 +1241,21 @@ fn prepare_fragments(
     // describes the fragments it accompanies.
     let rungs = ["code", "markdown", "text"];
     let mut code_harvest: Option<HarvestedFile> = None;
+    let mut code_blocks: Vec<CommentBlock> = Vec::new();
     let found = fluent_concurrency::ladder::first_accept_in_order_sync(
         rungs,
         |rung| -> Result<Option<Vec<PreparedFragment>>, crate::extractor::ExtractError> {
             let fragments = match rung {
                 "code" => {
-                    let (fragments, harvest) =
+                    let (fragments, harvest, blocks) =
                         CodeExtractor.extract_with_harvest(parser, source, options)?;
                     if !fragments.is_empty() {
                         code_harvest = Some(harvest);
+                    }
+                    // Blocks ride along even when the rung declines: a
+                    // comment-only file still maps to its module fragment.
+                    if !blocks.is_empty() {
+                        code_blocks = blocks;
                     }
                     fragments
                 }
@@ -1036,15 +1273,41 @@ fn prepare_fragments(
         |_: &crate::extractor::ExtractError| true,
     );
     match found {
-        Ok(Some(fragments)) => Ok((fragments, code_harvest.unwrap_or_default())),
-        Ok(None) => Ok((Vec::new(), HarvestedFile::default())),
+        Ok(Some(fragments)) => Ok((
+            fragments,
+            code_harvest.unwrap_or_default(),
+            std::mem::take(&mut code_blocks),
+        )),
+        Ok(None) => Ok((Vec::new(), HarvestedFile::default(), Vec::new())),
         Err(e) => Err(e),
     }
 }
 
 enum EmbedFailure {
     FailFast(String),
-    Retryable(String),
+    Retryable(EmbedFileFailure),
+}
+
+/// One file's embed failure: the reason plus whether the backend (rather
+/// than the input) is at fault. Unavailable marks transport trouble and
+/// waits; anything else is a terminal input failure. Both record without
+/// failing the file — the next attempt waits for new input, a new
+/// embedder, or an explicit backfill.
+#[derive(Debug, Clone)]
+/// One file's embed failure: the reason plus whether the backend (rather
+/// than the input) is at fault. Unavailable marks transport trouble and
+/// waits; anything else is a terminal input failure. Both record without
+/// failing the file — the next attempt waits for new input, a new
+/// embedder, or an explicit backfill.
+struct EmbedFileFailure {
+    reason: String,
+    unavailable: bool,
+}
+
+/// Transport-shaped embed errors (timeouts, refused connections, rate
+/// limits) may succeed later; everything else fails the input.
+fn is_unavailable(error: &EmbeddingError) -> bool {
+    matches!(error, EmbeddingError::RequestFailed(_))
 }
 
 fn embed_with_retry<P>(
@@ -1067,7 +1330,10 @@ where
             }
             Err(e) if is_fail_fast(&e) => return Err(EmbedFailure::FailFast(e.to_string())),
             Err(e) if attempt >= options.retry_max_attempts.max(1) => {
-                return Err(EmbedFailure::Retryable(e.to_string()));
+                return Err(EmbedFailure::Retryable(EmbedFileFailure {
+                    reason: e.to_string(),
+                    unavailable: is_unavailable(&e),
+                }));
             }
             Err(_) => {
                 let delay = backoff_ms(options.retry_base_ms, attempt, EMBED_RETRY_JITTER_PCT);
@@ -1090,75 +1356,84 @@ fn is_fail_fast(error: &EmbeddingError) -> bool {
     )
 }
 
-fn scanned_record(file: &ScannedFile) -> FileRecord {
-    FileRecord {
-        id: file.id.clone(),
-        absolute_path: file.absolute_path.clone(),
-        relative_path: file.relative_path.clone(),
-        root_path: file.root_path.clone(),
-        size_bytes: file.size_bytes,
-        last_modified_time: file.last_modified_time,
-        kind: file.kind.clone(),
-        format: file.format.clone(),
-        content_hash: file.content_hash.clone(),
-        index_status: Some("indexed".to_string()),
-        fail_count: 0,
-        last_error: None,
-    }
-}
-
-/// Commit one file's extractor chunks: per-symbol fragments with line
-/// ranges, code metadata, per-fragment lemmas and REQUIRED per-fragment
-/// vectors (a count mismatch fails the file — this path never writes
-/// unembedded rows), plus graph rows from the same extract pass.
-/// This is the embedding batch pipeline's writer; it is intentionally
-/// NOT the sync writer. The live sync path
-/// (`query::ingest::ingest_text_file`) stores one whole-file fragment
-/// per file (file id, whole-file range, no metadata, vectors optional)
-/// so recall works with no embedding backend. Same fixture through
-/// both writers yields different fragment rows (chunked/ranged/meta vs
-/// whole-file) with agreeing file-level retrieval — unifying them
-/// would rewrite every stored row, range, and entity id the live path
-/// serves, for no retrieval gain. Keep the split; see the pointer at
-/// `ingest_text_file`.
+/// Commit one file's extractor chunks through the unified writer, then its
+/// graph rows from the same extract pass, and record per-fragment embedding
+/// status. `embedded` selects the vector policy: required vectors fail the
+/// file on mismatch, degraded commits persist unembedded rows with a
+/// recorded failure instead.
+#[allow(clippy::too_many_arguments)]
+/// Commit one file's extractor chunks through the unified writer, then its
+/// graph rows from the same extract pass, and record per-fragment embedding
+/// status. `embedded` selects the vector policy: required vectors fail the
+/// file on mismatch, degraded commits persist unembedded rows with a
+/// recorded failure instead.
 fn commit_file(
     db: &GuidanceDb,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
     file: &ScannedFile,
     fragments: &[PreparedFragment],
+    blocks: &[CommentBlock],
     vectors: &[Vec<f32>],
     harvest: &HarvestedFile,
+    texts: &[String],
+    embedder: &str,
+    embedded: bool,
+    unavailable: bool,
 ) -> Result<usize, String> {
     let record = scanned_record(file);
-    let mut fragment_records = Vec::with_capacity(fragments.len());
-    let mut symbol_rows: Vec<SymbolRecord> = Vec::new();
-    let mut lemmas: Vec<FragmentLemma> = Vec::new();
-    for (fragment, vector) in fragments.iter().zip(vectors.iter()) {
-        let entity = prepared_to_entity(file, fragment);
-        let mut row = fragment_record(&entity);
-        row.cjk_text = common_core::string::cjk_bigrams(&fragment.content_text).join(" ");
-        row.embedding = Some(vector.clone());
-        fragment_records.push(row);
-        if let Some(symbol) = crate::query::db_storage::symbol_record(&entity) {
-            symbol_rows.push(symbol);
-        }
-        for lemma in query_lemmas(nlp, &fragment.content_text) {
-            lemmas.push(fragment_lemma(&fragment.id, &lemma, 1.0));
-        }
-    }
-    let count = db
-        .replace_file(&record, &fragment_records, &lemmas)
-        .map_err(|e| format!("commit: {e}"))?;
+    let kind = parse_scan_kind(file.kind.as_deref());
+    let policy = if embedded {
+        VectorPolicy::Required
+    } else {
+        VectorPolicy::Optional
+    };
+    let committed = if embedded { vectors } else { &[] };
+    let count =
+        FragmentWriter::write_items(db, &record, kind, fragments, blocks, committed, nlp, policy)?;
     commit_graph(db, &file.absolute_path, harvest)?;
-    commit_symbols(db, &symbol_rows)?;
+    record_embedding_status(db, fragments, texts, embedder, embedded, unavailable)?;
     Ok(count)
 }
 
-/// Persist identity rows derived from the same harvest pass as the
-/// fragments above. The invalidation follow-up reads these back to
-/// detect interface moves without re-parsing.
-fn commit_symbols(db: &GuidanceDb, rows: &[SymbolRecord]) -> Result<(), String> {
-    db.replace_symbols(rows).map_err(|e| format!("symbols: {e}"))?;
+/// Persist one file's embedding provenance: input hash plus embedder
+/// identity per fragment, ready or not. Unchanged files skip on content
+/// alone afterwards; the status decides only rotation backfills.
+fn record_embedding_status(
+    db: &GuidanceDb,
+    fragments: &[PreparedFragment],
+    texts: &[String],
+    embedder: &str,
+    embedded: bool,
+    unavailable: bool,
+) -> Result<(), String> {
+    use search_vector::db::EmbeddingStatusRecord;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0);
+    let status = if embedded {
+        "ready"
+    } else if unavailable {
+        "unavailable"
+    } else {
+        "failed"
+    };
+    let rows: Vec<EmbeddingStatusRecord> = fragments
+        .iter()
+        .zip(texts.iter())
+        .map(|(fragment, text)| EmbeddingStatusRecord {
+            fragment_id: fragment.id.clone(),
+            input_hash: common_core::hash::blake3_hex(text.as_bytes()),
+            embedder: embedder.to_string(),
+            status: status.to_string(),
+            updated_at: now_ms,
+        })
+        .collect();
+    if rows.is_empty() {
+        return Ok(());
+    }
+    db.replace_embedding_status(&rows)
+        .map_err(|e| format!("status: {e}"))?;
     Ok(())
 }
 
@@ -1180,67 +1455,6 @@ fn commit_graph(db: &GuidanceDb, path: &str, harvest: &HarvestedFile) -> Result<
         .map_err(|e| format!("graph: {e}"))
 }
 
-fn prepared_to_entity(file: &ScannedFile, fragment: &PreparedFragment) -> EntityFragment {
-    EntityFragment {
-        id: fragment.id.clone(),
-        group: fragment.group.clone(),
-        file_id: file.id.clone(),
-        range: FragmentSpan::Text {
-            start_line: fragment.range.start_line as u32,
-            end_line: fragment.range.end_line as u32,
-            start_offset: fragment.range.start_offset as u64,
-            end_offset: fragment.range.end_offset as u64,
-        },
-        content: FragmentContent::Text {
-            text: fragment.content_text.clone(),
-        },
-        metadata: fragment.metadata.as_ref().map(prepared_metadata),
-    }
-}
-
-fn prepared_metadata(metadata: &FragmentMetadata) -> EntityMetadata {
-    match metadata {
-        FragmentMetadata::Code {
-            symbol_type,
-            symbol_name,
-            scope,
-            node_type,
-            signature,
-            doc,
-            modifiers,
-        } => EntityMetadata::Code {
-            symbol_type: *symbol_type,
-            symbol_name: symbol_name.clone(),
-            scope: scope.clone(),
-            node_type: Some(node_type.clone()),
-            signature: signature.clone(),
-            doc: doc.clone(),
-            modifiers: modifiers
-                .iter()
-                .filter_map(|name| match name.as_str() {
-                    "exported" => Some(CodeEntityModifier::Exported),
-                    "async" => Some(CodeEntityModifier::Async),
-                    "static" => Some(CodeEntityModifier::Static),
-                    "public" => Some(CodeEntityModifier::Public),
-                    "private" => Some(CodeEntityModifier::Private),
-                    "protected" => Some(CodeEntityModifier::Protected),
-                    "internal" => Some(CodeEntityModifier::Internal),
-                    _ => None,
-                })
-                .collect(),
-        },
-        FragmentMetadata::Markdown {
-            heading,
-            level,
-            scope,
-        } => EntityMetadata::Markdown {
-            heading: heading.clone(),
-            level: *level,
-            scope: scope.clone(),
-        },
-    }
-}
-
 #[cfg(test)]
 #[path = "../tests/index_pipeline.rs"]
 mod tests;
@@ -1248,3 +1462,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/m4_cutoff.rs"]
 mod m4_cutoff_tests;
+
+#[cfg(test)]
+#[path = "../tests/lemma_provenance.rs"]
+mod lemma_provenance_tests;

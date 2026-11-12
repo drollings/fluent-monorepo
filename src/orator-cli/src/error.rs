@@ -18,6 +18,8 @@ fn io_remedy(kind: io::ErrorKind) -> &'static str {
 /// One line for a file-backed failure: `orator:` prefix, the action,
 /// the path, the OS detail, and a remedy hint for known kinds.
 #[must_use]
+/// One line for a file-backed failure: `orator:` prefix, the action,
+/// the path, the OS detail, and a remedy hint for known kinds.
 pub fn file_error(action: &str, path: &std::path::Path, error: &io::Error) -> String {
     format!(
         "orator: {action} {}: {error}{}",
@@ -29,6 +31,8 @@ pub fn file_error(action: &str, path: &std::path::Path, error: &io::Error) -> St
 /// One line for a malformed file: prefix, action, path, line number,
 /// and the parse detail.
 #[must_use]
+/// One line for a malformed file: prefix, action, path, line number,
+/// and the parse detail.
 pub fn parse_error(
     action: &str,
     path: &std::path::Path,

@@ -1,9 +1,7 @@
 //! Per-gate pins: each gate rejects its fixture and names its ID;
 //! prose and test bytes are invariant across every applier path.
 
-use crate::gates::{
-    gates_passed, run_gates, BuildReport, ChangedFile, GateCtx, TestReport,
-};
+use crate::gates::{gates_passed, run_gates, BuildReport, ChangedFile, GateCtx, TestReport};
 
 fn ctx<'a>() -> GateCtx<'a> {
     GateCtx {
@@ -21,6 +19,7 @@ fn ctx<'a>() -> GateCtx<'a> {
         build: None,
         tests: None,
         rustfmt_config: None,
+        source_dir: None,
     }
 }
 
@@ -106,6 +105,64 @@ fn p2_refuses_pub_signature_change_without_flag() {
 }
 
 #[test]
+fn p2_ignores_watched_tokens_in_prose() {
+    // Each watched token cited in prose (comments, string literals) must
+    // not trip P2. Other gates may still fire on these fixtures (P3 sees
+    // the new prose); only the P2 verdict is pinned here.
+    let before = "pub fn a() -> u32 {\n    1\n}\n";
+    let prose_cases = [
+        "/// Returns the value via unwrap().\npub fn a() -> u32 {\n    1\n}\n",
+        "/// Uses #[allow(dead_code)] elsewhere.\npub fn a() -> u32 {\n    1\n}\n",
+        "// File-level: #![allow(clippy::all)] lives in the crate root.\npub fn a() -> u32 {\n    1\n}\n",
+        "/* todo!(later) is tracked outside. */\npub fn a() -> u32 {\n    1\n}\n",
+        "/// Not unimplemented!(reviewed).\npub fn a() -> u32 {\n    1\n}\n",
+        "/* unreachable!(reviewed) branches stay. */\npub fn a() -> u32 {\n    1\n}\n",
+        "pub fn a() -> u32 {\n    let _s = \"panic!(x)\";\n    1\n}\n",
+        "/// expect()s nothing from callers.\npub fn a() -> u32 {\n    1\n}\n",
+        "// unsafe blocks are reviewed elsewhere.\npub fn a() -> u32 {\n    1\n}\n",
+    ];
+    for after in prose_cases {
+        let verdicts = run_gates(&file(before, after), &ctx());
+        assert!(
+            verdicts.iter().all(|v| v.id != "P2" || !v.is_fail()),
+            "prose must not trip P2: {after}"
+        );
+    }
+}
+
+#[test]
+fn p2_still_catches_real_code_additions() {
+    // Control group for the prose subtraction: genuine code additions of
+    // the same tokens must still fail P2.
+    let before = "pub fn a() -> u32 {\n    1\n}\n";
+    let code_cases = [
+        "pub fn a() -> u32 {\n    let x: Option<u32> = None;\n    x.unwrap()\n}\n",
+        "pub fn a() -> u32 {\n    panic!(\"boom\")\n}\n",
+        "pub fn a() -> u32 {\n    todo!()\n}\n",
+    ];
+    for after in code_cases {
+        let verdicts = run_gates(&file(before, after), &ctx());
+        assert!(
+            verdicts.iter().any(|v| v.id == "P2" && v.is_fail()),
+            "real addition must trip P2: {after}"
+        );
+    }
+}
+
+#[test]
+fn p2_test_region_tokens_do_not_mask_code_additions() {
+    // Test regions leave the counting surface on both sides: an unwrap()
+    // already present in a test must not offset a real addition in code.
+    let before = "pub fn a() -> u32 {\n    1\n}\n\n#[test]\nfn t() {\n    let x: Option<u32> = Some(1);\n    assert_eq!(x.unwrap(), 1);\n}\n";
+    let after = "pub fn a() -> u32 {\n    let y: Option<u32> = None;\n    y.unwrap()\n}\n\n#[test]\nfn t() {\n    let x: Option<u32> = Some(1);\n    assert_eq!(x.unwrap(), 1);\n}\n";
+    let verdicts = run_gates(&file(before, after), &ctx());
+    assert!(
+        verdicts.iter().any(|v| v.id == "P2" && v.is_fail()),
+        "test-region tokens must not mask a real addition"
+    );
+}
+
+#[test]
 fn p3_rejects_prose_changes() {
     let before = "/// Adds one.\npub fn a() -> u8 {\n    let s = \"hi\";\n    1\n}\n";
     let after = "/// Adds two.\npub fn a() -> u8 {\n    let s = \"hi\";\n    1\n}\n";
@@ -132,7 +189,10 @@ fn p6_requires_strict_shrink() {
     c.after_diags = &[];
     let verdicts = run_gates(&file("fn a() {}\n", "fn a() {}\n"), &c);
     assert!(verdicts.iter().any(|v| v.id == "P6" && v.is_pass()));
-    let added = ["E0308: mismatched types".to_string(), "E0599: missing".to_string()];
+    let added = [
+        "E0308: mismatched types".to_string(),
+        "E0599: missing".to_string(),
+    ];
     let mut c = ctx();
     c.before_diags = &diags_before;
     c.after_diags = &added;

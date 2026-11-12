@@ -34,6 +34,8 @@ pub const TWO_TOWER_PROMPT_VERSION: &str = "v1";
 /// The head the two-tower graph was trained with, read from the model's
 /// `config.json` `head` block (never hardcoded).
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// The head the two-tower graph was trained with, read from the model's
+/// `config.json` `head` block (never hardcoded).
 pub enum TwoTowerHead {
     /// `cosine`: L2-normalise both pooled towers, dot, scale + bias, softmax
     /// across labels (Prompt-Router).
@@ -119,6 +121,9 @@ impl TwoTowerHead {
 /// `TwoTowerWorker`; with the feature off they are deliberately unread.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[allow(dead_code)]
+/// The raw `head` block from `config.json` (serde view over the exact keys the
+/// exports ship). `prefix_heading`/`proj_dim` are consumed by the onnx-gated
+/// `TwoTowerWorker`; with the feature off they are deliberately unread.
 struct RawHead {
     #[serde(default)]
     kind: String,
@@ -138,6 +143,7 @@ struct RawHead {
 
 /// The `config.json` wrapper that carries the nested `head` block.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
+/// The `config.json` wrapper that carries the nested `head` block.
 struct RawConfigHead {
     #[serde(default)]
     head: Option<RawHead>,
@@ -165,6 +171,8 @@ impl RawHead {
 /// The assembled byte-exact prompt plus the byte regions the pooling math
 /// needs: each label line's text and the `Text:` region.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The assembled byte-exact prompt plus the byte regions the pooling math
+/// needs: each label line's text and the `Text:` region.
 pub struct TwoTowerPrompt {
     /// The full assembled prompt (the README contract, byte for byte).
     pub prompt: String,
@@ -331,6 +339,8 @@ pub fn score_with_head(head: &TwoTowerHead, query: &[f32], rules: &[Vec<f32>]) -
 /// Per-token × per-rule scores (the Policy-Linter op: dot + scale + bias +
 /// sigmoid over the text-region tokens against each pooled rule vector).
 #[derive(Debug, Clone, PartialEq)]
+/// Per-token × per-rule scores (the Policy-Linter op: dot + scale + bias +
+/// sigmoid over the text-region tokens against each pooled rule vector).
 pub struct TokenScoreMatrix {
     /// The text-region token surfaces, in order.
     pub tokens: Vec<String>,
@@ -345,6 +355,8 @@ pub struct TokenScoreMatrix {
 /// The `TwoTowerWorker` — a shared two-tower session plus its tokenizer and
 /// head. Behind the `onnx` feature.
 #[cfg(feature = "onnx")]
+/// The `TwoTowerWorker` — a shared two-tower session plus its tokenizer and
+/// head. Behind the `onnx` feature.
 pub struct TwoTowerWorker {
     session: Arc<Mutex<ort::session::Session>>,
     tokenizer: Arc<LfmTokenizer>,
@@ -550,6 +562,8 @@ fn read_raw_head(config: &OnnxConfig) -> Result<RawHead, OrtError> {
 /// Build a `TwoTowerWorker` from the registry's session for `model_key`, if the
 /// model is registered and its task is a two-tower task.
 #[cfg(feature = "onnx")]
+/// Build a `TwoTowerWorker` from the registry's session for `model_key`, if the
+/// model is registered and its task is a two-tower task.
 pub fn build_two_tower_from_registry(
     registry: &crate::session::OrtSessionRegistry,
     model_key: &str,
@@ -572,6 +586,9 @@ pub fn build_two_tower_from_registry(
 /// cleared the threshold. `start`/`end` are byte offsets into the linter's
 /// input text.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// A single Policy-Linter hit: a text token whose score against a policy rule
+/// cleared the threshold. `start`/`end` are byte offsets into the linter's
+/// input text.
 pub struct PolicyHit {
     /// The token surface.
     pub token: String,
@@ -598,6 +615,9 @@ impl PolicyHit {
 /// (token, rule) pair whose score clears `threshold`, ordered token-major.
 /// Unit-testable without a model (the Policy-Linter's deterministic half).
 #[must_use]
+/// Pure hit extraction from a [`TokenScoreMatrix`] and its rule labels: every
+/// (token, rule) pair whose score clears `threshold`, ordered token-major.
+/// Unit-testable without a model (the Policy-Linter's deterministic half).
 pub fn policy_hits_from_matrix(
     matrix: &TokenScoreMatrix,
     labels: &[String],
@@ -632,6 +652,13 @@ pub fn policy_hits_from_matrix(
 /// descriptions), never a code constant. Default quantization `fp32` (the
 /// binary-gate rule); q8 only behind a golden-gated threshold.
 #[cfg(feature = "onnx")]
+/// The Policy-Linter: a [`TwoTowerWorker`]
+/// (dot/sigmoid head) scoring every text token against the config's policy
+/// labels, emitting the tokens whose score clears the configured threshold.
+/// The label list is a data artifact (`OnnxConfig.policy_labels`, a JSON array
+/// of strings — typically the config's blacklist/`RejectPatterns`
+/// descriptions), never a code constant. Default quantization `fp32` (the
+/// binary-gate rule); q8 only behind a golden-gated threshold.
 pub struct PolicyLinter {
     worker: Arc<TwoTowerWorker>,
     labels: Vec<String>,
@@ -730,6 +757,10 @@ pub fn load_policy_labels(path: &Path) -> Result<Vec<String>, OrtError> {
 /// `policy_labels` file is configured. `Ok(None)` when the model is absent,
 /// mis-typed, or has no `policy_labels` source (fail-open).
 #[cfg(feature = "onnx")]
+/// Build a `PolicyLinter` from the registry's session for `model_key`, if the
+/// model is registered as a `ZeroShotTokenMatching` two-tower session and a
+/// `policy_labels` file is configured. `Ok(None)` when the model is absent,
+/// mis-typed, or has no `policy_labels` source (fail-open).
 pub fn build_policy_linter_from_registry(
     registry: &crate::session::OrtSessionRegistry,
     model_key: &str,

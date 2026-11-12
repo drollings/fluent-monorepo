@@ -78,6 +78,7 @@ pub const DEFAULT_MIN_PART_ROWS: usize = 16;
 /// How a seal chunks rows into Parquet row groups. Both are **cost bounds**.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
 #[builder(start_fn = new)]
+/// How a seal chunks rows into Parquet row groups. Both are **cost bounds**.
 pub struct SealOptions {
     /// Rows per row group before a trailing merge. Defaults to the shared
     /// append-chunk bound.
@@ -91,6 +92,7 @@ pub struct SealOptions {
 
 /// What one seal produced: the artifact, its coverage, and its digest.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What one seal produced: the artifact, its coverage, and its digest.
 pub struct SealedSnapshot {
     /// The tape that was sealed.
     pub key: TapeKey,
@@ -131,6 +133,10 @@ impl SealedSnapshot {
 /// The writer is file-only: it never touches the database. [`seal`] composes
 /// it with the manifest transaction.
 #[derive(Debug)]
+/// Write sealed artifacts into one directory with one chunk policy.
+/// 
+/// The writer is file-only: it never touches the database. [`seal`] composes
+/// it with the manifest transaction.
 pub struct SnapshotWriter<'a> {
     out_dir: &'a Path,
     options: SealOptions,
@@ -287,6 +293,7 @@ pub(crate) fn read_snapshot_ungated(key: TapeKey, path: &Path) -> Result<Vec<Bar
 
 /// What a reconcile pass observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What a reconcile pass observed.
 pub struct ReconcileReport {
     /// Manifest rows seen.
     pub rows_checked: usize,
@@ -373,6 +380,10 @@ fn check_series(key: TapeKey, market: &Market, bars: &[Bar]) -> Result<(), Store
 /// sizes in order. Both bounds are clamped to at least one row.
 #[cfg(feature = "parquet")]
 #[must_use]
+/// The trailing-merge rule: split `n` rows into chunks of at most
+/// `row_group_rows`, then fold a trailing chunk smaller than `min_part_rows`
+/// into its predecessor while more than one chunk remains. Returns the chunk
+/// sizes in order. Both bounds are clamped to at least one row.
 pub(crate) fn plan_parts(n: usize, row_group_rows: usize, min_part_rows: usize) -> Vec<usize> {
     let chunk = row_group_rows.max(1);
     let floor = min_part_rows.max(1);
@@ -460,6 +471,9 @@ fn write_parquet(
 /// cannot be opened for sync is not fatal — the artifact is already fsynced;
 /// the rename's durability is the filesystem's responsibility.
 #[cfg(feature = "parquet")]
+/// Best-effort directory fsync so the rename is durable. A directory that
+/// cannot be opened for sync is not fatal — the artifact is already fsynced;
+/// the rename's durability is the filesystem's responsibility.
 fn sync_dir(dir: &Path) {
     if let Ok(handle) = File::open(dir) {
         let _ = handle.sync_all();
@@ -553,6 +567,10 @@ fn build_batch(
 /// would overflow `Decimal128` refuses the same way. Never rounded, never
 /// truncated.
 #[cfg(feature = "parquet")]
+/// Encode one price at the pinned scale. A value needing more digits refuses
+/// with the market, price, and scale named; a value whose scaled magnitude
+/// would overflow `Decimal128` refuses the same way. Never rounded, never
+/// truncated.
 fn encode_decimal(symbol: &str, value: Decimal, scale: u32) -> Result<i128, StoreError> {
     let normalized = value.normalize();
     let value_scale = normalized.scale();
@@ -628,6 +646,9 @@ fn read_parquet(path: &Path) -> Result<Vec<Bar>, StoreError> {
 /// type. Positions are the contract — `ts_ms` first, `adj` last — and the
 /// shared decode layer performs the downcast.
 #[cfg(feature = "parquet")]
+/// Downcast the positional column to the sealed schema's pinned array
+/// type. Positions are the contract — `ts_ms` first, `adj` last — and the
+/// shared decode layer performs the downcast.
 fn column<'a, T: 'static>(
     batch: &'a RecordBatch,
     index: usize,
@@ -646,6 +667,11 @@ fn column<'a, T: 'static>(
 /// sealed artifact the writer produces carries one, so no valid artifact
 /// changes meaning.
 #[cfg(feature = "parquet")]
+/// Read the sealed price scale: the `open` field must carry `Decimal128`,
+/// and its scale must check through the shared scale rule. A negative
+/// scale now refuses where the private reader silently read zero — no
+/// sealed artifact the writer produces carries one, so no valid artifact
+/// changes meaning.
 fn decimal_scale(schema: &SchemaRef) -> Result<u32, StoreError> {
     crate::arrow_decode::decimal_scale_of(schema, "open").map_err(|err| {
         StoreError::Snapshot(SnapshotError::Artifact {

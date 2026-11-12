@@ -46,6 +46,7 @@ pub fn free_port() -> Option<u16> {
 
 /// Everything needed to spawn and supervise one model's `llama-server`.
 #[derive(Debug, Clone)]
+/// Everything needed to spawn and supervise one model's `llama-server`.
 pub struct LlamaServerSpec {
     /// Coral Router model id (public).
     pub model_key: String,

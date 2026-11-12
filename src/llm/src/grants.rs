@@ -20,6 +20,7 @@ const SIGNING_KEY_BYTES: usize = 32;
 
 /// A remote embedding target: one provider/model/endpoint for workspace roots.
 #[derive(Debug, Clone)]
+/// A remote embedding target: one provider/model/endpoint for workspace roots.
 pub struct RemoteEmbeddingTarget {
     pub workspace_roots: Vec<PathBuf>,
     pub workspace_fingerprint: String,
@@ -70,6 +71,8 @@ impl RemoteEmbeddingTarget {
 /// Grant store failures. Absent keys/documents are clean negatives (`false`
 /// / empty), never errors.
 #[derive(Debug, thiserror::Error)]
+/// Grant store failures. Absent keys/documents are clean negatives (`false`
+/// / empty), never errors.
 pub enum GrantError {
     #[error("grant store I/O failed: {0}")]
     Io(#[from] std::io::Error),
@@ -89,6 +92,7 @@ pub enum GrantError {
 
 /// One persisted workspace grant.
 #[derive(Debug, Clone)]
+/// One persisted workspace grant.
 pub struct RemoteEmbeddingWorkspaceGrant {
     pub id: String,
     pub capability: String,
@@ -469,6 +473,10 @@ fn write_owner_only(path: &Path, data: &[u8]) -> Result<(), GrantError> {
 
 /// How remote use was authorized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ---------------------------------------------------------------------------
+/// Authorization gate + elicitation seam.
+/// ---------------------------------------------------------------------------
+/// How remote use was authorized.
 pub enum RemoteAuthorization {
     /// A stored workspace grant covers the target.
     Stored,
@@ -479,6 +487,7 @@ pub enum RemoteAuthorization {
 
 /// A user-facing authorization question for hosts that support elicitation.
 #[derive(Debug, Clone)]
+/// A user-facing authorization question for hosts that support elicitation.
 pub struct ElicitationRequest<'a> {
     pub target: &'a RemoteEmbeddingTarget,
     pub grant_path: PathBuf,
@@ -487,6 +496,7 @@ pub struct ElicitationRequest<'a> {
 
 /// The host's answer. Anything but `Allow` denies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The host's answer. Anything but `Allow` denies.
 pub enum ElicitationDecision {
     Allow,
     Deny,

@@ -46,7 +46,9 @@ fn old_sidecar_without_header_loads() {
     let body = crate::sync::json_writer::doc_to_json_string(&doc);
     assert!(!body.lines().next().unwrap_or("").starts_with("GHDR1 "));
     std::fs::write(&path, &body).expect("write");
-    let loaded = json_store::load_guidance(&path).expect("load").expect("doc");
+    let loaded = json_store::load_guidance(&path)
+        .expect("load")
+        .expect("doc");
     assert_eq!(loaded.meta.module.as_str(), "m1");
 }
 
@@ -58,7 +60,9 @@ fn header_round_trip_preserves_doc() {
     json_store::save_guidance(&path, &test_doc(), &vector).expect("save");
     let raw = std::fs::read_to_string(&path).expect("read");
     assert!(raw.lines().next().unwrap_or("").starts_with("GHDR1 "));
-    let loaded = json_store::load_guidance(&path).expect("load").expect("doc");
+    let loaded = json_store::load_guidance(&path)
+        .expect("load")
+        .expect("doc");
     assert_eq!(loaded.meta.module.as_str(), "m1");
 }
 
@@ -68,10 +72,16 @@ fn identical_write_with_header_skips_rewrite() {
     let path = dir.path().join("idem.json");
     let vector = test_receipt(&[("parser", "p1")]);
     json_store::save_guidance(&path, &test_doc(), &vector).expect("first");
-    let before = std::fs::metadata(&path).expect("stat").modified().expect("mtime");
+    let before = std::fs::metadata(&path)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
     std::thread::sleep(std::time::Duration::from_millis(5));
     json_store::save_guidance(&path, &test_doc(), &vector).expect("second");
-    let after = std::fs::metadata(&path).expect("stat").modified().expect("mtime");
+    let after = std::fs::metadata(&path)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
     assert_eq!(before, after);
 }
 
@@ -108,8 +118,7 @@ fn sweep_reports_current_when_recorded_match() {
     let source = dir.path().join("a.zig");
     std::fs::write(&source, "pub fn a() void {}\n").expect("write");
     let vector = test_receipt(&[("parser", "p1"), ("schema", "s1")]);
-    json_store::save_guidance(&sidecars.join("a.zig.json"), &test_doc(), &vector)
-        .expect("save");
+    json_store::save_guidance(&sidecars.join("a.zig.json"), &test_doc(), &vector).expect("save");
     let outcomes = crate::components::sweep_sidecars(&sidecars, dir.path(), &vector.components);
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].decision, SweepDecision::Current);
@@ -132,16 +141,23 @@ fn sweep_backdates_only_on_recorded_change() {
     let outcomes = crate::components::sweep_sidecars(
         &sidecars,
         dir.path(),
-        &ComponentVector { components: changed },
+        &ComponentVector {
+            components: changed,
+        },
     );
     assert_eq!(outcomes[0].decision, SweepDecision::Current);
     // Recorded component change backdates exactly the affected receipt.
     let evolved = test_receipt(&[("parser", "p2"), ("schema", "s1")]);
-    let outcomes =
-        crate::components::sweep_sidecars(&sidecars, dir.path(), &evolved.components);
+    let outcomes = crate::components::sweep_sidecars(&sidecars, dir.path(), &evolved.components);
     assert_eq!(outcomes[0].decision, SweepDecision::Backdated);
-    let sidecar_mtime = std::fs::metadata(&sidecar).expect("stat").modified().expect("mtime");
-    let source_mtime = std::fs::metadata(&source).expect("stat").modified().expect("mtime");
+    let sidecar_mtime = std::fs::metadata(&sidecar)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
+    let source_mtime = std::fs::metadata(&source)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
     assert!(sidecar_mtime < source_mtime);
 }
 
@@ -153,14 +169,20 @@ fn sweep_marks_headerless_sidecars_unknown() {
     let body = crate::sync::json_writer::doc_to_json_string(&test_doc());
     let sidecar = sidecars.join("old.json");
     std::fs::write(&sidecar, &body).expect("write");
-    let before = std::fs::metadata(&sidecar).expect("stat").modified().expect("mtime");
+    let before = std::fs::metadata(&sidecar)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
     let outcomes = crate::components::sweep_sidecars(
         &sidecars,
         dir.path(),
         &test_receipt(&[("parser", "p1")]).components,
     );
     assert_eq!(outcomes[0].decision, SweepDecision::Unknown);
-    let after = std::fs::metadata(&sidecar).expect("stat").modified().expect("mtime");
+    let after = std::fs::metadata(&sidecar)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
     assert_eq!(before, after);
 }
 

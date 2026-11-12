@@ -34,7 +34,11 @@ fn packs_are_deterministic_with_manifests() {
         second.0.items.len() + second.0.dropped
     );
     // Priority order survives packing: target first.
-    assert!(first.0.items.first().is_some_and(|item| item.source == "src/a.rs"));
+    assert!(first
+        .0
+        .items
+        .first()
+        .is_some_and(|item| item.source == "src/a.rs"));
     // Manifest covers every kept item exactly once.
     assert_eq!(first.1.citations.len(), first.0.items.len());
     assert_eq!(first.1.hashes.len(), first.0.items.len());
@@ -52,11 +56,19 @@ fn packs_respect_small_budgets() {
 #[test]
 fn tests_touching_matches_item_names_as_tokens() {
     let test_files = vec![
-        ("tests/a.rs".to_string(), "use crate::a::foo;\nassert_eq!(foo(), 1);\n".to_string()),
-        ("tests/b.rs".to_string(), "use crate::b::bar;\nassert_eq!(bar(), 2);\n".to_string()),
+        (
+            "tests/a.rs".to_string(),
+            "use crate::a::foo;\nassert_eq!(foo(), 1);\n".to_string(),
+        ),
+        (
+            "tests/b.rs".to_string(),
+            "use crate::b::bar;\nassert_eq!(bar(), 2);\n".to_string(),
+        ),
     ];
-    let touched =
-        tests_touching(&test_files, &["foo".to_string(), "quux_missing".to_string()]);
+    let touched = tests_touching(
+        &test_files,
+        &["foo".to_string(), "quux_missing".to_string()],
+    );
     assert_eq!(touched, vec!["tests/a.rs".to_string()]);
     // Substrings are not tokens: `food` must not match `foo`.
     let tricky = vec![("tests/c.rs".to_string(), "let food = 1;\n".to_string())];
@@ -83,7 +95,12 @@ fn impact_lists_tests_touching_the_change() {
         "tests/a.rs".to_string(),
         "use crate::a::foo;\nassert_eq!(foo(), 1);\n".to_string(),
     )];
-    let report = impact_report_with_tests(&graph, &["src/a.rs".to_string()], &test_files, &["foo".to_string()]);
+    let report = impact_report_with_tests(
+        &graph,
+        &["src/a.rs".to_string()],
+        &test_files,
+        &["foo".to_string()],
+    );
     assert!(report.dependents.contains(&"src/b.rs".to_string()));
     assert!(report.tests.contains(&"tests/a.rs".to_string()));
     assert!(!report.gates.is_empty(), "narrowest gates still joined");
@@ -134,8 +151,11 @@ fn bench_counters_on_converged_trees() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     for i in 0..3 {
-        std::fs::write(root.join(format!("f{i:02}.rs")), format!("pub fn f{i:02}() -> u64 {{ {i} }}\n"))
-            .expect("write");
+        std::fs::write(
+            root.join(format!("f{i:02}.rs")),
+            format!("pub fn f{i:02}() -> u64 {{ {i} }}\n"),
+        )
+        .expect("write");
     }
     let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
     let selection = FileSelection {

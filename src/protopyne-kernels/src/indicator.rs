@@ -35,6 +35,9 @@ pub type IndicatorId = String;
 /// authoritative for length; every leg a kernel reads must match it (see
 /// [`require`](Ohlcv::require)).
 #[derive(Debug, Clone, Copy)]
+/// Whole-window input: five aligned legs over the same bars. `close` is
+/// authoritative for length; every leg a kernel reads must match it (see
+/// [`require`](Ohlcv::require)).
 pub struct Ohlcv<'a> {
     /// Open prices.
     pub open: &'a [f64],
@@ -90,6 +93,8 @@ impl<'a> Ohlcv<'a> {
 /// Owned whole-window input for supervised execution (type-erased handoffs
 /// require `'static` data; hot paths borrow [`views`](OwnedOhlcv::views)).
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Owned whole-window input for supervised execution (type-erased handoffs
+/// require `'static` data; hot paths borrow [`views`](OwnedOhlcv::views)).
 pub struct OwnedOhlcv {
     /// Open prices.
     pub open: Vec<f64>,
@@ -157,6 +162,7 @@ impl OwnedOhlcv {
 
 /// Per-bar input for [`update`](Indicator::update).
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Per-bar input for [`update`](Indicator::update).
 pub struct BarTick {
     /// Open price.
     pub open: f64,
@@ -186,6 +192,7 @@ impl BarTick {
 
 /// Map a computed value to its output slot: `NaN` (Pine `na`) becomes `None`.
 #[must_use]
+/// Map a computed value to its output slot: `NaN` (Pine `na`) becomes `None`.
 pub fn fin_or_none(value: f64) -> Option<f64> {
     if value.is_nan() {
         None
@@ -199,12 +206,16 @@ pub fn fin_or_none(value: f64) -> Option<f64> {
 /// inverse of [`fin_or_none`].
 #[inline]
 #[must_use]
+/// Map an output slot to its hole value: `None` becomes `NaN` (Pine `na`).
+/// The one spelling for the hole idiom every kernel's output edge repeats,
+/// inverse of [`fin_or_none`].
 pub fn nan_hole(value: Option<f64>) -> f64 {
     value.unwrap_or(f64::NAN)
 }
 
 /// One declared kernel parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// One declared kernel parameter.
 pub struct IndicatorParam {
     /// Parameter name as the kernel reads it.
     pub name: &'static str,
@@ -224,6 +235,7 @@ pub struct IndicatorParam {
 
 /// Parameter kinds the schema editor understands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Parameter kinds the schema editor understands.
 pub enum ParamKind {
     /// Whole number.
     Int,
@@ -235,6 +247,7 @@ pub enum ParamKind {
 
 /// One declared default.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// One declared default.
 pub enum ParamValue {
     /// Integer default.
     Int(i64),
@@ -246,6 +259,7 @@ pub enum ParamValue {
 
 /// Role of one output series.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Role of one output series.
 pub enum OutputRole {
     /// Main output, carried by `IndicatorResult::values`.
     Primary,
@@ -256,6 +270,8 @@ pub enum OutputRole {
 /// Display scale policy for one output. This is a display value, never a
 /// trading threshold.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Display scale policy for one output. This is a display value, never a
+/// trading threshold.
 pub enum ScalePolicy {
     /// Declared display bounds.
     Bounded {
@@ -270,6 +286,7 @@ pub enum ScalePolicy {
 
 /// One declared output series.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// One declared output series.
 pub struct OutputSpec {
     /// Output name (`"value"` for the primary).
     pub name: &'static str,
@@ -281,6 +298,7 @@ pub struct OutputSpec {
 
 /// Complete parameter/output declaration for one kernel.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Complete parameter/output declaration for one kernel.
 pub struct IndicatorSchema {
     /// Declared parameters.
     pub params: &'static [IndicatorParam],
@@ -559,6 +577,7 @@ const STDDEV_PARAMS: &[IndicatorParam] = &[
 
 /// The one schema table every kernel and the terminal read.
 #[must_use]
+/// The one schema table every kernel and the terminal read.
 pub fn indicator_schema(id: &str) -> Option<IndicatorSchema> {
     let (params, outputs): (&'static [IndicatorParam], &'static [OutputSpec]) = match id {
         "sma" | "ema" | "rma" | "wma" | "hma" | "vwma" | "dema" | "tema" | "trima" => {
@@ -665,6 +684,9 @@ impl IndicatorSpec {
 /// [`Indicator::warmup`], which sees the actual parameters.
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Static description of one indicator: identity, warmup floor, and
+/// dependencies. The per-invocation refinement lives in
+/// [`Indicator::warmup`], which sees the actual parameters.
 pub struct IndicatorSpec {
     /// Stable registry key.
     pub id: IndicatorId,
@@ -688,6 +710,7 @@ impl IndicatorSpec {
 
 /// Typed parameters for one indicator invocation.
 #[derive(Debug, Clone, Default)]
+/// Typed parameters for one indicator invocation.
 pub struct ParamSet {
     values: HashMap<String, PineValue>,
 }
@@ -931,6 +954,7 @@ pub fn encode_param_value(bytes: &mut Vec<u8>, value: &PineValue) {
 
 /// One named secondary output series (e.g. `upper` for Bollinger Bands).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One named secondary output series (e.g. `upper` for Bollinger Bands).
 pub struct NamedSeries {
     /// Output name.
     pub name: String,
@@ -954,6 +978,10 @@ impl NamedSeries {
 /// `values` is the primary output; multi-output kernels (MACD, bands,
 /// stochastics) attach the rest as [`secondary`](Self::secondary).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Output of one [`batch`](Indicator::batch) evaluation, aligned with the
+/// input bars: `None` marks warming or otherwise uncomputable positions.
+/// `values` is the primary output; multi-output kernels (MACD, bands,
+/// stochastics) attach the rest as [`secondary`](Self::secondary).
 pub struct IndicatorResult {
     /// Id of the producing indicator.
     pub spec_id: IndicatorId,
@@ -1006,6 +1034,7 @@ impl IndicatorResult {
 
 /// One named secondary value from [`update_full`](Indicator::update_full).
 #[derive(Debug, Clone, PartialEq)]
+/// One named secondary value from [`update_full`](Indicator::update_full).
 pub struct NamedValue {
     /// Output name.
     pub name: String,
@@ -1015,6 +1044,7 @@ pub struct NamedValue {
 
 /// One bar of multi-output evaluation.
 #[derive(Debug, Clone, PartialEq)]
+/// One bar of multi-output evaluation.
 pub struct FullTick {
     /// Primary value for this bar.
     pub primary: Option<f64>,
@@ -1037,6 +1067,20 @@ pub struct FullTick {
 /// it cached is a caller bug — two kernels sharing a state — and refuses rather
 /// than silently rebuilding under the first kernel's feet.
 #[derive(Default)]
+/// One kernel's resolved scalars, memoised on its [`IndicatorState`].
+/// 
+/// A state belongs to **one run of one kernel**, and a run's parameters are
+/// fixed for its lifetime, so the first resolution is the run's: later bars read
+/// a copy instead of re-reading the boundary [`ParamSet`] (a `HashMap` of
+/// `PineValue`s) once per bar. `T` is whatever the kernel's own resolver returns
+/// — a `usize` or a small tuple it already defines — never a shared bag of
+/// untyped slots.
+/// 
+/// The cache is pure, so it never has to be kept in step: cloning a state drops
+/// it (the clone re-resolves on its first bar) and a failed resolution stores
+/// nothing (the next bar retries). Asking one state for a *different* `T` than
+/// it cached is a caller bug — two kernels sharing a state — and refuses rather
+/// than silently rebuilding under the first kernel's feet.
 pub struct ResolvedCache {
     value: Option<Box<dyn Any + Send + Sync>>,
 }
@@ -1090,6 +1134,10 @@ impl ResolvedCache {
 /// gain/loss smoothers, …). Single- and multi-output paths share it, so
 /// `batch`/`update` agreement covers every emitted series.
 #[derive(Debug, Clone, Default)]
+/// Incremental evaluation state: recent per-bar ticks, the last emitted
+/// value, and child states for composed kernels (MACD's three EMAs, RSI's
+/// gain/loss smoothers, …). Single- and multi-output paths share it, so
+/// `batch`/`update` agreement covers every emitted series.
 pub struct IndicatorState {
     history: VecDeque<BarTick>,
     last: Option<f64>,
@@ -1399,6 +1447,23 @@ pub trait Indicator: Send + Sync {
 /// Duplicate policy: first-wins, duplicates refuse `Err(DuplicateIndicator)`.
 /// `ids()` returns sorted order via [`KeyedRegistry`].
 #[derive(Default)]
+/// Registry of indicators keyed by spec id.
+/// 
+/// What the ownership rule actually forbids is **per-run state** in a shared
+/// place: accumulators, cursors, "last bar" — anything two concurrent runs could
+/// tread on. This type holds none. Its entries are `Arc<dyn Indicator>` over
+/// stateless kernels (each `batch`/`update` call carries its own state —
+/// [`IndicatorState`] for the incremental path, `params` for both), so a registry
+/// is a pure value: two of them built from [`builtin_registry`] are
+/// interchangeable, and caching one is not a second source of truth.
+/// 
+/// That is why [`shared_registry`] may keep one in a `static`: the static is an
+/// **immutable cache of a pure value**, not shared mutable state. The owned
+/// constructor stays [`builtin_registry`], and a test that wants isolation can
+/// still build its own — nothing requires the shared handle.
+/// 
+/// Duplicate policy: first-wins, duplicates refuse `Err(DuplicateIndicator)`.
+/// `ids()` returns sorted order via [`KeyedRegistry`].
 pub struct IndicatorRegistry {
     indicators: KeyedRegistry<IndicatorId, Arc<dyn Indicator>>,
 }
@@ -1586,6 +1651,9 @@ static SHARED_REGISTRY: OnceLock<IndicatorRegistry> = OnceLock::new();
 /// by a second mechanism.
 #[cfg(test)]
 #[must_use]
+/// How many times the shared registry has been *installed*, for the cache
+/// tests. Always at most one; a larger value means the `OnceLock` was replaced
+/// by a second mechanism.
 pub(crate) fn shared_registry_builds() -> usize {
     SHARED_BUILDS.load(Ordering::Relaxed)
 }
@@ -1603,6 +1671,8 @@ thread_local! {
 /// A hot path that reads [`shared_registry`] never moves this count.
 #[cfg(test)]
 #[must_use]
+/// Owned-constructor calls observed on **this thread**, for the cache tests.
+/// A hot path that reads [`shared_registry`] never moves this count.
 pub(crate) fn owned_registry_builds() -> usize {
     OWNED_BUILDS.with(std::cell::Cell::get)
 }
@@ -1644,6 +1714,9 @@ shared_kernels!(
 /// an epsilon would let a recurrence drift while the fold still "agreed".
 #[cfg(test)]
 #[must_use]
+/// Bit patterns of a series: `None` stays `None`, a value compares by every
+/// bit. The one home for the exact batch/update folds — a float comparison at
+/// an epsilon would let a recurrence drift while the fold still "agreed".
 pub(crate) fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
     values.iter().map(|value| value.map(f64::to_bits)).collect()
 }

@@ -13,6 +13,9 @@ use std::path::{Path, PathBuf};
 /// Empty and relative values are skipped — callers must never root
 /// trusted paths in one.
 #[must_use]
+/// Home directory base: `$HOME`, then `$XDG_DATA_HOME`, else `None`.
+/// Empty and relative values are skipped — callers must never root
+/// trusted paths in one.
 pub fn home_dir() -> Option<PathBuf> {
     for var in ["HOME", "XDG_DATA_HOME"] {
         if let Ok(value) = std::env::var(var) {
@@ -29,6 +32,9 @@ pub fn home_dir() -> Option<PathBuf> {
 /// Read from `/proc/self`, whose owner is the process's euid — no new
 /// dependencies, no unsafe. Unreadable (no `/proc`) fails closed.
 #[must_use]
+/// The process's own uid: the owner every private path must match.
+/// Read from `/proc/self`, whose owner is the process's euid — no new
+/// dependencies, no unsafe. Unreadable (no `/proc`) fails closed.
 pub fn current_uid() -> u32 {
     #[cfg(target_os = "linux")]
     {
@@ -43,6 +49,7 @@ pub fn current_uid() -> u32 {
 
 /// Search `$PATH` for `name`. `None` when absent.
 #[must_use]
+/// Search `$PATH` for `name`. `None` when absent.
 pub fn find_on_path(name: &str) -> Option<PathBuf> {
     find_all_on_path(name).into_iter().next()
 }
@@ -54,6 +61,12 @@ pub fn find_on_path(name: &str) -> Option<PathBuf> {
 /// outcome) and the next candidate serves, instead of one shadowed
 /// binary vetoing voice.
 #[must_use]
+/// Every `name` hit on `$PATH` in directory order, deduplicated by
+/// canonical path (the literal join is returned, so symlinked hits
+/// keep their `$PATH` spelling). Boot code tries each in turn: a
+/// stale install earlier on `$PATH` fails fast (measured boot
+/// outcome) and the next candidate serves, instead of one shadowed
+/// binary vetoing voice.
 pub fn find_all_on_path(name: &str) -> Vec<PathBuf> {
     let Some(path) = std::env::var_os("PATH") else {
         return Vec::new();
@@ -86,6 +99,17 @@ pub fn find_all_on_path(name: &str) -> Vec<PathBuf> {
 /// the authoritative jail; this is the cheap gate. Both share
 /// `common_core::path::MAX_SYMLINK_HOPS`.
 #[must_use]
+/// Whether `candidate` stays inside `root` after resolving symlinks.
+/// Missing paths and escapes both fail closed (`false`). Resolution is
+/// hop-capped (never an unbounded `canonicalize`): loops and deep
+/// chains refuse instead of hanging or resolving outside.
+/// 
+/// Layering (intentional, not duplication): this is the fast check —
+/// callers that then open the path must re-validate the opened
+/// handle (`orator_agent::tools::sandbox::open_within`, fd re-validation),
+/// because a check-then-open races a symlink swap. The sandbox is
+/// the authoritative jail; this is the cheap gate. Both share
+/// `common_core::path::MAX_SYMLINK_HOPS`.
 pub fn within_root(root: &Path, candidate: &Path) -> bool {
     use common_core::path::MAX_SYMLINK_HOPS;
     let Some(root) = resolve_hop_capped(root, MAX_SYMLINK_HOPS) else {
@@ -101,6 +125,9 @@ pub fn within_root(root: &Path, candidate: &Path) -> bool {
 /// of the path string, not the file contents (instant even for
 /// gigabyte weights; the content hash gate lives in `verify_entry`).
 #[must_use]
+/// 12-char fingerprint for an explicit binary path (for logs): sha256
+/// of the path string, not the file contents (instant even for
+/// gigabyte weights; the content hash gate lives in `verify_entry`).
 pub fn binary_fingerprint(path: &Path) -> String {
     common_core::hash::sha256_hex(path.as_os_str().as_encoded_bytes())
         .chars()
@@ -112,6 +139,9 @@ pub fn binary_fingerprint(path: &Path) -> String {
 /// symlink. Uses `symlink_metadata` per component (never follows), so
 /// a swapped parent refuses instead of serving through it.
 #[must_use]
+/// Whether any component of `path` (or its parents up to root) is a
+/// symlink. Uses `symlink_metadata` per component (never follows), so
+/// a swapped parent refuses instead of serving through it.
 pub fn has_symlink_parent(path: &Path) -> bool {
     let mut cursor: Option<&Path> = Some(path);
     while let Some(current) = cursor {
@@ -160,6 +190,13 @@ fn resolve_hop_capped(path: &Path, hops: u32) -> Option<PathBuf> {
 /// helpers capture. Per-caller order tables stay at the call sites;
 /// only the classification and the gate filter move here.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Explicit binary override slot: the env var plus its current value.
+/// The three server resolvers (`llm::resolve_binary*`,
+/// `s2s::resolve_audio_server*`, `s2s::resolve_tts_binary`) share one
+/// shape — absolute override wins untouched, relative refuses with no
+/// search, unset falls through to the order table — which these
+/// helpers capture. Per-caller order tables stay at the call sites;
+/// only the classification and the gate filter move here.
 pub struct ExplicitBinary {
     /// Env var naming the override (kept for diagnostics at call sites).
     pub env_var: &'static str,
@@ -184,6 +221,11 @@ impl ExplicitBinary {
 /// the `find_all_on_path` dedup contract, so filtering an already
 /// deduplicated list is a no-op.
 #[must_use]
+/// Every candidate passing [`validate_server_binary`], order
+/// preserved, deduplicated by canonical path (the literal join is
+/// returned, so symlinked hits keep their table spelling). Matches
+/// the `find_all_on_path` dedup contract, so filtering an already
+/// deduplicated list is a no-op.
 pub fn filter_validated_binaries(
     candidates: impl IntoIterator<Item = PathBuf>,
     expected_uid: u32,
@@ -212,6 +254,14 @@ pub fn filter_validated_binaries(
 /// [`ExplicitBinary`] instead — the boot paths that try every
 /// candidate compose this function.
 #[must_use]
+/// Resolve one server binary: an absolute explicit override wins
+/// untouched (bypass — the caller logs the gate warning and owns the
+/// path); a relative override refuses with no search; otherwise the
+/// first gate-passing candidate serves (`None` when nothing trusted).
+/// Single-hit fail-fast wrappers (`resolve_binary_validated`) keep
+/// their own first-hit-then-validate shape on top of
+/// [`ExplicitBinary`] instead — the boot paths that try every
+/// candidate compose this function.
 pub fn resolve_validated_binary(
     explicit: &ExplicitBinary,
     candidates: impl IntoIterator<Item = PathBuf>,

@@ -24,7 +24,10 @@ fn kept_report(file: &str) -> ApplyReport {
 }
 
 fn unlimited() -> MaintenancePolicy {
-    MaintenancePolicy { attempt_limit: 100, ..MaintenancePolicy::default() }
+    MaintenancePolicy {
+        attempt_limit: 100,
+        ..MaintenancePolicy::default()
+    }
 }
 
 #[test]
@@ -33,11 +36,27 @@ fn clean_rerun_does_zero_work() {
     let guard = LoopGuard::acquire().expect("guard");
     let mut queue = MaintenanceQueue::new();
     queue.enqueue("a", "src", "rustfmt", &[]).expect("enqueue");
-    let act: Act = Arc::new(Mutex::new(|id: &str, _tier: Tier| ActOutcome::Verified(kept_report(id))));
+    let act: Act = Arc::new(Mutex::new(|id: &str, _tier: Tier| {
+        ActOutcome::Verified(kept_report(id))
+    }));
     let abort = StreamAbort::new();
-    let first = run_to_fixpoint(&guard, &mut queue, &MaintenancePolicy::default(), 10, &abort, &act);
+    let first = run_to_fixpoint(
+        &guard,
+        &mut queue,
+        &MaintenancePolicy::default(),
+        10,
+        &abort,
+        &act,
+    );
     assert!(first.stopped.is_none());
-    let second = run_to_fixpoint(&guard, &mut queue, &MaintenancePolicy::default(), 10, &abort, &act);
+    let second = run_to_fixpoint(
+        &guard,
+        &mut queue,
+        &MaintenancePolicy::default(),
+        10,
+        &abort,
+        &act,
+    );
     assert_eq!(second.passes, 0);
     assert!(second.stopped.is_none());
     assert!(second.verified.is_empty());
@@ -48,12 +67,22 @@ fn unconvergeable_work_escalates_to_a_fixpoint() {
     let _serial = serial_loop_tests();
     let guard = LoopGuard::acquire().expect("guard");
     let mut queue = MaintenanceQueue::new();
-    queue.enqueue("a", "src", "rustfmt", &[]).expect("enqueue a");
-    queue.enqueue("b", "src", "rustfmt", &[]).expect("enqueue b");
-    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| ActOutcome::Retryable("red gate".to_string())));
+    queue
+        .enqueue("a", "src", "rustfmt", &[])
+        .expect("enqueue a");
+    queue
+        .enqueue("b", "src", "rustfmt", &[])
+        .expect("enqueue b");
+    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| {
+        ActOutcome::Retryable("red gate".to_string())
+    }));
     let abort = StreamAbort::new();
     let report = run_to_fixpoint(&guard, &mut queue, &unlimited(), 50, &abort, &act);
-    assert!(report.stopped.is_none(), "escalation converges: {:?}", report.stopped);
+    assert!(
+        report.stopped.is_none(),
+        "escalation converges: {:?}",
+        report.stopped
+    );
     assert!(report.verified.is_empty());
     assert_eq!(report.escalated.len(), 2);
     assert!(!report.packets.is_empty());
@@ -65,10 +94,18 @@ fn pass_bound_says_why() {
     let _serial = serial_loop_tests();
     let guard = LoopGuard::acquire().expect("guard");
     let mut queue = MaintenanceQueue::new();
-    queue.enqueue("a", "src", "rustfmt", &[]).expect("enqueue a");
-    queue.enqueue("b", "src", "rustfmt", &[]).expect("enqueue b");
-    queue.enqueue("c", "src", "rustfmt", &[]).expect("enqueue c");
-    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| ActOutcome::Retryable("red gate".to_string())));
+    queue
+        .enqueue("a", "src", "rustfmt", &[])
+        .expect("enqueue a");
+    queue
+        .enqueue("b", "src", "rustfmt", &[])
+        .expect("enqueue b");
+    queue
+        .enqueue("c", "src", "rustfmt", &[])
+        .expect("enqueue c");
+    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| {
+        ActOutcome::Retryable("red gate".to_string())
+    }));
     let abort = StreamAbort::new();
     let report = run_to_fixpoint(&guard, &mut queue, &unlimited(), 4, &abort, &act);
     assert_eq!(report.passes, 4);
@@ -91,7 +128,14 @@ fn cancelled_abort_stops_before_any_pass() {
     }));
     let abort = StreamAbort::new();
     abort.cancel();
-    let report = run_to_fixpoint(&guard, &mut queue, &MaintenancePolicy::default(), 10, &abort, &act);
+    let report = run_to_fixpoint(
+        &guard,
+        &mut queue,
+        &MaintenancePolicy::default(),
+        10,
+        &abort,
+        &act,
+    );
     assert_eq!(report.passes, 0);
     assert_eq!(report.stopped.as_deref(), Some("aborted"));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -112,7 +156,14 @@ fn tiers_escalate_on_evidence_only() {
         }
     }));
     let abort = StreamAbort::new();
-    let report = run_to_fixpoint(&guard, &mut queue, &MaintenancePolicy::default(), 10, &abort, &act);
+    let report = run_to_fixpoint(
+        &guard,
+        &mut queue,
+        &MaintenancePolicy::default(),
+        10,
+        &abort,
+        &act,
+    );
     assert_eq!(report.escalated.len(), 1);
     assert_eq!(report.summary.entries.len(), 0);
     assert_eq!(
@@ -127,8 +178,12 @@ fn terminal_verdict_escalates_dependents_with_owner() {
     let _serial = serial_loop_tests();
     let guard = LoopGuard::acquire().expect("guard");
     let mut queue = MaintenanceQueue::new();
-    queue.enqueue("b", "src", "rustfmt", &[]).expect("enqueue b");
-    queue.enqueue("a", "src", "rustfmt", &["b"]).expect("enqueue a");
+    queue
+        .enqueue("b", "src", "rustfmt", &[])
+        .expect("enqueue b");
+    queue
+        .enqueue("a", "src", "rustfmt", &["b"])
+        .expect("enqueue a");
     let acted = Arc::new(std::sync::Mutex::new(Vec::new()));
     let act: Act = Arc::new(Mutex::new({
         let acted = Arc::clone(&acted);
@@ -138,9 +193,20 @@ fn terminal_verdict_escalates_dependents_with_owner() {
         }
     }));
     let abort = StreamAbort::new();
-    let report = run_to_fixpoint(&guard, &mut queue, &MaintenancePolicy::default(), 10, &abort, &act);
+    let report = run_to_fixpoint(
+        &guard,
+        &mut queue,
+        &MaintenancePolicy::default(),
+        10,
+        &abort,
+        &act,
+    );
     assert!(report.stopped.is_none());
-    assert_eq!(acted.lock().expect("acted").len(), 1, "dependents never act");
+    assert_eq!(
+        acted.lock().expect("acted").len(),
+        1,
+        "dependents never act"
+    );
     assert_eq!(report.escalated.len(), 2);
     assert!(!report.packets.is_empty());
     assert!(report.render().contains("escalated"));
@@ -151,9 +217,20 @@ fn blocked_without_owner_says_why() {
     let _serial = serial_loop_tests();
     let guard = LoopGuard::acquire().expect("guard");
     let mut queue = MaintenanceQueue::new();
-    queue.enqueue("orphan", "src", "rustfmt", &["ghost"]).expect("enqueue");
-    let act: Act = Arc::new(Mutex::new(|id: &str, _tier: Tier| ActOutcome::Verified(kept_report(id))));
+    queue
+        .enqueue("orphan", "src", "rustfmt", &["ghost"])
+        .expect("enqueue");
+    let act: Act = Arc::new(Mutex::new(|id: &str, _tier: Tier| {
+        ActOutcome::Verified(kept_report(id))
+    }));
     let abort = StreamAbort::new();
-    let report = run_to_fixpoint(&guard, &mut queue, &MaintenancePolicy::default(), 10, &abort, &act);
+    let report = run_to_fixpoint(
+        &guard,
+        &mut queue,
+        &MaintenancePolicy::default(),
+        10,
+        &abort,
+        &act,
+    );
     assert_eq!(report.stopped.as_deref(), Some("blocked without owner"));
 }

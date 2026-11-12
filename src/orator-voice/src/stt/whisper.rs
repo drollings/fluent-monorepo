@@ -20,6 +20,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 /// One decoded segment before word splitting.
 #[derive(Debug, Clone, PartialEq)]
+/// One decoded segment before word splitting.
 pub struct RawSegment {
     /// Segment text.
     pub text: String,
@@ -196,6 +197,9 @@ impl WhisperBackend {
 /// span. Token-level alignment lands later; uniform slicing is the honest
 /// v1 approximation and is exact for short segments.
 #[must_use]
+/// Split one decoded segment into words with uniform timing across its
+/// span. Token-level alignment lands later; uniform slicing is the honest
+/// v1 approximation and is exact for short segments.
 pub fn split_segment_words(segment: &RawSegment) -> Vec<crate::stt::streaming::DecodedWord> {
     let tokens: Vec<&str> = segment.text.split_whitespace().collect();
     if tokens.is_empty() {

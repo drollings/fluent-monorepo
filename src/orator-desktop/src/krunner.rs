@@ -6,6 +6,12 @@
 
 /// One runner offer.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// KRunner runner: `orator` plus a question asks the assistant.
+/// 
+/// The runner parses the typed query and offers follow-up actions
+/// (ask, start a meeting, dictate) without executing anything: offers
+/// are suggestions the user picks, never ambient effects.
+/// One runner offer.
 pub enum RunnerOffer {
     /// Ask the assistant `question`.
     Ask(String),
@@ -17,6 +23,7 @@ pub enum RunnerOffer {
 
 /// A parsed runner query.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A parsed runner query.
 pub struct RunnerQuery {
     /// The question text after the `orator` prefix.
     pub question: String,
@@ -28,6 +35,9 @@ pub struct RunnerQuery {
 /// assistant. The prefix match is case-insensitive; an empty question
 /// still offers the two session openers.
 #[must_use]
+/// Parse a KRunner query. `None` when the text is not addressed to the
+/// assistant. The prefix match is case-insensitive; an empty question
+/// still offers the two session openers.
 pub fn parse_query(text: &str) -> Option<RunnerQuery> {
     let trimmed = text.trim();
     let rest = trimmed.strip_prefix("orator").or_else(|| {

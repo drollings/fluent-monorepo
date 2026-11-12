@@ -75,6 +75,7 @@ pub fn kernel_order(
 
 /// Cache key directly from a pane's parameter set.
 #[must_use]
+/// Cache key directly from a pane's parameter set.
 pub fn cache_key_for(node: &str, params: &ParamSet) -> u64 {
     cache_key(node, params.fingerprint())
 }
@@ -94,6 +95,13 @@ pub(crate) fn describe_kernel(error: &protopyne_kernels::KernelError) -> EguiErr
 /// else refuses. A bare node without the prefix refuses — node ids must be
 /// explicit, never guessed from a bare word.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One indicator input: raw bars or a published series.
+/// 
+/// `Bars` reads an OHLC-derived column (the M1 registry); `Series` names a
+/// published node (`fast_mas:first`, `kernel:sma`, ...). Spellings are
+/// `close`-style names for bars and `series:<node>` for series; anything
+/// else refuses. A bare node without the prefix refuses — node ids must be
+/// explicit, never guessed from a bare word.
 pub enum SeriesSource {
     /// An OHLC-derived column over raw bars.
     Bars(PriceSource),
@@ -145,6 +153,10 @@ impl std::fmt::Display for SeriesSource {
 /// holes are producer self-knowledge, so composition reads them instead of
 /// asking each producer for a number.
 #[derive(Debug, Clone, Default)]
+/// Published indicator outputs by stable node id: the series catalog a
+/// source picker lists. A producer's warmup is its leading-hole count —
+/// holes are producer self-knowledge, so composition reads them instead of
+/// asking each producer for a number.
 pub struct SeriesCatalog {
     series: std::collections::HashMap<String, PublishedSeries>,
 }
@@ -152,6 +164,8 @@ pub struct SeriesCatalog {
 /// One published series: its cache key (carrying the producer fingerprint)
 /// and its per-bar values.
 #[derive(Debug, Clone)]
+/// One published series: its cache key (carrying the producer fingerprint)
+/// and its per-bar values.
 struct PublishedSeries {
     key: u64,
     values: Vec<Option<f64>>,
@@ -235,6 +249,7 @@ pub fn series_frame(rows: &[ChartRow], values: &[Option<f64>]) -> Result<OwnedOh
 
 /// The default input spelling: raw close bars.
 #[must_use]
+/// The default input spelling: raw close bars.
 pub fn default_source_spelling() -> String {
     SeriesSource::default().to_string()
 }
@@ -245,6 +260,11 @@ pub fn default_source_spelling() -> String {
 /// dropdown, never free text, for bar inputs (`series:<node>` spellings still
 /// validate and render as unlisted rows for producer inputs).
 #[must_use]
+/// Canonical price-source ids for pickers: the eight OHLC-derived columns a
+/// smoothing or oscillator may read, in canonical order. Used as the
+/// `variants` behind every `source` field so the settings pane offers a
+/// dropdown, never free text, for bar inputs (`series:<node>` spellings still
+/// validate and render as unlisted rows for producer inputs).
 pub fn price_source_ids() -> Vec<String> {
     PriceSource::all()
         .iter()
@@ -284,6 +304,10 @@ pub fn resolve_input_column(
 /// producer's series key — so a producer edit invalidates every downstream
 /// key transitively, while an untouched pair stays stable.
 #[must_use]
+/// Cache key for a series consumed from another node: the node's own key
+/// framing, but the fingerprint folds the consumer config together with the
+/// producer's series key — so a producer edit invalidates every downstream
+/// key transitively, while an untouched pair stays stable.
 pub fn consumer_cache_key(node: &str, config_fingerprint: u64, producer_key: u64) -> u64 {
     cache_key(
         node,
@@ -392,6 +416,15 @@ pub fn kernel_warmup(kernel_id: &str, params: &ParamSet) -> Result<usize, EguiEr
 /// leading holes stay holes downstream — the kernels emit `None` where
 /// history runs short, never a fabricated value.
 #[must_use]
+/// Bar slice for visible-window-plus-warmup assessment: the visible bars
+/// plus the warmup bars before them, clamped to history.
+/// 
+/// Returns `(eval_start, eval_len)` with `eval_start + eval_len` clamped to
+/// `total_bars`, so the caller slices `bars[eval_start..eval_start + eval_len]`
+/// without a second bounds check. A visible window past the data (or no
+/// bars at all) evaluates nothing; a shortfall evaluates what exists, and
+/// leading holes stay holes downstream — the kernels emit `None` where
+/// history runs short, never a fabricated value.
 pub fn evaluation_window(
     total_bars: usize,
     visible_start: usize,

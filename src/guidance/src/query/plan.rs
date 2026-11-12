@@ -15,6 +15,7 @@ use crate::search_types::{
 
 /// Recall failure: plan validation, storage, or embedding.
 #[derive(Debug, Error)]
+/// Recall failure: plan validation, storage, or embedding.
 pub enum RecallError {
     /// Plan carries no routes.
     #[error("search plan requires at least one route")]

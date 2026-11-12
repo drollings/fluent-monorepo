@@ -41,6 +41,7 @@ use crate::views::{bar_frame, live_grant};
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Server tunables, loadable from JSON with defaults for every field.
 pub struct ServerConfig {
     /// Socket to bind, e.g. `127.0.0.1:9060`.
     #[field(desc = "Bind address")]
@@ -316,6 +317,11 @@ fn default_history_timeframe() -> String {
 /// this delegates to it so serving and display cannot disagree about what a
 /// label means.
 #[must_use]
+/// Map the terminal toolbar's resolution label onto a [`Timeframe`].
+/// 
+/// The one toolbar-label bridge lives on [`Timeframe::from_chart_label`];
+/// this delegates to it so serving and display cannot disagree about what a
+/// label means.
 pub fn timeframe_of_label(label: &str) -> Option<Timeframe> {
     Timeframe::from_chart_label(label)
 }
@@ -324,6 +330,9 @@ pub fn timeframe_of_label(label: &str) -> Option<Timeframe> {
 /// ([`TapeMissKind`]) rides alongside so counters and the fallback latch hold
 /// the classification without the non-`Copy` store error.
 #[derive(Debug)]
+/// Why a store-backed chart read could not produce bars. A copyable kind
+/// ([`TapeMissKind`]) rides alongside so counters and the fallback latch hold
+/// the classification without the non-`Copy` store error.
 pub enum TapeMiss {
     /// No durable tape is wired into this server.
     NoTape,
@@ -339,6 +348,7 @@ pub enum TapeMiss {
 
 /// The copyable classification of a [`TapeMiss`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// The copyable classification of a [`TapeMiss`].
 pub enum TapeMissKind {
     /// See [`TapeMiss::NoTape`].
     NoTape,
@@ -371,6 +381,10 @@ impl TapeMiss {
 /// Collapsing the miss into a bare `None` erases the difference between "no
 /// tape" and "the tape refused", which is why provenance is observable.
 #[derive(Debug)]
+/// The outcome of planning and reading one chart window from the durable
+/// tape: either the served bars, or why the tape could not serve them.
+/// Collapsing the miss into a bare `None` erases the difference between "no
+/// tape" and "the tape refused", which is why provenance is observable.
 pub enum TapeServe {
     /// The tape served these bars.
     Served(Vec<Bar>),
@@ -383,6 +397,10 @@ pub enum TapeServe {
 /// nothing gates a read on these; the read path records its outcome after
 /// deciding it.
 #[derive(Debug, Default)]
+/// Counters over tape-serve outcomes: how many reads the tape served, and a
+/// per-kind tally of misses with the most recent kind. Pure observation —
+/// nothing gates a read on these; the read path records its outcome after
+/// deciding it.
 pub struct TapeServeStats {
     served: AtomicU64,
     no_tape: AtomicU64,
@@ -395,6 +413,7 @@ pub struct TapeServeStats {
 
 /// A point-in-time snapshot of [`TapeServeStats`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+/// A point-in-time snapshot of [`TapeServeStats`].
 pub struct TapeServeSnapshot {
     /// Reads the tape served.
     pub served: u64,
@@ -459,6 +478,14 @@ impl TapeServeStats {
 /// granted the store is denied exactly as everywhere else. The caller decides
 /// the fallback; this layer never silently substitutes another source.
 #[must_use]
+/// Plan and read a chart window from the durable tape, reporting either the
+/// served bars or why the read could not be answered. The store's own gate
+/// runs inside the permit's scope on the shared capability-scoped blocking
+/// worker (multi-thread runtime → `block_in_place`; current-thread runtime or
+/// no runtime → a dedicated scoped OS thread), so a synchronous render loop
+/// can plan a read without stalling the executor and a task that was never
+/// granted the store is denied exactly as everywhere else. The caller decides
+/// the fallback; this layer never silently substitutes another source.
 pub fn tape_serve(
     reader: &TapeReader,
     symbol: &str,

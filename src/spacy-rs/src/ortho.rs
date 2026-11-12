@@ -36,6 +36,10 @@ pub const BLOB_VERSION_SOR1: u16 = 1;
 /// (English: the embedded [`crate::lang::en::ORTHO_BLOB`]); swapping
 /// languages swaps the blob, never the parser.
 #[derive(Debug, Clone)]
+/// The parser-facing language orthography: morpheme spellings plus the
+/// punctuation sets the tagger frames evaluate. Borrowed from the blob
+/// (English: the embedded [`crate::lang::en::ORTHO_BLOB`]); swapping
+/// languages swaps the blob, never the parser.
 pub struct TaggerOrtho<'a> {
     trailing: Vec<&'a str>,
     boundary: Vec<&'a str>,

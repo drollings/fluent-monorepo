@@ -21,6 +21,12 @@ use crate::signals_lite::LiteIndicatorParams;
 #[derive(
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
+/// One entry trigger's parameters.
+/// 
+/// The fields are kind-conditional, like the filter row below: `level`
+/// carries the momentum level, the exhaustion band, or the slow leg of the
+/// dual exhaustion; `fast_level` only the dual's fast leg; `lookback` only
+/// the dual window.
 pub struct TriggerSlot {
     /// Catalog id (`momentum`, `ribbon_flip`, `osc_cross`, `exhaustion`,
     /// `dual_exhaustion`).
@@ -46,6 +52,12 @@ pub struct TriggerSlot {
 #[derive(
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
+/// One admission filter's parameters.
+/// 
+/// The numeric fields are kind-conditional: `minimum` carries the health,
+/// slow-side, or volume floor; `maximum` the extension ceiling; `length`
+/// the delta window. The two regime arms ride their own switches because
+/// they are independent policies, not one threshold.
 pub struct FilterSlot {
     /// Catalog id (`ribbon`, `ma_health`, `ribbon_health`, `slow_side`,
     /// `delta_side`, `volume_min`, `atr_distance_max`, `regime_skip`).
@@ -69,6 +81,7 @@ pub struct FilterSlot {
 #[derive(
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
+/// The entry section: triggers, filters, and the setup window.
 pub struct EntrySpec {
     /// Up to eight trigger rows.
     #[field(items = 8)]
@@ -89,6 +102,7 @@ pub struct EntrySpec {
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[allow(clippy::struct_excessive_bools)]
+/// The exit section: stop, targets, trailing, breakeven, exhaustion.
 pub struct ExitSpec {
     /// Stop construction (`ATR`, `Percent`, `Swing`).
     pub stop_type: String,
@@ -130,6 +144,7 @@ pub struct ExitSpec {
 #[derive(
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
+/// The risk section: sizing and the gates.
 pub struct RiskSpec {
     /// Sizing mode (`Risk Percent`, `Fixed`, …).
     pub size_mode: String,
@@ -157,6 +172,7 @@ pub struct RiskSpec {
 #[derive(
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
+/// The session section.
 pub struct SessionSpec {
     /// Session window (`HHMM-HHMM`).
     pub window: String,
@@ -174,6 +190,7 @@ pub struct SessionSpec {
 #[derive(
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
+/// The presentation section.
 pub struct DisplaySpec {
     /// Master switch.
     pub enabled: bool,
@@ -187,6 +204,7 @@ pub struct DisplaySpec {
 
 /// The nested composition view.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// The nested composition view.
 pub struct IntegrationLiteSpec {
     /// Market-leg dials.
     pub indicator: LiteIndicatorParams,
@@ -226,6 +244,13 @@ impl From<&IntegrationLiteStrategyConfig> for TriggerSlot {
 /// dials without a slot (setup window, adaptive default, dual bypass) ride
 /// the entry section directly.
 #[must_use]
+/// Project the flat wire config onto the nested entry section.
+/// 
+/// This is the one flat→entry mapping: the slot builders read the entry,
+/// never the flat config, so the flat struct reaches the slots only through
+/// this projection. Every entry dial has a lossless slot field; the section
+/// dials without a slot (setup window, adaptive default, dual bypass) ride
+/// the entry section directly.
 pub fn entry_from_config(config: &IntegrationLiteStrategyConfig) -> EntrySpec {
     let mut triggers = Vec::new();
     if config.sig_momentum {

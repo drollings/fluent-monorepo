@@ -31,6 +31,10 @@ use crate::pool::{PoolError, SinkPool, WorkerPool};
 /// `initial = limit.max(1)`, `more_after = (limit / 2).max(1)`).
 /// Defaults reproduce those values byte-for-byte.
 #[derive(Debug, Clone, Copy)]
+/// Tuning for [`CreditGatedPool`]: the worker cap and the credit-formula
+/// parameters, previously hard-coded magic (`WORKER_CAP = 2`,
+/// `initial = limit.max(1)`, `more_after = (limit / 2).max(1)`).
+/// Defaults reproduce those values byte-for-byte.
 pub struct CreditGatedConfig {
     /// Worker task count.
     pub worker_cap: usize,

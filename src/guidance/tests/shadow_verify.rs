@@ -25,7 +25,11 @@ fn merged_pass_accepts_all_patches() {
         true
     });
     assert!(ok);
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "merged result verifies once");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "merged result verifies once"
+    );
 }
 
 #[test]
@@ -62,7 +66,9 @@ fn bisect_property_single_culprit_always_found() {
             let culprit = bisect_culprit(dir.path(), &patches, &|shadow| {
                 !std::fs::read_dir(shadow).map_or(true, |entries| {
                     entries.filter_map(Result::ok).any(|entry| {
-                        std::fs::read_to_string(entry.path()).unwrap_or_default().contains("BAD")
+                        std::fs::read_to_string(entry.path())
+                            .unwrap_or_default()
+                            .contains("BAD")
                     })
                 })
             });

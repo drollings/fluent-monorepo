@@ -1,0 +1,82 @@
+{
+  "provenance": {
+    "origin": "human",
+    "labeller": "guidance-team",
+    "date": "2026-11-10",
+    "note": "Hand-authored triage goldens; never model output. Control entries are cases the static table already decides; the rest discriminate it (a table-parroting classifier cannot ace this corpus)."
+  },
+  "cases": [
+    {
+      "id": "unused-import",
+      "diagnostic": "warning: unused import: `foo` [unused_imports]",
+      "expected": "mechanical-removal",
+      "control": true
+    },
+    {
+      "id": "unresolved-import",
+      "diagnostic": "error[E0432]: unresolved import `foo`",
+      "expected": "mechanical-import",
+      "control": true
+    },
+    {
+      "id": "mismatched-types",
+      "diagnostic": "error[E0308]: mismatched types",
+      "expected": "needs-human",
+      "control": true
+    },
+    {
+      "id": "missing-crate",
+      "diagnostic": "error: can't find crate for `foo`",
+      "expected": "external",
+      "control": true
+    },
+    {
+      "id": "unknown-code-import",
+      "diagnostic": "error[E9999]: unresolved import `bar`",
+      "expected": "mechanical-import",
+      "control": false
+    },
+    {
+      "id": "dead-private-field",
+      "diagnostic": "warning: field `x` is never read [dead_code]",
+      "expected": "mechanical-removal",
+      "control": false
+    },
+    {
+      "id": "perf-hint-loop",
+      "diagnostic": "warning: suboptimal iteration pattern [perf_hint]",
+      "expected": "local-rewrite",
+      "control": false
+    },
+    {
+      "id": "network-fetch-failed",
+      "diagnostic": "error: network unreachable during dependency fetch",
+      "expected": "external",
+      "control": false
+    },
+    {
+      "id": "shadowed-binding",
+      "diagnostic": "warning: variable shadows outer binding [shadow_hint]",
+      "expected": "local-rewrite",
+      "control": false
+    },
+    {
+      "id": "double-mut-borrow-helper",
+      "diagnostic": "error[E9001]: cannot borrow as mutable twice in this helper",
+      "expected": "local-rewrite",
+      "control": false
+    },
+    {
+      "id": "redundant-borrow",
+      "diagnostic": "warning: needless borrow of a reference [needless_borrows]",
+      "expected": "mechanical-borrow",
+      "control": false
+    },
+    {
+      "id": "duplicate-symbol-link",
+      "diagnostic": "error: linking failed: duplicate symbol `foo` (build)",
+      "expected": "external",
+      "control": false
+    }
+  ]
+}

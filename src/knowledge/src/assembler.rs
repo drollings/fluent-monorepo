@@ -43,6 +43,7 @@ use crate::views::LedgerView;
 
 /// The assembled prompt output.
 #[derive(Debug, Clone)]
+/// The assembled prompt output.
 pub struct AssembledPrompt {
     /// The worker's composed system prompt.
     pub system: String,
@@ -84,6 +85,7 @@ fn estimate(store: &dyn ContentNodeStore, id: NodeId, lod: Lod) -> usize {
 
 /// The deterministic prompt assembler — a pure function object.
 #[derive(Debug, Clone, Copy, Default)]
+/// The deterministic prompt assembler — a pure function object.
 pub struct LedgerPromptAssembler;
 
 impl LedgerPromptAssembler {

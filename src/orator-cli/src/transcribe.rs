@@ -4,6 +4,8 @@
 
 /// One timed transcript cue.
 #[derive(Debug, Clone, PartialEq)]
+/// Offline transcription rendering: one cue list, four formats.
+/// One timed transcript cue.
 pub struct Cue {
     /// Start in seconds.
     pub start_s: f64,
@@ -20,6 +22,7 @@ pub const NO_SPEECH_NOTE: &str = "orator: no speech detected; empty transcript";
 
 /// Output formats for `orator transcribe --format`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Output formats for `orator transcribe --format`.
 pub enum TranscriptFormat {
     /// Plain text, one cue per line.
     Txt,
@@ -74,6 +77,11 @@ pub const MAX_CUE_SECONDS: f64 = 24.0 * 3600.0;
 /// stamp). Conversions stay in `f64` from clamped `i64` (never a
 /// narrowing `u32`, never `u64::MAX`).
 #[must_use]
+/// Build one cue from whisper centiseconds. Negative inputs clamp to
+/// zero; a reversed end clamps up to the start so the cue never runs
+/// backwards; anything past the media cap clamps to it (never a giant
+/// stamp). Conversions stay in `f64` from clamped `i64` (never a
+/// narrowing `u32`, never `u64::MAX`).
 pub fn cue_from_centiseconds(start_cs: i64, end_cs: i64, text: String) -> Cue {
     let start_s = (start_cs.max(0) as f64 / 100.0).min(MAX_CUE_SECONDS);
     let end_s = (end_cs.max(0) as f64 / 100.0)
@@ -90,6 +98,9 @@ pub fn cue_from_centiseconds(start_cs: i64, end_cs: i64, text: String) -> Cue {
 /// LE plus the rate tag. Matches the daemon's audio decoder; the
 /// daemon enforces the single-frame bound before any inference.
 #[must_use]
+/// Encode 16 kHz mono `samples` for a `Transcribe` call: base64 i16
+/// LE plus the rate tag. Matches the daemon's audio decoder; the
+/// daemon enforces the single-frame bound before any inference.
 pub fn encode_transcribe_audio(samples: &[f32]) -> serde_json::Value {
     // Truncating quantizer shared with the s2s WAV frame
     // (`common_core::pcm`, TowardZero); the base64 envelope stays here.
@@ -118,6 +129,13 @@ pub fn decode_transcribe_text(body: &serde_json::Value) -> Result<String, String
 /// never recoverable). Endpoint errors surface as-is; render failures
 /// are usage errors.
 #[must_use]
+/// Single cue for an audio-server transcript over `sample_count` 16 kHz
+/// samples. The audio-server path keeps an intentional no-fallback
+/// asymmetry with `say`: a voiceless `say` turn advances down the
+/// fallback chain (silence is recoverable), but a failed transcription
+/// reports honestly instead of inventing words (transcript fidelity is
+/// never recoverable). Endpoint errors surface as-is; render failures
+/// are usage errors.
 pub fn audio_server_cue(text: String, sample_count: usize) -> Cue {
     Cue {
         start_s: 0.0,

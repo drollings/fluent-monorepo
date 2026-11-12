@@ -25,6 +25,7 @@ use crate::trading_loop::TradingLoopExt;
 
 /// Whether the journaled authority permits the loop to start.
 #[derive(Debug, Clone, PartialEq)]
+/// Whether the journaled authority permits the loop to start.
 pub enum LoopGate {
     /// No live (unrevoked) grant is journaled.
     Unarmed,
@@ -45,6 +46,7 @@ pub fn loop_gate(journal: &Journal, permit: &VenueStorage) -> Result<LoopGate, S
 
 /// The pure fold behind [`loop_gate`], over already-replayed events.
 #[must_use]
+/// The pure fold behind [`loop_gate`], over already-replayed events.
 pub fn gate_of(events: &[JournalEvent]) -> LoopGate {
     match replay_grant(events).filter(|grant| !grant.revoked) {
         None => LoopGate::Unarmed,
@@ -80,6 +82,7 @@ pub struct LiveLoop<'a> {
 
 /// What a start attempt did.
 #[derive(Debug)]
+/// What a start attempt did.
 pub enum LiveLoopOutcome {
     /// Authority was absent: not one bar was decided.
     Refused(LoopGate),

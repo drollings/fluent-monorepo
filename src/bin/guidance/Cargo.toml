@@ -33,6 +33,34 @@ path = "tests/component_gate_cli.rs"
 name = "prune_surface"
 path = "tests/prune_surface.rs"
 
+[[test]]
+name = "strict_verify"
+path = "tests/strict_verify.rs"
+
+[[test]]
+name = "calibrate_cli"
+path = "tests/calibrate_cli.rs"
+
+[[test]]
+name = "run_cli"
+path = "tests/run_cli.rs"
+
+[[test]]
+name = "impact_cli"
+path = "tests/impact_cli.rs"
+
+[[test]]
+name = "kb_cli"
+path = "tests/kb_cli.rs"
+
+[[test]]
+name = "truth_cli"
+path = "tests/truth_cli.rs"
+
+[[test]]
+name = "summarize_cli"
+path = "tests/summarize_cli.rs"
+
 [dependencies]
 common-core = { path = "../../common-core" }
 guidance-core = { path = "../../guidance" }

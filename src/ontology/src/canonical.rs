@@ -28,6 +28,7 @@ pub const ENTITY_ROOT_IRI: &str = "http://yago-knowledge.org/resource/Entity";
 
 /// Errors surfaced while loading/parsing a canonical-form table.
 #[derive(Debug, Error)]
+/// Errors surfaced while loading/parsing a canonical-form table.
 pub enum CanonicalFormError {
     #[error("invalid canonical-form JSON: {0}")]
     Json(String),
@@ -35,6 +36,7 @@ pub enum CanonicalFormError {
 
 /// A versioned `surface lemma → canonical lemma` table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A versioned `surface lemma → canonical lemma` table.
 pub struct CanonicalFormTable {
     /// The table version (the offline build that produced it).
     version: String,

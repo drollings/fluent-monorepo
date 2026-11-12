@@ -168,6 +168,7 @@ pub fn capped_exp_backoff_ms(base_ms: u64, failures: u32, max_shift: u32) -> u64
 
 /// Outcome of a [`PollWithBackoff`] run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Outcome of a [`PollWithBackoff`] run.
 pub enum PollResult {
     /// `tick()` returned `true` before exhausting the failure budget.
     Ready,
@@ -243,6 +244,9 @@ impl PollWithBackoff {
 /// caller waited. Data only — the caller formats its own refusal line
 /// (domain prefixes like `orator: ` stay at the call site, never here).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Marker for a [`run_with_budget`] timeout: which op and how long the
+/// caller waited. Data only — the caller formats its own refusal line
+/// (domain prefixes like `orator: ` stay at the call site, never here).
 pub struct BudgetExceeded {
     label: String,
     budget_secs: u64,

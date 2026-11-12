@@ -105,6 +105,8 @@ fn is_known_model(deps: &ServerDeps, key: &str) -> bool {
 /// Validate that `model` names a managed model (or `None` when exactly one
 /// managed model exists). Returns the model key.
 #[allow(clippy::result_large_err)]
+/// Validate that `model` names a managed model (or `None` when exactly one
+/// managed model exists). Returns the model key.
 fn resolve_model(deps: &ServerDeps, model: Option<&str>) -> Result<String, HyperResponse> {
     if let Some(m) = model {
         if !is_known_model(deps, m) {
@@ -128,6 +130,10 @@ fn resolve_model(deps: &ServerDeps, model: Option<&str>) -> Result<String, Hyper
 /// running server. Fleet-aware: onnx keys (`onnx/llm:default`) resolve through
 /// the unified fleet's id grammar too.
 #[allow(clippy::result_large_err)]
+/// Resolve a per-instance operation to `(model, instance)`: the id grammar
+/// `<model_id>:<name>` wins; else `?model=` + the bare name; else the single
+/// running server. Fleet-aware: onnx keys (`onnx/llm:default`) resolve through
+/// the unified fleet's id grammar too.
 fn resolve_instance_target(
     deps: &ServerDeps,
     path_name: &str,

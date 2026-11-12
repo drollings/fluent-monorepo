@@ -51,6 +51,8 @@ use std::sync::Arc;
 /// Run configuration: mirrors the tree-walk run contract (warmup bars
 /// advance unseen, over-capacity refuses instead of truncating).
 #[derive(Debug, Clone)]
+/// Run configuration: mirrors the tree-walk run contract (warmup bars
+/// advance unseen, over-capacity refuses instead of truncating).
 pub struct VmConfig {
     /// Chart symbol backing `syminfo.tickerid`. Retained as the one
     /// chart-symbol source for a run: the loop carries it alongside the
@@ -96,6 +98,9 @@ impl VmConfig {
 /// constructs, unresolvable targets). Never a semantic refusal — those
 /// surface identically at run time from either engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Link-time refusal: the program needs the tree-walk (unlowered
+/// constructs, unresolvable targets). Never a semantic refusal — those
+/// surface identically at run time from either engine.
 pub enum LinkError {
     /// A module still carries `Fallback` markers: run it tree-walk.
     Fallback {
@@ -206,6 +211,11 @@ pub const SPLIT_BRAIN_COVERAGE: f64 = 1.0;
 /// `fin_or_none`, so a hole never compares equal to zero and out-of-range
 /// reads stay absence instead of wrapping.
 #[derive(Debug, Clone, Default)]
+/// Contiguous numeric column with hole discipline: finite values ride as
+/// themselves, everything else (absence, non-numeric cells) rides as the
+/// shared NaN hole. Reads map the hole back to absence through the shared
+/// `fin_or_none`, so a hole never compares equal to zero and out-of-range
+/// reads stay absence instead of wrapping.
 pub struct FloatSeries {
     values: Vec<f64>,
 }
@@ -256,6 +266,8 @@ impl FloatSeries {
 /// One linked module: blocks with validated indices plus the interned
 /// global namespace the M4 loop addresses directly.
 #[derive(Clone)]
+/// One linked module: blocks with validated indices plus the interned
+/// global namespace the M4 loop addresses directly.
 struct VmModule {
     key: String,
     blocks: Vec<CompiledBlock>,
@@ -294,6 +306,7 @@ struct VmModule {
 
 /// A linked program: modules in execution order with resolved namespaces.
 #[derive(Clone)]
+/// A linked program: modules in execution order with resolved namespaces.
 pub struct VmProgram {
     modules: Vec<VmModule>,
     order: Vec<usize>,
@@ -938,6 +951,8 @@ pub fn link(program: &CompiledProgram, order: &[&str]) -> Result<VmProgram, Link
 /// One resolved method target: the program module plus the entry that
 /// carries the body block, parameter layout, and receiver alias.
 #[derive(Debug, Clone)]
+/// One resolved method target: the program module plus the entry that
+/// carries the body block, parameter layout, and receiver alias.
 pub(crate) struct ResolvedMethod {
     pub(crate) module: usize,
     pub(crate) entry: super::bytecode::MethodEntry,
@@ -949,6 +964,11 @@ pub(crate) struct ResolvedMethod {
 /// (nested readers fall back to the tree-walk there, exactly like the
 /// unbound-variable rule on the tree side).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One caller home a journaled write may target: a shared global
+/// column (nested reads observe it, exactly like the tree-walk's
+/// shared namespace) or a caller frame slot for names with no column
+/// (nested readers fall back to the tree-walk there, exactly like the
+/// unbound-variable rule on the tree side).
 enum JournalHome {
     /// Shared global column.
     Global(usize),
@@ -961,6 +981,10 @@ enum JournalHome {
 /// keeps the first write per home per call, mirroring the tree-walk's
 /// journal suffix discipline.
 #[derive(Debug, Clone)]
+/// One logged write: the home plus its entry value, so the return
+/// teardown restores exactly what the call observed on entry. The log
+/// keeps the first write per home per call, mirroring the tree-walk's
+/// journal suffix discipline.
 struct JournalEntry {
     home: JournalHome,
     /// Entry value: nested option for globals (never-written vs
@@ -979,6 +1003,9 @@ impl JournalEntry {
 /// semantic home model ([`super::home::Home`]) wraps these, so nested
 /// paths and map entries share their take/put table with the tree-walk.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The loop's own address for one directly writable home slot. The
+/// semantic home model ([`super::home::Home`]) wraps these, so nested
+/// paths and map entries share their take/put table with the tree-walk.
 enum VmSlot {
     /// Live receiver slot by depth.
     Receiver(usize),
@@ -1005,6 +1032,8 @@ impl super::home::HomeSlot for VmSlot {
 /// A plain value home (not an object take): where a map variable lives so a
 /// provenance write can replace it in place.
 #[derive(Debug, Clone, Copy)]
+/// A plain value home (not an object take): where a map variable lives so a
+/// provenance write can replace it in place.
 enum ValueSlot {
     /// Named frame slot at an absolute frame index.
     Frame { frame: usize, slot: usize },
@@ -1086,6 +1115,8 @@ struct Frame {
 /// Call scratch buffers owned by one run: taken and returned around every
 /// call so a refusal (which ends the run) never leaves a borrowed buffer.
 #[derive(Default)]
+/// Call scratch buffers owned by one run: taken and returned around every
+/// call so a refusal (which ends the run) never leaves a borrowed buffer.
 pub(crate) struct Scratch {
     /// Evaluated argument values, in call-site order.
     pub(crate) values: Vec<Option<PineValue>>,
@@ -1098,6 +1129,10 @@ pub(crate) struct Scratch {
 /// one live copy, never a stale clone — mirroring the tree-walk's
 /// receiver stack discipline.
 #[derive(Debug, Clone)]
+/// One live method receiver: the instance plus the parameter name its
+/// body spells it by. Reads and nested calls through the alias hit the
+/// one live copy, never a stale clone — mirroring the tree-walk's
+/// receiver stack discipline.
 struct ReceiverSlot {
     instance: UserInstance,
     alias: String,
@@ -1108,6 +1143,10 @@ struct ReceiverSlot {
 /// Same declaration, same call path, same cell — mirroring the
 /// tree-walk's `ScopeKey` without sharing its representation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Identity of one in-function `var`/`varip` instance: the call path
+/// that reached the declaring body plus the declaration site within it.
+/// Same declaration, same call path, same cell — mirroring the
+/// tree-walk's `ScopeKey` without sharing its representation.
 struct VarInstKey {
     /// Caller chain, outermost first: (module, block, call-site pc).
     path: Vec<(usize, usize, usize)>,
@@ -1120,6 +1159,10 @@ struct VarInstKey {
 /// have no declaration ordinal) and kept apart from `VarInstKey` so a
 /// cell ordinal can never collide with a symbol id.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Identity of one plain frame local's per-call history: the open call
+/// path plus the declaring body and name. Keyed by name (plain locals
+/// have no declaration ordinal) and kept apart from `VarInstKey` so a
+/// cell ordinal can never collide with a symbol id.
 struct LocalHistKey {
     /// Caller chain, outermost first: (module, block, call-site pc).
     path: Vec<(usize, usize, usize)>,
@@ -1134,6 +1177,10 @@ struct LocalHistKey {
 /// later declaration is still a no-op — mirroring the tree-walk's store
 /// clear under registration.
 #[derive(Debug, Clone)]
+/// One per-instance cell: the current value. Clearing (`na` assign,
+/// `varip` bar reset) drops the entry but keeps the seeded mark, so a
+/// later declaration is still a no-op — mirroring the tree-walk's store
+/// clear under registration.
 struct FrameVarCell {
     /// Bound name (snapshot views).
     name: String,
@@ -1150,6 +1197,12 @@ struct FrameVarCell {
 /// categorization: this names the run-time backing store, not the reason
 /// a capture fell back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Capture family tag for the unified capture index: one
+/// `(family, site)` map replaces six per-family maps, and the family
+/// selects the backing vector at the single dispatch in
+/// [`Run::capture_row`]. Distinct from [`CallTarget`]-adjacent
+/// categorization: this names the run-time backing store, not the reason
+/// a capture fell back.
 enum CaptureFamily {
     Plot,
     PlotCandle,
@@ -5361,6 +5414,12 @@ fn set_nested_value(current: &mut PineValue, fields: &[String], value: Option<Pi
 /// cache or a persisted artifact: the run owns its counters and drops
 /// them with its columns.
 #[derive(Debug, Clone, Default)]
+/// Tier observability for one run: which columns tiered up, how many
+/// history reads each path served, and how often the T2 guard retired a
+/// column. Counts only — the scalar rows stay the source of truth, so the
+/// probe can never change the outcome it observes. Nothing here feeds a
+/// cache or a persisted artifact: the run owns its counters and drops
+/// them with its columns.
 pub struct ProbeReport {
     /// Columns tiered at end of run (written, still pure, stability at or
     /// past [`TIER_STABLE_BARS`], closed-bar run).
@@ -5412,6 +5471,15 @@ fn probe_of(run: &Run, program: &VmProgram) -> ProbeReport {
 /// counting tier-up, path hits, and T2 deopts for calibration. The plain
 /// entry point delegates here and drops the report.
 #[allow(clippy::too_many_lines)]
+/// Run a linked program over chart bars: the same run contract as
+/// `PineEngine::run_linked` (warmup skipped, over-capacity refused,
+/// tick lengths checked), with per-bar evaluation through the compiled
+/// blocks. Refusals name the same reasons as the tree-walk; a program
+/// the linker rejects runs tree-walk instead (see [`link`]).
+/// 
+/// The probe twin of [`run_linked`]: same outcome, plus a [`ProbeReport`]
+/// counting tier-up, path hits, and T2 deopts for calibration. The plain
+/// entry point delegates here and drops the report.
 pub fn run_linked_with_probe(
     program: &VmProgram,
     bars: &[Bar],

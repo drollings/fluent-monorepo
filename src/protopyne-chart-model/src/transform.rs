@@ -18,6 +18,12 @@ use crate::error::ChartModelError;
 /// cover the source high/low. Timestamps, volumes, and adjustments carry
 /// over unchanged.
 #[must_use]
+/// Smoothed heikin-ashi candles over closed bars.
+/// 
+/// `ha_close = (o + h + l + c) / 4`; `ha_open` seeds at `(o + c) / 2` of the
+/// first bar then recurs as `(prev_open + prev_close) / 2`; wicks stretch to
+/// cover the source high/low. Timestamps, volumes, and adjustments carry
+/// over unchanged.
 pub fn heikin_ashi(bars: &[Bar]) -> Vec<Bar> {
     let mut out = Vec::with_capacity(bars.len());
     let mut prev_open: Option<Decimal> = None;
@@ -53,6 +59,11 @@ pub fn heikin_ashi(bars: &[Bar]) -> Vec<Bar> {
 /// future caller share one seeding instead of re-seeding per window
 /// (windowing first would miscompute every open past the seam).
 #[must_use]
+/// Heikin-Ashi over display rows: the same recurrence as [`heikin_ashi`],
+/// seeded once from row zero. Display smoothing only, never a decision
+/// input — the sole home of the row-space recurrence, so paint and any
+/// future caller share one seeding instead of re-seeding per window
+/// (windowing first would miscompute every open past the seam).
 pub fn heikin_rows_of(rows: &[ChartRow]) -> Vec<ChartRow> {
     let mut out = Vec::with_capacity(rows.len());
     let mut prev_open: Option<f64> = None;

@@ -48,6 +48,7 @@ use super::LOD5_LABEL;
 
 /// Configuration for the background tier worker (defaults honor §0.3).
 #[derive(Debug, Clone)]
+/// Configuration for the background tier worker (defaults honor §0.3).
 pub struct TierConfig {
     /// Max characters for LOD4 (short summary). Default 240.
     pub lod4_max_chars: usize,
@@ -88,6 +89,7 @@ impl Default for TierConfig {
 
 /// Errors produced by the tier worker.
 #[derive(Debug, thiserror::Error)]
+/// Errors produced by the tier worker.
 pub enum TierError {
     /// The summarizer/backend is unavailable for lazy derivation — degrade
     /// LOD5 to `derive_label`, leave LOD4 empty (never a crash, no retry).

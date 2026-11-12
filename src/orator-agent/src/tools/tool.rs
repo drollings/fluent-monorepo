@@ -8,6 +8,7 @@ use thiserror::Error;
 
 /// Effect tier. Defaults follow the policy table; the policy decides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Effect tier. Defaults follow the policy table; the policy decides.
 pub enum ToolTier {
     /// Read-only: time, calculator.
     T0,
@@ -20,6 +21,8 @@ pub enum ToolTier {
 /// One parsed invocation plus the spoken lead-in it must never diverge
 /// from. Empty preamble means the turn spoke nothing first.
 #[derive(Debug, Clone, PartialEq)]
+/// One parsed invocation plus the spoken lead-in it must never diverge
+/// from. Empty preamble means the turn spoke nothing first.
 pub struct ToolCall {
     /// Registry tool name.
     pub name: String,
@@ -31,6 +34,7 @@ pub struct ToolCall {
 
 /// Tool failures. Denials name the policy; timeouts name the budget.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Tool failures. Denials name the policy; timeouts name the budget.
 pub enum ToolError {
     /// No tool by that name.
     #[error("unknown tool: {0}")]
@@ -69,6 +73,8 @@ pub trait Tool: Send + Sync {
 /// The static registry. Registration rejects duplicates: a name is
 /// defined exactly once, so prompt, grammar, and executor agree.
 #[derive(Default)]
+/// The static registry. Registration rejects duplicates: a name is
+/// defined exactly once, so prompt, grammar, and executor agree.
 pub struct ToolRegistry {
     tools: Vec<Arc<dyn Tool>>,
 }

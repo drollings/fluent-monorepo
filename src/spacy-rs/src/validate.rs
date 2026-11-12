@@ -39,6 +39,9 @@ use crate::llm::{AnnotationRecord, AnnotationSet};
 /// one of the §10.2 checks, so a caller can discriminate the invalid class
 /// without string matching.
 #[derive(Debug, Error)]
+/// Errors from the deterministic annotation gate. Each variant corresponds to
+/// one of the §10.2 checks, so a caller can discriminate the invalid class
+/// without string matching.
 pub enum AnnotationError {
     /// Check 1: the reply has a different number of records than tokens.
     #[error("annotation count mismatch: got {got} records for {expected} tokens")]
@@ -258,6 +261,9 @@ impl Eq for AnnotationError {}
 /// (the `DepLabelSet`, serde-able so a model's `label_data` can override it)
 /// and the optional projectivity requirement.
 #[derive(Debug, Clone)]
+/// The deterministic gate. Holds the accepted dependency-label vocabulary
+/// (the `DepLabelSet`, serde-able so a model's `label_data` can override it)
+/// and the optional projectivity requirement.
 pub struct AnnotationValidator {
     dep_labels: DepLabelSet,
     require_projectivity: bool,
@@ -326,6 +332,8 @@ fn upos_known(pos: &str) -> bool {
 /// Whether `dep` names the ROOT label (ASCII case-insensitive): the one
 /// normalized root comparison shared by checks 3–6.
 #[inline]
+/// Whether `dep` names the ROOT label (ASCII case-insensitive): the one
+/// normalized root comparison shared by checks 3–6.
 fn is_root_dep(dep: &str) -> bool {
     dep.eq_ignore_ascii_case("root")
 }
@@ -333,6 +341,8 @@ fn is_root_dep(dep: &str) -> bool {
 /// A BILUO entity marker classified without allocating: the byte-level twin
 /// of matching on the trimmed, uppercased marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A BILUO entity marker classified without allocating: the byte-level twin
+/// of matching on the trimmed, uppercased marker.
 enum IobMarker {
     Outside,
     Begin,

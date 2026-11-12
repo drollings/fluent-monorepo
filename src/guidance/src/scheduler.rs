@@ -36,6 +36,7 @@ pub type JobRun = Arc<dyn Fn(JobContext) -> BoxFuture<Result<(), JobError>> + Se
 
 /// Job failure (ports `DaemonError`'s retryable flag).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Job failure (ports `DaemonError`'s retryable flag).
 pub struct JobError {
     /// Human message.
     pub message: String,
@@ -63,6 +64,7 @@ impl JobError {
 
 /// Per-run control handed to the job body.
 #[derive(Clone)]
+/// Per-run control handed to the job body.
 pub struct JobContext {
     /// Cancellation signal (close / abort).
     pub abort: StreamAbort,
@@ -72,6 +74,7 @@ pub struct JobContext {
 
 /// Job lifecycle state (ports `JobState`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Job lifecycle state (ports `JobState`).
 pub enum JobState {
     /// Waiting for a worker slot.
     Queued,
@@ -88,6 +91,8 @@ pub enum JobState {
 /// Submission reason (ports `JobReason`; priority ordering Watch <
 /// Reconcile < Manual mirrors the daemon's `priority()`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Submission reason (ports `JobReason`; priority ordering Watch <
+/// Reconcile < Manual mirrors the daemon's `priority()`).
 pub enum JobReason {
     /// Watcher event.
     Watch,
@@ -99,6 +104,7 @@ pub enum JobReason {
 
 /// Observable job snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Observable job snapshot.
 pub struct JobSnapshot {
     /// Job id.
     pub id: u64,
@@ -126,6 +132,7 @@ pub struct SubmitJob {
 
 /// Submission result (ports `SubmitIndexJobResult`).
 #[derive(Debug, Clone)]
+/// Submission result (ports `SubmitIndexJobResult`).
 pub struct SubmitResult {
     /// Snapshot at submit time.
     pub job: JobSnapshot,
@@ -182,6 +189,7 @@ enum DriverMsg {
 
 /// Reconcile job queue with per-root `followupIfRunning` coalescing.
 #[derive(Clone)]
+/// Reconcile job queue with per-root `followupIfRunning` coalescing.
 pub struct JobScheduler {
     inner: Arc<std::sync::Mutex<SchedulerInner>>,
     tx: mpsc::UnboundedSender<DriverMsg>,

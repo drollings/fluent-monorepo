@@ -119,6 +119,9 @@ impl_component!(KernelUnit);
 /// unit is ready for `Arc<dyn Component>` erasure; observe the histogram
 /// for count and aggregate latency.
 #[must_use]
+/// Wrap a kernel evaluation with per-kernel latency recording. The returned
+/// unit is ready for `Arc<dyn Component>` erasure; observe the histogram
+/// for count and aggregate latency.
 pub fn instrumented_kernel(
     indicator: Arc<dyn Indicator>,
     params: ParamSet,

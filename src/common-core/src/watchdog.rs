@@ -186,6 +186,7 @@ impl RepetitionWatchdog {
 
 /// Events emitted by the three watchdogs.
 #[derive(Debug, Clone)]
+/// Events emitted by the three watchdogs.
 pub enum WatchdogEvent {
     BudgetExceeded {
         limit: u32,
@@ -206,6 +207,10 @@ pub enum WatchdogEvent {
 /// Distinct from `WatchdogEvent` (which carries payload data); this enum
 /// provides label-safe variant keys suitable for `HashMap` keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Discriminant keys for watchdog event counters in metrics aggregation.
+/// 
+/// Distinct from `WatchdogEvent` (which carries payload data); this enum
+/// provides label-safe variant keys suitable for `HashMap` keys.
 pub enum WatchdogEventType {
     BudgetExceeded,
     WallClock,

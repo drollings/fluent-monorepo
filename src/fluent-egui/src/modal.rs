@@ -80,6 +80,7 @@ impl<C> CatalogEntry<C> {
 
 /// What one frame of the modal raised.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What one frame of the modal raised.
 pub enum CatalogAction {
     /// An entry row was clicked; the payload is its id.
     Picked(String),
@@ -92,6 +93,10 @@ pub enum CatalogAction {
 /// them. Namespaces are a catalog convention (`pine:` scripts here); the
 /// modal never invents tags, it only matches the prefix the caller names.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An opt-in second checkbox filter over an id namespace: entries whose id
+/// starts with the prefix read as tagged, and the checked box shows only
+/// them. Namespaces are a catalog convention (`pine:` scripts here); the
+/// modal never invents tags, it only matches the prefix the caller names.
 pub struct TagFilter {
     /// Checkbox label rendered beside the Favorites toggle.
     pub label: &'static str,

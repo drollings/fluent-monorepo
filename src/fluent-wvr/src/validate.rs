@@ -18,6 +18,7 @@ pub fn check_for_execute<T: Validate>(value: &T, context: &str) -> Result<(), Wo
 
 /// Success [`WorkOutput`] for a validated surface.
 #[must_use]
+/// Success [`WorkOutput`] for a validated surface.
 pub fn valid_output(message: impl Into<String>) -> WorkOutput {
     WorkOutput::ok(message.into())
 }

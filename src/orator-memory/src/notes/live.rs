@@ -19,6 +19,7 @@ pub trait Summarize: Send + Sync {
 
 /// Scheduler state for one meeting.
 #[derive(Debug, Clone, Default)]
+/// Scheduler state for one meeting.
 pub struct NotesScheduler {
     /// Seconds since the last notes update.
     pub elapsed_secs: u64,

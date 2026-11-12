@@ -202,6 +202,10 @@ impl FsmEngine {
 /// arms (identical to `classify`); `None` means ambiguous — the only
 /// queries a decision model may ever see.
 #[must_use]
+/// Deterministic pre-check: exact evidence decides without judgment.
+/// Returns the verdict for the empty, file-path, and single-identifier
+/// arms (identical to `classify`); `None` means ambiguous — the only
+/// queries a decision model may ever see.
 pub fn intent_precheck(qc: &QueryClass) -> Option<QueryClass> {
     let mut result = qc.clone();
     let trimmed: String = qc.tokens.join(" ");

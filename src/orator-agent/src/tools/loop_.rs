@@ -17,6 +17,7 @@ pub const MAX_PROMPT_TOKENS: usize = 8192;
 
 /// What the turn produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What the turn produced.
 pub enum TurnOutcome {
     /// Final speech: the carried preamble plus the closing answer.
     Answer {
@@ -105,6 +106,13 @@ pub fn run_turn(
 /// budgets and the marker text stay here (call-site policy, pinned by
 /// `bound_prompt_pins_head_tail_split_and_marker`).
 #[must_use]
+/// Keep `prompt` under [`MAX_PROMPT_TOKENS`] with middle-truncation and
+/// newest-turn protection. Small prompts pass through verbatim; large
+/// ones keep a head prefix plus the newest tail with a loud marker.
+/// The split (head prefix, marker, newest tail) assembles through the
+/// shared `fluent_llm::tokens::truncate_middle`; the keep/head/tail
+/// budgets and the marker text stay here (call-site policy, pinned by
+/// `bound_prompt_pins_head_tail_split_and_marker`).
 pub fn bound_prompt(prompt: &str) -> String {
     use fluent_llm::tokens::{estimate_chars_for_tokens, estimate_tokens, truncate_middle};
     if estimate_tokens(prompt) as usize <= MAX_PROMPT_TOKENS {
@@ -132,6 +140,8 @@ fn record_prompt(prompt: &str) {
 /// Last prompt seen by `run_turn` on this thread (test hook for the
 /// budget golden; production callers ignore it).
 #[must_use]
+/// Last prompt seen by `run_turn` on this thread (test hook for the
+/// budget golden; production callers ignore it).
 pub fn last_prompt_for_tests() -> Option<String> {
     LAST_PROMPT.with(|slot| slot.borrow().clone())
 }
@@ -173,6 +183,7 @@ fn run_tool(tool: &dyn crate::tools::tool::Tool, call: &ToolCall) -> String {
 
 /// Tier lookup helper for policy call sites.
 #[must_use]
+/// Tier lookup helper for policy call sites.
 pub fn tier_of(registry: &ToolRegistry, name: &str) -> Option<ToolTier> {
     registry.get(name).map(|tool| tool.tier())
 }

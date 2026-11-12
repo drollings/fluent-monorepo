@@ -22,6 +22,9 @@ use crate::onnx_error::OrtError;
 /// `onnx` feature; the registry stores this type-erased value so its logic
 /// compiles and is testable without `ort`.
 #[derive(Clone)]
+/// Opaque handle to a loaded ONNX session. The concrete type lives behind the
+/// `onnx` feature; the registry stores this type-erased value so its logic
+/// compiles and is testable without `ort`.
 pub struct SessionHandle {
     inner: Arc<dyn Any + Send + Sync>,
 }
@@ -53,6 +56,7 @@ pub trait SessionLoader: Send + Sync {
 
 /// Registry of ONNX sessions keyed by model key.
 #[derive(Clone)]
+/// Registry of ONNX sessions keyed by model key.
 pub struct OrtSessionRegistry {
     inner: Arc<Mutex<RegistryInner>>,
     loader: Arc<dyn SessionLoader>,
@@ -89,6 +93,7 @@ impl SessionEntry {
 
 /// One row of the registry's residency view — the loop's read snapshot.
 #[derive(Debug, Clone)]
+/// One row of the registry's residency view — the loop's read snapshot.
 pub struct ResidencyReportEntry {
     /// The registry key.
     pub key: String,

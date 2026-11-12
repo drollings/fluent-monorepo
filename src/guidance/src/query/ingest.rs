@@ -6,13 +6,143 @@
 //! Per-file isolation: a failed embed or parse degrades to an unembedded /
 //! unlemmatized fragment (counted in stats), never an aborted ingest.
 
+use std::collections::HashSet;
+use std::sync::OnceLock;
+
 use search_vector::db::GuidanceDb;
 
+use crate::ast_parser::{AstParser, CommentBlock};
 use crate::query::db_storage::{file_record, fragment_lemma, fragment_record};
-use crate::search_types::{EntityFragment, FileInfo, FragmentContent, FragmentSpan};
+use crate::search_types::{EntityFragment, FileInfo, FileKind, FragmentContent, FragmentSpan};
+
+fluent_concurrency::thread_local_resource!(static COMMENT_PARSER: AstParser);
+
+/// Shortest lemma worth indexing. One-character code punctuation was
+/// the largest single noise class in the pre-policy table.
+const MIN_LEMMA_CHARS: usize = 2;
+
+/// Function words and syntax keywords that carry no navigation signal.
+/// They stay in FTS for phrase/BM25 behavior; the lemma route drops them.
+const LEMMA_STOP_WORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by", "can", "could", "did", "do",
+    "does", "for", "from", "had", "has", "have", "he", "her", "here", "him", "his", "how", "i",
+    "if", "in", "into", "is", "it", "its", "just", "may", "me", "might", "more", "most", "must",
+    "my", "no", "not", "of", "on", "or", "our", "out", "over", "should", "so", "some", "such",
+    "than", "that", "the", "their", "them", "then", "there", "these", "they", "this", "those",
+    "through", "to", "up", "us", "very", "was", "we", "were", "what", "when", "where", "which",
+    "while", "who", "will", "with", "would", "you", "your", "async", "await", "const", "crate",
+    "dyn", "else", "enum", "err", "extern", "false", "fn", "impl", "let", "loop", "match", "mod",
+    "move", "mut", "none", "ok", "pub", "ref", "return", "self", "static", "struct", "super",
+    "trait", "true", "type", "unsafe", "use",
+];
+
+fn stop_words() -> &'static HashSet<&'static str> {
+    static STOP: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    STOP.get_or_init(|| LEMMA_STOP_WORDS.iter().copied().collect())
+}
+
+/// Keep only lowercase alphanumeric terms that carry navigation signal.
+fn keep_lemma(lemma: &str) -> bool {
+    lemma.chars().count() >= MIN_LEMMA_CHARS
+        && lemma.chars().all(char::is_alphanumeric)
+        && !stop_words().contains(lemma)
+}
+
+/// Comment-only lemmas over comment text slices: the single helper owning
+/// which text is indexed, reusing the `query_lemmas` normalization.
+#[must_use]
+/// Comment-only lemmas over comment text slices: the single helper owning
+/// which text is indexed, reusing the `query_lemmas` normalization.
+pub fn lemmas_for_comment_texts(
+    texts: &[&str],
+    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+) -> Vec<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut lemmas = Vec::new();
+    for text in texts {
+        for lemma in query_lemmas(nlp, text) {
+            if seen.insert(lemma.clone()) {
+                lemmas.push(lemma);
+            }
+        }
+    }
+    lemmas
+}
+
+/// Comment-only lemmas over collected blocks, in block order.
+#[must_use]
+/// Comment-only lemmas over collected blocks, in block order.
+pub fn lemmas_for_comment_blocks(
+    blocks: &[CommentBlock],
+    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+) -> Vec<String> {
+    let texts: Vec<&str> = blocks.iter().map(|block| block.text.as_str()).collect();
+    lemmas_for_comment_texts(&texts, nlp)
+}
+
+/// Accept an extension or a canonical extractor format for comment parsing.
+pub fn tree_sitter_format(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "zig" | "zon" => Some("zig"),
+        "rust" => Some("rust"),
+        "python" => Some("python"),
+        "c" => Some("c"),
+        "cpp" => Some("cpp"),
+        "go" => Some("go"),
+        "java" => Some("java"),
+        "javascript" => Some("javascript"),
+        "jsx" => Some("jsx"),
+        "typescript" => Some("typescript"),
+        "tsx" => Some("tsx"),
+        _ => crate::extractor::adapter::format_for_extension(name),
+    }
+}
+
+/// File kind for lemma scoping, inferring from the format when unset.
+fn ingest_lemma_kind(file: &FileInfo) -> FileKind {
+    if let Some(kind) = file.kind {
+        return kind;
+    }
+    let format = file.format.to_ascii_lowercase();
+    if fluent_types::file_kind::data_kind_format(&format).is_some() {
+        return FileKind::Data;
+    }
+    if tree_sitter_format(&format).is_some() {
+        return FileKind::Code;
+    }
+    FileKind::Text
+}
+
+/// Collect comment blocks with the thread-local parser: one parse per file.
+fn comment_blocks_for_file(format: &str, text: &str) -> Vec<CommentBlock> {
+    fluent_concurrency::thread_resource::with_tlr(&COMMENT_PARSER, |parser| {
+        parser.comment_blocks(format, text).unwrap_or_default()
+    })
+}
+
+/// Lemma source text for one ingested file: comments for code, whole text
+/// for prose, nothing for structured data (FTS still serves every byte).
+fn lemmas_for_file(
+    file: &FileInfo,
+    text: &str,
+    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+) -> Vec<String> {
+    match ingest_lemma_kind(file) {
+        FileKind::Data => Vec::new(),
+        FileKind::Code => match tree_sitter_format(&file.format) {
+            Some(format) => {
+                let blocks = comment_blocks_for_file(format, text);
+                lemmas_for_comment_blocks(&blocks, nlp)
+            }
+            None => Vec::new(),
+        },
+        FileKind::Text | FileKind::Image => query_lemmas(nlp, text),
+    }
+}
 
 /// Ingestion outcome counts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Ingestion outcome counts.
 pub struct IngestStats {
     /// Fragments committed.
     pub fragments: usize,
@@ -26,6 +156,7 @@ pub struct IngestStats {
 
 /// Ingestion failure (database only — parse/embed degrade, see above).
 #[derive(Debug, thiserror::Error)]
+/// Ingestion failure (database only — parse/embed degrade, see above).
 pub enum IngestError {
     /// Database failure.
     #[error("database error: {0}")]
@@ -73,7 +204,7 @@ pub fn ingest_text_file(
         },
         None => stats.skipped_embedding = 1,
     }
-    let lemmas: Vec<search_vector::db::FragmentLemma> = query_lemmas(nlp, text)
+    let lemmas: Vec<search_vector::db::FragmentLemma> = lemmas_for_file(file, text, nlp)
         .into_iter()
         .map(|lemma| fragment_lemma(&file.id, &lemma, 1.0))
         .collect();
@@ -93,42 +224,53 @@ pub fn ingest_text_file(
 /// so old rows keep matching exactly as before while pipeline rows gain
 /// inflection collapsing.
 #[must_use]
+/// Request/index lemma normalization: spacy rule lemmas when a pipeline is
+/// wired, unioned with the lowercase alphanumeric fallback (deterministic —
+/// L2 works with no model either way).
+///
+/// The union is backward compatible: rows ingested without a pipeline carry
+/// fallback tokens only, and every query still carries its fallback tokens,
+/// so old rows keep matching exactly as before while pipeline rows gain
+/// inflection collapsing.
 pub fn query_lemmas(nlp: Option<&spacy_rs::pipeline::NlpPipeline>, text: &str) -> Vec<String> {
     let fallback = fallback_tokens(text);
     let Some(nlp) = nlp else {
         return fallback;
     };
-    let mut lemmas = match nlp.process_sync(text, None) {
-        Ok(doc) => {
-            let strings = doc.vocab().strings();
-            let mut lemmas = Vec::new();
-            for token in doc.tokens() {
-                let Some(lemma) = strings.get(token.lemma) else {
-                    continue;
-                };
-                let normalized = lemma.to_lowercase();
-                if !normalized.is_empty() && !lemmas.contains(&normalized) {
-                    lemmas.push(normalized);
-                }
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut lemmas = Vec::new();
+    if let Ok(doc) = nlp.process_sync(text, None) {
+        let strings = doc.vocab().strings();
+        for token in doc.tokens() {
+            if let Some(lemma) = strings.get(token.lemma) {
+                push_lemma(&mut lemmas, &mut seen, &lemma);
             }
-            lemmas
         }
-        Err(_) => Vec::new(),
-    };
+    }
     // Union with the fallback so pipeline and pipeline-less rows share
     // the fallback intersection (old rows never silently unmatch).
     for token in fallback {
-        if !lemmas.contains(&token) {
+        if seen.insert(token.clone()) {
             lemmas.push(token);
         }
     }
     lemmas
 }
 
+fn push_lemma(lemmas: &mut Vec<String>, seen: &mut HashSet<String>, lemma: &str) {
+    let normalized = lemma.to_lowercase();
+    if keep_lemma(&normalized) && seen.insert(normalized.clone()) {
+        lemmas.push(normalized);
+    }
+}
+
 /// Hermetic default English pipeline for L2 (rule tokenizer + rule
 /// lemmatizer; no model, no network, zero embedding cost). `None` when
 /// construction fails — callers degrade to the fallback.
 #[must_use]
+/// Hermetic default English pipeline for L2 (rule tokenizer + rule
+/// lemmatizer; no model, no network, zero embedding cost). `None` when
+/// construction fails — callers degrade to the fallback.
 pub fn default_en_pipeline() -> Option<spacy_rs::pipeline::NlpPipeline> {
     spacy_rs::pipeline::NlpPipeline::en_default().ok()
 }
@@ -191,12 +333,13 @@ mod tests;
 
 fn fallback_tokens(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
+    let mut seen = HashSet::new();
     for token in text.split(|c: char| !c.is_alphanumeric()) {
         if token.is_empty() {
             continue;
         }
         let lower = token.to_lowercase();
-        if !tokens.contains(&lower) {
+        if keep_lemma(&lower) && seen.insert(lower.clone()) {
             tokens.push(lower);
         }
     }

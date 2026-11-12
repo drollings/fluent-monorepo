@@ -12,6 +12,7 @@ use thiserror::Error;
 /// Closed vocabulary of chat message roles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Closed vocabulary of chat message roles.
 pub enum ChatRole {
     System,
     User,
@@ -22,6 +23,7 @@ pub enum ChatRole {
 /// Refusal for reserved role input outside the closed vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("unknown chat role: {0}")]
+/// Refusal for reserved role input outside the closed vocabulary.
 pub struct RoleParseError(pub String);
 
 impl ChatRole {

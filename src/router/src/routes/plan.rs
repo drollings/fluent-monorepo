@@ -57,6 +57,9 @@ pub struct PlanRoute {
 /// plus a `LedgerPromptAssembler` and its budget/fidelity band. Pure — it only
 /// renders, it never triggers LOD derivation.
 #[derive(Clone)]
+/// The session-context renderer for the plan route: a shared `ContentNodeStore`
+/// plus a `LedgerPromptAssembler` and its budget/fidelity band. Pure — it only
+/// renders, it never triggers LOD derivation.
 pub struct PromptAssemblerCtx {
     store: Arc<crate::node_store::ContentNodeStore>,
     assembler: LedgerPromptAssembler,
@@ -134,6 +137,8 @@ pub struct PlanResult {
 /// A replayed workflow as a plan: the stored decomposition, ready to run
 /// locally with no frontier call. Steps carry LOD0 text (never summaries).
 #[derive(Debug, Clone)]
+/// A replayed workflow as a plan: the stored decomposition, ready to run
+/// locally with no frontier call. Steps carry LOD0 text (never summaries).
 pub struct ReplayedPlan {
     pub audit_id: String,
     pub score: f64,
@@ -143,6 +148,7 @@ pub struct ReplayedPlan {
 
 /// One replayed step: identity, data-flow edges, and LOD0 content.
 #[derive(Debug, Clone)]
+/// One replayed step: identity, data-flow edges, and LOD0 content.
 pub struct ReplayedPlanStep {
     pub step_id: String,
     pub prompt_lod0: String,

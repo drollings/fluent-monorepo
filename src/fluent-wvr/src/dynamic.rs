@@ -38,6 +38,14 @@ pub type DynamicExecutor = Arc<
 /// `describe`.
 #[doc(hidden)]
 #[allow(dead_code)]
+/// Compatibility surface (scaffold).
+/// A runtime-assembled `Component`.
+/// 
+/// Fields are stored in an interior `Mutex<HashMap<String, String>>` so
+/// `set_field` works on `&mut self` after construction (matching `WasmComponent`).
+/// `field_names` returns the declared schema keys; unknown keys are still
+/// storable (the map is open-ended) but are reported as config entries in
+/// `describe`.
 pub struct DynamicComponent {
     name: ArcIntern<str>,
     depends: Vec<ArcIntern<str>>,

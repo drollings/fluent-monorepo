@@ -43,7 +43,10 @@ fn parse_range(source: &str, member: &str) -> MemberRange {
     assert!(end > start, "span must cover the item");
     assert!(end as usize <= source.len(), "span must stay in bounds");
     let covered = &source.as_bytes()[start as usize..end as usize];
-    assert!(covered.starts_with(b"pub fn f()"), "span must start at the item");
+    assert!(
+        covered.starts_with(b"pub fn f()"),
+        "span must start at the item"
+    );
     range
 }
 
@@ -96,7 +99,10 @@ fn range_rehash_matches_live_bytes() {
     assert_eq!(cited.len(), 1);
     assert_eq!(cited[0].freshness, CitationFreshness::Fresh);
     assert!(cited[0].cite.contains("@ b3:"), "new shape carries a hash");
-    assert!(cited[0].cite.contains(":L1-L3"), "new shape carries a range");
+    assert!(
+        cited[0].cite.contains(":L1-L3"),
+        "new shape carries a range"
+    );
 }
 
 #[test]
@@ -236,4 +242,134 @@ fn envelope_carries_shape_freshness_and_gaps() {
     let envelope = AnswerEnvelope::from_verified_stages(&class, "word_index", stages, &cited);
     assert_eq!(envelope.citation_freshness, CitationFreshness::Stale);
     assert!(envelope.gaps.iter().any(|g| g.contains("stale")));
+}
+
+// Tiered output-guard goldens: the output citation check compares staged
+// text hashes against live bytes, with verified / stale-kept / dropped
+// outcomes. Written before the live verifier exists.
+
+fn live_stage(source: &str, line: u32, member: &str) -> Stage {
+    Stage {
+        kind: StageKind::Code,
+        content: "fn f() {}".to_string(),
+        source: source.to_string(),
+        line: Some(line),
+        end_line: Some(line + 2),
+        member_name: Some(member.to_string()),
+        member_type: None,
+        trace: None,
+    }
+}
+
+fn full_range(body: &[u8]) -> MemberRange {
+    MemberRange {
+        start: 0,
+        end: body.len() as u64,
+        range_hash: common_core::hash::blake3_hex(body),
+        item_hash: None,
+    }
+}
+
+fn lookup_full(body: &[u8]) -> MemberRange {
+    full_range(body)
+}
+
+#[test]
+fn live_exact_match_verifies_fresh() {
+    use crate::grounding::verify_citations_live;
+    let dir = tempdir();
+    let body = b"pub fn f() -> u64 {\n    1\n}\n";
+    let file = dir.path().join("m.rs");
+    std::fs::write(&file, body).expect("write");
+    let path = file.to_string_lossy().into_owned();
+    let stages = vec![live_stage(&path, 1, "f")];
+    let output = format!("see {}:1", file.file_name().unwrap().to_string_lossy());
+    let report = verify_citations_live(&output, &stages, dir.path(), |_| Some(lookup_full(body)));
+    assert!(report.dropped.is_empty(), "nothing dropped: {report:?}");
+    assert!(report.gaps.is_empty(), "no gaps: {report:?}");
+    assert_eq!(report.citations.len(), 1);
+    assert_eq!(
+        report.citations[0].freshness,
+        CitationFreshness::Fresh,
+        "exact bytes verify"
+    );
+    assert!(report.citations[0].cite.contains("@ b3:"));
+}
+
+#[test]
+fn live_moved_bytes_keep_line_and_mark_stale() {
+    use crate::grounding::verify_citations_live;
+    let dir = tempdir();
+    let body = b"pub fn f() -> u64 {\n    1\n}\n";
+    let file = dir.path().join("m.rs");
+    std::fs::write(&file, body).expect("write");
+    let path = file.to_string_lossy().into_owned();
+    let stages = vec![live_stage(&path, 1, "f")];
+    std::fs::write(&file, b"pub fn f() -> u64 {\n    2\n}\n").expect("mutate");
+    let output = format!("see {}:1", file.file_name().unwrap().to_string_lossy());
+    let report = verify_citations_live(&output, &stages, dir.path(), |_| Some(lookup_full(body)));
+    assert!(report.dropped.is_empty(), "moved line is kept: {report:?}");
+    assert_eq!(report.citations.len(), 1);
+    assert_eq!(
+        report.citations[0].freshness,
+        CitationFreshness::Stale,
+        "moved bytes downgrade, never verify"
+    );
+    assert_eq!(report.moved_lines().len(), 1);
+    assert!(report.gaps.iter().any(|g| g.contains("stale")));
+}
+
+#[test]
+fn live_unstaged_claim_drops_with_gap() {
+    use crate::grounding::verify_citations_live;
+    let dir = tempdir();
+    let body = b"pub fn f() -> u64 {\n    1\n}\n";
+    let file = dir.path().join("m.rs");
+    std::fs::write(&file, body).expect("write");
+    let path = file.to_string_lossy().into_owned();
+    let stages = vec![live_stage(&path, 1, "f")];
+    let report = verify_citations_live("see other.rs:9", &stages, dir.path(), |_| {
+        Some(lookup_full(body))
+    });
+    assert!(report.citations.is_empty());
+    assert_eq!(report.dropped, vec!["other.rs:9".to_string()]);
+    assert!(report
+        .gaps
+        .iter()
+        .any(|g| g.contains("citation unverifiable, source changed")));
+}
+
+#[test]
+fn live_basename_collision_fails_verification() {
+    use crate::grounding::verify_citations_live;
+    let dir = tempdir();
+    let body = b"pub fn f() -> u64 {\n    1\n}\n";
+    let a_dir = dir.path().join("a");
+    let b_dir = dir.path().join("b");
+    std::fs::create_dir_all(&a_dir).expect("mkdir");
+    std::fs::create_dir_all(&b_dir).expect("mkdir");
+    let a_file = a_dir.join("main.rs");
+    let b_file = b_dir.join("main.rs");
+    std::fs::write(&a_file, body).expect("write");
+    std::fs::write(&b_file, body).expect("write");
+    let stages = vec![
+        live_stage(&a_file.to_string_lossy(), 1, "f"),
+        live_stage(&b_file.to_string_lossy(), 1, "f"),
+    ];
+    // Bare basename is ambiguous between the two staged excerpts: it must
+    // not verify against either.
+    let report = verify_citations_live("see main.rs:1", &stages, dir.path(), |_| {
+        Some(lookup_full(body))
+    });
+    assert!(
+        report.citations.is_empty(),
+        "ambiguous claim verifies nothing"
+    );
+    assert_eq!(report.dropped, vec!["main.rs:1".to_string()]);
+    // A directory-qualified claim resolves to exactly one staged excerpt.
+    let report = verify_citations_live("see a/main.rs:1", &stages, dir.path(), |_| {
+        Some(lookup_full(body))
+    });
+    assert_eq!(report.citations.len(), 1);
+    assert_eq!(report.citations[0].freshness, CitationFreshness::Fresh);
 }

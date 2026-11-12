@@ -47,6 +47,9 @@ pub const PAPER_PORTFOLIO: &str = "paper";
 /// position engine unchanged; the attribution fields only group.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
+/// One fill with its attribution: which portfolio book, instrument,
+/// structure, strategy, and grant produced it. The fill fields feed the venue
+/// position engine unchanged; the attribution fields only group.
 pub struct BookedFill {
     /// Portfolio book this fill belongs to (run-level label).
     pub portfolio: String,
@@ -92,6 +95,10 @@ pub struct BookedFill {
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
+/// Grouping key: one attributed book. Plain strings — these are names that
+/// already appear in JSON (orders, grants, configs), never opaque keys — plus
+/// the front expiry, so a roll opens a new book: the book follows the
+/// instrument, not the request.
 pub struct BucketKey {
     /// Portfolio book.
     pub portfolio: String,
@@ -142,6 +149,7 @@ impl BookedFill {
 
 /// One attributed book's closed-plus-open state.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One attributed book's closed-plus-open state.
 pub struct BucketSummary {
     /// Which book this summarizes.
     pub key: BucketKey,
@@ -166,6 +174,7 @@ pub struct BucketSummary {
 
 /// One portfolio's rolled-up economics plus its attribution stats.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One portfolio's rolled-up economics plus its attribution stats.
 pub struct PortfolioTotals {
     /// Portfolio book.
     pub portfolio: String,
@@ -199,6 +208,8 @@ pub struct PortfolioTotals {
 /// Portfolio aggregation output: per-portfolio totals plus the per-mark
 /// unrealized curve across all books (in mark order).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Portfolio aggregation output: per-portfolio totals plus the per-mark
+/// unrealized curve across all books (in mark order).
 pub struct PortfolioReport {
     /// Per-portfolio totals, sorted by portfolio name.
     pub portfolios: Vec<PortfolioTotals>,
@@ -361,6 +372,9 @@ impl BookState {
 /// side, how many whole units, and the engine's volume-weighted entry price.
 /// Flat books are omitted.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One open book position as the aggregate sees it: which underlying, which
+/// side, how many whole units, and the engine's volume-weighted entry price.
+/// Flat books are omitted.
 pub struct OpenPosition {
     /// Underlying this book trades.
     pub underlying: String,

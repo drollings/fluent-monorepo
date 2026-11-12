@@ -51,6 +51,10 @@ pub const MODEL_PREFIX: &str = "model:";
 /// server pipeline): routes, then roles, then models. One classifier
 /// so the three paths can never disagree about what a name means.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Which namespace a bare requested name resolved in — the single ordered
+/// lookup behind every request path (`resolve_route`, `routing_target`, the
+/// server pipeline): routes, then roles, then models. One classifier
+/// so the three paths can never disagree about what a name means.
 pub enum RequestedRef {
     /// `model:<remainder>`: address the models table directly (the remainder
     /// may itself be qualified). Bypasses the order below.
@@ -101,6 +105,32 @@ pub fn strip_model_prefix(name: &str) -> Option<&str> {
 /// closed at parse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// One entry of the routing-vocabulary table: a role names *what the request
+/// needs* — its residency axis (`pinned`), its admission cap
+/// (`max_parallel`), its thinking policy, its run block (`params`), and the
+/// models that serve it (`models`). Membership lives on the role side
+/// (`roles.<role>.models` names the serving model keys); models never name
+/// roles for membership, so the two tables stay separate and compose only
+/// through the binding. Resolution to a concrete `base:qualifier` target
+/// happens per request at dispatch time, never at boot, so lazy models load
+/// correctly.
+/// 
+/// A role owns its run configuration: `params` is the role's "how a model
+/// is run" block (launch knobs plus flat sampling keys — never a nested
+/// `params` object; the fleet block lives as `roles.default.params`).
+/// Sampling composes `models.default` → model entry → role params →
+/// `models.<model>.roles.<role>.params` (each sparser layer wins; the
+/// model-side override wins at dispatch), materialized at boot into each
+/// model's effective pool. A role's qualifier is never stored here: it
+/// resolves from the route, which selects a model from the role's models,
+/// and the model's entry default supplies the point (explicit `base:point`
+/// still wins).
+/// 
+/// `max_parallel` is the per-role admission cap: how many simultaneous
+/// dispatches the role admits, enforced per-role globally at the dispatch
+/// gate. `None` (the default) leaves the role unbounded. A zero cap would
+/// admit nothing and wedge every dispatch through the role, so it fails
+/// closed at parse.
 pub struct RoleEntry {
     /// Maximum simultaneous dispatches admitted for the role. `None` =
     /// unbounded; `0` fails closed at parse.
@@ -339,6 +369,10 @@ impl RoutingConfig {
 /// (the server pipeline carries maps, not a `RoutingConfig`) expand
 /// identically without restating the rule.
 #[allow(clippy::implicit_hasher)]
+/// Ordered member expansion for one role over raw tables — the shared core
+/// behind [`RoutingConfig::role_dispatch_members`], so map-only call sites
+/// (the server pipeline carries maps, not a `RoutingConfig`) expand
+/// identically without restating the rule.
 pub fn expanded_role_members(
     roles: &HashMap<String, RoleEntry>,
     models: &HashMap<String, ModelEntry>,
@@ -373,6 +407,13 @@ pub fn expanded_role_members(
 /// runtime target-match expansion supersedes this with true recency whenever
 /// the ladder runs.
 #[allow(clippy::implicit_hasher)]
+/// The static fallback member for a group whose members are all availability
+/// sentinels (`last`/`any`): the first declared model key in sorted order
+/// (the `default` template key excluded — it is never servable). `last`
+/// means "work with whatever model is loaded rather than load another"; with
+/// no dispatch history the lightest-declared model is the fleet default. The
+/// runtime target-match expansion supersedes this with true recency whenever
+/// the ladder runs.
 pub fn fleet_default_member(models: &HashMap<String, ModelEntry>) -> Option<String> {
     let mut keys: Vec<&String> = models.keys().filter(|k| k.as_str() != "default").collect();
     keys.sort();
@@ -401,6 +442,27 @@ pub fn fleet_default_member(models: &HashMap<String, ModelEntry>) -> Option<Stri
 /// then materializes the weights on demand, opening the role's window on
 /// the resident server instead of evicting it).
 #[allow(clippy::implicit_hasher)]
+/// Viability-ordered member selection over expanded members — the shared core
+/// behind static role resolution and every availability-sentinel fallback.
+/// 
+/// Ordering (task-value, never producer confidence): resident members first
+/// (via `is_resident` over the base key; `None` treats every candidate as
+/// resident), then intelligence-passing members (`intelligence >=
+/// min_complexity`), then cheapest `cost_input + cost_output` with a
+/// key-ascending tie-break for determinism. `scope` is the audit label only
+/// (role name or `classifier`). Availability sentinels (`last`/`any`) carry
+/// no static meaning: they are skipped when literal members exist, and a
+/// sentinel-only role resolves over every servable model (the `default`
+/// template excluded) — the runtime recency expansion supersedes that
+/// whenever the target-match ladder runs. Returns the full member key
+/// (possibly qualified).
+/// 
+/// Resident-first is the whole point of `last`: work with whatever model is
+/// loaded rather than load another. No pool filtering: a loaded member that
+/// fails the intelligence bar still outranks a cold passer — a cold load
+/// happens only when nothing resident serves at all (dispatch readiness
+/// then materializes the weights on demand, opening the role's window on
+/// the resident server instead of evicting it).
 pub fn select_viable_member(
     scope: &str,
     members: &[String],
@@ -480,6 +542,11 @@ pub fn select_viable_member(
 /// byte-identically to before. Sentinel-only roles now resolve by viability
 /// (intended behavior change: lexicographic accident → viable member).
 #[allow(clippy::implicit_hasher)]
+/// Cheapest-passing member selection over expanded members — kept as the
+/// signature-compatible wrapper over [`select_viable_member`] with no
+/// residency signal, so literal roles with no liveness input resolve
+/// byte-identically to before. Sentinel-only roles now resolve by viability
+/// (intended behavior change: lexicographic accident → viable member).
 pub fn select_role_member(
     scope: &str,
     members: &[String],
@@ -1097,6 +1164,27 @@ pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
 /// expected boot-materialized (pools composed); pre-boot entries resolve
 /// through step 3.
 #[allow(clippy::implicit_hasher)]
+/// Resolve the inference point a role or model key serves, as the qualifier
+/// of the dispatch `base:qualifier` id (`None` = bare `<base>`). The single
+/// qualifier resolver — every construction path and adapter composes it, so
+/// the precedence is documented once, here:
+/// 
+/// 1. Explicit qualifier — embedded (`base:point`) or parametric — wins,
+/// except `latest`, which normalizes away and falls through.
+/// 2. The entry default over the boot-materialized effective pool (the
+/// `default: true` profile's group, else the cheapest pinned group, else
+/// the single shared group — `default_inference_point`).
+/// 3. Bare key (`None`): no pool materialized, or no rule matched.
+/// 
+/// A role carries no qualifier of its own: it resolves from the route, which
+/// selects a model from a group, and the selected model's entry default
+/// supplies the backend inference point (the caller resolves *what* serves
+/// via [`role_head_key`], then this function resolves *where* on it).
+/// Dispatch targets qualify separately through `apply_terminal_role` — every
+/// dispatch names the role's window (`<base>:<role>`), never the entry
+/// default. Unknown roles and keys fail closed (`None`). Entries are
+/// expected boot-materialized (pools composed); pre-boot entries resolve
+/// through step 3.
 pub fn resolve_inference_point(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,
@@ -1132,6 +1220,19 @@ pub fn resolve_inference_point(
 /// through the same map rather than this helper: params composition stays
 /// on declared pools only.
 #[allow(clippy::implicit_hasher)]
+/// Model keys serving a role, in sorted model-key order: every model named
+/// in the role's `models` binding map that also declares a `models` entry.
+/// Membership lives on the role side — models never name roles. Empty when
+/// the role is unknown, binds nothing, or names only undeclared models (the
+/// last case warns loudly at boot via
+/// [`crate::config::root::warn_on_unknown_model_bindings`]).
+/// The single membership source for every "who serves this role" question
+/// (`role_head_key`,
+/// [`crate::config::root::RouterConfig::classifier_role_key`],
+/// `role_dispatch_members`).
+/// Pools (`materialize_effective_pool`) deliberately resolve bindings
+/// through the same map rather than this helper: params composition stays
+/// on declared pools only.
 pub fn models_serving_role(
     roles: &HashMap<String, RoleEntry>,
     models: &HashMap<String, ModelEntry>,
@@ -1164,6 +1265,16 @@ pub fn models_serving_role(
 /// to [`resolve_inference_point`]: the key identifies *what* serves, the
 /// point identifies *where* on it.
 #[allow(clippy::implicit_hasher)]
+/// Resolve a role or model key to its serving model key: a bare role name
+/// fans out to its head candidate (sorted model-key order over the models
+/// binding to it — see [`models_serving_role`]), everything else passes
+/// through unchanged. `None` for unknown roles, roles with no bound models,
+/// and (when `require_entry` is set) keys with no `models` entry. A
+/// qualified key (`base:point`, other than `base:latest`) always passes
+/// through: it already names an instance of a concrete model, so a role
+/// sharing the base name must never swallow its qualifier. The companion
+/// to [`resolve_inference_point`]: the key identifies *what* serves, the
+/// point identifies *where* on it.
 pub fn role_head_key(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,

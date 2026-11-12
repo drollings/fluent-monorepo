@@ -137,6 +137,24 @@ fn char_token_weight(c: char) -> f64 {
 /// assert_eq!(budget.remaining(), 850);
 /// ```
 #[derive(Debug)]
+/// ── Atomic Token Budget ─────────────────────────────────────────────
+/// A thread-safe token budget using atomic operations internally.
+/// 
+/// All methods take `&self` (no mutable borrow) so the budget can be
+/// shared across concurrent tasks.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use fluent_llm::tokens::AtomicTokenBudget;
+/// 
+/// let budget = AtomicTokenBudget::new(1000);
+/// assert_eq!(budget.remaining(), 1000);
+/// assert!(budget.reserve(200));
+/// assert_eq!(budget.remaining(), 800);
+/// budget.release(50);
+/// assert_eq!(budget.remaining(), 850);
+/// ```
 pub struct AtomicTokenBudget {
     total: u64,
     used: AtomicU64,
@@ -224,6 +242,28 @@ impl AtomicTokenBudget {
 /// assert_eq!(budget.remaining(0), 1000 - tokens);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ── Token Budget (mutable, per-request) ─────────────────────────────
+/// A remaining token budget that can be checked and consumed.
+/// 
+/// Single-threaded, `&mut` form: the caller owns the count and mutates it
+/// directly. For shared ownership across threads/tasks use
+/// [`AtomicTokenBudget`] instead (interior mutability via atomics, `&`
+/// methods). The two never interconvert: pick one per call path.
+/// Useful for truncating prompts or responses to fit within LLM context windows.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use fluent_llm::tokens::{TokenBudget, estimate_tokens};
+/// 
+/// let mut budget = TokenBudget(1000);
+/// let text = "This is a test prompt.";
+/// let tokens = estimate_tokens(text) as usize;
+/// 
+/// assert!(budget.fits(tokens));
+/// assert!(budget.consume(tokens));
+/// assert_eq!(budget.remaining(0), 1000 - tokens);
+/// ```
 pub struct TokenBudget(pub usize);
 
 impl TokenBudget {
@@ -274,6 +314,18 @@ impl TokenBudget {
 /// middle (the caller's budgets guarantee this never fires on a bound
 /// path — pinned by `truncate_middle_overlap_duplicates`).
 #[must_use]
+/// Middle-truncation splitter: the first `head_chars` chars, then
+/// `marker`, then the last `tail_chars` chars.
+/// 
+/// Pure char splitting — the caller owns every budget decision
+/// (whether to truncate, how big the halves are, what the marker
+/// says), so `bound_prompt`'s keep/head/tail math keeps its exact
+/// shape. There is deliberately no small-input shortcut: a hidden
+/// passthrough here would change outputs whose halves overlap their
+/// input (callers that pass small inputs through do so before
+/// calling). Zero halves are empty; overlapping halves duplicate the
+/// middle (the caller's budgets guarantee this never fires on a bound
+/// path — pinned by `truncate_middle_overlap_duplicates`).
 pub fn truncate_middle(text: &str, head_chars: usize, tail_chars: usize, marker: &str) -> String {
     let head: String = text.chars().take(head_chars).collect();
     let tail: String = text
@@ -291,6 +343,8 @@ pub fn truncate_middle(text: &str, head_chars: usize, tail_chars: usize, marker:
 
 /// Configuration for sentence-boundary-aware document chunking.
 #[derive(Debug, Clone)]
+/// ── Sentence-boundary-aware document chunking ────────────────────────
+/// Configuration for sentence-boundary-aware document chunking.
 pub struct ChunkConfig {
     /// Maximum tokens allowed per chunk (estimated).
     pub max_tokens: u64,

@@ -5,6 +5,8 @@ use thiserror::Error;
 /// Errors produced by the spacy-rs core: doc construction, array
 /// round-trips, tree rebuilds, and label parsing.
 #[derive(Debug, Error, PartialEq, Eq)]
+/// Errors produced by the spacy-rs core: doc construction, array
+/// round-trips, tree rebuilds, and label parsing.
 pub enum SpacyError {
     /// A dependency `head` relative offset points outside the document
     /// (`doc.pyx:1115-1128` bounds check).

@@ -9,6 +9,7 @@ use fluent_db::store::SqliteStore;
 
 /// One ranked search hit.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One ranked search hit.
 pub struct NoteHit {
     /// Note id.
     pub id: String,
@@ -79,6 +80,11 @@ pub fn search_notes(
 /// corpus). Lines starting with `Action:` in `user_requests` are
 /// items; transcript lines never are.
 #[must_use]
+/// Action items derive only from explicit user requests, never from
+/// transcript prose: a planted instruction inside quoted meeting text
+/// must not become an action item (the notes half of the red-team
+/// corpus). Lines starting with `Action:` in `user_requests` are
+/// items; transcript lines never are.
 pub fn extract_action_items(transcript: &str, user_requests: &[String]) -> Vec<String> {
     let _ = transcript;
     user_requests

@@ -31,6 +31,7 @@ const TABLE_OVERSCAN_ROWS: usize = 4;
 
 /// Sort direction of the table's sort tuple.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Sort direction of the table's sort tuple.
 pub enum SortDirection {
     /// Smallest values first.
     Ascending,
@@ -40,6 +41,7 @@ pub enum SortDirection {
 
 /// One registered column: its stable id and paint width.
 #[derive(Debug, Clone, PartialEq)]
+/// One registered column: its stable id and paint width.
 pub struct ColWidth {
     /// Stable column key; also the sort key.
     pub column: String,
@@ -50,6 +52,8 @@ pub struct ColWidth {
 /// A table's display plan: column registry, sort tuple, sparse selection,
 /// and the row height the cull windows through.
 #[derive(Debug, Clone)]
+/// A table's display plan: column registry, sort tuple, sparse selection,
+/// and the row height the cull windows through.
 pub struct TablePlan {
     columns: Vec<ColWidth>,
     sort: Option<(String, SortDirection)>,

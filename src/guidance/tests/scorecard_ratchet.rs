@@ -177,7 +177,8 @@ fn civil_date_anchors() {
 }
 
 #[test]
-fn baseline_serializes_with_history() {    let base = policy_baseline();
+fn baseline_serializes_with_history() {
+    let base = policy_baseline();
     let next = apply_baseline_update(
         Some(&base),
         &[measured("m.ok", 1.0, true)],
@@ -201,20 +202,31 @@ fn release_gate_blocks_any_clean_reprocess_or_behavior_shift() {
     // baseline carries the approved values; this pins the mechanism the
     // release relies on, not the data.
     let zero_bound = Baseline {
-        metrics: [("fixpoint.clean_skip".to_string(), 0.0)].into_iter().collect(),
+        metrics: [("fixpoint.clean_skip".to_string(), 0.0)]
+            .into_iter()
+            .collect(),
         tolerances: HashMap::new(),
-        bounds: [("fixpoint.clean_skip".to_string(), 0.0)].into_iter().collect(),
+        bounds: [("fixpoint.clean_skip".to_string(), 0.0)]
+            .into_iter()
+            .collect(),
         history: Vec::new(),
     };
-    let clean = score_metrics(&[measured("fixpoint.clean_skip", 0.0, false)], &Some(zero_bound));
+    let clean = score_metrics(
+        &[measured("fixpoint.clean_skip", 0.0, false)],
+        &Some(zero_bound),
+    );
     assert_eq!(clean.lines[0].status, super::MetricStatus::Pass);
     assert_eq!(clean.exit_code, 0);
     let dirty = score_metrics(
         &[measured("fixpoint.clean_skip", 1.0, false)],
         &Some(Baseline {
-            metrics: [("fixpoint.clean_skip".to_string(), 0.0)].into_iter().collect(),
+            metrics: [("fixpoint.clean_skip".to_string(), 0.0)]
+                .into_iter()
+                .collect(),
             tolerances: HashMap::new(),
-            bounds: [("fixpoint.clean_skip".to_string(), 0.0)].into_iter().collect(),
+            bounds: [("fixpoint.clean_skip".to_string(), 0.0)]
+                .into_iter()
+                .collect(),
             history: Vec::new(),
         }),
     );

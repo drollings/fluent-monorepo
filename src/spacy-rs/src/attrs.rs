@@ -13,6 +13,9 @@ use crate::error::SpacyError;
 /// [`Attribute::Other`] catches reserved flag slots (56–63) and unknown ids.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
+/// A token/lexeme attribute id. Named variants cover the ids spaCy defines
+/// plus the closed-class function-word flags (19–55);
+/// [`Attribute::Other`] catches reserved flag slots (56–63) and unknown ids.
 pub enum Attribute {
     // ── boolean flags (ids 1..=18; bit positions into LexemeFlags) ──
     IsAlpha = 1,

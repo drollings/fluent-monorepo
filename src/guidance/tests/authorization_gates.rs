@@ -75,7 +75,10 @@ fn control_set_never_authorizes() {
 #[test]
 fn threshold_sweep_reproduces_the_pinned_entry() {
     let entry = calibrated("ds-1");
-    let thresholds = ThresholdSet { act: 0.5, review: 0.5 };
+    let thresholds = ThresholdSet {
+        act: 0.5,
+        review: 0.5,
+    };
     assert_eq!(entry.thresholds, thresholds);
     assert!(entry.gate.precision >= GateParams::default().min_precision);
     assert_eq!(entry.gate.control_fires, 0);
@@ -97,18 +100,27 @@ fn dataset_rotation_returns_to_measuring() {
     registry.upsert(calibrated("ds-1"));
     assert!(authorize_pinned(&registry, "triage", "model-a", 1, "ds-1").is_calibrated());
     let rotated = authorize_pinned(&registry, "triage", "model-a", 1, "ds-2");
-    assert!(rotated.is_shadow_only(), "rotated dataset must re-measure, got {rotated:?}");
+    assert!(
+        rotated.is_shadow_only(),
+        "rotated dataset must re-measure, got {rotated:?}"
+    );
 }
 
 #[test]
 fn cold_start_holds_drafts_for_review() {
     use crate::triage::{draft_disposition, DraftDisposition};
     let measuring = authorize(&CalibrationRegistry::empty(), "triage", "model-a", 1);
-    assert_eq!(draft_disposition(&measuring), DraftDisposition::HoldForReview);
+    assert_eq!(
+        draft_disposition(&measuring),
+        DraftDisposition::HoldForReview
+    );
     let mut registry = CalibrationRegistry::empty();
     registry.upsert(calibrated("ds-1"));
     let advisory = authorize_advisory(&registry, "triage", "model-a", 1);
-    assert_eq!(draft_disposition(&advisory), DraftDisposition::HoldForReview);
+    assert_eq!(
+        draft_disposition(&advisory),
+        DraftDisposition::HoldForReview
+    );
     let authorized = authorize(&registry, "triage", "model-a", 1);
     assert_eq!(draft_disposition(&authorized), DraftDisposition::MayApply);
 }

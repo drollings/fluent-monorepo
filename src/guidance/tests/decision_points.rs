@@ -148,6 +148,105 @@ fn degraded_success_answers_once_without_caching() {
 }
 
 #[test]
+fn loaded_registry_authorizes_where_empty_stays_shadow() {
+    use crate::query::decision_points::{
+        authorize_point_advisory_with, authorize_point_pinned_with, authorize_point_with,
+    };
+    use crate::query_engine::QueryEngine;
+    use fluent_llm::decision::{
+        CalibrationRegistry, CorpusProvenance, GateReport, RegistryEntry, ThresholdSet,
+    };
+    let entry = RegistryEntry {
+        point: INTENT_POINT.to_string(),
+        model_fingerprint: "test-model".to_string(),
+        question_version: INTENT_VERSION,
+        thresholds: ThresholdSet {
+            act: 1.0,
+            review: 1.0,
+        },
+        gate: GateReport {
+            threshold: 1.0,
+            precision: 1.0,
+            recall: 1.0,
+            fpr: 0.0,
+            support: 12,
+            control_fires: 0,
+            passed: true,
+            date: "2026-11-10".to_string(),
+        },
+        provenance: CorpusProvenance {
+            source: "test".to_string(),
+            labeller: "test".to_string(),
+            date: "2026-11-10".to_string(),
+            dataset: "abc123".to_string(),
+        },
+        dataset: "abc123".to_string(),
+    };
+    let mut registry = CalibrationRegistry::empty();
+    // Empty registry: every flavor fails closed.
+    assert!(
+        authorize_point_with(&registry, INTENT_POINT, "test-model", INTENT_VERSION)
+            .is_shadow_only()
+    );
+    assert!(
+        authorize_point_advisory_with(&registry, INTENT_POINT, "test-model", INTENT_VERSION)
+            .is_shadow_only()
+    );
+    assert!(authorize_point_pinned_with(
+        &registry,
+        INTENT_POINT,
+        "test-model",
+        INTENT_VERSION,
+        "abc123"
+    )
+    .is_shadow_only());
+    assert!(QueryEngine::new()
+        .authorize(INTENT_POINT, "test-model", INTENT_VERSION)
+        .is_shadow_only());
+    // Loaded entry: same point authorizes; wrong model, version, or
+    // dataset still fails closed, and the engine consults its registry.
+    registry.upsert(entry);
+    assert!(
+        authorize_point_with(&registry, INTENT_POINT, "test-model", INTENT_VERSION).is_calibrated()
+    );
+    assert!(
+        authorize_point_advisory_with(&registry, INTENT_POINT, "test-model", INTENT_VERSION)
+            .is_advisory()
+    );
+    assert!(authorize_point_pinned_with(
+        &registry,
+        INTENT_POINT,
+        "test-model",
+        INTENT_VERSION,
+        "abc123"
+    )
+    .is_calibrated());
+    assert!(
+        authorize_point_with(&registry, INTENT_POINT, "other-model", INTENT_VERSION)
+            .is_shadow_only()
+    );
+    assert!(
+        authorize_point_with(&registry, INTENT_POINT, "test-model", INTENT_VERSION + 1)
+            .is_shadow_only()
+    );
+    assert!(authorize_point_pinned_with(
+        &registry,
+        INTENT_POINT,
+        "test-model",
+        INTENT_VERSION,
+        "rotated"
+    )
+    .is_shadow_only());
+    let engine = QueryEngine::new().with_calibration(registry);
+    assert!(engine
+        .authorize(INTENT_POINT, "test-model", INTENT_VERSION)
+        .is_calibrated());
+    assert!(engine
+        .authorize(INTENT_POINT, "other-model", INTENT_VERSION)
+        .is_shadow_only());
+}
+
+#[test]
 fn spec_thresholds_feed_shadow_without_changing_verdict() {
     use crate::query::strategy::FsmEngine;
     use fluent_llm::decision::{decide_verdict, Verdict};
@@ -162,5 +261,132 @@ fn spec_thresholds_feed_shadow_without_changing_verdict() {
     assert_eq!(
         record.would_have_acted,
         decide_verdict(&verdict_decision, &thresholds) == Verdict::Act
+    );
+}
+
+#[test]
+fn summary_index_spec_pins_version() {
+    use super::{
+        summary_index_fingerprint, summary_index_spec, SUMMARY_INDEX_POINT, SUMMARY_INDEX_VERSION,
+    };
+    let spec = summary_index_spec();
+    assert!(spec.validate().is_ok());
+    assert_eq!(spec.id, SUMMARY_INDEX_POINT);
+    assert_eq!(spec.version, SUMMARY_INDEX_VERSION);
+    assert!(!spec.cacheable);
+    assert!(!summary_index_fingerprint("test-model").is_empty());
+    assert_ne!(
+        summary_index_fingerprint("model-a"),
+        summary_index_fingerprint("model-b")
+    );
+}
+
+fn summary_corpus(passing: bool) -> fluent_llm::decision::Corpus {
+    use fluent_llm::decision::{CaseProvenance, Corpus, CorpusProvenance, ScoredCase};
+    let provenance = CaseProvenance::human("guidance-test", "2026-11-11");
+    let control_score = if passing { 0.20 } else { 0.95 };
+    Corpus {
+        point: super::SUMMARY_INDEX_POINT.to_string(),
+        model_fingerprint: super::summary_index_fingerprint("test-model"),
+        question_version: super::SUMMARY_INDEX_VERSION,
+        provenance: CorpusProvenance {
+            source: "summary route calibration".to_string(),
+            labeller: "guidance-test".to_string(),
+            date: "2026-11-11".to_string(),
+            dataset: String::new(),
+        },
+        cases: vec![
+            ScoredCase {
+                score: 0.95,
+                expected: true,
+                control: false,
+                provenance: provenance.clone(),
+            },
+            ScoredCase {
+                score: 0.92,
+                expected: true,
+                control: false,
+                provenance: provenance.clone(),
+            },
+            ScoredCase {
+                score: control_score,
+                expected: false,
+                control: true,
+                provenance,
+            },
+        ],
+    }
+}
+
+#[test]
+fn summary_index_fails_closed_without_entry() {
+    use super::{authorize_point_with, SUMMARY_INDEX_POINT, SUMMARY_INDEX_VERSION};
+    use fluent_llm::decision::{CalibrationRegistry, CalibrationStatus};
+    let registry = CalibrationRegistry::empty();
+    let status = authorize_point_with(
+        &registry,
+        SUMMARY_INDEX_POINT,
+        "test-model",
+        SUMMARY_INDEX_VERSION,
+    );
+    assert!(matches!(status, CalibrationStatus::ShadowOnly { .. }));
+    let engine = crate::query_engine::QueryEngine::new().with_calibration(registry);
+    assert_eq!(
+        engine.summary_mode("test-model"),
+        crate::query::recall::SummaryMode::Shadow
+    );
+}
+
+#[test]
+fn summary_index_promotes_only_through_authorize() {
+    use super::{authorize_point_with, summary_index_fingerprint};
+    use super::{SUMMARY_INDEX_POINT, SUMMARY_INDEX_VERSION};
+    use fluent_llm::decision::{CalibrationRegistry, CalibrationStatus, RegistryEntry};
+    let fingerprint = summary_index_fingerprint("test-model");
+    let failing = summary_corpus(false);
+    let rejected = RegistryEntry::calibrate(
+        SUMMARY_INDEX_POINT,
+        &fingerprint,
+        SUMMARY_INDEX_VERSION,
+        &failing,
+        0.9,
+    )
+    .expect("calibrate");
+    assert!(
+        !rejected.gate.passed,
+        "a firing control must not pass the gate"
+    );
+    let passing = summary_corpus(true);
+    let entry = RegistryEntry::calibrate(
+        SUMMARY_INDEX_POINT,
+        &fingerprint,
+        SUMMARY_INDEX_VERSION,
+        &passing,
+        0.9,
+    )
+    .expect("calibrate");
+    assert!(
+        entry.gate.passed,
+        "clean corpus must pass: {:?}",
+        entry.gate
+    );
+    let mut registry = CalibrationRegistry::empty();
+    registry.upsert(entry);
+    let status = authorize_point_with(
+        &registry,
+        SUMMARY_INDEX_POINT,
+        &fingerprint,
+        SUMMARY_INDEX_VERSION,
+    );
+    assert!(matches!(status, CalibrationStatus::Calibrated(_)));
+    let engine = crate::query_engine::QueryEngine::new().with_calibration(registry);
+    assert_eq!(
+        engine.summary_mode("test-model"),
+        crate::query::recall::SummaryMode::Act
+    );
+    assert_eq!(
+        engine.summary_mode("other-model"),
+        crate::query::recall::SummaryMode::Shadow,
+        "authorization binds the measured model"
     );
 }

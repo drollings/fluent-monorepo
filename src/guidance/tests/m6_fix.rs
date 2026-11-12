@@ -30,18 +30,25 @@ fn apply_ctx<'a>(pre_hash: &str) -> ApplyCtx<'a> {
 fn d1_keeps_test_bytes_while_formatting() {
     let dir = tempdir();
     let path = dir.path().join("a.rs");
-    let before = "pub fn messy(  x:u8 )->u8 {\n    x\n}\n\n#[test]\nfn t() {\n    assert!(  true  );\n}\n";
+    let before =
+        "pub fn messy(  x:u8 )->u8 {\n    x\n}\n\n#[test]\nfn t() {\n    assert!(  true  );\n}\n";
     std::fs::write(&path, before).expect("write");
     let outcome = format_rust(&path, before);
     assert!(outcome.conflict.is_none(), "no prose conflict expected");
-    assert!(outcome.text.contains("pub fn messy(x: u8) -> u8"), "code formatted");
+    assert!(
+        outcome.text.contains("pub fn messy(x: u8) -> u8"),
+        "code formatted"
+    );
     assert!(
         outcome.text.contains("assert!(  true  );"),
         "test bytes survive byte-identically"
     );
     // Convergence: formatting the result is a fixed point.
     let again = format_rust(&path, &outcome.text);
-    assert_eq!(again.text, outcome.text, "format must converge, not oscillate");
+    assert_eq!(
+        again.text, outcome.text,
+        "format must converge, not oscillate"
+    );
 }
 
 #[test]
@@ -56,7 +63,10 @@ fn d1_reports_fmt_conflict_instead_of_looping() {
     let before = "pub fn a() {}\n\n// A very long comment that rustfmt with wrapping enabled would certainly want to reflow across lines here.\n\npub fn b() {}\n";
     std::fs::write(&path, before).expect("write");
     let outcome = format_rust(&path, before);
-    assert!(outcome.conflict.is_some(), "prose pressure must surface as one finding");
+    assert!(
+        outcome.conflict.is_some(),
+        "prose pressure must surface as one finding"
+    );
     let again = format_rust(&path, &outcome.text);
     assert_eq!(again.text, outcome.text, "conflict must not oscillate");
 }
@@ -92,15 +102,22 @@ fn d2_defers_overlaps_and_respects_excluded_spans() {
 
 #[test]
 fn d3_import_fires_only_when_unique() {
-    let patch = recipe_import("E0432 unresolved import `foo`", &["crate::foo".to_string()], true);
+    let patch = recipe_import(
+        "E0432 unresolved import `foo`",
+        &["crate::foo".to_string()],
+        true,
+    );
     assert_eq!(patch.as_deref(), Some("use crate::foo;\n"));
     assert!(recipe_import("E0432 unresolved import", &[], true).is_none());
-    assert!(recipe_import(
-        "E0432 unresolved import",
-        &["crate::a".to_string(), "crate::b".to_string()],
-        true
-    )
-    .is_none(), "ambiguous imports never fire");
+    assert!(
+        recipe_import(
+            "E0432 unresolved import",
+            &["crate::a".to_string(), "crate::b".to_string()],
+            true
+        )
+        .is_none(),
+        "ambiguous imports never fire"
+    );
     assert!(recipe_import("E0432 unresolved import", &["crate::a".to_string()], false).is_none());
     assert!(recipe_import("E9999 something else", &["crate::a".to_string()], true).is_none());
 }
@@ -112,7 +129,10 @@ fn d3_mut_inserts_precisely() {
     let patched = recipe_mut(text, offset, true).expect("fires");
     assert!(patched.contains("let mut x = 1;"), "{patched}");
     assert!(recipe_mut(text, offset, false).is_none());
-    assert!(recipe_mut(text, 1_000_000, true).is_none(), "out-of-range never fires");
+    assert!(
+        recipe_mut(text, 1_000_000, true).is_none(),
+        "out-of-range never fires"
+    );
 }
 
 #[test]
@@ -121,21 +141,39 @@ fn d3_seeded_set_measures_precision_before_enablement() {
     // (ambiguous, unlisted class, disabled policy) never do. Run this
     // before enabling any recipe for auto-apply.
     let positives = [
-        recipe_import("error[E0432]: unresolved import", &["crate::only".to_string()], true)
-            .is_some(),
+        recipe_import(
+            "error[E0432]: unresolved import",
+            &["crate::only".to_string()],
+            true,
+        )
+        .is_some(),
         recipe_mut("fn a() {\n    let x = 1;\n}\n", 17, true).is_some(),
     ];
     let negatives = [
-        recipe_import("error[E0432]: unresolved import", &["a".to_string(), "b".to_string()], true)
-            .is_none(),
-        recipe_import("error[E0432]: unresolved import", &["crate::a".to_string()], false)
-            .is_none(),
+        recipe_import(
+            "error[E0432]: unresolved import",
+            &["a".to_string(), "b".to_string()],
+            true,
+        )
+        .is_none(),
+        recipe_import(
+            "error[E0432]: unresolved import",
+            &["crate::a".to_string()],
+            false,
+        )
+        .is_none(),
         recipe_import("error[E0001]: other", &["crate::a".to_string()], true).is_none(),
         recipe_mut("fn a() {\n    let x = 1;\n}\n", 17, false).is_none(),
         recipe_mut("fn a() {\n    let x = 1;\n}\n", 999, true).is_none(),
     ];
-    assert!(positives.iter().all(|v| *v), "recall must be total on seeds");
-    assert!(negatives.iter().all(|v| *v), "control group must never fire");
+    assert!(
+        positives.iter().all(|v| *v),
+        "recall must be total on seeds"
+    );
+    assert!(
+        negatives.iter().all(|v| *v),
+        "control group must never fire"
+    );
 }
 
 #[test]
@@ -163,5 +201,8 @@ fn apply_keeps_gated_patches_and_reverts_the_rest() {
     std::fs::write(&path, "fn human() {}\n").expect("human edit");
     let report = apply_verified_patch(&path, "fn a() {}\n", &good);
     assert!(!report.is_kept(), "stale preconditions never overwrite");
-    assert_eq!(std::fs::read_to_string(&path).expect("read"), "fn human() {}\n");
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("read"),
+        "fn human() {}\n"
+    );
 }

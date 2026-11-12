@@ -18,6 +18,8 @@ pub use common_core::envelope::DUCK_RAMP_MS;
 /// dB gain to linear amplitude.
 /// Shared math home: `common_core::envelope`.
 #[must_use]
+/// dB gain to linear amplitude.
+/// Shared math home: `common_core::envelope`.
 pub fn db_to_linear(db: f32) -> f32 {
     common_core::envelope::db_to_linear(db)
 }
@@ -26,6 +28,9 @@ pub fn db_to_linear(db: f32) -> f32 {
 /// duck floor over [`DUCK_RAMP_MS`], then holding.
 /// Shared math home: `common_core::envelope::linear_ramp_gain`.
 #[must_use]
+/// Playout gain `elapsed_ms` after detect: 1.0 ramping linearly to the
+/// duck floor over [`DUCK_RAMP_MS`], then holding.
+/// Shared math home: `common_core::envelope::linear_ramp_gain`.
 pub fn duck_gain_at(elapsed_ms: u64) -> f32 {
     duck_gain_at_with(elapsed_ms, &orator::TurnConfig::default())
 }
@@ -34,6 +39,9 @@ pub fn duck_gain_at(elapsed_ms: u64) -> f32 {
 /// surface for the barge-in envelope. Defaults equal the calibrated
 /// constants, so default configs voice byte-identically.
 #[must_use]
+/// Playout gain under the configured duck ramp and depth: the tunable
+/// surface for the barge-in envelope. Defaults equal the calibrated
+/// constants, so default configs voice byte-identically.
 pub fn duck_gain_at_with(elapsed_ms: u64, turn: &orator::TurnConfig) -> f32 {
     let floor = db_to_linear(turn.duck_depth_db);
     common_core::envelope::linear_ramp_gain(elapsed_ms, turn.duck_ramp_ms, floor)

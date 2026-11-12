@@ -13,6 +13,7 @@ use crate::strings::StringStore;
 
 /// The vocabulary: string store + lexicon + morphology, shared across docs.
 #[derive(Debug, Clone)]
+/// The vocabulary: string store + lexicon + morphology, shared across docs.
 pub struct Vocab {
     strings: Arc<StringStore>,
     lexicon: Arc<Lexicon>,

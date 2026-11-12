@@ -23,6 +23,7 @@ use crate::window::BarWindow;
 
 /// Which leg of a bar a series calculation reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+/// Which leg of a bar a series calculation reads.
 pub enum PriceSource {
     /// Opening price.
     Open,
@@ -94,6 +95,7 @@ impl PriceSource {
 
 /// How a series interprets spacing discontinuities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// How a series interprets spacing discontinuities.
 pub enum GapPolicy {
     /// Holes are ordinary (filtered sessions, sparse symbols): consumers
     /// read around them, `gaps` stays advisory.
@@ -106,6 +108,8 @@ pub enum GapPolicy {
 /// One symbol and timeframe bound to validated bars: the chart-bar context
 /// the evaluation runtime threads per run.
 #[derive(Debug, Clone)]
+/// One symbol and timeframe bound to validated bars: the chart-bar context
+/// the evaluation runtime threads per run.
 pub struct SeriesContext {
     symbol: String,
     window: BarWindow,
@@ -204,6 +208,9 @@ impl SeriesContext {
 /// runtime reads alongside the chart timeframe. No resampling lives here —
 /// aggregation is a runtime concern, not a context one.
 #[derive(Debug, Clone, Copy)]
+/// A borrowed higher-timeframe slice over chart bars: the LTF array the v6
+/// runtime reads alongside the chart timeframe. No resampling lives here —
+/// aggregation is a runtime concern, not a context one.
 pub struct LtfView<'a> {
     timeframe: Timeframe,
     bars: &'a [Bar],

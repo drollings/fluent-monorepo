@@ -10,6 +10,8 @@ use crate::error::ProtocolError;
 /// never reorder, never reuse a retired value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
+/// One-byte wire message families. Discriminants are stable on the wire:
+/// never reorder, never reuse a retired value.
 pub enum MessageType {
     /// Protocol version and capability handshake.
     Hello = 0,

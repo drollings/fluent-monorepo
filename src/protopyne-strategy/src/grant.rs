@@ -47,6 +47,8 @@ macro_rules! json_boundary {
 /// Entry/exit/roll permissions inside a grant's scope. Exit-only operation
 /// is the low-risk default: entries need an explicit opt-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable)]
+/// Entry/exit/roll permissions inside a grant's scope. Exit-only operation
+/// is the low-risk default: entries need an explicit opt-in.
 pub struct GrantPermission {
     /// Whether new exposure may be opened.
     #[field(desc = "Whether new exposure may be opened (tightening clears it)")]
@@ -73,6 +75,14 @@ json_boundary!(GrantPermission, "grant permissions");
     Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// What a grant covers: which strategies, underlyings, structures, and
+/// directions may trade, and with which lifecycle permissions. Empty lists
+/// match nothing: a grant must name its scope explicitly to authorize.
+/// 
+/// The list fields stay out of the field descriptor (`#[field(skip)]`): a
+/// `Vec` has no boundary-string reading and the orphan rule forbids lending
+/// it one, so no list encoding is declared until a second consumer needs it.
+/// Scope narrowing stays enforced core-side by [`Grant::tighten`].
 pub struct GrantScope {
     /// Strategy names covered by this grant.
     #[field(skip)]
@@ -140,6 +150,8 @@ impl GrantScope {
     Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Signal-tier thresholds: is the idea worth acting on?
+/// Axis: **(task-value)** — merit of the trade, never producer health.
 pub struct SignalThresholds {
     /// Minimum signal conviction in `[0, 1]` **(task-value)**.
     #[field(
@@ -163,6 +175,8 @@ json_boundary!(SignalThresholds, "signal thresholds");
     Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Trade-tier thresholds: is this concrete order acceptable?
+/// Axis: **(task-value)**, except the quote gate which is **(correctness)**.
 pub struct TradeThresholds {
     /// Maximum loss any single trade may commit **(task-value)**.
     #[field(
@@ -203,6 +217,9 @@ json_boundary!(TradeThresholds, "trade thresholds");
     Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Portfolio/market-tier thresholds: is the book and the market fit to trade?
+/// Open-risk caps are **(task-value)**; the quote-age gate is
+/// **(correctness)**.
 pub struct PortfolioThresholds {
     /// Maximum aggregate committed max loss across open risk
     /// **(task-value)**.
@@ -230,6 +247,9 @@ json_boundary!(PortfolioThresholds, "portfolio thresholds");
     Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Hard budgets reserved at submission and consumed on fill.
+/// Axis: **(task-value)** — every budget bounds worst-case exposure, which
+/// the arming screen shows before confirmation.
 pub struct GrantBudgets {
     /// Maximum number of trades under this grant **(task-value)**.
     #[field(
@@ -266,6 +286,10 @@ json_boundary!(GrantBudgets, "grant budgets");
 /// [`BudgetEcho`](Self::BudgetEcho) as an upper bound, never as a computed
 /// exposure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Where a [`ComputedWorstCase`] number came from. Producer-confidence about
+/// the number's provenance, never a verdict on exposure: the screen shows
+/// [`BudgetEcho`](Self::BudgetEcho) as an upper bound, never as a computed
+/// exposure.
 pub enum WorstCaseBasis {
     /// Every permitted structure was priced from a chain: the numbers are
     /// computed exposures.
@@ -288,6 +312,7 @@ impl WorstCaseBasis {
 
 /// Worst case for one package unit of a structure, priced from a chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Worst case for one package unit of a structure, priced from a chain.
 pub struct WorstCaseUnit {
     /// Worst-case loss for one package unit.
     pub max_loss: Money,
@@ -298,6 +323,8 @@ pub struct WorstCaseUnit {
 /// Bounded worst-case exposure of an armed grant: at most the grant's budgets,
 /// tightened by per-structure unit economics when a chain answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Bounded worst-case exposure of an armed grant: at most the grant's budgets,
+/// tightened by per-structure unit economics when a chain answers.
 pub struct ComputedWorstCase {
     /// Package units (trades) the binding structure allows.
     pub max_trades: u32,
@@ -322,6 +349,16 @@ pub struct ComputedWorstCase {
 /// structure cannot be priced (`per_unit` answers `None`) or the structure
 /// list is empty, the numbers fall back to the budget fields.
 #[must_use]
+/// Bound an armed grant's exposure from per-structure unit economics.
+/// 
+/// For every permitted structure the caller prices, the implied package
+/// units are `min(max_trades, max_contracts / legs_per_unit)`, and the worst
+/// case is the largest `units × per-unit` over those structures. Both numbers
+/// are capped by the grant's own loss and notional budgets — a budget is a
+/// hard limit, so [`WorstCaseBasis::BudgetEcho`] is always an upper bound on
+/// what [`WorstCaseBasis::ChainDerived`] can compute. When any permitted
+/// structure cannot be priced (`per_unit` answers `None`) or the structure
+/// list is empty, the numbers fall back to the budget fields.
 pub fn worst_case_for(
     grant: &Grant,
     structures: &[StructureKind],
@@ -382,6 +419,8 @@ fn cheaper(left: Money, right: Money) -> Money {
 /// the evaluator stays a pure function of `(proposal, grant, usage, ...)`.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Budget already consumed. Kept separate from the immutable [`Grant`] so
+/// the evaluator stays a pure function of `(proposal, grant, usage, ...)`.
 pub struct GrantUsage {
     /// Trades already submitted.
     #[builder(default)]
@@ -409,6 +448,10 @@ pub struct GrantUsage {
 /// behave exactly as before, forever.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Re-attestation window: the operator's authority lapses on a cadence, so
+/// a grant left unconfirmed stops opening new risk while positions stay
+/// manageable. Additive and `None` by default: grants armed without one
+/// behave exactly as before, forever.
 pub struct ReAttestationWindow {
     /// How long one attestation stays authoritative.
     pub cadence: Duration,
@@ -428,6 +471,17 @@ pub struct ReAttestationWindow {
 /// | ≤ 72 h | daily cadence, one hour of grace |
 /// | > 72 h | daily cadence, no grace (re-confirm before each entry session) |
 #[must_use]
+/// Re-attestation window for a grant lifetime: longer windows get tighter
+/// (or equal) windows — never the reverse. A policy table, not a fit: the
+/// calibration suite asserts every window length maps exactly once and the
+/// mapping never loosens with length.
+/// 
+/// | window length | re-attestation |
+/// |---|---|
+/// | ≤ 1 h | none — the window ends before any cadence could lapse |
+/// | ≤ 24 h | none — a single session needs no re-attestation |
+/// | ≤ 72 h | daily cadence, one hour of grace |
+/// | > 72 h | daily cadence, no grace (re-confirm before each entry session) |
 pub fn re_attestation_for_window(window: Duration) -> Option<ReAttestationWindow> {
     if window <= Duration::from_hours(24) {
         None
@@ -450,6 +504,9 @@ pub fn re_attestation_for_window(window: Duration) -> Option<ReAttestationWindow
     Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Circuit-breaker trip limits. Axis: **(producer-confidence)** — these
+/// measure doubt in the producer's health, never the trade's merit, and must
+/// never approve or veto a trade on merit.
 pub struct BreakerLimits {
     /// Consecutive venue errors that disarm entries **(producer-confidence)**.
     #[field(
@@ -517,6 +574,7 @@ json_boundary!(BreakerLimits, "breaker limits");
 /// Live breaker state, tracked outside the immutable grant.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Live breaker state, tracked outside the immutable grant.
 pub struct BreakerState {
     /// Consecutive venue errors observed so far.
     #[builder(default)]
@@ -533,6 +591,9 @@ pub struct BreakerState {
 /// against a fresh quote: callers pass the newest snapshot they have.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Fresh market snapshot the evaluator checks the proposal against. The
+/// evaluator runs at decision time and again immediately before submission
+/// against a fresh quote: callers pass the newest snapshot they have.
 pub struct GrantMarket {
     /// Age of the quote in seconds **(correctness)**.
     pub quote_age_secs: u64,
@@ -554,6 +615,8 @@ pub struct GrantMarket {
 /// breaker limits over a bounded time window.
 #[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// An immutable arming grant: scope, budgets, three threshold tiers, and
+/// breaker limits over a bounded time window.
 pub struct Grant {
     /// Stable grant identifier.
     pub id: String,
@@ -621,6 +684,9 @@ impl fluent_wvr::validate::Validate for Grant {
 /// Presets name their tier values once; every caller that arms the same
 /// rehearsal surface shares this body instead of a second literal.
 #[derive(Debug, Clone, PartialEq)]
+/// A named grant construction: the one place a preset grant is built.
+/// Presets name their tier values once; every caller that arms the same
+/// rehearsal surface shares this body instead of a second literal.
 pub enum GrantPreset {
     /// The permissive rehearsal surface: fixed strategies over one
     /// underlying, both directions, wide budgets, open thresholds, a long
@@ -893,6 +959,20 @@ impl Grant {
 /// patch arriving as tier texts needs no second parser.
 #[derive(Debug, Clone, Default, Builder, PartialEq, Serialize, Deserialize, FieldAccess)]
 #[builder(start_fn = new)]
+/// Optional per-tier replacements for [`Grant::tighten`]. `None` keeps the
+/// current value; `Some` must move toward more restrictive.
+/// 
+/// The field descriptor drives the arming form: every settable tier edits
+/// leaf by leaf (see [`Describable`] below), so the form renders from the
+/// schema with no hand-written field list. `scope` stays out of the
+/// descriptor: the generated `get_field` moves an `Option` out of the
+/// borrow, which only compiles for `Copy` tiers, and the scope lists are
+/// skipped anyway (see [`GrantScope`]) — scope narrowing stays enforced
+/// core-side by [`Grant::tighten`], never through the form.
+/// 
+/// Whole-tier boundary strings stay the server path: [`FieldAccess`]
+/// `set_field` parses one tier document through its `FromStr` codec, so a
+/// patch arriving as tier texts needs no second parser.
 pub struct GrantPatch {
     /// Replacement budgets (all caps must not rise).
     #[field(desc = "Replacement budgets, one value per leaf (caps must not rise)")]
@@ -1043,6 +1123,8 @@ pub mod refusal {
 /// Outcome of [`evaluate_grant`]: unconditional allow, or deny with every
 /// reason collected (never just the first) for audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Outcome of [`evaluate_grant`]: unconditional allow, or deny with every
+/// reason collected (never just the first) for audit.
 pub enum GrantDecision {
     /// The grant covers this proposal.
     Allow,
@@ -1104,6 +1186,24 @@ fn budget_exceeded(
 /// structure-in-scope check attributes threshold denials to the structure
 /// for audit.
 #[must_use]
+/// Decide whether `grant` covers `proposal`.
+/// 
+/// Pure function: same inputs always produce the identical decision, with no
+/// I/O, clock reads, or hidden state. Backtest preview, paper trading, and
+/// (later) live submission all call this one function — never a second
+/// preview-only copy.
+/// 
+/// Check order: liveness, scope, budgets, signal tier, trade tier (including
+/// the defined-risk rule), portfolio/market tier, breakers. All failures are
+/// collected so a denial explains itself fully.
+/// 
+/// Scope appears twice by design, with distinct meanings: the `scope.allows`
+/// check is the whole-scope gate (one reason covering strategy, underlying,
+/// structure, direction, and permission together), while the trade-tier
+/// structure checks name the structure specifically — the defined-risk
+/// exclusion bans naked shorts regardless of scope, and the
+/// structure-in-scope check attributes threshold denials to the structure
+/// for audit.
 pub fn evaluate_grant(
     proposal: &Proposal,
     grant: &Grant,

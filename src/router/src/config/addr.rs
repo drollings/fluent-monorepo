@@ -59,6 +59,8 @@ pub fn parse_bind_addr(addr: &str) -> Result<(&str, u16), ServerError> {
 /// Validate that none of the configured model endpoints point back at the
 /// router's own bind address.  This prevents accidental self-routing loops.
 #[allow(clippy::implicit_hasher)]
+/// Validate that none of the configured model endpoints point back at the
+/// router's own bind address.  This prevents accidental self-routing loops.
 pub fn validate_no_self_routing(
     bind_addr: &str,
     models: &HashMap<String, ModelEntry>,

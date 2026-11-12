@@ -23,6 +23,7 @@ use crate::labels::Upos;
 
 /// A tag → UPOS map. `"$"` → `SYM`, `"NN"` → `NOUN`, `"NNP"` → `PROPN`, ...
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// A tag → UPOS map. `"$"` → `SYM`, `"NN"` → `NOUN`, `"NNP"` → `PROPN`, ...
 pub struct TagMap {
     entries: HashMap<String, Upos>,
 }

@@ -88,6 +88,7 @@ pub const COMMANDS: [&str; 18] = [
 
 /// Stable process exit codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Stable process exit codes.
 pub enum ExitCode {
     /// Success.
     Success,
@@ -120,6 +121,7 @@ impl ExitCode {
 
 /// A validated outbound socket request under construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A validated outbound socket request under construction.
 pub struct OutboundRequest {
     /// Wire-contract method name.
     pub method: String,
@@ -139,6 +141,7 @@ impl OutboundRequest {
 /// The `orator` command line.
 #[derive(Debug, Parser)]
 #[command(name = "orator", about = "Local voice assistant")]
+/// The `orator` command line.
 pub struct Cli {
     /// Daemon transport: `socket` (default) or `ws`.
     #[arg(long, default_value = "socket", global = true)]
@@ -154,6 +157,7 @@ pub struct Cli {
 
 /// One variant per entry in `COMMANDS`, pinned by the parity test.
 #[derive(Debug, Subcommand)]
+/// One variant per entry in `COMMANDS`, pinned by the parity test.
 pub enum Command {
     /// Speak text or stdin; returns when playback ends.
     Say {
@@ -325,6 +329,7 @@ pub enum Command {
 
 /// Model-management actions.
 #[derive(Debug, Subcommand)]
+/// Model-management actions.
 pub enum ModelsAction {
     /// List catalog entries with presence and verification state.
     List,
@@ -349,6 +354,8 @@ pub enum ModelsAction {
 /// Render a `doctor` report for humans. One section per probe, then
 /// actionable notes. Empty notes line means green.
 #[must_use]
+/// Render a `doctor` report for humans. One section per probe, then
+/// actionable notes. Empty notes line means green.
 pub fn render_doctor(report: &orator_audio::DoctorReport) -> String {
     use std::fmt::Write as _;
     let mut out = String::from("orator doctor\n");

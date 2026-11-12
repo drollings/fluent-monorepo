@@ -23,6 +23,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Tuning for lock acquisition.
 #[derive(Debug, Clone, Copy)]
+/// Tuning for lock acquisition.
 pub struct LockOptions {
     /// Wait between acquisition polls.
     pub poll_ms: u64,
@@ -45,6 +46,8 @@ impl Default for LockOptions {
 /// Lock failures. Every variant preserves the underlying `io::Error` so
 /// callers can distinguish contention handling from real I/O failures.
 #[derive(Debug, thiserror::Error)]
+/// Lock failures. Every variant preserves the underlying `io::Error` so
+/// callers can distinguish contention handling from real I/O failures.
 pub enum LockError {
     #[error("artifact cache lock I/O failed: {0}")]
     Io(#[from] io::Error),
@@ -239,6 +242,8 @@ fn owner_payload(token: &str) -> String {
 /// Best-effort local hostname for dead-owner scoping. Unknown hosts stay
 /// conservative: the TTL path applies instead of the fast takeover.
 #[must_use]
+/// Best-effort local hostname for dead-owner scoping. Unknown hosts stay
+/// conservative: the TTL path applies instead of the fast takeover.
 pub fn local_hostname() -> String {
     if let Ok(name) = std::env::var("HOSTNAME") {
         if !name.trim().is_empty() {

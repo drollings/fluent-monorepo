@@ -4,7 +4,6 @@
 //! role-coverage tiebreak over fused candidates.
 
 use crate::ast_parser::AstParser;
-use crate::extractor::adapter::format_for_extension;
 use crate::extractor::code::harvest_file_entities;
 use crate::extractor::ExtractSource;
 use crate::query::fusion::RecallCandidate;
@@ -18,6 +17,7 @@ use thiserror::Error;
 
 /// Graph build failure.
 #[derive(Debug, Error)]
+/// Graph build failure.
 pub enum GraphIndexError {
     /// Dependency graph bookkeeping failed.
     #[error("graph error: {0}")]
@@ -35,6 +35,7 @@ impl From<GraphError> for GraphIndexError {
 
 /// One file's harvest inputs (bytes owned by the caller).
 #[derive(Debug, Clone)]
+/// One file's harvest inputs (bytes owned by the caller).
 pub struct HarvestInput {
     /// Normalized absolute path.
     pub path: String,
@@ -46,6 +47,7 @@ pub struct HarvestInput {
 
 /// A resolved symbol definition site.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A resolved symbol definition site.
 pub struct SymbolDef {
     /// Defining file (normalized absolute path).
     pub file: String,
@@ -58,6 +60,10 @@ pub struct SymbolDef {
 /// relation was established. Only the syntactic tier exists today;
 /// resolved edges (exact references) land as a second producer later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Resolution tier of a graph edge: which machinery produced it.
+/// Every edge carries its tier, so an answer never overstates how a
+/// relation was established. Only the syntactic tier exists today;
+/// resolved edges (exact references) land as a second producer later.
 pub enum EdgeTier {
     /// Name-based edges, always available and error-tolerant.
     Syntactic,
@@ -86,6 +92,7 @@ impl EdgeTier {
 
 /// A caller → callee-name edge (callee resolved at build).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A caller → callee-name edge (callee resolved at build).
 pub struct CallEdge {
     /// Calling file.
     pub caller_file: String,
@@ -106,6 +113,10 @@ pub struct CallEdge {
 /// verdict, and never alone a reason to delete or rewrite. Delete-adjacent
 /// consumers expand on `Homonym`/`Unresolved`, never narrow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// How a bare name resolved to definition sites. Producer-confidence
+/// only (how sure the indexer is about identity) — never a correctness
+/// verdict, and never alone a reason to delete or rewrite. Delete-adjacent
+/// consumers expand on `Homonym`/`Unresolved`, never narrow.
 pub enum ResolutionMethod {
     /// Exactly one definition site in the workspace.
     Unique,
@@ -136,6 +147,7 @@ impl ResolutionMethod {
 
 /// An importer → specifier edge.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// An importer → specifier edge.
 pub struct ImportEdge {
     /// Importing file.
     pub importer: String,
@@ -155,6 +167,7 @@ pub const CLOSURE_ANCHOR_FILES: usize = 3;
 
 /// Direction of a context edge toward its anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Direction of a context edge toward its anchor.
 pub enum ContextDirection {
     /// The file depends on the anchor (importer/caller of the anchor).
     Dependent,
@@ -164,6 +177,7 @@ pub enum ContextDirection {
 
 /// Family of the edge carrying a context relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Family of the edge carrying a context relation.
 pub enum ContextFamily {
     /// Import/specifier edge.
     Import,
@@ -175,6 +189,9 @@ pub enum ContextFamily {
 /// (which anchor, which direction, which edge). Ordered for
 /// deterministic rendering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// One depth-1 context edge: an anchor's graph neighbor with provenance
+/// (which anchor, which direction, which edge). Ordered for
+/// deterministic rendering.
 pub struct ContextEdge {
     /// Neighbor file.
     pub file: String,
@@ -196,6 +213,8 @@ pub struct ContextEdge {
 /// Query-side graph signals: routing-signal lemmas (predicate + roles),
 /// lowercased. Built from `extract_routing_signals` — no new NLP.
 #[derive(Debug, Clone, Default)]
+/// Query-side graph signals: routing-signal lemmas (predicate + roles),
+/// lowercased. Built from `extract_routing_signals` — no new NLP.
 pub struct GraphQuerySignals {
     /// Predicate lemmas.
     pub predicate: Vec<String>,
@@ -205,6 +224,7 @@ pub struct GraphQuerySignals {
 
 /// Build query signals from routing signals (predicate + role lemmas).
 #[must_use]
+/// Build query signals from routing signals (predicate + role lemmas).
 pub fn signals_from_routing(signals: &[RoutingSignal]) -> GraphQuerySignals {
     let mut predicate = Vec::new();
     let mut roles = Vec::new();
@@ -244,45 +264,6 @@ pub struct GraphIndex {
     symbol_defs: HashMap<String, Vec<SymbolDef>>,
     call_edges: Vec<CallEdge>,
     import_edges: Vec<ImportEdge>,
-}
-
-/// Harvest one file's persistable graph inputs with a caller-provided
-/// parser (one parser per sync, never per file). This is the same
-/// harvest `assemble` consumes — the ingest path reuses it rather than
-/// a second parser. Non-code files and unknown extensions yield empty
-/// inputs (persisting empty clears rows a kind-changed file left).
-/// Unnamed scopes persist under "" (calls only, never a definition).
-/// Parse failure yields empty inputs: fragments stay authoritative for
-/// content, the graph simply has no edges for the file.
-pub fn harvest_graph_inputs(
-    parser: &mut AstParser,
-    format_ext: &str,
-    kind: FileKind,
-    text: &str,
-) -> (Vec<String>, Vec<(String, Vec<String>)>) {
-    if kind != FileKind::Code {
-        return (Vec::new(), Vec::new());
-    }
-    let Some(format) = format_for_extension(format_ext) else {
-        return (Vec::new(), Vec::new());
-    };
-    let Ok(harvested) = harvest_file_entities(
-        parser,
-        &ExtractSource {
-            file_id: String::new(),
-            text: text.to_string(),
-            format: format.to_string(),
-            kind: FileKind::Code,
-        },
-    ) else {
-        return (Vec::new(), Vec::new());
-    };
-    let symbols = harvested
-        .symbols
-        .into_iter()
-        .map(|symbol| (symbol.name.unwrap_or_default(), symbol.calls))
-        .collect();
-    (harvested.imports, symbols)
 }
 
 impl GraphIndex {
@@ -396,10 +377,13 @@ impl GraphIndex {
         }
         let mut import_edges = Vec::new();
         let mut file_deps: HashMap<String, HashSet<String>> = HashMap::new();
+        // One known-file set, not one per import edge: the old call
+        // rebuilt and hashed the full path set inside the loop.
+        let known_files = per_file_paths(per_file);
         for (path, harvested) in per_file {
             file_deps.entry(path.clone()).or_default();
             for specifier in &harvested.imports {
-                let resolved = resolve_import(path, specifier, roots, &per_file_paths(per_file));
+                let resolved = resolve_import(path, specifier, roots, &known_files);
                 if let Some(target) = &resolved {
                     file_deps
                         .entry(path.clone())
@@ -491,6 +475,80 @@ impl GraphIndex {
     #[must_use]
     pub fn definitions_of(&self, symbol: &str) -> &[SymbolDef] {
         self.symbol_defs.get(symbol).map_or(&[], Vec::as_slice)
+    }
+
+    /// Test files exercising one named item: test-path files whose
+    /// recorded references name the item — exact callee matches plus
+    /// import specifiers whose final segment names it (structured
+    /// segments, never token substrings). Unresolved callees are
+    /// included when named: resolution is a separate axis, tiered on
+    /// the edge itself.
+    #[must_use]
+    pub fn tests_touching(&self, item: &str) -> Vec<String> {
+        if item.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for edge in &self.call_edges {
+            if edge.callee == item
+                && crate::offload::is_test_path(std::path::Path::new(&edge.caller_file))
+                && !out.contains(&edge.caller_file)
+            {
+                out.push(edge.caller_file.clone());
+            }
+        }
+        for edge in &self.import_edges {
+            if specifier_names(&edge.specifier)
+                .last()
+                .is_some_and(|name| name == item)
+                && crate::offload::is_test_path(std::path::Path::new(&edge.importer))
+                && !out.contains(&edge.importer)
+            {
+                out.push(edge.importer.clone());
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Test files exercising any of the changed files: test-path files
+    /// whose recorded edges resolve into the changed set (call targets
+    /// or import targets), plus import specifiers whose module segments
+    /// name a changed file stem (structural fallback where the resolver
+    /// does not cover `crate::` paths). Sorted, deduped. Callers
+    /// without a hydrated graph keep the token-mention heuristic in
+    /// `impact_report_with_tests`.
+    #[must_use]
+    pub fn tests_touching_files(&self, changed: &[String]) -> Vec<String> {
+        let mut out = Vec::new();
+        for edge in &self.call_edges {
+            if !edge.callee_files.iter().any(|file| changed.contains(file)) {
+                continue;
+            }
+            if crate::offload::is_test_path(std::path::Path::new(&edge.caller_file)) {
+                out.push(edge.caller_file.clone());
+            }
+        }
+        for edge in &self.import_edges {
+            let resolves_into_changed = edge
+                .resolved_file
+                .as_ref()
+                .is_some_and(|file| changed.contains(file));
+            let structural = !resolves_into_changed
+                && changed.iter().any(|file| {
+                    file_stem(file).is_some_and(|stem| {
+                        specifier_names(&edge.specifier).any(|segment| segment == stem)
+                    })
+                });
+            if (resolves_into_changed || structural)
+                && crate::offload::is_test_path(std::path::Path::new(&edge.importer))
+            {
+                out.push(edge.importer.clone());
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
     }
 
     /// Depth-1 context expansion over the hydrated graph: for each
@@ -764,6 +822,21 @@ fn role_overlap(candidate: &RecallCandidate, signals: &GraphQuerySignals) -> usi
 
 fn per_file_paths(per_file: &[(String, crate::extractor::code::HarvestedFile)]) -> HashSet<String> {
     per_file.iter().map(|(path, _)| path.clone()).collect()
+}
+
+/// Import specifier as module segments (`crate::a::target_a` →
+/// `crate`, `a`, `target_a`): the grammar's own segmentation, so a
+/// changed file's stem matches only whole segments, never substrings.
+fn specifier_names(specifier: &str) -> impl Iterator<Item = &str> {
+    specifier
+        .split([':', '/', '.'])
+        .filter(|segment| !segment.is_empty())
+}
+
+/// File stem for specifier matching (`/repo/src/a.rs` → `a`):
+/// the module unit a `crate::a::…` import names.
+fn file_stem(path: &str) -> Option<&str> {
+    Path::new(path).file_stem().and_then(|stem| stem.to_str())
 }
 
 /// Resolve an import specifier to a workspace file (best effort):

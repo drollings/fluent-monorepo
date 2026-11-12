@@ -4,6 +4,10 @@
 
 /// Indicator states. Recording states cannot be hidden by configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Tray status model: what the indicator shows. The live StatusNotifier
+/// connection lands with the desktop surface; the model (states, labels,
+/// transitions) is pinned now so behavior never depends on the backend.
+/// Indicator states. Recording states cannot be hidden by configuration.
 pub enum TrayStatus {
     /// Daemon idle, no capture.
     Idle,
@@ -37,6 +41,7 @@ impl TrayStatus {
 
 /// Current tray state plus the reason shown on hover.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Current tray state plus the reason shown on hover.
 pub struct TrayState {
     /// Indicator state.
     pub status: TrayStatus,

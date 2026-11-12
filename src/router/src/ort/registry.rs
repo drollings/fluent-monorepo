@@ -19,6 +19,13 @@ pub type OrtRegistry = Arc<OrtSessionRegistry>;
 /// each scored against the given route descriptions. The router (composition
 /// root) supplies the route labels from `RoutingConfig`.
 #[cfg(feature = "onnx")]
+/// Build the disambiguation overlays for the overlay stage:
+/// one `PromptRouterOverlay` per `overlay_models`
+/// key whose registered onnx model is a `ZeroShotRouting` two-tower session,
+/// each scored against the given route descriptions. The router (composition
+/// root) supplies the route labels from `RoutingConfig`.
+/// No-ort build: no overlays can be built — the builder skips the overlay
+/// stage (fail-open).
 pub fn disambiguation_overlays<S: std::hash::BuildHasher>(
     registry: &OrtRegistry,
     model_keys: &[String],
@@ -84,6 +91,24 @@ pub fn disambiguation_overlays<S: std::hash::BuildHasher>(
 /// pure-deterministic). When the crate is built without the `onnx` feature,
 /// `None` is returned.
 #[cfg(feature = "onnx")]
+/// Build the `OrtSessionRegistry` from the role-based ONNX fleet in `config`.
+/// 
+/// Each configured role (`encoder`/`pii`/`router`/`policy`/`colbert`) is
+/// registered under its stable `OnnxRole::registry_key()` with the task implied
+/// by the role. Lifecycle semantics parallel the llama.cpp fleet:
+/// 
+/// - `resident: true` (Always) roles load at boot (loud error on a missing
+/// model file — the registry refuses to boot half-configured).
+/// - `resident: false` (Unloadable) roles register lazily and load on first
+/// use.
+/// - Task-vs-`config.json` mismatches are loud boot errors.
+/// 
+/// Absent ONNX config yields `None` (fully fail-open — the pipeline is
+/// pure-deterministic). When the crate is built without the `onnx` feature,
+/// `None` is returned.
+/// No-ort build: the ONNX fleet degrades to nothing (fail-open), but its
+/// presence is worth a loud warning so a config that expects ort wiring is not
+/// silently degraded.
 pub fn build_onnx_registry(
     config: &RouterConfig,
 ) -> Result<Option<Arc<OrtSessionRegistry>>, OrtError> {

@@ -29,6 +29,7 @@ use fluent_concept::ConceptStore;
 
 /// One entity-link job: a PROPN span (with no resolved entity) to link.
 #[derive(Debug, Clone)]
+/// One entity-link job: a PROPN span (with no resolved entity) to link.
 pub struct EntityLinkJob {
     pub node_id: NodeId,
     /// Byte span into the source text.
@@ -45,6 +46,12 @@ pub struct EntityLinkJob {
 /// the routing transcript indexes the exact request bytes). Fail-open: an
 /// unlocatable token contributes no job.
 #[must_use]
+/// Build the entity-link jobs for a parse: one per PROPN token that has no
+/// resolved entity (at runtime, entity resolution never writes a doc id, so
+/// every PROPN token is unresolved by construction). The byte span is located
+/// by searching `request_text` for the token's surface form (deterministic —
+/// the routing transcript indexes the exact request bytes). Fail-open: an
+/// unlocatable token contributes no job.
 pub fn entity_link_jobs_from_signals(
     request_text: &str,
     node_id: NodeId,
@@ -87,6 +94,8 @@ pub type EntityLinkScorer = Arc<dyn Fn(&str) -> Vec<(InterlinguaId, f64)> + Send
 /// Errors surfaced by `submit` (the worker's own processing is best-effort and
 /// logged — an entity-link failure must never take the hot path down).
 #[derive(Debug, Error)]
+/// Errors surfaced by `submit` (the worker's own processing is best-effort and
+/// logged — an entity-link failure must never take the hot path down).
 pub enum EntityLinkError {
     #[error("entity-link queue closed: {0}")]
     Closed(String),
@@ -172,6 +181,9 @@ impl EntityLinkWorker {
 /// → write candidates only. Best-effort by design — a failure logs and never
 /// blocks the pool.
 #[allow(clippy::too_many_arguments)]
+/// Process one entity-link job: score → threshold → `is_subclass_of(YagoEntity)`
+/// → write candidates only. Best-effort by design — a failure logs and never
+/// blocks the pool.
 fn process_job(
     job: &EntityLinkJob,
     candidates: &OverlayCandidateStore,

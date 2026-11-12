@@ -23,6 +23,10 @@ use crate::error::StrategyError;
 /// `bars` and `closes` are the same window: the caller derives the closes
 /// once (the signal's fast path) rather than re-extracting them per call.
 #[derive(Debug, Clone, Copy)]
+/// A caller-assembled point-in-time view of one underlying's decision inputs.
+/// 
+/// `bars` and `closes` are the same window: the caller derives the closes
+/// once (the signal's fast path) rather than re-extracting them per call.
 pub struct MarketData<'a> {
     /// Closed bars, oldest first.
     pub bars: &'a [Bar],
@@ -53,6 +57,7 @@ impl MarketData<'_> {
 
 /// What a signal sees, with the view instant that bounds it.
 #[derive(Debug, Clone, Copy)]
+/// What a signal sees, with the view instant that bounds it.
 pub struct MarketView<'a> {
     /// The caller's data window.
     pub data: &'a MarketData<'a>,
@@ -81,6 +86,12 @@ impl MarketView<'_> {
 /// decision. [`quotes_at_or_before`](Self::quotes_at_or_before) re-filters
 /// defensively at read time as well.
 #[derive(Debug, Clone, Copy)]
+/// A point-in-time slice of one underlying's option chain.
+/// 
+/// Construction refuses a quote stamped after `as_of`, so a caller bug
+/// (`chain_snapshot` for the wrong instant) cannot leak the future into a
+/// decision. [`quotes_at_or_before`](Self::quotes_at_or_before) re-filters
+/// defensively at read time as well.
 pub struct ChainSlice<'a> {
     quotes: &'a [ChainQuote],
     as_of: DateTime<Utc>,

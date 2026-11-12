@@ -23,6 +23,14 @@ use std::sync::Arc;
 /// `of` is possible but reserved for the forced-collision control group:
 /// production code names its bytes and lets `of` hash them.
 #[derive(Clone)]
+/// A 64-bit content hash of a canonical byte encoding, **plus** the bytes.
+/// 
+/// Construct through [`of`](Self::of): the hash always matches the bytes it
+/// was built with, so equality (hash and bytes) is consistent with hashing
+/// (the digest), and a map keyed on identities never aliases distinct
+/// datasets even when their digests collide. Field construction outside
+/// `of` is possible but reserved for the forced-collision control group:
+/// production code names its bytes and lets `of` hash them.
 pub struct VerifiedId {
     /// The FNV-1a-64 digest of [`canonical`](Self::canonical).
     pub hash: u64,

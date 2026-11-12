@@ -33,6 +33,7 @@ pub trait ChordSender: Send + Sync {
 
 /// Outcome of a paste transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Outcome of a paste transaction.
 pub enum PasteOutcome {
     /// The paste landed; the clipboard moved, so nothing was restored.
     Pasted,
@@ -135,6 +136,7 @@ pub const CLIPBOARD_CHILD_DEADLINE_MS: u64 = 2000;
 
 /// Why a bounded clipboard-child wait ended without a status.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Why a bounded clipboard-child wait ended without a status.
 pub(crate) enum ChildWaitError {
     /// The deadline passed: the child was killed and reaped.
     Timeout,
@@ -191,6 +193,8 @@ fn wait_for_change(clip: &dyn Clipboard, before: u64, deadline_ms: u64) -> bool 
 /// In-memory clipboard for tests and headless runs. The fingerprint bumps
 /// on every write, mirroring the platform counter.
 #[derive(Debug, Default)]
+/// In-memory clipboard for tests and headless runs. The fingerprint bumps
+/// on every write, mirroring the platform counter.
 pub struct InMemoryClipboard {
     state: Mutex<InMemoryState>,
 }
@@ -230,6 +234,8 @@ impl Clipboard for InMemoryClipboard {
 /// `wl-copy` / `wl-paste` backend. Present check is the binaries existing;
 /// fingerprints compare content hashes (Wayland exposes no counter).
 #[derive(Debug, Default)]
+/// `wl-copy` / `wl-paste` backend. Present check is the binaries existing;
+/// fingerprints compare content hashes (Wayland exposes no counter).
 pub struct ExternalClipboard;
 
 impl ExternalClipboard {
@@ -329,6 +335,8 @@ impl Clipboard for ExternalClipboard {
 /// Chord sender with no backend: every chord reports unavailable. Headless
 /// runs fall through the ladder to output-only; tests use fakes instead.
 #[derive(Debug, Default)]
+/// Chord sender with no backend: every chord reports unavailable. Headless
+/// runs fall through the ladder to output-only; tests use fakes instead.
 pub struct NoChord;
 
 impl NoChord {

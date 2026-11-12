@@ -72,8 +72,7 @@ impl fluent_llm::embeddings::EmbeddingProvider for CountingEmbedding {
                 return Err(EmbeddingError::RequestFailed("fixture failure".to_string()));
             }
         }
-        common_core::sync::lock(&self.texts)
-            .extend(texts.iter().map(ToString::to_string));
+        common_core::sync::lock(&self.texts).extend(texts.iter().map(ToString::to_string));
         let mut flat = Vec::with_capacity(texts.len() * self.dims as usize);
         for (i, text) in texts.iter().enumerate() {
             let base = (text.len() + i) as f32;
@@ -112,7 +111,11 @@ fn converged_pass_does_zero_work() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     for i in 0..6 {
-        write(root, &format!("f{i:02}.rs"), &format!("pub fn f{i:02}() -> u64 {{ {i} }}\n"));
+        write(
+            root,
+            &format!("f{i:02}.rs"),
+            &format!("pub fn f{i:02}() -> u64 {{ {i} }}\n"),
+        );
     }
     let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
@@ -141,7 +144,11 @@ fn body_edit_skips_dependents_sig_edit_pulls_them() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     write(root, "a.rs", "pub fn foo() -> u64 {\n    1\n}\n");
-    write(root, "b.rs", "use crate::a::foo;\npub fn bar() -> u64 {\n    foo()\n}\n");
+    write(
+        root,
+        "b.rs",
+        "use crate::a::foo;\npub fn bar() -> u64 {\n    foo()\n}\n",
+    );
     let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     run(&db, provider.clone(), root).expect("first");
@@ -161,7 +168,11 @@ fn macro_change_widens_to_the_package() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     write(root, "m.rs", "macro_rules! m {\n    () => { 1 };\n}\n");
-    write(root, "n.rs", "use crate::m::m;\npub fn n() -> u64 {\n    1\n}\n");
+    write(
+        root,
+        "n.rs",
+        "use crate::m::m;\npub fn n() -> u64 {\n    1\n}\n",
+    );
     let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     run(&db, provider.clone(), root).expect("first");
@@ -173,29 +184,136 @@ fn macro_change_widens_to_the_package() {
 }
 
 #[test]
-fn failure_isolates_and_dependents_reverify() {
+fn failure_degrades_without_failing_dependents() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     write(root, "f.rs", "pub fn f() -> u64 {\n    1\n}\n");
-    write(root, "g.rs", "use crate::f::f;\npub fn g() -> u64 {\n    f()\n}\n");
+    write(
+        root,
+        "g.rs",
+        "use crate::f::f;\npub fn g() -> u64 {\n    f()\n}\n",
+    );
     let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     run(&db, provider.clone(), root).expect("baseline");
-    // Break f with an embedding failure; g stays byte-identical.
+    // Break f with an embedding failure: the file commits unembedded
+    // instead of failing the run, and the unchanged dependent is left
+    // alone (its interface never moved).
     let mut failing = CountingEmbedding::ok();
     failing.fail_marker = Some("FAILME".to_string());
-    write(root, "f.rs", "pub fn f() -> u64 {\n    // FAILME\n    1\n}\n");
-    let failed = run(&db, failing.clone(), root);
-    assert!(failed.is_err(), "f must fail the run");
-    // The dependent still re-verified through the failure follow-up:
-    // its texts reached the embedder despite being unchanged.
-    let embedded = common_core::sync::lock(&failing.texts).join("\n");
+    write(
+        root,
+        "f.rs",
+        "pub fn f() -> u64 {\n    // FAILME\n    1\n}\n",
+    );
+    let before = failing.batches.load(Ordering::SeqCst);
+    let degraded = run(&db, failing.clone(), root).expect("degraded, not failed");
+    assert_eq!(degraded.files_failed, 0, "{degraded:?}");
     assert!(
-        embedded.contains("pub fn g"),
-        "dependent must re-verify when its dependency fails"
+        failing.batches.load(Ordering::SeqCst) > before,
+        "the poisoned input reached the embedder"
+    );
+    let files = db.list_files().expect("files");
+    let fingerprint = |relative: &str| {
+        let id = files
+            .iter()
+            .find(|file| file.relative_path == relative)
+            .expect("file row")
+            .id
+            .clone();
+        db.fragment_freshness(&id)
+            .expect("fingerprint")
+            .expect("row")
+    };
+    assert!(
+        !fingerprint("f.rs").embedded,
+        "failed files stay unembedded"
+    );
+    assert!(
+        fingerprint("g.rs").embedded,
+        "dependents keep their vectors"
+    );
+    let statuses = db
+        .embedding_status_for_file(
+            &files
+                .iter()
+                .find(|file| file.relative_path == "f.rs")
+                .expect("file row")
+                .id,
+        )
+        .expect("status rows");
+    assert!(
+        statuses.iter().any(|row| row.status == "unavailable"),
+        "{statuses:?}"
     );
     // Marker removed: the tree converges with zero clean reprocessing.
     write(root, "f.rs", "pub fn f() -> u64 {\n    1\n}\n");
     let recovered = run(&db, CountingEmbedding::ok(), root).expect("recover");
     assert_eq!(recovered.reprocessed_clean, 0, "{recovered:?}");
+    assert!(fingerprint("f.rs").embedded, "recovery re-embeds");
+}
+
+#[test]
+fn moved_symbol_pulls_dangling_dependent() {
+    // foo moves a.rs -> b.rs; b.rs drops its import, d.rs keeps the stale
+    // `use crate::a::foo`. d.rs is byte-identical, but the interface it
+    // consumes is gone: the sig gate must pull it through the persisted
+    // edge, or d.rs goes silently stale.
+    let dir = TempDir::new().expect("tempdir");
+    let root = dir.path();
+    write(root, "a.rs", "pub fn foo() -> u64 {\n    1\n}\n");
+    write(
+        root,
+        "b.rs",
+        "use crate::a::foo;\npub fn bar() -> u64 {\n    foo()\n}\n",
+    );
+    write(
+        root,
+        "d.rs",
+        "use crate::a::foo;\npub fn deep() -> u64 {\n    foo()\n}\n",
+    );
+    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let provider = CountingEmbedding::ok();
+    run(&db, provider.clone(), root).expect("baseline");
+    // Move foo into b.rs; b.rs drops its import, d.rs dangles.
+    write(root, "a.rs", "pub fn unused() -> u64 {\n    0\n}\n");
+    write(
+        root,
+        "b.rs",
+        "pub fn foo() -> u64 {\n    1\n}\npub fn bar() -> u64 {\n    foo()\n}\n",
+    );
+    let seen = common_core::sync::lock(&provider.texts).len();
+    let moved = run(&db, provider.clone(), root).expect("move");
+    assert!(moved.files_indexed >= 3, "{moved:?}");
+    let tail = common_core::sync::lock(&provider.texts)[seen..].join("\n");
+    assert!(
+        tail.contains("deep"),
+        "unchanged d.rs must re-verify when its consumed interface moves: {tail:?}"
+    );
+    // The symbol table tracks the move: foo left a.rs, arrived in b.rs.
+    let symbols = |relative: &str| {
+        let id = db
+            .list_files()
+            .expect("files")
+            .into_iter()
+            .find(|file| file.relative_path == relative)
+            .expect("file row")
+            .id;
+        db.symbols_for_file(&id)
+            .expect("symbols")
+            .into_iter()
+            .map(|row| row.name.unwrap_or_default())
+            .collect::<Vec<_>>()
+    };
+    assert!(!symbols("a.rs").contains(&"foo".to_string()), "{:?}", symbols("a.rs"));
+    assert!(symbols("b.rs").contains(&"foo".to_string()), "{:?}", symbols("b.rs"));
+    // d.rs rows stay retrievable under the new graph.
+    assert!(!db
+        .search_fts(
+            "deep",
+            10,
+            &search_vector::db::FragmentFilter::default()
+        )
+        .expect("search")
+        .is_empty());
 }

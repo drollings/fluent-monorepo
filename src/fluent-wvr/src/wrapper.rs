@@ -78,6 +78,29 @@ where
 /// // unit.execute(ctx) will log timing and record to hist
 /// ```
 #[derive(Clone)]
+/// A `WorkUnit` wrapper that logs execution timing and optionally records
+/// durations into a shared `LatencyHistogram`.
+/// 
+/// # Examples
+/// 
+/// ```no_run
+/// use std::sync::Arc;
+/// use fluent_wvr::wrapper::Instrumented;
+/// use common_core::metrics::LatencyHistogram;
+/// # use fluent_wvr::{WorkUnit, WorkContext, WorkOutput, WorkError};
+/// # use internment::ArcIntern;
+/// # struct MyUnit;
+/// # impl WorkUnit for MyUnit {
+/// #     fn name(&self) -> &str { "my_unit" }
+/// #     fn depends(&self) -> &[ArcIntern<str>] { &[] }
+/// #     fn provides(&self) -> &[ArcIntern<str>] { &[] }
+/// #     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> { Ok(WorkOutput::ok("ok")) }
+/// # }
+/// 
+/// let hist = Arc::new(LatencyHistogram::new());
+/// let unit = Instrumented::with_metrics(MyUnit, "my.unit", hist.clone());
+/// // unit.execute(ctx) will log timing and record to hist
+/// ```
 pub struct Instrumented<U> {
     inner: U,
     label: String,

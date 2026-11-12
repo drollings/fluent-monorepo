@@ -28,6 +28,7 @@ const QUERY_CACHE_DDL: &str = "CREATE TABLE IF NOT EXISTS query_cache (
 
 /// A single cached entry.
 #[derive(Debug, Clone)]
+/// A single cached entry.
 pub struct Entry {
     /// Stored key (post-`hash_key` derivation).
     pub key: String,

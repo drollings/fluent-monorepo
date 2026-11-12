@@ -35,6 +35,7 @@ static BUILTIN_ENGINE: LazyLock<DeterministicFilterEngine> = LazyLock::new(built
 
 /// Result of scrubbing one write-path payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Result of scrubbing one write-path payload.
 pub struct ScrubbedText {
     /// The scrubbed text, safe to persist.
     pub text: String,

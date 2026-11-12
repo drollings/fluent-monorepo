@@ -35,6 +35,16 @@ pub use fluent_concept::{
 /// When `store` is in `Loading` state the call returns `None` (provisional —
 /// taxonomy not yet ready, mirrors `FrameKey` provisional gating).
 #[must_use]
+/// Score `triples` against the YaGO taxonomy: for each triple, test whether
+/// the subject/object lemmas are known in `store`
+/// (`store.contains` on the content id, else the `yago:Capitalized` /
+/// `schema:Capitalized` curie fallback). A known argument counts as
+/// plausible; the per-triple score is `1.0` (both), `0.5` (one), `0.0`
+/// (neither). The sentence-level plausibility is the mean over triples;
+/// `None` when there are no triples.
+/// 
+/// When `store` is in `Loading` state the call returns `None` (provisional —
+/// taxonomy not yet ready, mirrors `FrameKey` provisional gating).
 pub fn score_plausibility(triples: &[PlausibilityTriple], store: &dyn ConceptStore) -> Option<f64> {
     if triples.is_empty() {
         return None;

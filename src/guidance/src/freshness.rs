@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime};
 
 /// Serving mode for stale reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Serving mode for stale reads.
 pub enum FreshnessMode {
     /// Enqueue a reconcile, serve the stale index now.
     #[default]
@@ -32,6 +33,8 @@ pub enum FreshnessMode {
 /// Typed strict refusal: the read was valid but not fresh enough.
 /// Carries why, never the content that was withheld.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Typed strict refusal: the read was valid but not fresh enough.
+/// Carries why, never the content that was withheld.
 pub struct StrictRefusal {
     /// Machine-readable reason (`pending`, `stale`, `dependent-stale`).
     pub reason: String,
@@ -46,6 +49,7 @@ impl StrictRefusal {
 
 /// Freshness of the index behind a read.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Freshness of the index behind a read.
 pub enum Freshness {
     /// Indexed revision covers all watched changes.
     Fresh {
@@ -106,6 +110,8 @@ impl Freshness {
 /// The serving matrix: pure decision + caller-supplied effects (trigger,
 /// wait, fetch), so the contract unit-tests without I/O.
 #[derive(Debug, Clone, Copy)]
+/// The serving matrix: pure decision + caller-supplied effects (trigger,
+/// wait, fetch), so the contract unit-tests without I/O.
 pub struct FreshnessGate {
     mode: FreshnessMode,
 }
@@ -288,6 +294,9 @@ impl FreshnessGate {
 /// because a dependency signature changed. Pure membership input from
 /// the invalidation closure; task value, never producer confidence.
 #[must_use]
+/// Whether a file whose own bytes look clean must still re-derive
+/// because a dependency signature changed. Pure membership input from
+/// the invalidation closure; task value, never producer confidence.
 pub fn is_dependent_stale(dependent_changed: bool, own_fresh: bool) -> bool {
     dependent_changed && own_fresh
 }
@@ -303,6 +312,16 @@ pub fn is_dependent_stale(dependent_changed: bool, own_fresh: bool) -> bool {
 /// so the content hash ([`hash_decides_fresh`]) decides instead. The
 /// threshold gates which evidence to consult, never the conclusion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Mtime skew classification: the single decision table for the 1-second
+/// timestamp-resolution rule (M12). Pure over `SystemTime` pairs — the
+/// `sync::staleness` shells fetch the mtimes, this table classifies them,
+/// so the stale/ambiguous partition cannot drift between two mirrored
+/// predicates.
+///
+/// The window measures *producer self-doubt* (filesystem timestamp
+/// granularity), never task value. Inside it the clock is evidence-free,
+/// so the content hash ([`hash_decides_fresh`]) decides instead. The
+/// threshold gates which evidence to consult, never the conclusion.
 pub enum MtimeSkew {
     /// Source strictly older than the sidecar: no work (both legacy
     /// predicates read false).
@@ -318,6 +337,9 @@ pub enum MtimeSkew {
 /// [`MtimeSkew::Ambiguous`] (zero skew is evidence-free, matching the
 /// legacy window predicate exactly).
 #[must_use]
+/// Classify one `(sidecar, source)` mtime pair. Equal mtimes land
+/// [`MtimeSkew::Ambiguous`] (zero skew is evidence-free, matching the
+/// legacy window predicate exactly).
 pub fn mtime_skew(json_mtime: SystemTime, source_mtime: SystemTime) -> MtimeSkew {
     mtime_skew_with_granularity(json_mtime, source_mtime, std::time::Duration::from_secs(1))
 }
@@ -328,6 +350,11 @@ pub fn mtime_skew(json_mtime: SystemTime, source_mtime: SystemTime) -> MtimeSkew
 /// content hash decides instead. `mtime_skew` is this with the 1-second
 /// default window, byte-identical.
 #[must_use]
+/// Classify one `(sidecar, source)` mtime pair under an explicit
+/// granularity. Equal mtimes and skews within the window land
+/// [`MtimeSkew::Ambiguous`]: the clock is evidence-free there, so the
+/// content hash decides instead. `mtime_skew` is this with the 1-second
+/// default window, byte-identical.
 pub fn mtime_skew_with_granularity(
     json_mtime: SystemTime,
     source_mtime: SystemTime,
@@ -347,6 +374,12 @@ pub fn mtime_skew_with_granularity(
 /// the safe direction — a wider window only spends hashes, never serves
 /// stale as fresh.
 #[must_use]
+/// Probe the filesystem timestamp granularity behind `dir`: round-trip a
+/// timestamp with distinctive sub-second digits and read what survives.
+/// Missing prefixes resolve to the nearest existing ancestor (same
+/// filesystem in the normal case); unreadable layouts fall back to 1s,
+/// the safe direction — a wider window only spends hashes, never serves
+/// stale as fresh.
 pub fn probe_timestamp_granularity(dir: &std::path::Path) -> std::time::Duration {
     use std::time::Duration;
     let mut anchor = dir.to_path_buf();
@@ -405,19 +438,31 @@ fn system_time_secs(time: SystemTime) -> std::time::Duration {
 /// the mtimes rule with zero hash cost; inside it the content hash
 /// decides, so identical bytes never regen and differing bytes always do.
 #[must_use]
+/// Regen decision over clock plus content evidence: outside the window
+/// the mtimes rule with zero hash cost; inside it the content hash
+/// decides, so identical bytes never regen and differing bytes always do.
 pub fn regen_decision(
     sidecar_mtime: SystemTime,
     source_mtime: SystemTime,
     granularity: std::time::Duration,
     hashes_equal: bool,
 ) -> bool {
-    regen_decision_with_dependents(sidecar_mtime, source_mtime, granularity, hashes_equal, false)
+    regen_decision_with_dependents(
+        sidecar_mtime,
+        source_mtime,
+        granularity,
+        hashes_equal,
+        false,
+    )
 }
 
 /// Regen decision with a dependent-change input: a clean local pair
 /// still regenerates when a dependency signature changed elsewhere.
 /// Task value (the receipt would be wrong), never producer doubt.
 #[must_use]
+/// Regen decision with a dependent-change input: a clean local pair
+/// still regenerates when a dependency signature changed elsewhere.
+/// Task value (the receipt would be wrong), never producer doubt.
 pub fn regen_decision_with_dependents(
     sidecar_mtime: SystemTime,
     source_mtime: SystemTime,
@@ -455,10 +500,57 @@ pub fn completion_touch(
     Ok(())
 }
 
+/// Whether a sidecar carries a stuck record: the loop escalated the
+/// file and holds it for a human. Header-only read.
+#[must_use]
+/// Whether a sidecar carries a stuck record: the loop escalated the
+/// file and holds it for a human. Header-only read.
+pub fn sidecar_stuck(sidecar: &std::path::Path) -> bool {
+    use std::io::BufRead as _;
+    let Ok(file) = std::fs::File::open(sidecar) else {
+        return false;
+    };
+    let mut lines = std::io::BufReader::new(file).lines();
+    let Some(Ok(line)) = lines.next() else {
+        return false;
+    };
+    fluent_types::sidecar::SidecarHeader::parse_line(&line).is_some_and(|header| header.stuck)
+}
+
+/// Mark a sidecar stuck without touching its body: the record explains
+/// why the file stays incomplete while the timestamp (set separately
+/// by `backdate_sidecar`) keeps the mtime verdict truthful. A later
+/// clean save rewrites the header and clears the flag. `false` when
+/// no parseable header exists to mark.
+pub fn mark_stuck_sidecar(sidecar: &std::path::Path) -> bool {
+    let Ok(raw) = common_core::io::read_to_string_err(sidecar) else {
+        return false;
+    };
+    let Some((header, _)) = raw.split_once('\n') else {
+        return false;
+    };
+    let Some(mut parsed) = fluent_types::sidecar::SidecarHeader::parse_line(header) else {
+        return false;
+    };
+    if parsed.stuck {
+        return true;
+    }
+    parsed.stuck = true;
+    let marked = format!(
+        "{}\n{}",
+        parsed.render(),
+        raw.split_once('\n').map_or("", |(_, rest)| rest)
+    );
+    common_core::io::write_atomic(sidecar, marked.as_bytes()).is_ok()
+}
+
 /// Backdate one sidecar below its source: the stuck/invalidate signal.
 /// Invalidation moves the sidecar timestamp, never the source. `false`
 /// when the source is missing or the stamp cannot move.
 #[must_use]
+/// Backdate one sidecar below its source: the stuck/invalidate signal.
+/// Invalidation moves the sidecar timestamp, never the source. `false`
+/// when the source is missing or the stamp cannot move.
 pub fn backdate_sidecar(sidecar: &std::path::Path, source: &std::path::Path) -> bool {
     let Some(source_mtime) = common_core::io::mtime(source) else {
         return false;
@@ -478,6 +570,10 @@ pub fn backdate_sidecar(sidecar: &std::path::Path, source: &std::path::Path) -> 
 /// source hash, move it instead of reprocessing. Returns the moved-to
 /// path, or `None` when there is nothing (or nothing unambiguous) to do.
 #[must_use]
+/// Adopt an orphaned sidecar after a rename: when the expected sidecar
+/// for `source_path` is missing and exactly one orphan carries the same
+/// source hash, move it instead of reprocessing. Returns the moved-to
+/// path, or `None` when there is nothing (or nothing unambiguous) to do.
 pub fn adopt_renamed_sidecar(
     sidecar_dir: &std::path::Path,
     source_dir: &std::path::Path,
@@ -533,6 +629,7 @@ pub fn adopt_renamed_sidecar(
 
 /// Audit verdict for one sidecar against live bytes and mtimes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Audit verdict for one sidecar against live bytes and mtimes.
 pub enum VerifyVerdict {
     /// Hashes and clock agree the sidecar is complete.
     Fresh,
@@ -553,6 +650,8 @@ pub enum VerifyVerdict {
 /// Audit hashes against mtimes for skew, restores, and forgeries. The
 /// clock is evidence; the hashes decide.
 #[must_use]
+/// Audit hashes against mtimes for skew, restores, and forgeries. The
+/// clock is evidence; the hashes decide.
 pub fn verify_sidecar(
     sidecar: &std::path::Path,
     source: &std::path::Path,
@@ -581,7 +680,9 @@ pub fn verify_sidecar(
             MtimeSkew::SourceNewer | MtimeSkew::Ambiguous => VerifyVerdict::Stale,
         };
     };
-    let live = std::fs::read(source).ok().map(|bytes| common_core::hash::sha256_hex(&bytes));
+    let live = std::fs::read(source)
+        .ok()
+        .map(|bytes| common_core::hash::sha256_hex(&bytes));
     if live.as_deref() == Some(recorded.as_str()) {
         return match clock {
             MtimeSkew::SourceNewer => VerifyVerdict::Stale,
@@ -607,6 +708,18 @@ pub fn verify_sidecar(
 /// Moved verbatim from `sync::staleness` (M12 single home); that module
 /// re-resolves it for its inline tests.
 #[must_use]
+/// Content tiebreak for the ambiguity window: the fresh source sha256
+/// against the stored one (the `compute_diff` precedent — same hasher,
+/// `common_core::hash::sha256_hex` — never a second hasher). `None`
+/// stored means no evidence: fail open (not fresh — regenerate), never
+/// serve ambiguous content as fresh.
+///
+/// Axis statement: the hash measures *task correctness* (bytes changed),
+/// the complement of the window's self-doubt. It gates a regen decision
+/// only — never cached, never persisted, never served as data.
+///
+/// Moved verbatim from `sync::staleness` (M12 single home); that module
+/// re-resolves it for its inline tests.
 pub fn hash_decides_fresh(current_hash: &str, stored_hash: Option<&str>) -> bool {
     stored_hash.is_some_and(|want| want == current_hash)
 }

@@ -15,6 +15,389 @@ pub enum ParseError {
 
 common_core::impl_from_io_error!(ParseError);
 
+/// One comment scope: the contiguous comment text attached to a node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// One comment scope: the contiguous comment text attached to a node.
+pub struct CommentBlock {
+    /// Stable identity (`scope::name`, or `$file` for the module comment).
+    pub node_key: String,
+    /// Grammar node kind of the documented node (`module` for top-of-file).
+    pub node_kind: String,
+    /// Declared name (`$file` for the module comment).
+    pub name: String,
+    /// Lexical scope breadcrumb (`Widget` for methods).
+    pub scope: String,
+    /// Byte span from the first comment line through the node end.
+    pub start_byte: usize,
+    /// Byte span from the first comment line through the node end.
+    pub end_byte: usize,
+    /// 1-based first comment line.
+    pub start_line: u32,
+    /// 1-based node end line.
+    pub end_line: u32,
+    /// Contiguous comment text in source order, prefixes stripped.
+    pub text: String,
+    /// Blake3 of the normalized text; the summary cache key input.
+    pub comment_hash: String,
+}
+
+/// Python docstrings (first string in the body) join the `#` comments.
+pub const COLLECT_PYTHON_DOCSTRINGS: bool = true;
+
+/// Strip one comment's prefixes (`///`, `//!`, `//`, `#`, `/*`, `*`).
+#[must_use]
+/// Strip one comment's prefixes (`///`, `//!`, `//`, `#`, `/*`, `*`).
+pub fn clean_comment_block_text(text: &str) -> String {
+    let mut out = text.to_string();
+    if let Some(stripped) = out.strip_prefix("/**").or_else(|| out.strip_prefix("/*")) {
+        out = stripped.to_string();
+    }
+    if let Some(stripped) = out.strip_suffix("*/") {
+        out = stripped.to_string();
+    }
+    let mut lines = Vec::new();
+    for line in out.lines() {
+        if let Some(rest) = line.strip_prefix("//!") {
+            lines.push(rest.strip_prefix(' ').unwrap_or(rest));
+        } else if let Some(rest) = line.strip_prefix("///") {
+            lines.push(rest.strip_prefix(' ').unwrap_or(rest));
+        } else if let Some(rest) = line.strip_prefix("//") {
+            let rest = rest.strip_prefix('/').unwrap_or(rest);
+            lines.push(rest.strip_prefix(' ').unwrap_or(rest));
+        } else if let Some(rest) = line.strip_prefix('#') {
+            lines.push(rest.strip_prefix(' ').unwrap_or(rest));
+        } else {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix('*') {
+                lines.push(rest.strip_prefix(' ').unwrap_or(rest));
+            } else {
+                lines.push(line);
+            }
+        }
+    }
+    lines.join("\n").trim().to_string()
+}
+
+/// Whether a sibling kind carries comment text.
+fn is_comment_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "comment" | "doc_comment" | "line_comment" | "block_comment" | "documentation_comment"
+    )
+}
+
+/// Whether a sibling kind is an attribute that comments can span across.
+fn is_attribute_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "attribute_item" | "outer_attribute" | "inner_attribute" | "attribute"
+    ) || kind.contains("attribute")
+}
+
+/// Contiguous cleaned comment lines above `node`, oldest first, with spans.
+fn preceding_doc_parts(node: &tree_sitter::Node, source: &str) -> Vec<(String, usize, u32)> {
+    let bytes = source.as_bytes();
+    let mut parts = Vec::new();
+    let mut current = node.prev_sibling();
+    while let Some(sibling) = current {
+        let kind = sibling.kind();
+        if is_comment_kind(kind) {
+            if let Ok(text) = sibling.utf8_text(bytes) {
+                let cleaned = clean_comment_block_text(text);
+                parts.push((
+                    cleaned,
+                    sibling.start_byte(),
+                    sibling.start_position().row as u32,
+                ));
+            }
+            current = sibling.prev_sibling();
+        } else if is_attribute_kind(kind) {
+            current = sibling.prev_sibling();
+        } else {
+            break;
+        }
+    }
+    parts.reverse();
+    parts
+}
+
+/// Contiguous doc text above `node`, walking across attributes.
+#[must_use]
+/// Contiguous doc text above `node`, walking across attributes.
+pub fn preceding_doc_text(node: &tree_sitter::Node, source: &str) -> Option<String> {
+    let lines: Vec<String> = preceding_doc_parts(node, source)
+        .into_iter()
+        .map(|(text, _, _)| text)
+        .collect();
+    let joined = lines.join("\n").trim().to_string();
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined)
+    }
+}
+
+/// Leading comment lines at the top of the file, in source order.
+fn module_comment_parts(root: &tree_sitter::Node, source: &str) -> Vec<(String, usize, u32)> {
+    let bytes = source.as_bytes();
+    let mut parts = Vec::new();
+    let mut cursor = root.walk();
+    for node in root.children(&mut cursor) {
+        let kind = node.kind();
+        if is_comment_kind(kind) {
+            if let Ok(text) = node.utf8_text(bytes) {
+                let cleaned = clean_comment_block_text(text);
+                parts.push((cleaned, node.start_byte(), node.start_position().row as u32));
+            }
+        } else if !is_attribute_kind(kind) {
+            break;
+        }
+    }
+    parts
+}
+
+/// Leading file comment, if any.
+fn module_comment_text(root: &tree_sitter::Node, source: &str) -> Option<String> {
+    let lines: Vec<String> = module_comment_parts(root, source)
+        .into_iter()
+        .map(|(text, _, _)| text)
+        .collect();
+    let joined = lines.join("\n").trim().to_string();
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined)
+    }
+}
+
+/// First string literal in a Python body (the docstring), unquoted.
+fn python_docstring(node: &tree_sitter::Node, source: &str) -> Option<String> {
+    if !COLLECT_PYTHON_DOCSTRINGS {
+        return None;
+    }
+    let body = node.child_by_field_name("body")?;
+    let bytes = source.as_bytes();
+    let mut cursor = body.walk();
+    let first = body
+        .children(&mut cursor)
+        .find(tree_sitter::Node::is_named)?;
+    let mut stack = vec![first];
+    while let Some(view) = stack.pop() {
+        let kind = view.kind();
+        if kind.contains("string") && !kind.contains("statement") && !kind.contains("expression") {
+            if let Ok(text) = view.utf8_text(bytes) {
+                let doc = unquote_python_string(text);
+                if !doc.is_empty() {
+                    return Some(doc);
+                }
+            }
+            return None;
+        }
+        if kind == "expression_statement" {
+            let mut inner = view.walk();
+            let mut children: Vec<tree_sitter::Node> = view.children(&mut inner).collect();
+            children.reverse();
+            stack.extend(children);
+            continue;
+        }
+        return None;
+    }
+    None
+}
+
+/// Strip one layer of Python string quotes, then trim.
+fn unquote_python_string(text: &str) -> String {
+    let trimmed = text.trim();
+    for quote in ["\"\"\"", "'''"] {
+        if trimmed.len() >= 6 && trimmed.starts_with(quote) && trimmed.ends_with(quote) {
+            return trimmed[quote.len()..trimmed.len() - quote.len()]
+                .trim()
+                .to_string();
+        }
+    }
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        let (first, last) = (bytes[0], bytes[bytes.len() - 1]);
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return trimmed[1..trimmed.len() - 1].trim().to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+/// Scope breadcrumb entries for documentable containers.
+fn scope_name_for(node: &tree_sitter::Node, source: &str) -> Option<String> {
+    if node.kind() == "impl_item" {
+        return node
+            .child_by_field_name("type")
+            .and_then(|name| name.utf8_text(source.as_bytes()).ok())
+            .map(str::trim_matching_trailing_generics)
+            .map(str::to_string)
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty());
+    }
+    node.child_by_field_name("name")
+        .and_then(|name| name.utf8_text(source.as_bytes()).ok())
+        .map(str::to_string)
+}
+
+/// Whether `kind` opens a scope whose children inherit its name.
+fn is_scope_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "impl_item"
+            | "mod_item"
+            | "trait_item"
+            | "class_definition"
+            | "decorated_definition"
+            | "struct_item"
+            | "enum_item"
+    )
+}
+
+/// Human-readable name for an impl block's type node.
+trait TrimGenerics {
+    /// Cut a trailing `<...>` generic list for scope breadcrumbs.
+    fn trim_matching_trailing_generics(&self) -> &str;
+}
+
+impl TrimGenerics for str {
+    fn trim_matching_trailing_generics(&self) -> &str {
+        match self.find('<') {
+            Some(index) => self[..index].trim_end(),
+            None => self,
+        }
+    }
+}
+
+/// Walk one tree collecting documentable comment scopes.
+pub(crate) fn collect_comment_blocks(
+    root: &tree_sitter::Node,
+    source: &str,
+    format: &str,
+) -> Vec<CommentBlock> {
+    let mut blocks = Vec::new();
+    let bytes = source.as_bytes();
+    if let Some(text) = module_comment_text(root, source) {
+        blocks.push(CommentBlock {
+            node_key: "$file".to_string(),
+            node_kind: "module".to_string(),
+            name: "$file".to_string(),
+            scope: String::new(),
+            start_byte: 0,
+            end_byte: root.end_byte(),
+            start_line: 1,
+            end_line: root.end_position().row as u32 + 1,
+            comment_hash: common_core::hash::blake3_hex(text.as_bytes()),
+            text,
+        });
+    }
+    let mut breadcrumb: Vec<String> = Vec::new();
+    walk_comment_nodes(root, source, format, bytes, &mut breadcrumb, &mut blocks);
+    blocks
+}
+
+/// Depth-first comment walk sharing one tree and its source bytes.
+fn walk_comment_nodes(
+    node: &tree_sitter::Node,
+    source: &str,
+    format: &str,
+    bytes: &[u8],
+    breadcrumb: &mut Vec<String>,
+    out: &mut Vec<CommentBlock>,
+) {
+    let mut cursor = node.walk();
+    let children: Vec<tree_sitter::Node> = node.children(&mut cursor).collect();
+    for child in children {
+        if !child.is_named() {
+            continue;
+        }
+        let kind = child.kind();
+        if is_comment_kind(kind) || is_attribute_kind(kind) {
+            continue;
+        }
+        if is_scope_kind(kind) {
+            if kind == "impl_item" {
+                if let Some(name) = scope_name_for(&child, source) {
+                    breadcrumb.push(name);
+                    walk_comment_nodes(&child, source, format, bytes, breadcrumb, out);
+                    breadcrumb.pop();
+                    continue;
+                }
+            } else if let Some(name) = scope_name_for(&child, source) {
+                let doc = preceding_doc_text(&child, source);
+                if let Some(text) = doc {
+                    push_comment_block(&child, source, bytes, kind, &text, breadcrumb, out);
+                }
+                breadcrumb.push(name);
+                walk_comment_nodes(&child, source, format, bytes, breadcrumb, out);
+                breadcrumb.pop();
+                continue;
+            }
+        }
+        let name = child
+            .child_by_field_name("name")
+            .and_then(|name| name.utf8_text(bytes).ok())
+            .map(str::to_string);
+        if name.is_some() {
+            let mut text = preceding_doc_text(&child, source);
+            if format == "python" {
+                let docstring = python_docstring(&child, source);
+                text = match (text, docstring) {
+                    (Some(comments), Some(doc)) => Some(format!("{comments}\n{doc}")),
+                    (Some(comments), None) => Some(comments),
+                    (None, Some(doc)) => Some(doc),
+                    (None, None) => None,
+                };
+            }
+            if let Some(text) = text {
+                push_comment_block(&child, source, bytes, kind, &text, breadcrumb, out);
+            }
+        }
+        walk_comment_nodes(&child, source, format, bytes, breadcrumb, out);
+    }
+}
+
+/// Push one block spanning from its first comment line to the node end.
+fn push_comment_block(
+    node: &tree_sitter::Node,
+    source: &str,
+    bytes: &[u8],
+    kind: &str,
+    text: &str,
+    breadcrumb: &[String],
+    out: &mut Vec<CommentBlock>,
+) {
+    let _ = bytes;
+    let parts = preceding_doc_parts(node, source);
+    let scope = breadcrumb.join("::");
+    let name = scope_name_for(node, source).unwrap_or_default();
+    if name.is_empty() {
+        return;
+    }
+    let node_key = if scope.is_empty() {
+        name.clone()
+    } else {
+        format!("{scope}::{name}")
+    };
+    let start_byte = parts.first().map_or(node.start_byte(), |part| part.1);
+    let start_line = parts
+        .first()
+        .map_or(node.start_position().row as u32 + 1, |part| part.2 + 1);
+    out.push(CommentBlock {
+        node_key,
+        node_kind: kind.to_string(),
+        name,
+        scope,
+        start_byte,
+        end_byte: node.end_byte(),
+        start_line,
+        end_line: node.end_position().row as u32 + 1,
+        comment_hash: common_core::hash::blake3_hex(text.as_bytes()),
+        text: text.to_string(),
+    });
+}
+
 pub struct AstParser {
     zig: tree_sitter::Parser,
     python: tree_sitter::Parser,
@@ -38,6 +421,8 @@ impl Default for AstParser {
 /// Build a parser for one grammar. Takes ownership because
 /// `tree_sitter::Language` handles are moved into `set_language`.
 #[allow(clippy::needless_pass_by_value)]
+/// Build a parser for one grammar. Takes ownership because
+/// `tree_sitter::Language` handles are moved into `set_language`.
 fn parser_for(language: tree_sitter::Language) -> tree_sitter::Parser {
     let mut parser = tree_sitter::Parser::new();
     parser
@@ -86,6 +471,7 @@ impl AstParser {
         source: &str,
     ) -> Result<tree_sitter::Tree, ParseError> {
         let parser = match format {
+            "zig" => &mut self.zig,
             "rust" => &mut self.rust,
             "python" => &mut self.python,
             "c" => &mut self.c,
@@ -108,7 +494,8 @@ impl AstParser {
     pub fn has_grammar(format: &str) -> bool {
         matches!(
             format,
-            "rust"
+            "zig"
+                | "rust"
                 | "python"
                 | "c"
                 | "cpp"
@@ -119,6 +506,31 @@ impl AstParser {
                 | "typescript"
                 | "tsx"
         )
+    }
+
+    /// Comment scopes for one file over a single parse.
+    pub fn comment_blocks(
+        &mut self,
+        format: &str,
+        source: &str,
+    ) -> Result<Vec<CommentBlock>, ParseError> {
+        let tree = self.parse_tree(format, source)?;
+        Ok(collect_comment_blocks(&tree.root_node(), source, format))
+    }
+
+    /// Doc text for one named node, if the collector finds it.
+    #[must_use]
+    pub fn doc_comment_for_node(
+        &mut self,
+        format: &str,
+        source: &str,
+        node_name: &str,
+    ) -> Option<String> {
+        self.comment_blocks(format, source)
+            .ok()?
+            .into_iter()
+            .find(|block| block.name == node_name)
+            .map(|block| block.text)
     }
 
     pub fn parse_file(&mut self, path: &Path, source: &str) -> Result<GuidanceDoc, ParseError> {
@@ -190,8 +602,10 @@ impl AstParser {
         };
         let root = tree.root_node();
         let mut cursor = root.walk();
-        let nodes: Vec<tree_sitter::Node> =
-            root.children(&mut cursor).filter(tree_sitter::Node::is_named).collect();
+        let nodes: Vec<tree_sitter::Node> = root
+            .children(&mut cursor)
+            .filter(tree_sitter::Node::is_named)
+            .collect();
         let mut out = Vec::new();
         let mut pending_cfg = false;
         for node in nodes {
@@ -227,21 +641,24 @@ impl AstParser {
         };
         let root = tree.root_node();
         let mut cursor = root.walk();
-        let nodes: Vec<tree_sitter::Node> =
-            root.children(&mut cursor).filter(tree_sitter::Node::is_named).collect();
+        let nodes: Vec<tree_sitter::Node> = root
+            .children(&mut cursor)
+            .filter(tree_sitter::Node::is_named)
+            .collect();
         let mut items = Vec::new();
         let mut pending: Vec<(u64, u64, bool)> = Vec::new();
         for node in nodes {
             if node.kind() == "attribute_item" {
-                let testy = node.utf8_text(text.as_bytes()).is_ok_and(|attr| {
-                    attr.starts_with("#[test") || attr.starts_with("#[cfg(test")
-                });
+                let testy = node
+                    .utf8_text(text.as_bytes())
+                    .is_ok_and(|attr| attr.starts_with("#[test") || attr.starts_with("#[cfg(test"));
                 pending.push((node.start_byte() as u64, node.end_byte() as u64, testy));
                 continue;
             }
-            let start = pending.first().map_or(node.start_byte() as u64, |attr| attr.0);
-            let is_test =
-                pending.iter().any(|attr| attr.2) || item_is_test(&node, text);
+            let start = pending
+                .first()
+                .map_or(node.start_byte() as u64, |attr| attr.0);
+            let is_test = pending.iter().any(|attr| attr.2) || item_is_test(&node, text);
             pending.clear();
             items.push(TopItem {
                 start,
@@ -300,7 +717,9 @@ impl AstParser {
         };
         let mut out = Vec::new();
         collect_prose(&tree.root_node(), text, &mut out);
-        out.into_iter().map(|unit| unit.trim_start().to_string()).collect()
+        out.into_iter()
+            .map(|unit| unit.trim_start().to_string())
+            .collect()
     }
 
     /// Normalized headers of public items and impl blocks: the API
@@ -312,7 +731,10 @@ impl AstParser {
         let root = tree.root_node();
         let mut cursor = root.walk();
         let mut headers = Vec::new();
-        for node in root.children(&mut cursor).filter(tree_sitter::Node::is_named) {
+        for node in root
+            .children(&mut cursor)
+            .filter(tree_sitter::Node::is_named)
+        {
             let node_text = node.utf8_text(text.as_bytes()).unwrap_or("").to_string();
             let header = header_before_body(&node_text);
             let is_pub = header.split_whitespace().any(|token| token == "pub")
@@ -328,6 +750,7 @@ impl AstParser {
 
 /// One top-level item span with its test status.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One top-level item span with its test status.
 pub struct TopItem {
     /// Byte start of the item (attributes included).
     pub(crate) start: u64,
@@ -342,12 +765,14 @@ pub struct TopItem {
 /// Whether a top-level node carries its own `#[cfg]` attribute child
 /// (some shapes nest attributes instead of splitting siblings).
 fn has_cfg_attr(node: &tree_sitter::Node, text: &str) -> bool {
-    (0..node.child_count()).filter_map(|i| node.child(i)).any(|child| {
-        child.kind() == "attribute_item"
-            && child
-                .utf8_text(text.as_bytes())
-                .is_ok_and(|attr| attr.starts_with("#[cfg"))
-    })
+    (0..node.child_count())
+        .filter_map(|i| node.child(i))
+        .any(|child| {
+            child.kind() == "attribute_item"
+                && child
+                    .utf8_text(text.as_bytes())
+                    .is_ok_and(|attr| attr.starts_with("#[cfg"))
+        })
 }
 
 /// Whether a top-level node is a test region.
@@ -409,7 +834,11 @@ fn count_error_nodes(node: &tree_sitter::Node) -> usize {
 
 /// Collect comment and string-literal node texts in source order.
 fn collect_prose(node: &tree_sitter::Node, text: &str, out: &mut Vec<String>) {
-    if node.kind() == "line_comment" || node.kind() == "block_comment" || node.kind() == "string_literal" || node.kind() == "char_literal" {
+    if node.kind() == "line_comment"
+        || node.kind() == "block_comment"
+        || node.kind() == "string_literal"
+        || node.kind() == "char_literal"
+    {
         if let Ok(unit) = node.utf8_text(text.as_bytes()) {
             out.push(unit.to_string());
         }
@@ -422,22 +851,7 @@ fn collect_prose(node: &tree_sitter::Node, text: &str, out: &mut Vec<String>) {
 }
 
 fn extract_module_comment(root: &tree_sitter::Node, source: &str) -> Option<String> {
-    let mut doc_comments = Vec::new();
-    let mut child = root.walk();
-    for node in root.children(&mut child) {
-        if node.kind() == "comment" || node.kind() == "doc_comment" {
-            let text = node.utf8_text(source.as_bytes()).ok()?;
-            let trimmed = common_core::string::trim_doc_prefix(text);
-            doc_comments.push(trimmed);
-        } else {
-            break;
-        }
-    }
-    if doc_comments.is_empty() {
-        None
-    } else {
-        Some(doc_comments.join("\n"))
-    }
+    module_comment_text(root, source)
 }
 
 fn extract_members(
@@ -662,7 +1076,11 @@ fn extract_function(
         },
         name: name.into(),
         signature: Some(sig.as_str().into()),
-        match_hash: Some(crate::sync::staleness::match_hash_from_signature(&sig).as_str().into()),
+        match_hash: Some(
+            crate::sync::staleness::match_hash_from_signature(&sig)
+                .as_str()
+                .into(),
+        ),
         span_start,
         span_end,
         item_hash: item_hash.as_deref().map(Into::into),
@@ -891,7 +1309,11 @@ fn extract_struct_or_class(
         type_name: member_type,
         name: name.into(),
         signature: Some(sig.as_str().into()),
-        match_hash: Some(crate::sync::staleness::match_hash_from_signature(&sig).as_str().into()),
+        match_hash: Some(
+            crate::sync::staleness::match_hash_from_signature(&sig)
+                .as_str()
+                .into(),
+        ),
         span_start,
         span_end,
         item_hash: item_hash.as_deref().map(Into::into),
@@ -937,13 +1359,8 @@ fn extract_body_members(
                     _ => None,
                 };
                 let sig = build_signature("fn", name, &params, return_type.as_deref());
-                let (span_start, span_end, item_hash, range_hash) = span_hashes(
-                    language,
-                    &child_node,
-                    source,
-                    &sig,
-                    dc.as_deref(),
-                );
+                let (span_start, span_end, item_hash, range_hash) =
+                    span_hashes(language, &child_node, source, &sig, dc.as_deref());
                 members.push(Member {
                     type_name: if is_pub {
                         MemberType::Method
@@ -953,7 +1370,9 @@ fn extract_body_members(
                     name: name.into(),
                     signature: Some(sig.as_str().into()),
                     match_hash: Some(
-                        crate::sync::staleness::match_hash_from_signature(&sig).as_str().into(),
+                        crate::sync::staleness::match_hash_from_signature(&sig)
+                            .as_str()
+                            .into(),
                     ),
                     span_start,
                     span_end,
@@ -1022,13 +1441,7 @@ fn extract_test(node: &tree_sitter::Node, source: &str) -> Option<Member> {
 }
 
 fn extract_preceding_doc_comment(node: &tree_sitter::Node, source: &str) -> Option<String> {
-    let prev_node = node.prev_sibling()?;
-    if prev_node.kind() == "doc_comment" || prev_node.kind() == "comment" {
-        let text = prev_node.utf8_text(source.as_bytes()).ok()?;
-        Some(common_core::string::trim_doc_prefix(text))
-    } else {
-        None
-    }
+    preceding_doc_text(node, source)
 }
 
 fn check_visibility(node: &tree_sitter::Node, source: &str, language: &str) -> bool {
@@ -1404,3 +1817,6 @@ pub fn main() void {
     }
 }
 
+#[cfg(test)]
+#[path = "../tests/comment_scope.rs"]
+mod comment_scope_tests;

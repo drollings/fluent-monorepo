@@ -61,6 +61,16 @@ pub type SpanCacheInvalidate = Arc<dyn Fn(u64) + Send + Sync>;
 /// per leg, so sharing one seam across async workers and sync calls is
 /// cheap.
 #[derive(Clone)]
+/// The dependency-free span-cache seam the ladder consults (M2b).
+/// 
+/// A bundle of closures in the same idiom as the fetch seams
+/// ([`LlmRefineFetchSync`](crate::pipeline::LlmRefineFetchSync),
+/// [`EncoderResidualFetch`](crate::pipeline::EncoderResidualFetch)):
+/// the ladder needs `get`/`put` per refine plus `invalidate` for the
+/// correction-index contract, and knows nothing about the backend
+/// (in-memory map, ledger sqlite, or test stub). `Clone` is an `Arc` bump
+/// per leg, so sharing one seam across async workers and sync calls is
+/// cheap.
 pub struct SpanCacheSeam {
     /// Return the cached corrections for `key`, if present.
     pub get: SpanCacheGet,
@@ -109,6 +119,11 @@ impl std::fmt::Debug for SpanCacheSeam {
 /// separator prevents `"ab"+"c"` colliding with `"a"+"bc"`. An empty focus
 /// yields `0` (never cached — the ladder skips refine when focus is empty).
 #[must_use]
+/// Hash the focused span's lowercased orths into a content key.
+/// 
+/// The key is `hash_utf8(lowercased_focus_tokens joined by 0x1F)`. The 0x1F
+/// separator prevents `"ab"+"c"` colliding with `"a"+"bc"`. An empty focus
+/// yields `0` (never cached — the ladder skips refine when focus is empty).
 pub fn span_key(doc: &Doc, focus: &[usize]) -> u64 {
     if focus.is_empty() {
         return 0;

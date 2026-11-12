@@ -123,6 +123,16 @@ pub fn strip_think_block(text: &str) -> String {
 /// any trailing text that never resolved into a tag (the caller decides
 /// whether to emit it at end-of-stream).
 #[derive(Default)]
+/// ── Streaming think-block filter ──────────────────────────────────────
+/// Streaming think-block filter for token-chunked LLM output.
+/// 
+/// Feeds delta chunks via [`Self::push`] and returns only the text safe to
+/// emit. Trailing text that is a proper prefix of a think open/close tag
+/// (e.g. `<thi`) is held back until the next chunk completes it, so a tag
+/// split across chunk boundaries never leaks a partial tag to the client.
+/// Content inside an open think block is discarded; [`Self::finish`] returns
+/// any trailing text that never resolved into a tag (the caller decides
+/// whether to emit it at end-of-stream).
 pub struct StreamingThinkFilter {
     in_think_block: bool,
     pending: String,

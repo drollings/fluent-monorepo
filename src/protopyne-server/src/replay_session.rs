@@ -79,6 +79,14 @@ fn chain_covers(chain: Option<&dyn LegQuoteSource>, underlying: &str, at: DateTi
 /// venue config demands a screen joins it — covered bars flow, uncovered
 /// bars refuse naming the missing feed, never booked as single legs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Whether a session may flow multi-leg proposals to the venue without
+/// chain data.
+/// 
+/// An unscreened batch preserves its pinned legacy: multi-leg labels book
+/// as single legs, exactly as the historical loop booked them. Interactive
+/// replay passes [`ChainPolicy::RequireChains`], and a batch run whose
+/// venue config demands a screen joins it — covered bars flow, uncovered
+/// bars refuse naming the missing feed, never booked as single legs.
 pub enum ChainPolicy {
     /// No structure screen; multi-leg proposals flow to the venue exactly as
     /// the historical loop booked them (batch legacy).
@@ -91,6 +99,7 @@ pub enum ChainPolicy {
 
 /// One position the session's book carries across bars.
 #[derive(Debug, Clone, PartialEq)]
+/// One position the session's book carries across bars.
 pub struct BookPosition {
     /// Underlying.
     pub underlying: String,
@@ -120,6 +129,13 @@ pub struct BookPosition {
 /// reuses its record for partial fills — see that record's own note for the
 /// full field list that forbids the merge.
 #[derive(Debug, Clone, PartialEq)]
+/// One realized trade booked by the session's book.
+/// 
+/// Deliberately not the equity runner's trade record: this book is
+/// multi-symbol (hence `underlying`), averages in `Money`, and never books
+/// partials, while the equity run is single-symbol, prices in `f64`, and
+/// reuses its record for partial fills — see that record's own note for the
+/// full field list that forbids the merge.
 pub struct BookTrade {
     /// Underlying.
     pub underlying: String,
@@ -145,6 +161,9 @@ pub struct BookTrade {
 /// realized-trade log. It is fed by the same decisions the venue produced, so
 /// the strategy's exit rules and the report read one book.
 #[derive(Debug, Clone, Default)]
+/// The session's position book: one open position per underlying plus the
+/// realized-trade log. It is fed by the same decisions the venue produced, so
+/// the strategy's exit rules and the report read one book.
 pub struct PositionBook {
     positions: Vec<BookPosition>,
     trades: Vec<BookTrade>,
@@ -1057,6 +1076,14 @@ impl ReplayDriver {
 /// Duplicate policy: replace on `start` (explicit restart, never merge).
 /// `ids()` returns sorted order via [`KeyedRegistry`].
 #[derive(Default)]
+/// Keyed store of live replay drivers behind one mutex.
+/// 
+/// One operator, potentially several named slots: `start` replaces whatever
+/// a slot holds (an explicit restart, never a merge), `remove` releases the
+/// slot, and stepping borrows the driver in place so usage, breakers, and
+/// the closes prefix persist across gateway calls.
+/// Duplicate policy: replace on `start` (explicit restart, never merge).
+/// `ids()` returns sorted order via [`KeyedRegistry`].
 pub struct ReplayRegistry {
     sessions: KeyedRegistry<String, ReplayDriver>,
 }

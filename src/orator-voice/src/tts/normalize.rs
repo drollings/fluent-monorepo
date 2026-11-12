@@ -9,6 +9,15 @@
 
 /// Normalize `text` for speech. Idempotent on plain prose.
 #[must_use]
+/// Spoken-text normalizer: markdown and code never reach the voice.
+/// 
+/// Fenced code blocks vanish (the reply text on screen keeps them; the
+/// voice says nothing there), inline code and identifiers split into
+/// spoken words, markdown markup strips to plain text, and whitespace
+/// collapses. Numbers, dates, and units pass through untouched — full
+/// expansion is later work, and a half-expander mispronounces more than
+/// it fixes.
+/// Normalize `text` for speech. Idempotent on plain prose.
 pub fn normalize_for_speech(text: &str) -> String {
     let no_code = strip_fenced_code(text);
     let no_markup = strip_markdown(&no_code);

@@ -15,6 +15,7 @@ use crate::{ExitCode, OutboundRequest};
 
 /// Request envelope on the wire.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+/// Request envelope on the wire.
 pub struct WireRequest {
     /// Correlation id.
     pub id: u64,
@@ -27,6 +28,8 @@ pub struct WireRequest {
 /// Daemon transport: the Unix socket (default) or the WebSocket
 /// listener (same envelopes, same methods, loopback only).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Daemon transport: the Unix socket (default) or the WebSocket
+/// listener (same envelopes, same methods, loopback only).
 pub enum Transport {
     /// Owner-only socket file, same-uid peers.
     Socket,
@@ -46,6 +49,7 @@ pub fn parse_transport(flag: &str) -> Result<Transport, String> {
 
 /// Reply envelope on the wire.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+/// Reply envelope on the wire.
 pub struct WireReply {
     /// Correlation id echoed back.
     pub id: u64,
@@ -60,6 +64,10 @@ pub struct WireReply {
 /// wording applies (bad method, dead connection) — the caller names
 /// the remedy from the shared constructors below.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Failure from a daemon call: the exit code plus the exact line the
+/// caller shows. `text` is `None` where the call failed before any
+/// wording applies (bad method, dead connection) — the caller names
+/// the remedy from the shared constructors below.
 pub struct CallFailure {
     /// Process exit for the failure.
     pub code: ExitCode,
@@ -84,12 +92,14 @@ impl CallFailure {
 
 /// No socket path: neither `XDG_RUNTIME_DIR` nor `HOME` is set.
 #[must_use]
+/// No socket path: neither `XDG_RUNTIME_DIR` nor `HOME` is set.
 pub fn no_socket_path_text() -> String {
     "orator: no socket path: neither XDG_RUNTIME_DIR nor HOME is set".to_string()
 }
 
 /// Daemon unreachable over the socket: names the path and the remedy.
 #[must_use]
+/// Daemon unreachable over the socket: names the path and the remedy.
 pub fn unavailable_socket_text(path: Option<&std::path::Path>) -> String {
     match path {
         Some(path) => format!(
@@ -105,18 +115,21 @@ pub fn unavailable_socket_text(path: Option<&std::path::Path>) -> String {
 
 /// WS configured without a listen address.
 #[must_use]
+/// WS configured without a listen address.
 pub fn no_ws_listen_text() -> String {
     "orator: no WS listen address (set daemon.ws_listen to serve it)".to_string()
 }
 
 /// WS configured without a bearer token.
 #[must_use]
+/// WS configured without a bearer token.
 pub fn no_ws_token_text() -> String {
     "orator: daemon.ws_token is unset; the listener refuses tokenless peers".to_string()
 }
 
 /// Daemon unreachable over the WebSocket listener.
 #[must_use]
+/// Daemon unreachable over the WebSocket listener.
 pub fn unavailable_ws_text(ws_listen: &str) -> String {
     format!(
         "orator: daemon unavailable at ws://{ws_listen}/ws (run oratord with daemon.ws_listen set)"
@@ -125,30 +138,35 @@ pub fn unavailable_ws_text(ws_listen: &str) -> String {
 
 /// Daemon answered `ok: false`: names the method and the body.
 #[must_use]
+/// Daemon answered `ok: false`: names the method and the body.
 pub fn refused_text(method: &str, body: &serde_json::Value) -> String {
     format!("orator: daemon refused {method}: {body}")
 }
 
 /// WS handshake rejected: the daemon is there and refused the token.
 #[must_use]
+/// WS handshake rejected: the daemon is there and refused the token.
 pub fn handshake_refused_text() -> String {
     "orator: daemon refused the WS handshake (token rejected)".to_string()
 }
 
 /// Daemon write failed mid-call.
 #[must_use]
+/// Daemon write failed mid-call.
 pub fn write_failed_text(error: &str) -> String {
     format!("orator: daemon write failed: {error}")
 }
 
 /// Daemon read failed mid-call.
 #[must_use]
+/// Daemon read failed mid-call.
 pub fn read_failed_text(error: &str) -> String {
     format!("orator: daemon read failed: {error}")
 }
 
 /// Daemon reply failed to decode.
 #[must_use]
+/// Daemon reply failed to decode.
 pub fn reply_failed_text(error: &str) -> String {
     format!("orator: daemon reply failed: {error}")
 }
@@ -156,6 +174,8 @@ pub fn reply_failed_text(error: &str) -> String {
 /// Permission-denied connect: the daemon is there but the socket is
 /// not ours to use. Names the chmod/ownership remedy, never absence.
 #[must_use]
+/// Permission-denied connect: the daemon is there but the socket is
+/// not ours to use. Names the chmod/ownership remedy, never absence.
 pub fn permission_denied_text(path: &std::path::Path) -> String {
     format!(
         "orator: permission denied on {} (socket owned by another uid or mode is not 0600; check `ls -l` and `chmod 600`, or remove the stale file)",
@@ -166,6 +186,8 @@ pub fn permission_denied_text(path: &std::path::Path) -> String {
 /// WS reply timed out: the daemon is there but the call outran its
 /// budget.
 #[must_use]
+/// WS reply timed out: the daemon is there but the call outran its
+/// budget.
 pub fn ws_timeout_text(method: &str) -> String {
     format!(
         "orator: daemon timed out on {method} (past its budget; retry or raise the voice budget)"
@@ -175,6 +197,8 @@ pub fn ws_timeout_text(method: &str) -> String {
 /// Socket-file preflight: warn when the file is not uid-owned or not
 /// owner-only, before dialing it.
 #[must_use]
+/// Socket-file preflight: warn when the file is not uid-owned or not
+/// owner-only, before dialing it.
 pub fn socket_preflight_warning(path: &std::path::Path) -> Option<String> {
     #[cfg(unix)]
     {
@@ -459,6 +483,12 @@ pub fn call_socket_at(
 /// handler for the whole boot). One overall chain budget in the caller
 /// bounds stacked worker/stream/boot timeouts.
 #[must_use]
+/// Per-method socket budgets: control calls stay at 10 s; voice
+/// calls (`VoiceEndpoint`/`Say`/`Ask`) get a longer bound covering a
+/// cold supervised boot plus one turn (progress renders through
+/// `BootContention` for siblings, but the first caller holds the
+/// handler for the whole boot). One overall chain budget in the caller
+/// bounds stacked worker/stream/boot timeouts.
 pub fn socket_timeout_for(method: &str) -> Duration {
     match method {
         "VoiceEndpoint" | "Say" | "Ask" => Duration::from_secs(300),

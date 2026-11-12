@@ -71,6 +71,8 @@ pub(crate) type FuncDef = (Vec<Param>, std::sync::Arc<Vec<PineStmt>>);
 /// One spelling in one body instance: the module whose body declares it, the
 /// call expressions enclosing that body, and the declared name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// One spelling in one body instance: the module whose body declares it, the
+/// call expressions enclosing that body, and the declared name.
 pub(crate) struct VarScope {
     module: Option<ModuleKey>,
     call_sites: Vec<CallSite>,
@@ -80,6 +82,8 @@ pub(crate) struct VarScope {
 /// Where a `var`/`varip` spelling is bound here: the declaration node that
 /// owns its cell, and the lifetime flag.
 #[derive(Debug, Clone, Copy)]
+/// Where a `var`/`varip` spelling is bound here: the declaration node that
+/// owns its cell, and the lifetime flag.
 pub(crate) struct VarBinding {
     decl: NodeId,
     is_varip: bool,
@@ -4542,6 +4546,7 @@ struct MethodOutcome {
 
 /// One tree-walk slot address for the shared home model.
 #[derive(Debug, Clone)]
+/// One tree-walk slot address for the shared home model.
 enum TreeSlot {
     /// Shared variable namespace entry.
     Variable(String),
@@ -4638,6 +4643,10 @@ impl super::home::HomeStore<TreeSlot> for TreeStore<'_, '_> {
 /// Reads, nested calls, and field writes through the alias hit this slot,
 /// so the body always observes one live copy, never a stale clone.
 #[derive(Debug)]
+/// One live method receiver: the instance plus the alias the body bound
+/// it under (`level` in `updateLevelTouch(MarketLevel level, ...)`).
+/// Reads, nested calls, and field writes through the alias hit this slot,
+/// so the body always observes one live copy, never a stale clone.
 pub(crate) struct ReceiverSlot {
     instance: UserInstance,
     alias: String,

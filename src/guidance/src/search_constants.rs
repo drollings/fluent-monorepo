@@ -39,6 +39,8 @@ pub const MCP_LIMIT_CAP: usize = 50;
 /// Adaptive-recall target: `max(limit × 5, 50)`.
 /// Source: `pipeline/search/index.ts` (`recallTargetCandidateCount`).
 #[must_use]
+/// Adaptive-recall target: `max(limit × 5, 50)`.
+/// Source: `pipeline/search/index.ts` (`recallTargetCandidateCount`).
 pub fn recall_target_candidate_count(limit: usize) -> usize {
     limit
         .saturating_mul(RECALL_TARGET_FACTOR)
@@ -65,6 +67,9 @@ pub const METADATA_BUDGET_PERCENT: u64 = 25;
 /// Mirrors `metadataBudget` in `extraction/vector-content.ts`
 /// (`None` in, `None` out — the TS `undefined` case).
 #[must_use]
+/// Metadata-prefix budget in characters: `floor(max × 25%)`.
+/// Mirrors `metadataBudget` in `extraction/vector-content.ts`
+/// (`None` in, `None` out — the TS `undefined` case).
 pub fn metadata_budget_chars(max_chars: Option<usize>) -> Option<usize> {
     max_chars.map(|max| (max as u64 * METADATA_BUDGET_PERCENT / 100) as usize)
 }
@@ -115,6 +120,7 @@ pub const TOKEN_DENSE_NON_ASCII_PERCENT: usize = 30;
 
 /// Resolved chunk sizing. `None` fields mirror the TS `{}` (no model limit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Resolved chunk sizing. `None` fields mirror the TS `{}` (no model limit).
 pub struct ChunkOptions {
     /// Maximum chunk size in characters.
     pub max_chunk_chars: Option<usize>,
@@ -127,6 +133,10 @@ pub struct ChunkOptions {
 /// on Unicode scalar values where the TS operates on UTF-16 code units
 /// (identical for BMP text; P0 goldens pin the ASCII/CJK cases).
 #[must_use]
+/// Model-aware chunk resize (`indexChunkOptions`).
+/// Source: `pipeline/indexing/input-budget.ts` — ported verbatim, operating
+/// on Unicode scalar values where the TS operates on UTF-16 code units
+/// (identical for BMP text; P0 goldens pin the ASCII/CJK cases).
 pub fn index_chunk_options(max_input_tokens: Option<u64>, text: Option<&str>) -> ChunkOptions {
     let Some(max_input_tokens) = max_input_tokens else {
         return ChunkOptions {
@@ -150,6 +160,8 @@ pub fn index_chunk_options(max_input_tokens: Option<u64>, text: Option<&str>) ->
 /// Token-dense detector (`isTokenDenseText`).
 /// Source: `pipeline/indexing/input-budget.ts`.
 #[must_use]
+/// Token-dense detector (`isTokenDenseText`).
+/// Source: `pipeline/indexing/input-budget.ts`.
 pub fn is_token_dense_text(text: Option<&str>, max_input_tokens: u64) -> bool {
     let Some(text) = text else { return false };
     let chars: Vec<char> = text.chars().collect();

@@ -31,6 +31,8 @@ const SMA_LENGTHS: [(&str, i64); 3] = [("SMA 50", 50), ("SMA 100", 100), ("SMA 2
 /// One evaluated moving-average line: its name, per-bar display values with
 /// warmup holes preserved, and the theme style key resolved at paint time.
 #[derive(Debug, Clone, PartialEq)]
+/// One evaluated moving-average line: its name, per-bar display values with
+/// warmup holes preserved, and the theme style key resolved at paint time.
 pub struct FastMasLine {
     /// Display name (for example `"First MA"`, `"SMA 50"`).
     pub name: String,
@@ -42,6 +44,7 @@ pub struct FastMasLine {
 
 /// The evaluated overlay: one line per enabled average, in plot order.
 #[derive(Debug, Clone, PartialEq, Default)]
+/// The evaluated overlay: one line per enabled average, in plot order.
 pub struct FastMasView {
     /// Enabled lines, in plot order.
     pub lines: Vec<FastMasLine>,
@@ -115,6 +118,17 @@ fn default_source() -> String {
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// One Fast MAs overlay's configuration: the single schema-driven control
+/// truth behind its settings pane.
+/// 
+/// Every field is a `Component` field, so the settings modal renders from the
+/// `describe()` schema and a new knob appears without a UI edit. The
+/// `*_ma_type` / `*_ma_length` fields route to the Inputs tab, the
+/// `*_style` theme keys to Style, and the `show_*` toggles to Visibility.
+/// 
+/// The reference exposes four independent visibility toggles (first, second,
+/// the EMA group, and the SMA trio); splitting them into sub-structs would
+/// fragment the one settings schema the modal renders from.
 pub struct FastMasConfig {
     /// Smoothing family for the first average.
     #[field(

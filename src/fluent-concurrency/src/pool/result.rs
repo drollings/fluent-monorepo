@@ -15,6 +15,7 @@ use super::traits::{PoolError, RequestPool};
 
 /// Error type for `ResultPool::submit`.
 #[derive(Error, Debug)]
+/// Error type for `ResultPool::submit`.
 pub enum ResultPoolError<E> {
     /// The pool's queue is full or closed.
     #[error("pool error: {0}")]

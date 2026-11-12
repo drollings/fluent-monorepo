@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// One axis tick: value, label, and hierarchy weight.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One axis tick: value, label, and hierarchy weight.
 pub struct Tick {
     /// Tick value in axis units.
     pub value: f64,
@@ -24,6 +25,12 @@ pub struct Tick {
 /// (non-finite bounds, `min >= max`, `max_ticks == 0`) — the caller renders
 /// no ticks rather than a misleading grid. Never panics.
 #[must_use]
+/// Pick round tick values covering `[min, max]` within `max_ticks`.
+/// 
+/// Task value (legibility): the step/density choice serves readable axes,
+/// never a decision. Returns an empty vector for degenerate windows
+/// (non-finite bounds, `min >= max`, `max_ticks == 0`) — the caller renders
+/// no ticks rather than a misleading grid. Never panics.
 pub fn nice_ticks(min: f64, max: f64, max_ticks: usize) -> Vec<Tick> {
     if !min.is_finite() || !max.is_finite() || min >= max || max_ticks == 0 {
         return Vec::new();

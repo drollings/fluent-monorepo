@@ -33,6 +33,8 @@ use crate::value::{ColorHandle, EnumHandle, MatrixValue, PineValue};
 /// One evaluated call argument: the `name` from `name = value` when present,
 /// else positional.
 #[derive(Debug, Clone)]
+/// One evaluated call argument: the `name` from `name = value` when present,
+/// else positional.
 pub struct CoreArg {
     /// Argument name for named calls, else positional.
     pub name: Option<String>,
@@ -88,6 +90,11 @@ pub fn call(
 /// handle and a run-time table read can never name different members.
 /// Bare names miss.
 #[must_use]
+/// Trailing `Enum.Member` pair of a dotted spelling, resolved on the last
+/// two segments exactly like the tree-walk's member lookup (any module
+/// prefix is ignored). Both engines split the same way, so a static
+/// handle and a run-time table read can never name different members.
+/// Bare names miss.
 pub fn split_enum_member(dotted: &str) -> Option<(&str, &str)> {
     let mut parts = dotted.rsplit('.');
     let member = parts.next()?;
@@ -102,6 +109,12 @@ pub fn split_enum_member(dotted: &str) -> Option<(&str, &str)> {
 /// Chart scope (`timeframe.period`) resolves dynamically from the runtime
 /// config instead of here.
 #[must_use]
+/// Resolve a dotted display constant (`display.none`, `size.tiny`,
+/// `position.top_right`, `color.white`, `line.style_dotted`,
+/// `label.style_label_down`) to its opaque handle. Anything else
+/// is `None`, so the engine falls through to its undefined-variable refusal.
+/// Chart scope (`timeframe.period`) resolves dynamically from the runtime
+/// config instead of here.
 pub fn resolve_constant(name: &str) -> Option<PineValue> {
     if let Some(packed) = named_color(name) {
         return Some(PineValue::ColorHandle(ColorHandle::new(packed)));
@@ -390,6 +403,11 @@ fn single(values: &[f64], f: impl Fn(&[f64]) -> Vec<Option<f64>>) -> Option<Pine
 /// definitions shadow it on both engines, checked before this list).
 /// The calibration gate freezes this list: additions fail there first.
 #[must_use]
+/// Legacy bare math names: pre-namespace scripts call `pow(...)` without/// the `math.` qualifier. Every name here is served by [`math_call`]
+/// below and claimed by no other bare builtin, so routing an unclaimed
+/// bare call through the `math` namespace is purely additive (user
+/// definitions shadow it on both engines, checked before this list).
+/// The calibration gate freezes this list: additions fail there first.
 pub fn legacy_bare_math_names() -> &'static [&'static str] {
     &[
         "abs", "floor", "ceil", "sqrt", "log", "log10", "exp", "sign", "cos", "sin", "tan",
@@ -402,6 +420,9 @@ pub fn legacy_bare_math_names() -> &'static [&'static str] {
 /// without the `str.` qualifier. Same shadow rule as the math list; the
 /// calibration gate freezes this list too.
 #[must_use]
+/// Legacy bare string names: pre-namespace scripts call `tostring(...)`
+/// without the `str.` qualifier. Same shadow rule as the math list; the
+/// calibration gate freezes this list too.
 pub fn legacy_bare_str_names() -> &'static [&'static str] {
     &["tostring"]
 }
@@ -997,6 +1018,14 @@ pub(crate) fn remove_parts(
 /// `key` carries the removal key for `map.remove` and is ignored
 /// otherwise.
 #[allow(clippy::option_option)]
+/// Statement-position store for split-return mutators: `array.shift`,
+/// `array.pop`, and `map.remove` yield the removed element while the
+/// holder keeps the shrunken collection. Returns the stored collection.
+/// `None` means the pair is not a split shape (the caller stores the
+/// bridge return) or the receiver is absent (absence propagates: nothing
+/// persists). Kind mismatches refuse through the shared parts helpers.
+/// `key` carries the removal key for `map.remove` and is ignored
+/// otherwise.
 pub(crate) fn split_rest(
     bridge: &str,
     method: &str,
@@ -1884,12 +1913,16 @@ fn named_color(name: &str) -> Option<u32> {
 /// The float-to-int cast is exact: the value is rounded and clamped finite
 /// first, so no truncation or sign loss can occur.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+/// Clamp a channel into `0..=255` (display-only values clamp, never refuse).
+/// The float-to-int cast is exact: the value is rounded and clamped finite
+/// first, so no truncation or sign loss can occur.
 fn channel(value: f64) -> u32 {
     value.round().clamp(0.0, 255.0) as u32
 }
 
 /// Clamp transparency into `0..=100`, same exact-cast contract as [`channel`].
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+/// Clamp transparency into `0..=100`, same exact-cast contract as [`channel`].
 fn transparency(value: f64) -> u32 {
     value.round().clamp(0.0, 100.0) as u32
 }
@@ -1902,6 +1935,9 @@ fn pack(red: u32, green: u32, blue: u32, transp: u32) -> u32 {
 /// eight digits scale the alpha byte (`00` opaque .. `ff` fully transparent)
 /// into the `0..=100` transparency lane. Anything else is not a literal.
 #[must_use]
+/// Pack a `#rrggbb[aa]` literal into a color handle: six digits are opaque,
+/// eight digits scale the alpha byte (`00` opaque .. `ff` fully transparent)
+/// into the `0..=100` transparency lane. Anything else is not a literal.
 pub fn color_of_hex(digits: &str) -> Option<u32> {
     let channel = |pair: &str| u32::from_str_radix(pair, 16).ok();
     if digits.len() == 6 {
@@ -2051,6 +2087,9 @@ fn color_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
 // timeframe.*
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// timeframe.*
+/// ---------------------------------------------------------------------------
 fn timeframe_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {
     let name = format!("timeframe.{method}");
     match method {
@@ -2128,6 +2167,13 @@ fn timeframe_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, K
 /// split. Members outside this set keep their existing fallback/refusal
 /// because the tree-walk has no value for them either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// One deterministic chart-scope member the headless harness serves.
+/// 
+/// Chart scope is run configuration, not bar state: the tree-walk and the
+/// compiled loop resolve the same names to the same values through
+/// [`ChartScope::read`], so a chart-scope read can never diverge across a
+/// split. Members outside this set keep their existing fallback/refusal
+/// because the tree-walk has no value for them either.
 pub(crate) enum ChartScope {
     /// `syminfo.tickerid`.
     Symbol,
@@ -2201,6 +2247,7 @@ impl ChartScope {
 
 /// Whether a chart period string names an intraday span.
 #[must_use]
+/// Whether a chart period string names an intraday span.
 pub(crate) fn chart_period_is_intraday(period: &str) -> bool {
     if let Some(seconds) = period.strip_suffix('S') {
         return seconds.parse::<u64>().is_ok();
@@ -2212,6 +2259,9 @@ pub(crate) fn chart_period_is_intraday(period: &str) -> bool {
 /// minutes, a trailing `S` reads seconds. Unknown shapes read zero and let
 /// the caller refuse with the reason.
 #[must_use]
+/// Bar span in seconds for a chart period string: bare numbers read
+/// minutes, a trailing `S` reads seconds. Unknown shapes read zero and let
+/// the caller refuse with the reason.
 pub(crate) fn chart_period_seconds(period: &str) -> i64 {
     if let Some(seconds) = period.strip_suffix('S') {
         return seconds.parse::<i64>().unwrap_or(0);

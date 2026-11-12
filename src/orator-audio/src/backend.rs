@@ -12,6 +12,7 @@ use crate::error::AudioError;
 
 /// A named input or output device.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A named input or output device.
 pub struct DeviceInfo {
     /// Backend-reported device name.
     pub name: String,
@@ -22,6 +23,8 @@ pub struct DeviceInfo {
 /// List input devices. Never fails: headless machines simply yield an
 /// empty list, and capture falls back to synthetic sources.
 #[must_use]
+/// List input devices. Never fails: headless machines simply yield an
+/// empty list, and capture falls back to synthetic sources.
 pub fn list_input_devices() -> Vec<DeviceInfo> {
     let host = cpal::default_host();
     let mut devices = Vec::new();

@@ -147,6 +147,7 @@ struct StartArgs {
 
 /// Shared server-address args for the router-API commands.
 #[derive(Args)]
+/// Shared server-address args for the router-API commands.
 struct ServerArgs {
     /// Router base URL (default: derived from config server.bind_addr).
     #[arg(short = 'u', long)]
@@ -156,6 +157,8 @@ struct ServerArgs {
 /// Args for `ls`: aligned plain-text tables by default, machine JSON on
 /// `--json`, Markdown pipe tables on `--markdown`.
 #[derive(Args)]
+/// Args for `ls`: aligned plain-text tables by default, machine JSON on
+/// `--json`, Markdown pipe tables on `--markdown`.
 struct ListArgs {
     /// Emit the listing as JSON (routes/groups/models) instead of tables.
     #[arg(long)]
@@ -169,6 +172,9 @@ struct ListArgs {
 /// /instances API — aligned plain-text columns by default, Markdown pipe
 /// tables on `--markdown`.
 #[derive(Args)]
+/// Args for `ps`: the fleet table over the router's /v1/models and
+/// /instances API — aligned plain-text columns by default, Markdown pipe
+/// tables on `--markdown`.
 struct PsArgs {
     /// Router base URL (default: derived from config server.bind_addr).
     #[arg(short = 'u', long)]
@@ -2059,6 +2065,7 @@ fn default_rigor_backend(config: &RouterConfig, key: Option<&str>) -> Option<Arc
 
 /// Load `env/coral-router.json` relative to the crate root (test helper).
 #[cfg(test)]
+/// Load `env/coral-router.json` relative to the crate root (test helper).
 fn load_router_config() -> RouterConfig {
     let config_path = concat!(
         env!("CARGO_MANIFEST_DIR"),

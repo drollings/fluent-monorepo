@@ -41,6 +41,8 @@ use crate::server::responses::{error_response, HyperResponse};
 /// One review job: a parse node plus the interlingua pattern keys to
 /// (re)check against the correction index.
 #[derive(Debug, Clone)]
+/// One review job: a parse node plus the interlingua pattern keys to
+/// (re)check against the correction index.
 pub struct ReviewJob {
     pub node_id: NodeId,
     pub session_id: String,
@@ -75,6 +77,8 @@ pub type ReviewFetch = Arc<dyn Fn(String) -> Result<String, String> + Send + Syn
 /// Errors surfaced by enqueue (the worker's own processing is best-effort and
 /// logged — a failed review must never take the hot path down).
 #[derive(Debug, Error)]
+/// Errors surfaced by enqueue (the worker's own processing is best-effort and
+/// logged — a failed review must never take the hot path down).
 pub enum ReviewError {
     #[error("review queue closed: {0}")]
     Closed(String),

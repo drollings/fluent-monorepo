@@ -39,6 +39,10 @@ pub trait FidelitySelector: Send + Sync {
 /// interpolated across the band. The current relevance-ranked mechanism,
 /// extracted verbatim.
 #[derive(Debug, Clone)]
+/// Cosine-rank selection: sort by cosine similarity to the query embedding
+/// descending (most relevant → finest), nodes without an embedding last,
+/// interpolated across the band. The current relevance-ranked mechanism,
+/// extracted verbatim.
 pub struct CosineRankSelector {
     query: Vec<f32>,
 }
@@ -83,6 +87,8 @@ impl FidelitySelector for CosineRankSelector {
 /// Uniform selection: every intermediate at the band midpoint. The current
 /// no-signal mechanism, extracted verbatim.
 #[derive(Debug, Clone, Copy, Default)]
+/// Uniform selection: every intermediate at the band midpoint. The current
+/// no-signal mechanism, extracted verbatim.
 pub struct UniformSelector;
 
 impl FidelitySelector for UniformSelector {

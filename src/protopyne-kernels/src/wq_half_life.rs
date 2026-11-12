@@ -12,6 +12,9 @@ use crate::math::strict_window;
 /// prints decay by `0.5^(1 / half_life)` per bar, formula for formula with
 /// the reference construction.
 #[must_use]
+/// Geometric weight ladder: the newest print carries weight one and older
+/// prints decay by `0.5^(1 / half_life)` per bar, formula for formula with
+/// the reference construction.
 pub fn hl_weights(window: usize, half_life: u32) -> Vec<f64> {
     let step = 0.5f64.powf(1.0 / f64::from(half_life));
     (0..window)
@@ -21,12 +24,14 @@ pub fn hl_weights(window: usize, half_life: u32) -> Vec<f64> {
 
 /// Half-life weighted mean over the strict window.
 #[must_use]
+/// Half-life weighted mean over the strict window.
 pub fn ts_mean_hl(values: &[f64], d: usize, half_life: u32) -> Vec<Option<f64>> {
     weighted_moment(values, d, half_life, Moment::Mean)
 }
 
 /// Half-life weighted sum (unnormalized) over the strict window.
 #[must_use]
+/// Half-life weighted sum (unnormalized) over the strict window.
 pub fn ts_sum_hl(values: &[f64], d: usize, half_life: u32) -> Vec<Option<f64>> {
     weighted_moment(values, d, half_life, Moment::Sum)
 }
@@ -35,12 +40,16 @@ pub fn ts_sum_hl(values: &[f64], d: usize, half_life: u32) -> Vec<Option<f64>> {
 /// `sqrt(sum(w x^2) - (sum(w x))^2)` on sum-one weights, transcribing the
 /// reference kernel exactly).
 #[must_use]
+/// Half-life weighted standard deviation (population form
+/// `sqrt(sum(w x^2) - (sum(w x))^2)` on sum-one weights, transcribing the
+/// reference kernel exactly).
 pub fn ts_std_hl(values: &[f64], d: usize, half_life: u32) -> Vec<Option<f64>> {
     weighted_moment(values, d, half_life, Moment::Std)
 }
 
 /// Half-life weighted variance under the same population form.
 #[must_use]
+/// Half-life weighted variance under the same population form.
 pub fn ts_var_hl(values: &[f64], d: usize, half_life: u32) -> Vec<Option<f64>> {
     weighted_moment(values, d, half_life, Moment::Var)
 }

@@ -9,6 +9,7 @@ use protopyne_types::{Bar, TradingSession};
 
 /// One detected session boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One detected session boundary.
 pub struct SessionBreak {
     /// Timestamp of the first bar in the new session.
     pub ts: DateTime<Utc>,
@@ -20,6 +21,7 @@ pub struct SessionBreak {
 
 /// Classification of a session boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Classification of a session boundary.
 pub enum SessionBreakType {
     /// End of a trading day.
     Daily,
@@ -53,6 +55,11 @@ pub trait SessionProvider: Send + Sync {
 /// purposes; detection itself keys on the calendar-day change so intraday
 /// bar grids without session-clock metadata still split correctly.
 #[derive(Debug, Clone)]
+/// Daily boundaries at calendar-day changes (UTC).
+/// 
+/// The hour/minute fields record the intended break clock time for display
+/// purposes; detection itself keys on the calendar-day change so intraday
+/// bar grids without session-clock metadata still split correctly.
 pub struct DailySessionProvider {
     /// Intended break hour (0–23), display hint.
     pub break_hour: u32,
@@ -113,6 +120,7 @@ impl SessionProvider for DailySessionProvider {
 
 /// Weekly boundaries at ISO-week changes.
 #[derive(Debug, Clone)]
+/// Weekly boundaries at ISO-week changes.
 pub struct WeeklySessionProvider {
     /// Weekday the week is considered to break on (informational today).
     pub break_day: Weekday,
@@ -160,6 +168,7 @@ impl SessionProvider for WeeklySessionProvider {
 
 /// Monthly boundaries at calendar-month changes.
 #[derive(Debug, Clone, Default)]
+/// Monthly boundaries at calendar-month changes.
 pub struct MonthlySessionProvider;
 
 impl SessionProvider for MonthlySessionProvider {
@@ -193,6 +202,14 @@ impl SessionProvider for MonthlySessionProvider {
 /// session and adds no time math of its own. Overnight ranges refuse at
 /// parse, preserved here by construction.
 #[derive(Debug, Clone, Copy)]
+/// Exchange-session day boundaries on the ET wall clock.
+/// 
+/// Detection keys on the ET calendar date
+/// ([`TradingSession::session_date`]): two bars whose ET dates differ
+/// straddle a session break. The date math (including the daylight rules)
+/// belongs to the shared clock — this provider holds an already-parsed
+/// session and adds no time math of its own. Overnight ranges refuse at
+/// parse, preserved here by construction.
 pub struct EtSessionProvider {
     session: TradingSession,
 }
@@ -299,6 +316,12 @@ impl SessionProvider for CompositeSessionProvider {
 /// [`session_breaks_between`], so timestamp slices (display rows) and bars
 /// share one pairwise core instead of two scans.
 #[must_use]
+/// Scan closed bars for session boundaries.
+/// 
+/// Returns `(index, break)` pairs where `index` is the first bar of the new
+/// session. Timestamps are the only input read: the scan delegates to
+/// [`session_breaks_between`], so timestamp slices (display rows) and bars
+/// share one pairwise core instead of two scans.
 pub fn find_session_breaks(
     bars: &[Bar],
     provider: &dyn SessionProvider,
@@ -311,6 +334,10 @@ pub fn find_session_breaks(
 /// `(index, break)` pairs where `index` is the first timestamp of the new
 /// session.
 #[must_use]
+/// Scan an ordered timestamp slice for session boundaries: the pairwise
+/// core behind [`find_session_breaks`], callable without bars. Returns
+/// `(index, break)` pairs where `index` is the first timestamp of the new
+/// session.
 pub fn session_breaks_between(
     times: &[DateTime<Utc>],
     provider: &dyn SessionProvider,

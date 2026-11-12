@@ -78,6 +78,20 @@ fn node_sync_converges_deleted_doc() {
 }
 
 #[test]
+fn node_sync_dedupes_duplicate_members_within_one_rebuild() {
+    // Two docs can describe the same member (the tree has duplicate path
+    // spellings); in-memory dedupe matches the old NOT-EXISTS behavior.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json_dir = dir.path().join("json");
+    std::fs::create_dir(&json_dir).expect("mkdir");
+    write_doc(&json_dir, "a.json", "src/a.rs", "same_member");
+    write_doc(&json_dir, "b.json", "src/b.rs", "same_member");
+    let db = GuidanceDb::open(&dir.path().join("n.db")).expect("open");
+    assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 1);
+    assert_eq!(db.get_node_count().expect("count"), 1);
+}
+
+#[test]
 fn node_sync_empty_dir_clears_stale_nodes() {
     // Must-NOT-fire control: with zero docs the sync always runs, so
     // an emptied doc dir clears nodes exactly as before (never a

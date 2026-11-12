@@ -27,6 +27,9 @@ pub trait Codec: Send {
 /// round-trip contract is half an LSB per conversion; energy drift
 /// stays under 1e-4 on voiced fixtures (pinned by golden).
 #[derive(Debug, Default)]
+/// PCM wire adapter: f32 samples framed as little-endian i16. The
+/// round-trip contract is half an LSB per conversion; energy drift
+/// stays under 1e-4 on voiced fixtures (pinned by golden).
 pub struct PcmCodec;
 
 impl PcmCodec {

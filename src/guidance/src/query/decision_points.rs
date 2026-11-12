@@ -17,11 +17,13 @@ pub const INTENT_POINT: &str = "intent";
 pub const SUFFICIENCY_POINT: &str = "sufficiency";
 pub const EXCERPT_POINT: &str = "excerpt";
 pub const STALENESS_POINT: &str = "staleness";
+pub const SUMMARY_INDEX_POINT: &str = "summary_index";
 
 pub const INTENT_VERSION: u64 = 1;
 pub const SUFFICIENCY_VERSION: u64 = 1;
 pub const EXCERPT_VERSION: u64 = 1;
 pub const STALENESS_VERSION: u64 = 1;
+pub const SUMMARY_INDEX_VERSION: u64 = 1;
 
 fn spec(
     id: &str,
@@ -50,6 +52,7 @@ fn spec(
 
 /// Intent Choice over the `QueryIntent` labels (single tokens only).
 #[must_use]
+/// Intent Choice over the `QueryIntent` labels (single tokens only).
 pub fn intent_spec() -> QuestionSpec {
     spec(
         INTENT_POINT,
@@ -65,6 +68,7 @@ pub fn intent_spec() -> QuestionSpec {
 
 /// Sufficiency route: answer, synthesize, or stay silent.
 #[must_use]
+/// Sufficiency route: answer, synthesize, or stay silent.
 pub fn sufficiency_spec() -> QuestionSpec {
     spec(
         SUFFICIENCY_POINT,
@@ -80,6 +84,7 @@ pub fn sufficiency_spec() -> QuestionSpec {
 
 /// Excerpt relevance as ordinal score rungs (rank order, not magnitude).
 #[must_use]
+/// Excerpt relevance as ordinal score rungs (rank order, not magnitude).
 pub fn excerpt_spec() -> QuestionSpec {
     spec(
         EXCERPT_POINT,
@@ -95,6 +100,7 @@ pub fn excerpt_spec() -> QuestionSpec {
 
 /// Commentary staleness: does the diff alter the described behavior.
 #[must_use]
+/// Commentary staleness: does the diff alter the described behavior.
 pub fn staleness_spec() -> QuestionSpec {
     spec(
         STALENESS_POINT,
@@ -108,36 +114,120 @@ pub fn staleness_spec() -> QuestionSpec {
     )
 }
 
+/// Summary index route: may generated-comment recall contribute
+/// candidates. Authorization only, never a model verdict: the route reads
+/// a derived table and cites source ranges.
+#[must_use]
+/// Summary index route: may generated-comment recall contribute
+/// candidates. Authorization only, never a model verdict: the route reads
+/// a derived table and cites source ranges.
+pub fn summary_index_spec() -> QuestionSpec {
+    spec(
+        SUMMARY_INDEX_POINT,
+        SUMMARY_INDEX_VERSION,
+        "choice",
+        "May the summary index contribute recall candidates?",
+        "Act,Shadow",
+        0.9,
+        0.7,
+        5000,
+    )
+}
+
+/// Fingerprint binding a summary-index authorization to the model and
+/// prompt that produced the measured summaries.
+#[must_use]
+/// Fingerprint binding a summary-index authorization to the model and
+/// prompt that produced the measured summaries.
+pub fn summary_index_fingerprint(model: &str) -> String {
+    format!("{model}@prompt-v{}", crate::summary::SUMMARY_PROMPT_VERSION)
+}
+
 /// Fail-closed authorization: a passing entry on all three keys
 /// calibrates, anything else (including the seed-empty registry) is
 /// shadow-only with the reason named.
 #[must_use]
+/// Fail-closed authorization: a passing entry on all three keys
+/// calibrates, anything else (including the seed-empty registry) is
+/// shadow-only with the reason named.
 pub fn authorize_point(point: &str, fingerprint: &str, version: u64) -> CalibrationStatus {
-    authorize(&CalibrationRegistry::empty(), point, fingerprint, version)
+    authorize_point_with(&CalibrationRegistry::empty(), point, fingerprint, version)
+}
+
+/// Registry-taking companion: the loop loads `state/calibration.json`
+/// once and consults it here; the empty-registry call above is the
+/// cold-start form with identical fail-closed semantics.
+#[must_use]
+/// Registry-taking companion: the loop loads `state/calibration.json`
+/// once and consults it here; the empty-registry call above is the
+/// cold-start form with identical fail-closed semantics.
+pub fn authorize_point_with(
+    registry: &CalibrationRegistry,
+    point: &str,
+    fingerprint: &str,
+    version: u64,
+) -> CalibrationStatus {
+    authorize(registry, point, fingerprint, version)
 }
 
 /// Advisory authorization: ordering and priority only, never side
 /// effects. Same evidence bar as `authorize_point`, narrower grant.
 #[must_use]
+/// Advisory authorization: ordering and priority only, never side
+/// effects. Same evidence bar as `authorize_point`, narrower grant.
 pub fn authorize_point_advisory(point: &str, fingerprint: &str, version: u64) -> CalibrationStatus {
-    authorize_advisory(&CalibrationRegistry::empty(), point, fingerprint, version)
+    authorize_point_advisory_with(&CalibrationRegistry::empty(), point, fingerprint, version)
+}
+
+/// Registry-taking companion to `authorize_point_advisory`.
+#[must_use]
+/// Registry-taking companion to `authorize_point_advisory`.
+pub fn authorize_point_advisory_with(
+    registry: &CalibrationRegistry,
+    point: &str,
+    fingerprint: &str,
+    version: u64,
+) -> CalibrationStatus {
+    authorize_advisory(registry, point, fingerprint, version)
 }
 
 /// Dataset-pinned authorization: the entry must record the expected
 /// dataset hash or the point stays measuring.
 #[must_use]
+/// Dataset-pinned authorization: the entry must record the expected
+/// dataset hash or the point stays measuring.
 pub fn authorize_point_pinned(
     point: &str,
     fingerprint: &str,
     version: u64,
     dataset: &str,
 ) -> CalibrationStatus {
-    authorize_pinned(&CalibrationRegistry::empty(), point, fingerprint, version, dataset)
+    authorize_point_pinned_with(
+        &CalibrationRegistry::empty(),
+        point,
+        fingerprint,
+        version,
+        dataset,
+    )
+}
+
+/// Registry-taking companion to `authorize_point_pinned`.
+#[must_use]
+/// Registry-taking companion to `authorize_point_pinned`.
+pub fn authorize_point_pinned_with(
+    registry: &CalibrationRegistry,
+    point: &str,
+    fingerprint: &str,
+    version: u64,
+    dataset: &str,
+) -> CalibrationStatus {
+    authorize_pinned(registry, point, fingerprint, version, dataset)
 }
 
 /// Fingerprint-scoped cache key for one decision evaluation.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
+/// Fingerprint-scoped cache key for one decision evaluation.
 pub fn decision_key(
     point: &str,
     state: &str,
@@ -163,12 +253,14 @@ pub fn decision_key(
 
 /// Thresholds a shadow record is logged against for one spec.
 #[must_use]
+/// Thresholds a shadow record is logged against for one spec.
 pub fn shadow_thresholds(spec: &QuestionSpec) -> ThresholdSet {
     spec.thresholds()
 }
 
 /// Map an intent-spec label back to its `QueryIntent`, if it names one.
 #[must_use]
+/// Map an intent-spec label back to its `QueryIntent`, if it names one.
 pub fn intent_label_to_intent(label: &str) -> Option<super::strategy::QueryIntent> {
     use super::strategy::QueryIntent;
     match label {
@@ -190,6 +282,11 @@ pub fn intent_label_to_intent(label: &str) -> Option<super::strategy::QueryInten
 /// (today's behavior); a verdict routes three ways, and an unknown
 /// label can never silence grounded evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Sufficiency route for one evidence set. The hard gate runs first:
+/// ungrounded evidence routes `Unanswerable` no matter what the model
+/// says. Grounded evidence without a verdict answers from excerpts
+/// (today's behavior); a verdict routes three ways, and an unknown
+/// label can never silence grounded evidence.
 pub enum Sufficiency {
     Answer,
     Synthesize,
@@ -199,6 +296,8 @@ pub enum Sufficiency {
 /// Route one evidence set, logging the shadow record when a verdict
 /// was consulted. Pure: no I/O, no cache, no side effects.
 #[must_use]
+/// Route one evidence set, logging the shadow record when a verdict
+/// was consulted. Pure: no I/O, no cache, no side effects.
 pub fn route_sufficiency(
     evidence_count: usize,
     grounded: bool,
@@ -224,6 +323,9 @@ pub fn route_sufficiency(
 /// above `threshold`, preserving input order. A filter, never a rerank —
 /// the legacy 0.5 operating point passes through byte-identically.
 #[must_use]
+/// Relevance gate over scored candidates: keep every candidate at or
+/// above `threshold`, preserving input order. A filter, never a rerank —
+/// the legacy 0.5 operating point passes through byte-identically.
 pub fn relevance_gate(candidates: &[(&str, f64)], threshold: f64) -> Vec<String> {
     candidates
         .iter()
@@ -235,6 +337,8 @@ pub fn relevance_gate(candidates: &[(&str, f64)], threshold: f64) -> Vec<String>
 /// Whitespace-stripped signature: the cheap exact comparison behind
 /// eligibility. Cosmetic-only diffs never reach a verdict.
 #[must_use]
+/// Whitespace-stripped signature: the cheap exact comparison behind
+/// eligibility. Cosmetic-only diffs never reach a verdict.
 pub fn normalize_signature(signature: &str) -> String {
     signature.split_whitespace().collect::<String>()
 }
@@ -244,6 +348,10 @@ pub fn normalize_signature(signature: &str) -> String {
 /// generated comments are not nominated; everything else generated with
 /// changed bytes is model-eligible (shadow-only until authorized).
 #[must_use]
+/// Whether a member's commentary is eligible for a staleness verdict.
+/// Human-written comments are never nominated; whitespace-only diffs on
+/// generated comments are not nominated; everything else generated with
+/// changed bytes is model-eligible (shadow-only until authorized).
 pub fn staleness_eligible(comment_generated: bool, old_sig: &str, new_sig: &str) -> bool {
     comment_generated && normalize_signature(old_sig) != normalize_signature(new_sig)
 }
@@ -251,6 +359,8 @@ pub fn staleness_eligible(comment_generated: bool, old_sig: &str, new_sig: &str)
 /// Which rung answered one ladder evaluation. Efficiency accounting
 /// only: the deterministic result stays authoritative regardless.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which rung answered one ladder evaluation. Efficiency accounting
+/// only: the deterministic result stays authoritative regardless.
 pub enum LadderOutcome {
     /// Deterministic rule decided; no model call made.
     Rule,
@@ -274,6 +384,9 @@ pub struct DecisionMetrics {
     fallbacks: std::sync::atomic::AtomicU64,
     drops: std::sync::atomic::AtomicU64,
     shadow_disagreements: std::sync::atomic::AtomicU64,
+    /// Inputs flagged by the untrusted-input screen. The flag observes;
+    /// routing decisions are recorded on their own rungs.
+    suspicious: std::sync::atomic::AtomicU64,
     latency: std::sync::Arc<common_core::metrics::LatencyHistogram>,
 }
 
@@ -287,6 +400,7 @@ impl DecisionMetrics {
             fallbacks: std::sync::atomic::AtomicU64::new(0),
             drops: std::sync::atomic::AtomicU64::new(0),
             shadow_disagreements: std::sync::atomic::AtomicU64::new(0),
+            suspicious: std::sync::atomic::AtomicU64::new(0),
             latency: std::sync::Arc::new(common_core::metrics::LatencyHistogram::new()),
         }
     }
@@ -312,6 +426,13 @@ impl DecisionMetrics {
         }
     }
 
+    /// Count one input flagged by the untrusted-input screen. Observes
+    /// only: the routing rung is recorded separately by the caller.
+    pub fn record_suspicious(&self) {
+        use std::sync::atomic::Ordering;
+        self.suspicious.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Observe one finished evaluation latency in milliseconds.
     pub fn observe_latency_ms(&self, duration_ms: u64) {
         self.latency.observe(duration_ms);
@@ -328,6 +449,7 @@ impl DecisionMetrics {
             fallbacks: self.fallbacks.load(Ordering::Relaxed),
             drops: self.drops.load(Ordering::Relaxed),
             shadow_disagreements: self.shadow_disagreements.load(Ordering::Relaxed),
+            suspicious: self.suspicious.load(Ordering::Relaxed),
             latency_p50_ms: self.latency.estimate_percentile(50.0),
             latency_p99_ms: self.latency.estimate_percentile(99.0),
             latency_samples: self.latency.count(),
@@ -347,6 +469,11 @@ impl Default for DecisionMetrics {
 /// cache-hit marking, degraded flag, factory outcome) — never a
 /// second walk, and the shared ladder stays untouched.
 #[allow(clippy::too_many_arguments)]
+/// Run one ladder evaluation with metrics attached: exactly one
+/// `record` plus one latency sample per call, shadow optional.
+/// The rung is read off the ladder's own result (rule presence,
+/// cache-hit marking, degraded flag, factory outcome) — never a
+/// second walk, and the shared ladder stays untouched.
 pub async fn evaluate_with_metrics<MF, Fut>(
     metrics: &DecisionMetrics,
     rule: Option<Decision>,
@@ -422,6 +549,7 @@ where
 
 /// Serializable counters for health/benchmark output (additive key).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Serializable counters for health/benchmark output (additive key).
 pub struct DecisionMetricsSnapshot {
     pub rule_wins: u64,
     pub cache_hits: u64,
@@ -429,6 +557,10 @@ pub struct DecisionMetricsSnapshot {
     pub fallbacks: u64,
     pub drops: u64,
     pub shadow_disagreements: u64,
+    /// Flagged by the untrusted-input screen (defaulted: old journals
+    /// predate the counter).
+    #[serde(default)]
+    pub suspicious: u64,
     pub latency_p50_ms: u64,
     pub latency_p99_ms: u64,
     pub latency_samples: u64,

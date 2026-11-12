@@ -13,6 +13,8 @@ use thiserror::Error;
 /// Closed vocabulary of PII detector labels (union of the request-path table
 /// and the anonymize-only statics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Closed vocabulary of PII detector labels (union of the request-path table
+/// and the anonymize-only statics).
 pub enum PiiLabel {
     #[serde(rename = "ssn")]
     Ssn,
@@ -43,6 +45,7 @@ pub enum PiiLabel {
 /// Refusal for label input outside the closed vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("unknown PII label: {0}")]
+/// Refusal for label input outside the closed vocabulary.
 pub struct PiiLabelParseError(pub String);
 
 impl PiiLabel {

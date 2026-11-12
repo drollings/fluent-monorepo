@@ -49,6 +49,11 @@ use crate::ranking::SalienceRanker;
 /// Pure data so the combiner can tag every hit without depending on those
 /// backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The provenance of a retrieval hit. `TreeSitter` / `StringSearch` are
+/// produced by sibling tool backends (the compiled-tool world); this owner's
+/// tools produce [`RetrievalSource::LemmaGrep`] and [`RetrievalSource::Fuzzy`].
+/// Pure data so the combiner can tag every hit without depending on those
+/// backends.
 pub enum RetrievalSource {
     LemmaGrep,
     Fuzzy,
@@ -58,6 +63,7 @@ pub enum RetrievalSource {
 
 /// A fuzzy-retrieval hit: an embedding-similar span (paraphrase coverage).
 #[derive(Debug, Clone, PartialEq)]
+/// A fuzzy-retrieval hit: an embedding-similar span (paraphrase coverage).
 pub struct FuzzyHit {
     pub span: Span,
     pub score: f32,
@@ -68,6 +74,9 @@ pub struct FuzzyHit {
 /// sees a bare span — it sees the producing axis, the span, and the
 /// confidence/score that axis warrants.
 #[derive(Debug, Clone, PartialEq)]
+/// One surfaced hit, discriminated by [`RetrievalSource`]. A subagent never
+/// sees a bare span — it sees the producing axis, the span, and the
+/// confidence/score that axis warrants.
 pub struct RetrievalHit {
     pub source: RetrievalSource,
     pub span: Span,
@@ -130,6 +139,9 @@ pub trait FuzzyRetrieval: Send + Sync {
 /// ranked by cosine similarity. Deterministic and model-free — the test double
 /// a caller replaces with a real HNSW-backed [`FuzzyRetrieval`] implementation.
 #[derive(Clone)]
+/// A hermetic in-memory fuzzy index over `(span, text, embedding)` regions
+/// ranked by cosine similarity. Deterministic and model-free — the test double
+/// a caller replaces with a real HNSW-backed [`FuzzyRetrieval`] implementation.
 pub struct InMemoryFuzzyIndex {
     provider: Arc<dyn EmbeddingProvider>,
     regions: Vec<(Span, Vec<f32>)>,
@@ -185,6 +197,7 @@ impl FuzzyRetrieval for InMemoryFuzzyIndex {
 
 /// A per-region cross-check verdict: whether the lemma and fuzzy axes agreed.
 #[derive(Debug, Clone, PartialEq)]
+/// A per-region cross-check verdict: whether the lemma and fuzzy axes agreed.
 pub struct RegionVerdict {
     pub span: Span,
     pub lemma_confidence: Option<f64>,
@@ -198,6 +211,9 @@ pub struct RegionVerdict {
 /// a region are **always surfaced when they materially disagree** — the
 /// subagent sees the conflict rather than a silent single preference.
 #[derive(Debug, Clone)]
+/// All surfaced hits plus per-region cross-check verdicts. Both axes' hits for
+/// a region are **always surfaced when they materially disagree** — the
+/// subagent sees the conflict rather than a silent single preference.
 pub struct CrossCheckReport {
     pub hits: Vec<RetrievalHit>,
     pub regions: Vec<RegionVerdict>,
@@ -274,6 +290,7 @@ pub const DEFAULT_FUZZY_TOP_K: usize = 5;
 
 /// Errors surfaced by the retrieval service.
 #[derive(Debug, thiserror::Error)]
+/// Errors surfaced by the retrieval service.
 pub enum RetrievalError {
     #[error("spacy-rs pipeline error: {0}")]
     Pipeline(#[from] spacy_rs::PipelineError),
@@ -282,6 +299,8 @@ pub enum RetrievalError {
 /// One candidate node's retrieval report: the surfaced hits + region verdicts
 /// for its parsed LOD0, plus the candidate's salience-rank position.
 #[derive(Debug, Clone, PartialEq)]
+/// One candidate node's retrieval report: the surfaced hits + region verdicts
+/// for its parsed LOD0, plus the candidate's salience-rank position.
 pub struct NodeRetrievalReport {
     pub node_id: NodeId,
     /// Every hit from either axis (lemma-grep and fuzzy), discriminated by

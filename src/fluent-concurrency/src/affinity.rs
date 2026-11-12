@@ -21,6 +21,7 @@ use crate::sync as sync_lock;
 
 /// Configuration for aging behaviour.
 #[derive(Debug, Clone)]
+/// Configuration for aging behaviour.
 pub struct AgingConfig {
     /// Priority bonus added when task is for the currently-affine session.
     pub affinity_bonus: i32,
@@ -45,6 +46,7 @@ impl Default for AgingConfig {
 
 /// A task enqueued in the scheduler with its metadata.
 #[derive(Debug, Clone)]
+/// A task enqueued in the scheduler with its metadata.
 pub struct ScheduledTask<T> {
     pub identity: String,
     pub task: T,

@@ -361,6 +361,7 @@ pub const WILL_CLITIC: &[&str] = &["'ll"];
 
 /// Build the lowercased-orth → flag-bits map for [`LexiconConfig`](crate::lexeme::LexiconConfig).
 #[must_use]
+/// Build the lowercased-orth → flag-bits map for [`LexiconConfig`](crate::lexeme::LexiconConfig).
 pub fn function_word_bits() -> HashMap<String, u64> {
     let sets: &[(&[&str], Attribute)] = &[
         (DET, Attribute::IsDetWord),

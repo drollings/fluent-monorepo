@@ -56,6 +56,17 @@ pub trait RecallStorage: Send + Sync {
         limit: usize,
         filter: &StorageFilter,
     ) -> Result<Vec<StorageHit>, RecallError>;
+    /// Generated-summary recall (fragment ids whose summary matches).
+    /// Defaults to empty so existing fakes and adapters stay valid; the
+    /// summary index serves it once the pass has projected summaries.
+    fn search_summaries(
+        &self,
+        _query: &str,
+        _limit: usize,
+        _filter: &StorageFilter,
+    ) -> Result<Vec<StorageHit>, RecallError> {
+        Ok(Vec::new())
+    }
     /// Entity + file lookup by public entity id.
     fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, RecallError>;
     /// Entities + files for one file id (diagnosis fallback).
@@ -72,6 +83,9 @@ pub trait RecallStorage: Send + Sync {
 /// glob/type selection, mtime window. `None` = no path selection.
 /// Source: `resolveFilteredFileIds`.
 #[must_use]
+/// Resolve the storage file allow-list: include matchers, exclude matchers,
+/// glob/type selection, mtime window. `None` = no path selection.
+/// Source: `resolveFilteredFileIds`.
 pub fn resolve_filtered_file_ids(
     files: &[FileInfo],
     plan: &ResolvedSearchPlan,
@@ -114,6 +128,8 @@ pub fn resolve_filtered_file_ids(
 /// Closed symbol-type name in zvec wire spelling (`"function"`, …).
 /// Used by the GuidanceDb adapter when pushing the filter into SQL.
 #[must_use]
+/// Closed symbol-type name in zvec wire spelling (`"function"`, …).
+/// Used by the GuidanceDb adapter when pushing the filter into SQL.
 pub fn symbol_type_name(symbol: &CodeSymbolType) -> String {
     match symbol {
         CodeSymbolType::Module => "module",
@@ -142,6 +158,7 @@ fn matches_modified_time(file: &FileInfo, plan: &ResolvedSearchPlan) -> bool {
 
 /// Recall output: resolved plan, ranked hits, force-tracked hit, timings.
 #[derive(Debug)]
+/// Recall output: resolved plan, ranked hits, force-tracked hit, timings.
 pub struct RecallOutput {
     /// Resolved plan.
     pub plan: ResolvedSearchPlan,
@@ -163,6 +180,31 @@ struct RecallRoute {
     lemmas: Vec<String>,
 }
 
+/// Summary route mode: generated commentary participates additively,
+/// never as source. Disabled by default; shadow observes without fusing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Summary route mode: generated commentary participates additively,
+/// never as source. Disabled by default; shadow observes without fusing.
+pub enum SummaryMode {
+    /// Summary route off: zero extra work, byte-identical results.
+    #[default]
+    Disabled,
+    /// Compute the route and log agreement; never fuse candidates.
+    Shadow,
+    /// Fuse summary candidates; citations stay source ranges.
+    Act,
+}
+
+/// Additive recall policy: behavior beyond the deterministic routes.
+/// `run_recall` keeps the disabled default for existing callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Additive recall policy: behavior beyond the deterministic routes.
+/// `run_recall` keeps the disabled default for existing callers.
+pub struct RecallPolicy {
+    /// Summary route mode.
+    pub summary: SummaryMode,
+}
+
 /// Run the hybrid recall pipeline end to end. Source: `searchWorkspaceIndex`.
 /// The lemma route (P1 L2) always participates; it yields nothing when
 /// normalization is empty.
@@ -171,6 +213,19 @@ pub fn run_recall(
     storage: &dyn RecallStorage,
     embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+) -> Result<RecallOutput, RecallError> {
+    run_recall_with_policy(plan, storage, embedder, nlp, RecallPolicy::default())
+}
+
+/// Policy-aware recall: `run_recall` with an explicit [`RecallPolicy`].
+/// `Shadow` computes the summary route for agreement logging without
+/// fusing; `Act` fuses summary candidates with source-only citations.
+pub fn run_recall_with_policy(
+    plan: &SearchPlan,
+    storage: &dyn RecallStorage,
+    embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
+    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+    policy: RecallPolicy,
 ) -> Result<RecallOutput, RecallError> {
     let mut timings = TimingCollector::new();
     let normalized = validate_search_plan(plan)?;
@@ -209,6 +264,7 @@ pub fn run_recall(
             limit,
             storage,
             &mut candidates,
+            policy,
         )?;
     }
     timings.record("recall");
@@ -320,11 +376,12 @@ fn collect_adaptive_recall(
     limit: usize,
     storage: &dyn RecallStorage,
     candidates: &mut HashMap<String, RecallCandidate>,
+    policy: RecallPolicy,
 ) -> Result<usize, RecallError> {
     // M5: fan-out, not a first-accept walk — every route contributes hits
     // each depth (results merge for fusion). The ladder combinator
     // (first-Ok-wins) would drop recalls. Stays.
-    let routes = build_recall_routes(plan, filter, nlp);
+    let routes = build_recall_routes(plan, filter, nlp, policy);
     let target = recall_target_candidate_count(limit);
     let mut previous_depth = 0;
     let mut depth = RECALL_INITIAL_DEPTH;
@@ -332,6 +389,14 @@ fn collect_adaptive_recall(
         let mut saturated = false;
         for route in &routes {
             let hits = recall_route_hits(route, vector_by_route, depth, storage)?;
+            // Shadow observations never perturb the deterministic loop:
+            // saturation and fusion see exactly the pre-summary behavior.
+            let shadow_only =
+                route.mode == RecallPath::Summary && policy.summary == SummaryMode::Shadow;
+            if shadow_only {
+                record_summary_shadow(candidates, &hits);
+                continue;
+            }
             saturated = saturated || hits.len() >= depth;
             add_recall_hits(candidates, &hits, route, storage, previous_depth)?;
         }
@@ -343,10 +408,150 @@ fn collect_adaptive_recall(
     }
 }
 
+/// Log summary-route agreement against the deterministic candidates without
+/// fusing: which summary hits the deterministic path already finds, and
+/// which it would add.
+fn record_summary_shadow(candidates: &HashMap<String, RecallCandidate>, hits: &[StorageHit]) {
+    use std::collections::HashSet;
+    let authoritative: HashSet<&str> = candidates.keys().map(String::as_str).collect();
+    let summary: Vec<String> = hits
+        .iter()
+        .map(|hit| public_entity_id(&hit.fragment).to_string())
+        .collect();
+    let record = crate::query::shadow::summary_route_shadow(
+        &authoritative,
+        &summary.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    tracing::info!(
+        target: "summary_shadow",
+        point = record.point.as_str(),
+        label = record.label.as_str(),
+        confidence = record.confidence,
+        would_have_acted = record.would_have_acted,
+        "summary route shadow agreement",
+    );
+}
+
+/// One labelled retrieval case for summary-index calibration: the queries
+/// a summary route must answer plus the controls that must never fire it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+/// One labelled retrieval case for summary-index calibration: the queries
+/// a summary route must answer plus the controls that must never fire it.
+pub struct SummaryRecallCase {
+    /// Query text.
+    pub query: String,
+    /// Fragment ids the summary route must return.
+    #[serde(default)]
+    pub expected: Vec<String>,
+    /// Control queries must yield no summary hits.
+    #[serde(default)]
+    pub control: bool,
+    /// Why this case exists.
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// Task-value report for one summary-index measurement: precision/recall
+/// over expected hits, false-positive rate over controls.
+#[derive(Debug, Clone, PartialEq)]
+/// Task-value report for one summary-index measurement: precision/recall
+/// over expected hits, false-positive rate over controls.
+pub struct SummaryRecallReport {
+    /// Hits that matched expectations / all summary hits.
+    pub precision: f64,
+    /// Expected hits found / all expected hits.
+    pub recall: f64,
+    /// Controls that fired / all controls.
+    pub fpr: f64,
+    /// Control queries with any summary hit.
+    pub control_fires: usize,
+    /// Non-control cases measured.
+    pub support: usize,
+}
+
+/// Load a summary-index corpus (`summary_index_seed.json` shape).
+pub fn load_summary_corpus(path: &std::path::Path) -> Result<Vec<SummaryRecallCase>, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("read corpus {}: {e}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("parse corpus: {e}"))?;
+    let point = value.get("point").and_then(|v| v.as_str()).unwrap_or("");
+    if point != crate::query::decision_points::SUMMARY_INDEX_POINT {
+        return Err(format!("corpus point is {point:?}, want summary_index"));
+    }
+    let queries = value
+        .get("queries")
+        .ok_or_else(|| "corpus has no queries".to_string())?;
+    serde_json::from_value(queries.clone()).map_err(|e| format!("parse cases: {e}"))
+}
+
+/// Measure the summary route against labelled cases: expected fragment ids
+/// per query, zero tolerance for control fires. Hermetic: the caller seeds
+/// precomputed summary fixtures; no model runs here.
+#[must_use]
+/// Measure the summary route against labelled cases: expected fragment ids
+/// per query, zero tolerance for control fires. Hermetic: the caller seeds
+/// precomputed summary fixtures; no model runs here.
+pub fn measure_summary_recall(
+    storage: &dyn RecallStorage,
+    cases: &[SummaryRecallCase],
+    limit: usize,
+) -> SummaryRecallReport {
+    use std::collections::HashSet;
+    let mut retrieved = 0usize;
+    let mut relevant_retrieved = 0usize;
+    let mut relevant = 0usize;
+    let mut control_fires = 0usize;
+    let mut controls = 0usize;
+    let mut support = 0usize;
+    let filter = StorageFilter::default();
+    for case in cases {
+        let Ok(hits) = storage.search_summaries(&case.query, limit, &filter) else {
+            continue;
+        };
+        let hit_ids: HashSet<&str> = hits
+            .iter()
+            .map(|hit| public_entity_id(&hit.fragment))
+            .collect();
+        if case.control {
+            controls += 1;
+            if !hit_ids.is_empty() {
+                control_fires += 1;
+            }
+            continue;
+        }
+        support += 1;
+        let expected: HashSet<&str> = case.expected.iter().map(String::as_str).collect();
+        relevant_retrieved += hit_ids.intersection(&expected).count();
+        retrieved += hit_ids.len();
+        relevant += expected.len();
+    }
+    SummaryRecallReport {
+        precision: if retrieved == 0 {
+            1.0
+        } else {
+            relevant_retrieved as f64 / retrieved as f64
+        },
+        recall: if relevant == 0 {
+            1.0
+        } else {
+            relevant_retrieved as f64 / relevant as f64
+        },
+        fpr: if controls == 0 {
+            0.0
+        } else {
+            control_fires as f64 / controls as f64
+        },
+        control_fires,
+        support,
+    }
+}
+
 fn build_recall_routes(
     plan: &ResolvedSearchPlan,
     filter: &StorageFilter,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+    policy: RecallPolicy,
 ) -> Vec<RecallRoute> {
     let mut output: Vec<RecallRoute> = plan
         .routes
@@ -372,10 +577,22 @@ fn build_recall_routes(
         output.push(RecallRoute {
             id: "lemma".to_string(),
             mode: RecallPath::Lemma,
-            query: lemma_query,
+            query: lemma_query.clone(),
             filter: filter.clone(),
             vector_route_id: None,
             lemmas,
+        });
+    }
+    // Summary route: generated-comment recall over `fragment_summaries`.
+    // Computed in both Shadow and Act; fused only in Act.
+    if policy.summary != SummaryMode::Disabled && !lemma_query.trim().is_empty() {
+        output.push(RecallRoute {
+            id: "summary".to_string(),
+            mode: RecallPath::Summary,
+            query: lemma_query,
+            filter: filter.clone(),
+            vector_route_id: None,
+            lemmas: Vec::new(),
         });
     }
     if plan.prefer_symbol != Some(true) {
@@ -426,6 +643,7 @@ fn recall_route_hits(
             }
             storage.search_lemmas(&route.lemmas, depth, &route.filter)
         }
+        RecallPath::Summary => storage.search_summaries(&route.query, depth, &route.filter),
     }
 }
 

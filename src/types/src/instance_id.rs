@@ -40,6 +40,8 @@ impl std::error::Error for InstanceIdError {}
 /// Typed opaque pair `(model_key, instance_name)` with grammar validation.
 /// Backed by `ArcIntern<str>` per VISION §Shared Content Nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Typed opaque pair `(model_key, instance_name)` with grammar validation.
+/// Backed by `ArcIntern<str>` per VISION §Shared Content Nodes.
 pub struct InstanceId {
     model: ArcIntern<str>,
     name: ArcIntern<str>,

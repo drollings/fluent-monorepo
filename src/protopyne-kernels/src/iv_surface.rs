@@ -21,6 +21,7 @@ pub const MIN_SURFACE_STRIKES: usize = 3;
 
 /// One fitted surface point: the strike and its implied volatility.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One fitted surface point: the strike and its implied volatility.
 pub struct IvPoint {
     /// Strike price per share.
     pub strike: f64,
@@ -31,6 +32,8 @@ pub struct IvPoint {
 /// An implied-volatility surface at one expiry: per-strike IVs ascending by
 /// strike, with linear interpolation between points and flat wings.
 #[derive(Debug, Clone, PartialEq)]
+/// An implied-volatility surface at one expiry: per-strike IVs ascending by
+/// strike, with linear interpolation between points and flat wings.
 pub struct IvSurface {
     /// Expiry every fitted quote names.
     pub expiry: NaiveDate,

@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 /// deployment without it. `Some` composes the worker behind its runtime gate
 /// (open at boot, closable via `POST /admin/frame/rollback`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Frame-resolution worker configuration. `None` (the default, i.e. no
+/// `frame_resolution` block) leaves the worker unbuilt — byte-identical to a
+/// deployment without it. `Some` composes the worker behind its runtime gate
+/// (open at boot, closable via `POST /admin/frame/rollback`).
 pub struct FrameResolutionConfig {
     /// Model key for the resolution model (batched, grammar-shaped JSON).
     /// Falls back to the classifier key, then the onnx LLM key when absent —

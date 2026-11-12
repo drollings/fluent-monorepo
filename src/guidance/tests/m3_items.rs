@@ -50,7 +50,12 @@ fn cosmetic_edits_keep_sig_stable() {
 #[test]
 fn doc_edits_never_cascade_to_sig_or_body() {
     let before = item_hashes_for("rust", "fn f(x: u8) -> u8", "x + 1", Some("/// Adds one."));
-    let after = item_hashes_for("rust", "fn f(x: u8) -> u8", "x + 1", Some("/// Adds one more."));
+    let after = item_hashes_for(
+        "rust",
+        "fn f(x: u8) -> u8",
+        "x + 1",
+        Some("/// Adds one more."),
+    );
     assert_eq!(before.sig, after.sig);
     assert_eq!(before.body, after.body);
     assert_ne!(before.doc, after.doc);
@@ -78,7 +83,10 @@ fn body_only_edits_move_item_not_sig() {
 
 #[test]
 fn normalize_is_comment_aware_for_rust_only() {
-    assert_eq!(normalize_code_text("rust", "a // b"), normalize_code_text("rust", "a"));
+    assert_eq!(
+        normalize_code_text("rust", "a // b"),
+        normalize_code_text("rust", "a")
+    );
     assert_eq!(
         normalize_code_text("rust", "a /* b */ c"),
         normalize_code_text("rust", "a c")
@@ -103,7 +111,11 @@ fn interface_hash_survives_body_edit() {
         content_hash_for_entity(&before),
         content_hash_for_entity(&after)
     );
-    assert!(interface_stable("rust", "fn f(x: u8) -> u8", "fn  f( x:u8 ) -> u8"));
+    assert!(interface_stable(
+        "rust",
+        "fn f(x: u8) -> u8",
+        "fn  f( x:u8 ) -> u8"
+    ));
     assert!(interface_stable(
         "rust",
         "fn f(x: u8) -> u8",

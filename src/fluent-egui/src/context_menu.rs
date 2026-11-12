@@ -18,6 +18,9 @@ use crate::wheel::{menu_anchor, Pos2, Rect};
 /// x (the strip has no slots of its own), and the pane-local anchor the menu
 /// opens at.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A secondary click on a pane's axis strip: which pane, the nearest bar by
+/// x (the strip has no slots of its own), and the pane-local anchor the menu
+/// opens at.
 pub struct ContextTrigger {
     /// Pane index in the caller's zone order.
     pub pane: usize,
@@ -32,6 +35,10 @@ pub struct ContextTrigger {
 /// and off-canvas points raise nothing, so a click elsewhere can never open
 /// this pane's menu.
 #[must_use]
+/// Route a hover point to a context trigger, or `None` when the point is not
+/// on this pane's axis strip. Only the axis answers — plot, legend, divider,
+/// and off-canvas points raise nothing, so a click elsewhere can never open
+/// this pane's menu.
 pub fn detect_context_trigger(
     pane: usize,
     axis: Rect,
@@ -61,6 +68,8 @@ pub fn detect_context_trigger(
 /// One menu row: the action a pick raises, its display label, whether the
 /// row answers clicks, and whether a divider follows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One menu row: the action a pick raises, its display label, whether the
+/// row answers clicks, and whether a divider follows it.
 pub struct MenuRow<T> {
     /// Action raised when the operator picks this row.
     pub action: T,

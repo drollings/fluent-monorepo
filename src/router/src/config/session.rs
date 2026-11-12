@@ -8,6 +8,11 @@ use serde::{Deserialize, Serialize};
 /// session home) so checkpoint/rewind state and rigor rewind exist at runtime.
 /// `None` (absent) keeps today's behavior - no session registry at boot.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Session composition section - the `session` block of `RouterConfig`.
+/// 
+/// `Some` opts the composition root into a `SessionRegistry` (canonical
+/// session home) so checkpoint/rewind state and rigor rewind exist at runtime.
+/// `None` (absent) keeps today's behavior - no session registry at boot.
 pub struct SessionConfig {
     /// Cold-tier mountpoint for KV cache snapshots, mapped to
     /// `SessionRegistry::new`'s `kv_root`. `None` uses a process-local temp

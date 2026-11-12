@@ -3,8 +3,13 @@
 //! Shadow disagreement never flips the deterministic result while the
 //! registry is seed-empty; control fires block promotion.
 
-use crate::query::calibration::{cosmetic_corpus, control_fire_count, homonym_corpus, keyword_only_corpus, passes_gate, sweep};
-use crate::query::decision_points::{authorize_point, relevance_gate, route_sufficiency, staleness_eligible, sufficiency_spec, Sufficiency};
+use crate::query::calibration::{
+    control_fire_count, cosmetic_corpus, homonym_corpus, keyword_only_corpus, passes_gate, sweep,
+};
+use crate::query::decision_points::{
+    authorize_point, relevance_gate, route_sufficiency, staleness_eligible, sufficiency_spec,
+    Sufficiency,
+};
 
 #[test]
 fn homonym_control_blocks_high_threshold() {

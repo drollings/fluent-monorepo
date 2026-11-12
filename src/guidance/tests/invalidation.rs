@@ -29,10 +29,17 @@ fn dependents_cover_stem_resolved_and_glob() {
         ("b.rs".to_string(), "crate::a::foo".to_string(), None),
         ("c.rs".to_string(), "unrelated".to_string(), None),
         ("d.rs".to_string(), "crate::*".to_string(), None),
-        ("e.rs".to_string(), "other".to_string(), Some("src/a.rs".to_string())),
+        (
+            "e.rs".to_string(),
+            "other".to_string(),
+            Some("src/a.rs".to_string()),
+        ),
     ];
     let found = dependents_of(&edges, &["src/a.rs".to_string()]);
-    assert_eq!(found, vec!["b.rs".to_string(), "d.rs".to_string(), "e.rs".to_string()]);
+    assert_eq!(
+        found,
+        vec!["b.rs".to_string(), "d.rs".to_string(), "e.rs".to_string()]
+    );
 }
 
 #[test]

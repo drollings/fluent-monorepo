@@ -17,6 +17,7 @@ use crate::config::{FilterAction, FilterScope};
 
 /// A single regex match with positional info for codeword substitution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A single regex match with positional info for codeword substitution.
 pub struct RegexMatch {
     pub pattern_name: String,
     pub matched_text: String,
@@ -27,6 +28,7 @@ pub struct RegexMatch {
 
 /// Filter kinds per MOA_ROUTER_SPEC §2.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Filter kinds per MOA_ROUTER_SPEC §2.1.
 pub enum FilterKind {
     Regex,
     Whitelist,
@@ -36,6 +38,7 @@ pub enum FilterKind {
 
 /// Filter outcomes per MOA_ROUTER_SPEC §2 table.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Filter outcomes per MOA_ROUTER_SPEC §2 table.
 pub enum FilterDecision {
     HardReject {
         pattern: String,

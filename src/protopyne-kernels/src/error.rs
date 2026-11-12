@@ -5,6 +5,7 @@ use thiserror::Error;
 
 /// Errors from run-context handling, input validation, and runtime checks.
 #[derive(Error, Debug)]
+/// Errors from run-context handling, input validation, and runtime checks.
 pub enum KernelError {
     /// An input declaration or assignment failed validation.
     #[error("invalid input: {0}")]

@@ -19,6 +19,7 @@ pub const SWEEP_MS: u64 = 30_000;
 
 /// One resident model.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One resident model.
 pub struct Resident {
     /// Catalog tag.
     pub name: String,
@@ -38,6 +39,7 @@ impl Resident {
 
 /// Budget enforcer over resident models.
 #[derive(Debug, Clone, Default)]
+/// Budget enforcer over resident models.
 pub struct ResidencyManager {
     /// Budget in bytes.
     pub budget_bytes: u64,
@@ -126,6 +128,8 @@ impl ResidencyManager {
 /// Serial voice-model holds: acquire extends the lease, the sweep
 /// drops expired entries, and the voice stack unloads when empty.
 #[derive(Debug, Clone, Default)]
+/// Serial voice-model holds: acquire extends the lease, the sweep
+/// drops expired entries, and the voice stack unloads when empty.
 pub struct VoiceLeases {
     /// Lease expiry per model (seconds since Unix epoch).
     pub until: HashMap<String, i64>,

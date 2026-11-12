@@ -307,7 +307,7 @@ fn lemma_route_carries_full_recall_where_fts_finds_nothing() {
     crate::query::ingest::ingest_text_file(
         &db,
         &file,
-        "the function executes every morning\n",
+        "// the function executes every morning\nexport const anchor = 1;\n",
         None,
         Some(&nlp),
     )

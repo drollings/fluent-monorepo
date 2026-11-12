@@ -259,6 +259,8 @@ pub fn cosine_similarity_q8(a: &QuantizedEmbedding, b: &QuantizedEmbedding) -> f
 /// int8 storage codec (P6): `scale` (f32 LE) + `dimensions` (u32 LE) + raw
 /// i8 values. Stored bytes per vector = `dims + 8` vs `4 * dims` FP32.
 #[must_use]
+/// int8 storage codec (P6): `scale` (f32 LE) + `dimensions` (u32 LE) + raw
+/// i8 values. Stored bytes per vector = `dims + 8` vs `4 * dims` FP32.
 pub fn quantized_to_bytes(quantized: &QuantizedEmbedding) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(8 + quantized.values.len());
     bytes.extend_from_slice(&quantized.scale.to_le_bytes());
@@ -270,6 +272,8 @@ pub fn quantized_to_bytes(quantized: &QuantizedEmbedding) -> Vec<u8> {
 /// Decode [`quantized_to_bytes`]; `None` on truncation or dimension
 /// mismatch (corrupt rows never poison recall — callers skip them).
 #[must_use]
+/// Decode [`quantized_to_bytes`]; `None` on truncation or dimension
+/// mismatch (corrupt rows never poison recall — callers skip them).
 pub fn quantized_from_bytes(bytes: &[u8]) -> Option<QuantizedEmbedding> {
     if bytes.len() < 8 {
         return None;

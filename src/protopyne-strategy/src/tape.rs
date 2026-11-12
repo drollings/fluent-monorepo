@@ -13,6 +13,7 @@ use protopyne_types::Bar;
 
 /// One bar's view of a closed tape.
 #[derive(Debug, Clone, Copy)]
+/// One bar's view of a closed tape.
 pub struct Tape<'a> {
     bars: &'a [Bar],
     legs: &'a LiteLegs,
@@ -105,6 +106,14 @@ impl<'a> Tape<'a> {
 /// refuses, so the snapshot can never smuggle an out-of-bounds cursor past
 /// the look-ahead fence.
 #[derive(Debug, Clone)]
+/// An owned, shareable tape binding: the bars, the batched legs, and the
+/// cursor, behind `Arc`s so a per-bar snapshot crosses a `WorkContext`
+/// channel without borrowing the decision loop's frame.
+/// 
+/// A [`Tape`] borrows; a `TapeSnapshot` owns. [`TapeSnapshot::view`]
+/// rebinds the borrow-checked window, refusing exactly what [`Tape::new`]
+/// refuses, so the snapshot can never smuggle an out-of-bounds cursor past
+/// the look-ahead fence.
 pub struct TapeSnapshot {
     /// Closed bars behind the cursor.
     pub bars: Arc<Vec<Bar>>,

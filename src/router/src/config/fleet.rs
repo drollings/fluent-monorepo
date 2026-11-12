@@ -24,6 +24,19 @@ use common_core::constants::default_true;
 /// `models.default` at parse); the supervisor reads per-model spawn
 /// defaults through [`super::root::RouterConfig::spawn_defaults_for`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A role's run parameters — the `params` block on a `roles` entry.
+/// 
+/// Supplies the "how a model is run" configuration for everything serving
+/// the role: the `llama-server` launch knobs (`--batch-size`,
+/// `--ubatch-size`, `--cache-type-k/v`, `--flash-attn`, `--n-gpu-layers`,
+/// `--n-cpu-moe`, `--sleep-idle-seconds`, `--ctx-size`) and flat sampling
+/// keys (e.g. `temperature`) every selection for the role composes over
+/// (role-base, then pool profile, then per-model selection — each sparser
+/// layer wins; the role side wins over the model entry top-level at
+/// dispatch). There is no nested `params` object inside a run block.
+/// The fleet-wide block lives as `roles.default.params` (itself fed by
+/// `models.default` at parse); the supervisor reads per-model spawn
+/// defaults through [`super::root::RouterConfig::spawn_defaults_for`].
 pub struct RoleParams {
     /// Default context size in tokens (`--ctx-size`; also `ctx_size` alias).
     #[serde(default = "default_num_ctx", alias = "ctx_size")]
@@ -278,6 +291,17 @@ fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<Instanc
 /// `session: false` (one-shot: never snapshotted, like every undeclared
 /// window).
 #[allow(clippy::implicit_hasher)]
+/// On-demand role-window templates for one model: every role maps to the
+/// window a dispatch through that role opens when the model has no
+/// materialized profile for it (`<model>:<role>` from the role's params).
+/// Same composition as a bound profile — the role run block's `num_ctx`
+/// clamped to the model-side cap (role override, then the entry), the
+/// entry's `max_parallel`, the entry's `max_ctx` — except `pinned: false`
+/// always: on-demand windows are demand-driven and idle-reaped, never
+/// resident anchors (a pinned role's window exists only where the role
+/// binds the model and boot materializes it). `name` is filled at creation;
+/// `session: false` (one-shot: never snapshotted, like every undeclared
+/// window).
 pub(crate) fn role_window_templates(
     entry: &ModelEntry,
     roles: &HashMap<String, RoleEntry>,
@@ -341,6 +365,28 @@ pub(crate) fn role_window_templates(
 /// demand. `expand_instance_map` clamps each profile's `num_ctx` to its
 /// `max_ctx` cap and resolves names/groups.
 #[allow(clippy::implicit_hasher)]
+/// Compose one model's effective instance pool at boot: the single
+/// role → per-model-instance params chain, synthesized here so every
+/// qualifier, sampling, backend, and supervision path reads composed values
+/// through `ModelEntry::effective_pool`.
+/// 
+/// The config declares no instance pools; profiles are synthesized from the
+/// model entry and the roles that bind it:
+/// 
+/// - one profile per role whose `models` list binds this model (sorted
+/// role order), composing role run-block sampling and the model-side
+/// `roles.<role>` override over the entry params, with `pinned`
+/// composing as role OR model and `max_ctx` as override-else-entry;
+/// - when no role binds the model, no profile at all — there is no
+/// synthetic `base` dispatch point. Every dispatch names a real role
+/// window (`<model>:<role>`), opened on demand from the role's params
+/// when the model is selected; unlisted models stay fully lazy until
+/// then.
+/// 
+/// A pinned profile is what boots a model at startup
+/// (`supervisor::LlamaServerSpec::from_entry`); everything else loads on
+/// demand. `expand_instance_map` clamps each profile's `num_ctx` to its
+/// `max_ctx` cap and resolves names/groups.
 pub(crate) fn materialize_effective_pool(
     model_key: &str,
     entry: &ModelEntry,

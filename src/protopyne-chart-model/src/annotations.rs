@@ -17,6 +17,10 @@ use crate::convert::to_display_float;
 /// Both legs are `Copy` and `Eq`, so keys compare by value and travel
 /// cheaply; serialization keeps the price exact (no float rounding).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Domain identity of one annotation: when plus at what exact price.
+/// 
+/// Both legs are `Copy` and `Eq`, so keys compare by value and travel
+/// cheaply; serialization keeps the price exact (no float rounding).
 pub struct AnnotationKey {
     /// Bar close time as epoch seconds (the [`ChartRow`](crate::convert::ChartRow) clock).
     pub bar_timestamp: i64,
@@ -55,6 +59,10 @@ impl AnnotationKey {
 /// These are paint roles (`bull`/`bear`/neutral), not trade semantics —
 /// the marker records that something is worth looking at, never what to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Display role of an annotation marker: which theme key paints it.
+/// 
+/// These are paint roles (`bull`/`bear`/neutral), not trade semantics —
+/// the marker records that something is worth looking at, never what to do.
 pub enum AnnotationStyle {
     /// Neutral readout marker.
     Note,
@@ -66,6 +74,7 @@ pub enum AnnotationStyle {
 
 /// One operator annotation: a domain key plus a label and display role.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One operator annotation: a domain key plus a label and display role.
 pub struct Annotation {
     /// When and at what price.
     pub key: AnnotationKey,

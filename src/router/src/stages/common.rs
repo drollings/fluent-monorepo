@@ -13,6 +13,10 @@ pub const ROUTING_TARGET_TYPED_KEY: &str = "routing_target.typed";
 /// orchestrator; producers return the target by value and the orchestrator
 /// publishes it here.
 #[allow(clippy::needless_pass_by_value)]
+/// Publish a `RoutingTarget` to the typed `WorkContext` store (zero-copy).
+/// This is the single call site that hands a `RoutingTarget` to the
+/// orchestrator; producers return the target by value and the orchestrator
+/// publishes it here.
 pub fn publish_routing_target(
     ctx: &mut fluent_wvr::WorkContext,
     _decision: &mut StageDecision,

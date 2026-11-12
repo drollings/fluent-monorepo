@@ -83,6 +83,8 @@ pub const REGIME_HYSTERESIS: f64 = 5.0;
 /// Market regime labels, mirroring `UTIL.MarketRegimes` member for member.
 /// `Display` renders the Pine member name so audits compare directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Market regime labels, mirroring `UTIL.MarketRegimes` member for member.
+/// `Display` renders the Pine member name so audits compare directly.
 pub enum MarketRegime {
     /// No dominant surface (also the fresh-context default).
     #[default]
@@ -115,6 +117,11 @@ impl fmt::Display for MarketRegime {
 /// `regime` the frozen label. No `Decimal` anywhere on this path — money
 /// exactness lives at the order boundary, indicator math is `f64`.
 #[derive(Debug, Clone, PartialEq)]
+/// Native `MarketContext`: every `fetch`-written field of the Pine type in
+/// declaration order. Floats read `Option<f64>` (`None` is Pine `na` via
+/// the locked `fin_or_none` policy); `tf` resolves the fixed-ms span and
+/// `regime` the frozen label. No `Decimal` anywhere on this path — money
+/// exactness lives at the order boundary, indicator math is `f64`.
 pub struct MarketContext {
     /// Resolved span (Pine reports chart-relative `C`; native always names
     /// the fixed-ms span — representation differs, values never do).
@@ -189,6 +196,10 @@ impl MarketContext {
 /// STDEV-14, SMA-20 over the volume leg). Kernel ids reference the
 /// implementations' own `ID` constants — no second id table lives here.
 #[derive(Debug, Clone)]
+/// Frozen `fetch` parameter bundle for one span: the nine kernel series
+/// `fetch` reads (ALMA-8, VWMA-12, EMA-21, ATR-14/50, CCI-14, RSI-14,
+/// STDEV-14, SMA-20 over the volume leg). Kernel ids reference the
+/// implementations' own `ID` constants — no second id table lives here.
 pub struct MarketContextKey {
     /// Resolved span.
     pub tf: Timeframe,
@@ -292,6 +303,18 @@ impl MarketContextKey {
 /// a zero ATR (zero true ranges) behaves the same way. The final
 /// `fin_or_none` is the locked na policy.
 #[must_use]
+/// MA alignment score, ported 1:1 from `getHealthMAs` (same branches, same
+/// op order, same frozen constants): full-stack alignment scores through
+/// `fast_tanh`, counter-alignment mirrors negative, mixed stacks blend by
+/// distance share with a deadband.
+/// 
+/// Absence mirrors Pine `na` structurally, never by early return: the
+/// oracle initializes its accumulators to zero, na comparisons read false,
+/// and only the deadband decides — so absent legs on an unaligned stack
+/// read exactly `0.0` (pinned by the warming/flat probes), while a true
+/// comparison against an absent distance poisons to na through `NaN`, and
+/// a zero ATR (zero true ranges) behaves the same way. The final
+/// `fin_or_none` is the locked na policy.
 pub fn health_mas(
     atr: Option<f64>,
     fast: Option<f64>,
@@ -389,6 +412,20 @@ fn regime_surfaces(
 /// the oracle on chop-shaped tapes.
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Ratio-based regime label, ported 1:1 from `detectRegime`: the highest
+/// polynomial surface wins, ties yield to trend first. The oracle teaches
+/// two na-semantics the hard way (warming-bar probe): `math.max`
+/// propagates absence (any absent score poisons the max, so no tie can
+/// fire), and absent-`==`-absent never ties — a warming bar with trend 0.0
+/// present reads `LOW_VOLUME`, never the `0 == 0` trend tie. A present
+/// trend past its floor still fires with absent siblings (the `> 20`
+/// disjunct needs no tie); `VOLATILE`/`RANGING` need all three present.
+/// All absent reads `LOW_VOLUME` — the fail-closed quiet label.
+/// Thresholds frozen, never tuned.
+/// 
+/// `#[allow(clippy::float_cmp)]`: the `max == surface` ties mirror Pine
+/// `==` exactly — a tolerance band would reassign ties and diverge from
+/// the oracle on chop-shaped tapes.
 pub fn detect_regime(
     ma_health: Option<f64>,
     volatility_ratio: Option<f64>,
@@ -430,6 +467,16 @@ pub fn detect_regime(
 /// transition table pinned in tests. Never a substitute for
 /// [`detect_regime`] in parity probes.
 #[must_use]
+/// Label-stable regime read for consumers that need a quiet label (charts,
+/// gates): the frozen detector decides the fresh label, and this wrapper
+/// decides whether the switch earns the flicker. Switching across surfaces
+/// needs the fresh surface to beat the held surface by more than
+/// [`REGIME_HYSTERESIS`]; going quiet needs the held surface decayed below
+/// its win floor minus the band. Same-surface sign flips (bull↔bear) switch
+/// immediately — the sign is the signal, not noise. Quiet never vetoes a
+/// fresh signal, and vanished evidence never holds a stale label. Pure;
+/// transition table pinned in tests. Never a substitute for
+/// [`detect_regime`] in parity probes.
 pub fn detect_regime_stable(
     prev: MarketRegime,
     ma_health: Option<f64>,

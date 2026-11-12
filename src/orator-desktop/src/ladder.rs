@@ -16,6 +16,8 @@ use crate::clipboard::{paste_with_restore, ChordSender, Clipboard, PasteOutcome}
 /// Injection failures. Only `Fatal` stops the ladder; everything else
 /// tries the next rung.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Injection failures. Only `Fatal` stops the ladder; everything else
+/// tries the next rung.
 pub enum InjectError {
     /// Rung cannot run here (unwired backend, missing tool). Skips.
     #[error("injection rung unavailable: {0}")]
@@ -38,6 +40,7 @@ impl InjectError {
 
 /// Injection rungs, strongest first.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Injection rungs, strongest first.
 pub enum Rung {
     /// Portal RemoteDesktop with libei emulation. Unwired: later work.
     RemoteDesktop,
@@ -64,6 +67,7 @@ impl Rung {
 
 /// How the text reached the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// How the text reached the user.
 pub enum InjectOutcome {
     /// A rung injected the text (which one).
     Injected(Rung),
@@ -77,6 +81,11 @@ pub enum InjectOutcome {
 /// successful injection time so consecutive dictation in the same window
 /// joins with a leading space (Murmur's 10 s continuation rule).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Remembers the first working rung per session type. The next injection
+/// tries the remembered rung first, then the full order — a stale memory
+/// costs one failed attempt, never correctness. Also stamps the last
+/// successful injection time so consecutive dictation in the same window
+/// joins with a leading space (Murmur's 10 s continuation rule).
 pub struct LadderMemory {
     /// Last rung that reported success, if any.
     pub last_working: Option<Rung>,

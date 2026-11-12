@@ -25,6 +25,7 @@ use common_core::hash::blake3_hash;
 
 /// A parsed Pine file: top-level statements in source order.
 #[derive(Debug, Clone, PartialEq)]
+/// A parsed Pine file: top-level statements in source order.
 pub struct PineProgram {
     /// Top-level statements.
     pub statements: Vec<PineStmt>,
@@ -91,6 +92,7 @@ impl Default for PineProgram {
 
 /// One Pine statement: the egui set plus v6 declarations.
 #[derive(Debug, Clone, PartialEq)]
+/// One Pine statement: the egui set plus v6 declarations.
 pub enum PineStmt {
     /// `import publisher/name/version as ALIAS` (reuses the loader identity).
     Import(ImportDecl),
@@ -255,6 +257,7 @@ pub enum PineStmt {
 
 /// One `switch` with all its arms; valid as a statement and an expression.
 #[derive(Debug, Clone, PartialEq)]
+/// One `switch` with all its arms; valid as a statement and an expression.
 pub struct SwitchStmt {
     /// Matched value, or `None` for the bare form whose arms are boolean
     /// conditions (first truthy arm wins).
@@ -265,6 +268,7 @@ pub struct SwitchStmt {
 
 /// One `pattern => body` arm; a missing pattern is the default arm.
 #[derive(Debug, Clone, PartialEq)]
+/// One `pattern => body` arm; a missing pattern is the default arm.
 pub struct SwitchArm {
     /// Arm pattern, or `None` for the bare-`=>` default arm.
     pub pattern: Option<PineExpr>,
@@ -274,6 +278,7 @@ pub struct SwitchArm {
 
 /// One Pine expression: the egui set plus tuples and switches.
 #[derive(Debug, Clone, PartialEq)]
+/// One Pine expression: the egui set plus tuples and switches.
 pub enum PineExpr {
     /// Numeric literal.
     Number(f64),
@@ -384,6 +389,7 @@ pub enum PineExpr {
 
 /// One call argument with its optional `name =` prefix preserved.
 #[derive(Debug, Clone, PartialEq)]
+/// One call argument with its optional `name =` prefix preserved.
 pub struct CallArg {
     /// Argument name for `name = value`, else positional.
     pub name: Option<String>,
@@ -399,12 +405,20 @@ pub struct CallArg {
 /// identically. The arguments are static syntax, so the text is stable
 /// for the whole run; only its construction site differs per engine.
 #[must_use]
+/// One call-site key: the head text plus the debug rendering of the
+/// call's static arguments. Both engines name the same call the same
+/// site — the compiler bakes it into constants at link time, the
+/// tree-walk recomputes the identical text per bar — so shared keyed
+/// state (call-site vars, capture pairings, bridge dispatch) partitions
+/// identically. The arguments are static syntax, so the text is stable
+/// for the whole run; only its construction site differs per engine.
 pub fn site_string(head: &str, args: &[CallArg]) -> String {
     format!("{head}@{args:?}")
 }
 
 /// One declared parameter: `[qualifier] [type] name [= default]`.
 #[derive(Debug, Clone, PartialEq)]
+/// One declared parameter: `[qualifier] [type] name [= default]`.
 pub struct Param {
     /// `simple`/`series` (or `const`) qualifier, when present. Execution
     /// treats qualifiers as metadata; they never change evaluation.
@@ -419,6 +433,7 @@ pub struct Param {
 
 /// One item of a comma-separated local declaration: `[type] name [= value]`.
 #[derive(Debug, Clone, PartialEq)]
+/// One item of a comma-separated local declaration: `[type] name [= value]`.
 pub struct MultiDecl {
     /// Declared type, when written on the item.
     pub type_name: Option<PineType>,
@@ -430,6 +445,7 @@ pub struct MultiDecl {
 
 /// Operator of one comma-separated assignment item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Operator of one comma-separated assignment item.
 pub enum AssignOp {
     /// `=` assignment.
     Assign,
@@ -439,6 +455,7 @@ pub enum AssignOp {
 
 /// One item of a comma-separated assignment: `name op value`.
 #[derive(Debug, Clone, PartialEq)]
+/// One item of a comma-separated assignment: `name op value`.
 pub struct AssignItem {
     /// Variable name (possibly a `this.*` path for `:=`).
     pub name: String,
@@ -451,6 +468,8 @@ pub struct AssignItem {
 /// A Pine type name with optional generic arguments
 /// (`float`, `UTIL.Smoothings`, `array<float>`, `map<int, int>`).
 #[derive(Debug, Clone, PartialEq)]
+/// A Pine type name with optional generic arguments
+/// (`float`, `UTIL.Smoothings`, `array<float>`, `map<int, int>`).
 pub struct PineType {
     /// Type name (possibly dotted).
     pub name: String,
@@ -462,6 +481,7 @@ pub struct PineType {
 
 /// One `MEMBER = value` enum line.
 #[derive(Debug, Clone, PartialEq)]
+/// One `MEMBER = value` enum line.
 pub struct EnumMember {
     /// Member name.
     pub name: String,
@@ -474,6 +494,10 @@ pub struct EnumMember {
 /// (if any) qualified the field. Execution of the qualifier arrives with the
 /// headless library work; recording it here keeps parsing faithful.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Persistence qualifier on one `type`-block field line: Pine carries
+/// `var`/`varip` into user-type fields, so the declaration records which one
+/// (if any) qualified the field. Execution of the qualifier arrives with the
+/// headless library work; recording it here keeps parsing faithful.
 pub enum FieldPersistence {
     /// `var` field: persists across bars of the owning instance.
     Var,
@@ -483,6 +507,7 @@ pub enum FieldPersistence {
 
 /// One typed field line in a `type` block.
 #[derive(Debug, Clone, PartialEq)]
+/// One typed field line in a `type` block.
 pub struct FieldDecl {
     /// Declared type.
     pub type_name: PineType,
@@ -496,6 +521,7 @@ pub struct FieldDecl {
 
 /// Built-in series variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Built-in series variables.
 pub enum BuiltinVar {
     /// `open`.
     Open,
@@ -526,6 +552,7 @@ impl fmt::Display for BuiltinVar {
 
 /// Binary operators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Binary operators.
 pub enum BinaryOp {
     /// `+`.
     Add,
@@ -578,6 +605,7 @@ impl fmt::Display for BinaryOp {
 
 /// Unary operators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Unary operators.
 pub enum UnaryOp {
     /// `-`.
     Negate,
@@ -597,6 +625,7 @@ impl fmt::Display for UnaryOp {
 
 /// Parse failure with source position.
 #[derive(Debug, Clone, PartialEq)]
+/// Parse failure with source position.
 pub enum PineParseError {
     /// A token of another kind arrived where `expected` was required.
     UnexpectedToken {

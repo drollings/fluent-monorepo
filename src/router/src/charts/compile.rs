@@ -28,6 +28,12 @@ use super::{ChartDef, ChartError, ChartRubric, ChartTarget, DepSpec};
 /// Produced by [`compile_chart_stages`]; consumed by the SupervisedBatch supervisor
 /// (`ChartExecutionPlan`, the single chart executor).
 #[derive(Clone)]
+/// A compiled chart target: the executable stage plus the metadata the
+/// supervisor needs — the `essential` flag, the acceptance `rubric`,
+/// and the upstream stage ids it reads from.
+/// 
+/// Produced by [`compile_chart_stages`]; consumed by the SupervisedBatch supervisor
+/// (`ChartExecutionPlan`, the single chart executor).
 pub struct CompiledTarget {
     /// The executable `ChartPromptStage` (also a `Component`).
     pub stage: Arc<dyn Component>,

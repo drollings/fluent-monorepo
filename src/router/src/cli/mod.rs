@@ -44,6 +44,8 @@ pub const DEFAULT_GGUF_DIR: &str = "/app/ai/models/gguf";
 /// sufficient — the CLI prints it and exits non-zero.
 #[derive(Debug, Error)]
 #[error("{0}")]
+/// Error type for CLI command execution. A single display message is
+/// sufficient — the CLI prints it and exits non-zero.
 pub struct CliError(String);
 
 impl CliError {
@@ -68,6 +70,7 @@ pub type CliResult = Result<(), CliError>;
 
 /// Shared per-invocation state threaded through every subcommand.
 #[derive(Debug, Clone)]
+/// Shared per-invocation state threaded through every subcommand.
 pub struct CliContext {
     /// The GGUF directory scanned by the filesystem commands.
     pub gguf_dir: PathBuf,

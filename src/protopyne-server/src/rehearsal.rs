@@ -19,6 +19,11 @@ use crate::error::ServerError;
 /// old request runs byte-identically.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
+/// Which strategy composition a run decides with. The rehearsal default
+/// keeps the fixed-signal composition every existing pin was recorded
+/// against; momentum selects the kernel-backed deployment composition.
+/// Serialized kebab-case; absent in a request body means rehearsal, so an
+/// old request runs byte-identically.
 pub enum StrategyKind {
     /// Fixed long signal, explicit structure, one contract, hold.
     #[default]
@@ -73,6 +78,7 @@ pub(crate) fn replay_grant_for(structure: StructureKind) -> Grant {
 
 /// Map the read boundary's structure hint to the core's own structure kind.
 #[must_use]
+/// Map the read boundary's structure hint to the core's own structure kind.
 pub(crate) fn structure_of_hint(hint: StructureKindHint) -> StructureKind {
     match hint {
         StructureKindHint::Single => StructureKind::Single,

@@ -7,7 +7,9 @@ use super::{
     run_to_fixpoint, run_to_fixpoint_with_breaker, serial_loop_tests, ActOutcome, BreakerConfig,
     LoopBreaker, LoopGuard, LoopReport, MaintenanceQueue, Tier,
 };
-use crate::offload::{apply_draft, apply_draft_expected, apply_verified_expected, ApplyTool, TriageClass};
+use crate::offload::{
+    apply_draft, apply_draft_expected, apply_verified_expected, ApplyTool, TriageClass,
+};
 use crate::offload::{ApplyReport, ApplyVerdict, OffloadError, DEFAULT_MAX_ATTEMPTS};
 use crate::policy::MaintenancePolicy;
 use fluent_concurrency::stream::StreamAbort;
@@ -50,8 +52,15 @@ fn stale_read_never_overwrites_human_edit() {
         DEFAULT_MAX_ATTEMPTS,
         &stale,
     );
-    assert!(matches!(result, Err(OffloadError::Changed(_))), "{result:?}");
-    assert_eq!(std::fs::read(&file).expect("read"), human, "human bytes stand");
+    assert!(
+        matches!(result, Err(OffloadError::Changed(_))),
+        "{result:?}"
+    );
+    assert_eq!(
+        std::fs::read(&file).expect("read"),
+        human,
+        "human bytes stand"
+    );
 }
 
 #[test]
@@ -61,10 +70,16 @@ fn revert_path_never_restores_over_human_edit() {
     let script = format!("echo '// human' >> '{}' && false", file.display());
     let gate = vec!["sh".to_string(), "-c".to_string(), script];
     let result = apply_verified_expected(&file, ApplyTool::Rustfmt, &gate, 1, &stale);
-    assert!(matches!(result, Err(OffloadError::Changed(_))), "{result:?}");
+    assert!(
+        matches!(result, Err(OffloadError::Changed(_))),
+        "{result:?}"
+    );
     let content = std::fs::read_to_string(&file).expect("read");
     assert!(content.contains("// human"), "human edit stands: {content}");
-    assert!(!content.contains("x   +   1"), "stale bytes not restored: {content}");
+    assert!(
+        !content.contains("x   +   1"),
+        "stale bytes not restored: {content}"
+    );
 }
 
 #[test]
@@ -72,14 +87,11 @@ fn green_gate_with_mid_gate_edit_is_not_certified() {
     let (_dir, file) = drifted_file();
     let script = format!("echo '// human' >> '{}'", file.display());
     let gate = vec!["sh".to_string(), "-c".to_string(), script];
-    let result = apply_verified_expected(
-        &file,
-        ApplyTool::Rustfmt,
-        &gate,
-        1,
-        DRIFTED.as_bytes(),
+    let result = apply_verified_expected(&file, ApplyTool::Rustfmt, &gate, 1, DRIFTED.as_bytes());
+    assert!(
+        matches!(result, Err(OffloadError::Changed(_))),
+        "{result:?}"
     );
-    assert!(matches!(result, Err(OffloadError::Changed(_))), "{result:?}");
 }
 
 #[test]
@@ -97,6 +109,7 @@ fn breaker_stops_revert_rate() {
         max_failure_rate: 0.25,
         rate_min_passes: 4,
         max_stagnant_passes: usize::MAX,
+        max_systemic_items: usize::MAX,
     };
     let mut breaker = LoopBreaker::new(config);
     assert!(breaker.observe(true).is_none());
@@ -112,6 +125,7 @@ fn breaker_stops_no_progress() {
         max_failure_rate: 2.0,
         rate_min_passes: usize::MAX,
         max_stagnant_passes: 2,
+        max_systemic_items: usize::MAX,
     };
     let mut breaker = LoopBreaker::new(config);
     assert!(breaker.observe(false).is_none());
@@ -124,15 +138,24 @@ fn breaker_arms_a_live_run() {
     let _serial = serial_loop_tests();
     let guard = LoopGuard::acquire().expect("guard");
     let mut queue = MaintenanceQueue::new();
-    queue.enqueue("a", "src", "rustfmt", &[]).expect("enqueue a");
-    queue.enqueue("b", "src", "rustfmt", &[]).expect("enqueue b");
-    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| ActOutcome::Retryable("red".to_string())));
+    queue
+        .enqueue("a", "src", "rustfmt", &[])
+        .expect("enqueue a");
+    queue
+        .enqueue("b", "src", "rustfmt", &[])
+        .expect("enqueue b");
+    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| {
+        ActOutcome::Retryable("red".to_string())
+    }));
     let abort = StreamAbort::new();
     let mut breaker = LoopBreaker::new(BreakerConfig::strict());
     let report = run_to_fixpoint_with_breaker(
         &guard,
         &mut queue,
-        &MaintenancePolicy { attempt_limit: 100, ..MaintenancePolicy::default() },
+        &MaintenancePolicy {
+            attempt_limit: 100,
+            ..MaintenancePolicy::default()
+        },
         50,
         &abort,
         Some(&mut breaker),
@@ -147,11 +170,24 @@ fn ledger_round_trips_every_applied_change() {
     let _serial = serial_loop_tests();
     let guard = LoopGuard::acquire().expect("guard");
     let mut queue = MaintenanceQueue::new();
-    queue.enqueue("a", "src", "rustfmt", &[]).expect("enqueue a");
-    queue.enqueue("b", "src", "rustfmt", &[]).expect("enqueue b");
-    let act: Act = Arc::new(Mutex::new(|id: &str, _tier: Tier| ActOutcome::Verified(kept_report(id))));
+    queue
+        .enqueue("a", "src", "rustfmt", &[])
+        .expect("enqueue a");
+    queue
+        .enqueue("b", "src", "rustfmt", &[])
+        .expect("enqueue b");
+    let act: Act = Arc::new(Mutex::new(|id: &str, _tier: Tier| {
+        ActOutcome::Verified(kept_report(id))
+    }));
     let abort = StreamAbort::new();
-    let report = run_to_fixpoint(&guard, &mut queue, &MaintenancePolicy::default(), 10, &abort, &act);
+    let report = run_to_fixpoint(
+        &guard,
+        &mut queue,
+        &MaintenancePolicy::default(),
+        10,
+        &abort,
+        &act,
+    );
     assert!(report.stopped.is_none());
     let dir = tempdir();
     let ledger = dir.path().join("ledger.json");
@@ -163,6 +199,60 @@ fn ledger_round_trips_every_applied_change() {
         assert!(loaded.summary.entries.iter().any(|entry| &entry.file == id));
     }
     assert!(loaded.render().contains("fixpoint"));
+}
+
+#[test]
+fn report_carries_efficiency_sections_with_ledger_compat() {
+    // New efficiency fields render in their own sections (evidence
+    // routing apart from authority modes), and pre-enrichment ledgers
+    // still load with zeroed defaults.
+    let mut report = LoopReport {
+        passes: 3,
+        reprocessed_clean: 2,
+        model_calls_avoided: 5,
+        ..LoopReport::default()
+    };
+    report.record_modes(&["dp.triage_residual=shadow".to_string()]);
+    let text = report.render();
+    assert!(text.contains("reprocessed clean: 2"), "{text}");
+    assert!(text.contains("model calls avoided: 5"), "{text}");
+    assert!(text.contains("dp.triage_residual=shadow"), "{text}");
+    let legacy = serde_json::json!({
+        "passes": 3,
+        "verified": [],
+        "escalated": [],
+        "summary": crate::offload::ReviewSummary::new(),
+        "packets": [],
+        "stopped": null,
+    });
+    let dir = tempdir();
+    let path = dir.path().join("ledger.json");
+    std::fs::write(&path, serde_json::to_string(&legacy).unwrap()).expect("write");
+    let loaded = LoopReport::load_ledger(&path).expect("old ledgers load");
+    assert_eq!(loaded.reprocessed_clean, 0);
+    assert_eq!(loaded.model_calls_avoided, 0);
+    assert!(loaded.decision_modes.is_empty());
+    assert!(loaded.render().contains("decision modes: unmeasured"));
+}
+
+#[test]
+fn report_merges_index_and_decision_counters() {
+    use crate::index_pipeline::IndexStats;
+    use crate::query::decision_points::{DecisionMetrics, LadderOutcome};
+    let mut report = LoopReport::default();
+    let stats = IndexStats {
+        reprocessed_clean: 3,
+        ..IndexStats::default()
+    };
+    report.merge_index_stats(&stats);
+    report.merge_index_stats(&stats);
+    assert_eq!(report.reprocessed_clean, 6);
+    let metrics = DecisionMetrics::new();
+    metrics.record(LadderOutcome::Rule);
+    metrics.record(LadderOutcome::CacheHit);
+    metrics.record(LadderOutcome::Model);
+    report.merge_decision_snapshot(&metrics.snapshot());
+    assert_eq!(report.model_calls_avoided, 2, "rule wins + cache hits only");
 }
 
 #[test]

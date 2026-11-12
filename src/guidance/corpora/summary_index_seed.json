@@ -1,0 +1,20 @@
+{
+  "point": "summary_index",
+  "model_fingerprint": "test-model@prompt-v1",
+  "question_version": 1,
+  "provenance": {
+    "source": "guidance summary route calibration (precomputed fixtures, no model)",
+    "labeller": "guidance-team",
+    "date": "2026-11-11"
+  },
+  "queries": [
+    {"query": "total", "expected": ["fa"], "control": false, "reason": "comment-derived summary"},
+    {"query": "removes", "expected": ["fb"], "control": false, "reason": "comment-derived summary"},
+    {"query": "overview", "expected": ["f#$file"], "control": false, "reason": "module summary"},
+    {"query": "helper_fn", "expected": [], "control": true, "reason": "identifier-only query over summary-less code"},
+    {"query": "!!!", "expected": [], "control": true, "reason": "punctuation-only query"},
+    {"query": "", "expected": [], "control": true, "reason": "empty query"},
+    {"query": "qx", "expected": [], "control": true, "reason": "short comment with no summary row"},
+    {"query": "stale", "expected": [], "control": true, "reason": "failed summary row never fires"}
+  ]
+}

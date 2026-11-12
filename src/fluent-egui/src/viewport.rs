@@ -23,6 +23,15 @@ use crate::error::EguiError;
 /// carries time-axis pan and cursor-anchored zoom without touching the
 /// integer bar window the data slice is taken from.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Visible pane geometry: one price window mapped onto fixed pixels.
+/// 
+/// Construct once per visible window; recompute only on scroll, zoom, or
+/// range change — never per frame per bar. All mapping delegates to the
+/// owned canonical scale, so there is exactly one price↔pixel truth. The
+/// horizontal `x_offset_px` is an additive pixel shift on top of the scale's
+/// bar spacing (default `0.0`, so every existing caller is unchanged): it
+/// carries time-axis pan and cursor-anchored zoom without touching the
+/// integer bar window the data slice is taken from.
 pub struct Viewport {
     scale: PriceScale,
     x_offset_px: f32,
@@ -256,6 +265,7 @@ fn describe_scale(error: protopyne_chart_scale::ScaleError) -> EguiError {
 
 /// One session-break gridline at a break bar's x pixel.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One session-break gridline at a break bar's x pixel.
 pub struct BreakLine {
     /// Index of the first bar in the new session.
     pub index: usize,
@@ -269,6 +279,11 @@ pub struct BreakLine {
 /// and their parallel key series share this one slicer, so both windows
 /// always agree.
 #[must_use]
+/// Window a slice without copying; saturates out-of-range bounds
+/// instead of panicking, so scroll positions past the data edge show an
+/// empty (or trailing) window rather than aborting the frame. Converted rows
+/// and their parallel key series share this one slicer, so both windows
+/// always agree.
 pub fn visible_rows<T>(rows: &[T], start: usize, count: usize) -> &[T] {
     let start = start.min(rows.len());
     let end = start.saturating_add(count).min(rows.len());
@@ -334,6 +349,12 @@ pub fn auto_height_range(
 /// `N = ceil(len / max_labels)`. Counts only — the surviving values and
 /// labels are byte-identical to the input grid.
 #[must_use]
+/// Cap grid labels for readability; order-preserving stride thinning.
+/// 
+/// Returns every tick when the grid already fits `max_labels`, an empty
+/// vector when `max_labels` is zero, and otherwise every Nth tick with
+/// `N = ceil(len / max_labels)`. Counts only — the surviving values and
+/// labels are byte-identical to the input grid.
 pub fn thin_ticks(ticks: Vec<Tick>, max_labels: usize) -> Vec<Tick> {
     if max_labels == 0 {
         return Vec::new();
@@ -351,6 +372,11 @@ pub fn thin_ticks(ticks: Vec<Tick>, max_labels: usize) -> Vec<Tick> {
 /// followed by the readability cap. Degenerate windows still yield no ticks
 /// rather than a misleading grid.
 #[must_use]
+/// Round grid for `[min, max]` within `budget`, thinned to `max_labels`.
+/// 
+/// One call from window to paint-ready labels: the canonical grid generator
+/// followed by the readability cap. Degenerate windows still yield no ticks
+/// rather than a misleading grid.
 pub fn axis_ticks(min: f64, max: f64, budget: usize, max_labels: usize) -> Vec<Tick> {
     thin_ticks(nice_ticks(min, max, budget), max_labels)
 }

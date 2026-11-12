@@ -10,6 +10,16 @@
 
 /// One expected weight file.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Weight-layout manifest for LFM3-Audio: which files a runtime
+/// needs, where they live, and what is actually on disk.
+/// 
+/// Two layouts exist upstream: the HuggingFace bundle (safetensors,
+/// the only complete weights — text backbone + audio tower + codec)
+/// and the GGUF conversion (text backbone only; the `mmproj` entry
+/// carries a `clip` arch tag, not the audio tower, so no llama-server
+/// build can serve audio from it). Verification reports presence and
+/// size honestly; unpinned files are never claimed verified.
+/// One expected weight file.
 pub struct LfmWeights {
     /// File name within its home directory.
     pub file: String,
@@ -19,6 +29,7 @@ pub struct LfmWeights {
 
 /// The two upstream weight homes plus the GGUF conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The two upstream weight homes plus the GGUF conversion.
 pub struct LfmLayout {
     /// HuggingFace text+audio bundle files (`model.safetensors`,
     /// tokenizer, configs, audio tokenizer).
@@ -32,6 +43,8 @@ pub struct LfmLayout {
 /// The expected layout, transcribed from the reference repo and the
 /// `/app` model tree.
 #[must_use]
+/// The expected layout, transcribed from the reference repo and the
+/// `/app` model tree.
 pub fn expected_layout() -> LfmLayout {
     LfmLayout {
         hf_bundle: vec![
@@ -55,6 +68,7 @@ fn file(name: &str, arch: Option<String>) -> LfmWeights {
 
 /// One missing or unreadable weight file.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One missing or unreadable weight file.
 pub struct MissingWeights {
     /// Home directory checked.
     pub dir: std::path::PathBuf,

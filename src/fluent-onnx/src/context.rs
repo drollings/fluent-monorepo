@@ -24,6 +24,9 @@ pub const DEFAULT_ONNX_CONTEXT_TOKENS: u64 = 16384;
 /// it can be rebuilt into tensors for each `session.run`. A context's KV lives
 /// as one `Arc<Mutex<Option<PastState>>>` — `None` until the first `prefill`.
 #[derive(Debug, Clone, Default)]
+/// The conv/KV past-state carried across decode steps. Holds owned f32 data so
+/// it can be rebuilt into tensors for each `session.run`. A context's KV lives
+/// as one `Arc<Mutex<Option<PastState>>>` — `None` until the first `prefill`.
 pub struct PastState {
     /// The total sequence length processed so far (past tokens).
     pub seq_len: usize,
@@ -86,6 +89,9 @@ impl PastState {
 /// llama `InstanceProfile` vocabulary onto this; until then the pool's
 /// `ensure_context` uses it directly.
 #[derive(Debug, Clone)]
+/// The declarative shape of a named onnx context. Maps the
+/// llama `InstanceProfile` vocabulary onto this; until then the pool's
+/// `ensure_context` uses it directly.
 pub struct OnnxContextProfile {
     /// The context's group (mirrors a llama instance's group).
     pub group: String,

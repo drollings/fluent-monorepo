@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// One instrument's durable identity within a store's catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+/// One instrument's durable identity within a store's catalog.
 pub struct SymbolId(pub u32);
 
 /// One tape: one instrument at one bar spacing.
@@ -27,6 +28,13 @@ pub struct SymbolId(pub u32);
 /// caller wrote and reads at; coarser spacings are derived on read by
 /// folding, never stored twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// One tape: one instrument at one bar spacing.
+/// 
+/// A store file holds one timeframe per symbol — rows are keyed
+/// `(symbol_id, ts_ms)` with no timeframe column, so two spacings for one
+/// symbol would collide on the primary key. The key names the spacing the
+/// caller wrote and reads at; coarser spacings are derived on read by
+/// folding, never stored twice.
 pub struct TapeKey {
     /// The instrument, resolved through the catalog.
     pub symbol_id: SymbolId,

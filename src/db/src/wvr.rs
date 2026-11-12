@@ -91,6 +91,18 @@ impl DbStore for Arc<SqlitePool> {
 /// Construct with [`DbWorkUnit::builder`], or use the concrete
 /// [`store_unit`] factory for store operations over an `Arc<SqliteStore>`.
 #[derive(bon::Builder)]
+/// A `Component`/`WorkUnit` that runs a synchronous database operation on a
+/// dedicated blocking thread.
+/// 
+/// The op receives the `WorkContext` and returns a `WorkOutput`. `execute`
+/// offloads it via `tokio::task::block_in_place` when on a multi-threaded
+/// runtime worker, so the async executor is never starved — this is what makes
+/// DB work safe to run under `SupervisedBatch` supervision (timeout/retry/cancellation)
+/// and inside `ResultPool` handlers without violating the WorkUnit purity
+/// contract.
+/// 
+/// Construct with [`DbWorkUnit::builder`], or use the concrete
+/// [`store_unit`] factory for store operations over an `Arc<SqliteStore>`.
 pub struct DbWorkUnit<F> {
     /// The unit's `WorkUnit::name()`.
     #[builder(into)]

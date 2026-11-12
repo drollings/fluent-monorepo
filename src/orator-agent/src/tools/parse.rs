@@ -13,6 +13,8 @@ use crate::tools::tool::ToolCall;
 /// Parse failures. Unknown tools fail here, never at execution: a
 /// near-valid call naming the wrong tool must not run.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Parse failures. Unknown tools fail here, never at execution: a
+/// near-valid call naming the wrong tool must not run.
 pub enum ParseError {
     /// No calls on either path.
     #[error("no tool calls found")]
@@ -214,6 +216,10 @@ pub fn parse_model_output(text: &str) -> Result<(Vec<ToolCall>, String), ParseEr
 /// Names are literals from the registry; arguments stay open JSON so
 /// one grammar serves every schema without per-tool rules.
 #[must_use]
+/// Emit the grammar constraining output to `{"preamble": str,
+/// "tool_calls": [{name: <registry names>, arguments: <json>}]}.
+/// Names are literals from the registry; arguments stay open JSON so
+/// one grammar serves every schema without per-tool rules.
 pub fn gbnf_for_tools(names: &[&str]) -> String {
     let mut grammar = String::from(
         "root ::= \"{\\\"preamble\\\": \" string \", \\\"tool_calls\\\": \" calls \"}\"\n",

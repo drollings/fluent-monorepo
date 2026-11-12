@@ -17,6 +17,7 @@ pub const HEADER_VERSION: u16 = 1;
 
 /// Common header shape (per-artifact).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Common header shape (per-artifact).
 pub struct BlobHeader {
     pub magic: u32,
     pub header_version: u16,
@@ -40,6 +41,7 @@ impl BlobHeader {
 
 /// Legacy SLM1 magic check.
 #[must_use]
+/// Legacy SLM1 magic check.
 pub fn is_legacy_sml1(magic: u32) -> bool {
     magic == LEGACY_LEMMA_MAGIC
 }
@@ -62,6 +64,7 @@ pub enum BlobError {
 
 /// Read little-endian primitives (no unsafe, no mmap).
 #[inline]
+/// Read little-endian primitives (no unsafe, no mmap).
 pub fn rd_u16(b: &[u8], o: usize) -> Option<u16> {
     Some(u16::from_le_bytes(b.get(o..o + 2)?.try_into().ok()?))
 }
@@ -143,6 +146,17 @@ pub fn validate_sha(payload: &[u8], expected: &[u8; 16]) -> Result<(), BlobError
 /// map `None` to their own error type (loud failure, never silent misparse).
 /// No unsafe, no allocation, no I/O.
 #[derive(Debug, Clone, Copy)]
+/// A zero-copy little-endian cursor over a versioned blob (primitives
+/// roadmap M2): the single shared spelling of the `rd_u16` / `rd_u32` /
+/// `rd_usize` / `rd_str` / `slice` readers previously hand-rolled per blob
+/// (`spacy-rs` lemma + ortho loaders).
+/// 
+/// Advancing reads (`u16_le`, `u32_le`, `usize_le`, `sized_str`, `take`) move
+/// the cursor; absolute reads (`peek_u16`, `peek_u32`, `slice`) do not — the
+/// two call shapes (directory loops vs. header/section fixups) coexist on one
+/// type. Every read is bounds-checked and returns `None` past the end: callers
+/// map `None` to their own error type (loud failure, never silent misparse).
+/// No unsafe, no allocation, no I/O.
 pub struct BlobCursor<'a> {
     data: &'a [u8],
     offset: usize,

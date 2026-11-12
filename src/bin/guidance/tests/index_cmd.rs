@@ -123,6 +123,88 @@ fn fragment_ingest_reingests_same_size_edits() {
 }
 
 #[test]
+fn fragment_ingest_filters_structural_punctuation_and_stop_words() {
+    // Structural punctuation and syntax words never become lemma rows;
+    // FTS still owns the raw lexical row.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    // Data files emit no lemmas at all: keys stay FTS-only.
+    std::fs::write(
+        src.join("Cargo.toml"),
+        "[package]\nname = \"guidance\"\n[dependencies]\n",
+    )
+    .expect("write toml");
+    // Code without comments emits no lemmas either: bodies are FTS-only.
+    std::fs::write(src.join("lib.rs"), "pub fn alpha_beta() {}\n").expect("write rs");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    for noise in ["[", "]", "=", "\n", "pub", "fn"] {
+        assert!(
+            db.fragments_for_lemmas(&[noise.to_string()], 10)
+                .expect("lookup")
+                .is_empty(),
+            "structural token leaked into lemmas: {noise:?}"
+        );
+    }
+    for absent in ["package", "alpha", "beta"] {
+        assert!(
+            db.fragments_for_lemmas(&[absent.to_string()], 10)
+                .expect("lookup")
+                .is_empty(),
+            "non-comment token must stay out of lemmas: {absent:?}"
+        );
+    }
+    // Lexical recall is unaffected: bodies stay FTS-visible.
+    assert!(
+        !db.search_fts(
+            "alpha_beta",
+            5,
+            &search_vector::db::FragmentFilter::default()
+        )
+        .expect("fts")
+        .is_empty(),
+        "code bodies must stay FTS-visible"
+    );
+}
+
+#[test]
+fn live_ingest_lemmas_come_from_comments_not_bodies() {
+    // Comment-scoped lemmas: comment words land in the lemma table while
+    // body-only identifiers stay out (FTS still serves them).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    std::fs::write(
+        src.join("lib.rs"),
+        "/// Adds one to the total.\npub fn alpha_beta() {}\n",
+    )
+    .expect("write rs");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    for word in ["adds", "total"] {
+        assert!(
+            !db.fragments_for_lemmas(&[word.to_string()], 10)
+                .expect("lookup")
+                .is_empty(),
+            "comment word missing from lemmas: {word:?}"
+        );
+    }
+    for body in ["alpha", "beta"] {
+        assert!(
+            db.fragments_for_lemmas(&[body.to_string()], 10)
+                .expect("lookup")
+                .is_empty(),
+            "body-only identifier leaked into lemmas: {body:?}"
+        );
+    }
+}
+
+#[test]
 fn missing_workspace_is_a_named_error() {
     let error = run_index("/no/such/workspace", "/tmp/g", None).expect_err("must fail");
     assert!(error.contains("workspace not found"), "{error}");
@@ -257,4 +339,131 @@ fn ingest_reports_changed_and_purges_deleted() {
         .expect("symbols")
         .iter()
         .any(|r| r.file.ends_with("gone.rs")));
+}
+
+#[test]
+fn live_ingest_writes_item_chunks_with_graph() {
+    // The live path commits item chunks (never whole-file rows): fragment
+    // ids differ from the file id, ranges are item spans, the module
+    // fragment carries the top-of-file comment, and graph rows come from
+    // the same pass. A second pass over untouched files ingests nothing.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    std::fs::write(
+        src.join("lib.rs"),
+        "//! Crate helpers.\n/// Adds one.\npub fn alpha() -> i32 { 1 }\n/// Removes two.\npub fn beta() -> i32 { 2 }\n",
+    )
+    .expect("write rs");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    let first = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    assert_eq!(first.files, 1, "{first:?}");
+    assert_eq!(first.failed, 0, "{first:?}");
+    let db = GuidanceDb::open(&db_path).expect("open");
+    let file_id = db
+        .list_files()
+        .expect("files")
+        .into_iter()
+        .find(|file| file.relative_path.ends_with("lib.rs"))
+        .expect("lib row")
+        .id;
+    let adds_hits = db
+        .fragments_for_lemmas(&["adds".to_string()], 10)
+        .expect("lookup");
+    assert!(
+        !adds_hits.is_empty(),
+        "comment lemmas must land on item chunks"
+    );
+    assert!(
+        !adds_hits.contains(&file_id),
+        "item lemmas must not sit on the whole-file id: {adds_hits:?}"
+    );
+    assert!(
+        db.fragments_for_lemmas(&["alpha".to_string()], 10)
+            .expect("lookup")
+            .is_empty(),
+        "body identifiers stay out of lemmas"
+    );
+    let symbols = db.graph_symbol_rows().expect("symbols");
+    assert!(
+        symbols.iter().any(|row| row.name == "alpha"),
+        "same-pass graph harvest must record items: {symbols:?}"
+    );
+    let second = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    assert_eq!(second.files, 0, "{second:?}");
+    assert_eq!(second.skipped_unchanged, 1, "{second:?}");
+}
+
+#[test]
+fn live_ingest_writes_no_embedding_status() {
+    // The live path has no embedder: it commits unembedded item chunks
+    // without recording embedding status. Status rows belong to the
+    // batch pipeline alone.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    std::fs::write(src.join("lib.rs"), "/// Adds one.\npub fn alpha() {}\n").expect("write rs");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let file_id = db
+        .list_files()
+        .expect("files")
+        .into_iter()
+        .find(|file| file.relative_path.ends_with("lib.rs"))
+        .expect("lib row")
+        .id;
+    assert!(
+        db.embedding_status_for_file(&file_id)
+            .expect("status")
+            .is_empty(),
+        "live commits carry no embedding provenance"
+    );
+    assert!(
+        !db.fragment_freshness(&file_id)
+            .expect("fingerprint")
+            .expect("row")
+            .embedded,
+        "live rows stay unembedded"
+    );
+}
+
+#[test]
+fn fragment_ingestion_scopes_to_a_single_file() {
+    // The `sync --file` building block: a file root ingests only that
+    // file, and the delete purge stays scoped — out-of-scope indexed
+    // files are untouched, never "missing".
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    std::fs::write(src.join("a.rs"), "pub fn scoped_anchor() {}\n").expect("write");
+    std::fs::write(src.join("b.rs"), "pub fn bystander_fn() {}\n").expect("write");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    let first = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    assert_eq!(first.files, 2, "{first:?}");
+    std::fs::write(
+        src.join("a.rs"),
+        "pub fn scoped_anchor(x: u64) -> u64 {\n    x\n}\n",
+    )
+    .expect("write");
+    let scoped =
+        ingest_workspace_fragments(&db_path, dir.path(), &[src.join("a.rs")]).expect("scoped");
+    assert_eq!(scoped.files, 1, "{scoped:?}");
+    assert_eq!(scoped.failed, 0, "{scoped:?}");
+    assert!(scoped.deleted.is_empty(), "{scoped:?}");
+    assert!(
+        scoped.changed.iter().any(|p| p.ends_with("a.rs")),
+        "{scoped:?}"
+    );
+    // The bystander keeps its rows: scoping is a lens, not a wipe.
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    for term in ["scoped_anchor", "bystander_fn"] {
+        let hits = db
+            .search_fts(term, 5, &search_vector::db::FragmentFilter::default())
+            .expect("fts");
+        assert!(!hits.is_empty(), "{term} must stay FTS-visible");
+    }
 }

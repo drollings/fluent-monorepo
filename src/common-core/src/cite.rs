@@ -1,6 +1,7 @@
 //! `file:line` citation scanner — pure string math, no domain import.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `file:line` citation scanner — pure string math, no domain import.
 pub struct Citation {
     pub file: String,
     pub line: u32,

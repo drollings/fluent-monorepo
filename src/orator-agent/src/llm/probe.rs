@@ -12,6 +12,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
 
 /// What the endpoint serves.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What the endpoint serves.
 pub struct ProbeInfo {
     /// Served model ids, in server order.
     pub models: Vec<String>,
@@ -22,6 +23,8 @@ pub struct ProbeInfo {
 /// Probe failures. Refusals and timeouts are one variant: both mean the
 /// endpoint is not there.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Probe failures. Refusals and timeouts are one variant: both mean the
+/// endpoint is not there.
 pub enum ProbeError {
     /// Nothing answered (refused, timed out, transport failed).
     #[error("endpoint unreachable at {0}: {1}")]

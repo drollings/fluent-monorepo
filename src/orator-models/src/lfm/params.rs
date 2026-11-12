@@ -6,6 +6,7 @@ use crate::lfm::arch::{CODEBOOKS, MASKGIT_SCHEDULE, MASKGIT_STEPS};
 
 /// Text-side sampling (greedy by default).
 #[derive(Debug, Clone, PartialEq)]
+/// Text-side sampling (greedy by default).
 pub struct TextGen {
     /// Whether to sample (`false` = greedy).
     pub do_sample: bool,
@@ -19,6 +20,7 @@ pub struct TextGen {
 
 /// Audio-side sampling (MaskGIT over codebooks).
 #[derive(Debug, Clone, PartialEq)]
+/// Audio-side sampling (MaskGIT over codebooks).
 pub struct AudioGen {
     /// Audio temperature.
     pub temperature: f32,
@@ -32,6 +34,7 @@ pub struct AudioGen {
 
 /// One interleaved turn's budget (slots the mode toggles between).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One interleaved turn's budget (slots the mode toggles between).
 pub struct InterleavedBudget {
     /// Text slots before switching to audio.
     pub text_slots: usize,
@@ -41,6 +44,7 @@ pub struct InterleavedBudget {
 
 /// Full generation defaults.
 #[derive(Debug, Clone, PartialEq)]
+/// Full generation defaults.
 pub struct GenerationDefaults {
     /// Text side.
     pub text: TextGen,
@@ -81,6 +85,7 @@ impl Default for GenerationDefaults {
 
 /// Whether the MaskGIT schedule covers every codebook exactly once.
 #[must_use]
+/// Whether the MaskGIT schedule covers every codebook exactly once.
 pub fn maskgit_schedule_covers_codebooks(schedule: &[usize; 3]) -> bool {
     schedule.iter().sum::<usize>() == CODEBOOKS
 }

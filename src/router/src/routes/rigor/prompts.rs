@@ -126,6 +126,7 @@ pub(super) fn judge_prompt(answer: &str, objections: &[RedObjection]) -> String 
 
 /// Wire shape of the red output before it is mapped into `RedObjection`.
 #[derive(Debug, Deserialize)]
+/// Wire shape of the red output before it is mapped into `RedObjection`.
 struct RedObjectionWire {
     #[serde(default)]
     category: String,
@@ -168,6 +169,7 @@ pub(super) fn parse_objections(raw: &str) -> Result<Vec<RedObjection>, String> {
 
 /// Wire shape of the judge output.
 #[derive(Debug, Deserialize)]
+/// Wire shape of the judge output.
 struct JudgeOutputWire {
     #[serde(default)]
     verdict: String,

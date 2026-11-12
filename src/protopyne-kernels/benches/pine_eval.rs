@@ -199,6 +199,12 @@ criterion_group!(
 /// row exists only in oracle builds; every other row is the shipping
 /// path.
 #[cfg(feature = "bytecode")]
+/// Compiled workload with one oracle reference: titled plots,
+/// user-series history, `var` persistence, and one `ta.sma` call, so the
+/// loop serves every bar and the pair times the representation change.
+/// Linking happens once per bench; only evaluation is timed. The tree
+/// row exists only in oracle builds; every other row is the shipping
+/// path.
 fn bench_compiled_numeric(c: &mut Criterion) {
     let modules = link_script(
         "var x = 0.0\nx := x + close\ny = x[1] + close[2]\nplot(y, title=\"Y\")\nplot(ta.sma(close, 14), title=\"S\")",
@@ -237,6 +243,12 @@ fn bench_compiled_numeric(c: &mut Criterion) {
 /// Both closures link fully, so every row here times the one shipping
 /// path.
 #[cfg(feature = "bytecode")]
+/// Cross-module shapes on the loop: the `_FastMAs` fixture closure plus
+/// a synthetic library-driver closure. Linking happens once per bench;
+/// only evaluation is timed. Histories are bounded slices of the
+/// checked-in trim — history scaling is covered by `fastmas_full_history`.
+/// Both closures link fully, so every row here times the one shipping
+/// path.
 fn bench_mixed_shapes(c: &mut Criterion) {
     // Fixture shape: the whole closure links and runs on the loop.
     let mixed_fixture = link_fixture("_FastMAs");
@@ -292,6 +304,11 @@ fn bench_mixed_shapes(c: &mut Criterion) {
 /// deliberately time evaluation only, so this group is where compile/link
 /// regressions surface.
 #[cfg(feature = "bytecode")]
+/// Cold compile/link: the whole fixture closure compiled and linked with
+/// every cache bypassed, once per iteration. This is the front-door cost
+/// a process pays once per distinct program; the run-time benches above
+/// deliberately time evaluation only, so this group is where compile/link
+/// regressions surface.
 fn bench_cold_compile_link(c: &mut Criterion) {
     use protopyne_kernels::pine::bytecode_exec::link;
 
@@ -328,6 +345,9 @@ fn bench_cold_compile_link(c: &mut Criterion) {
 /// snapshot map carries a wide value set. Times the commit path's
 /// namespace merge and per-column bookkeeping, never the run itself.
 #[cfg(feature = "bytecode")]
+/// Snapshot-heavy: one script declaring many globals, so the per-bar
+/// snapshot map carries a wide value set. Times the commit path's
+/// namespace merge and per-column bookkeeping, never the run itself.
 fn bench_snapshot_heavy(c: &mut Criterion) {
     let mut script = String::from("v0 = close + 0.0\n");
     for index in 1..64 {
@@ -355,6 +375,9 @@ fn bench_snapshot_heavy(c: &mut Criterion) {
 /// Times receiver binding, take/put homes, and the per-call frame churn on
 /// both representations.
 #[cfg(feature = "bytecode")]
+/// Method-heavy: one user type mutated through many method calls per bar.
+/// Times receiver binding, take/put homes, and the per-call frame churn on
+/// both representations.
 fn bench_method_heavy(c: &mut Criterion) {
     let mut script = String::from(
         "type Box2\n int n = 0\nmethod bump(Box2 this, int d) =>\n this.n := d\n this.n * 2.0 + 1.0\nw = Box2.new()\n",
@@ -386,6 +409,10 @@ fn bench_method_heavy(c: &mut Criterion) {
 /// the loop on shared run-scoped state, which the differential suites
 /// keep byte-identical with the oracle.
 #[cfg(feature = "bytecode")]
+/// Stateful cross-module shape: a library with stateful `ta.*` sites
+/// under an entry that declares an `input.*` and a `fixnan` read. Times
+/// the loop on shared run-scoped state, which the differential suites
+/// keep byte-identical with the oracle.
 fn bench_mixed_stateful(c: &mut Criterion) {
     let lib = parse_program(
         "export smooth(src, len) =>\n    ta.sma(src, len)\n\
@@ -433,6 +460,10 @@ fn bench_mixed_stateful(c: &mut Criterion) {
 /// result. Times call binding, site identity, and write-back harvest on
 /// the hot per-bar path.
 #[cfg(feature = "bytecode")]
+/// Cross-module call shape: an entry that calls into a library several
+/// times per bar, each call carrying per-argument values and a collection
+/// result. Times call binding, site identity, and write-back harvest on
+/// the hot per-bar path.
 fn bench_mixed_boundary(c: &mut Criterion) {
     let lib = parse_program(
         "export bump(x) =>\n    b = [1.0, 2.0]\n    array.shift(b)\n    x + array.get(b, 0)",
@@ -480,6 +511,11 @@ fn bench_mixed_boundary(c: &mut Criterion) {
 /// fully, so a nonzero count is visible in the bench log instead of
 /// timing a fallback silently.
 #[cfg(feature = "bytecode")]
+/// Compile every bench workload module with the engine-mirroring
+/// registries, returning the program plus each module's fallback count.
+/// The counts are printed once at setup: every workload here links
+/// fully, so a nonzero count is visible in the bench log instead of
+/// timing a fallback silently.
 fn compile_workload(
     modules: &[LinkedModule],
 ) -> (

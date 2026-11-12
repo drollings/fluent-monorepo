@@ -33,6 +33,7 @@ static LEMMAS_EN: LazyLock<LemmaBlob> = LazyLock::new(|| {
 
 /// How the lemmatizer resolves a lemma.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How the lemmatizer resolves a lemma.
 pub enum LemmatizerMode {
     /// Per-POS suffix rules over the index/exc/rules tables.
     Rule,
@@ -44,6 +45,9 @@ pub enum LemmatizerMode {
 /// (zero-alloc binary-search lookups); the per-token result cache is
 /// interior-mutable and shared.
 #[derive(Debug)]
+/// The rule/lookup lemmatizer. Rule tables come from a parsed [`LemmaBlob`]
+/// (zero-alloc binary-search lookups); the per-token result cache is
+/// interior-mutable and shared.
 pub struct Lemmatizer {
     mode: LemmatizerMode,
     /// Rule-mode tables (`rules`/`index`/`exc`), one per POS key.
@@ -341,6 +345,8 @@ fn contraction_lemma(orth: &str, pos: Upos) -> Option<&'static str> {
 /// A lemmatizer whose morphology table resolves through a `StringStore`
 /// (helper for callers without a full vocab).
 #[must_use]
+/// A lemmatizer whose morphology table resolves through a `StringStore`
+/// (helper for callers without a full vocab).
 pub fn rule_lemmatizer_with_strings(strings: std::sync::Arc<StringStore>) -> Lemmatizer {
     let morphology = std::sync::Arc::new(Morphology::new(strings));
     Lemmatizer::english_rule().with_morphology(morphology)

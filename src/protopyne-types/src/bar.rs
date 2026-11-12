@@ -11,6 +11,7 @@ use crate::money::Money;
 /// Corporate-action adjustment attached to a closed bar.
 #[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Corporate-action adjustment attached to a closed bar.
 pub struct Adjustment {
     /// Split factor applied at this bar (e.g. `2` for a 2-for-1 split).
     #[serde(default)]
@@ -24,6 +25,8 @@ pub struct Adjustment {
 /// (still-forming) candles are never represented here.
 #[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// A single closed bar. Only closed bars enter the decision path; open
+/// (still-forming) candles are never represented here.
 pub struct Bar {
     /// Bucket-open timestamp: the instant the bar's interval begins.
     ///
@@ -104,6 +107,11 @@ impl Bar {
 /// frames, research frames, Pine legs, IV quotes). Volume legs
 /// (`u64 as f64`) are not decimals and stay out of scope (M3.1).
 #[must_use]
+/// One decimal price leg as an `f64` hole (`NaN` when unrepresentable):
+/// the one spelling for the `to_f64().unwrap_or(NAN)` / `nan_hole(...)`
+/// price-leg conversions across the kernel layer (indicator legs, bar
+/// frames, research frames, Pine legs, IV quotes). Volume legs
+/// (`u64 as f64`) are not decimals and stay out of scope (M3.1).
 pub fn bar_leg_as_f64(leg: Decimal) -> f64 {
     use rust_decimal::prelude::ToPrimitive as _;
     leg.to_f64().unwrap_or(f64::NAN)

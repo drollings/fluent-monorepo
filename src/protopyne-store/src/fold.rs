@@ -45,6 +45,8 @@ pub use protopyne_types::FoldEdges;
 /// The fold anchor for a spacing. Thin delegation to
 /// [`Timeframe::fold_origin_ms`], kept so no caller changes.
 #[must_use]
+/// The fold anchor for a spacing. Thin delegation to
+/// [`Timeframe::fold_origin_ms`], kept so no caller changes.
 pub fn fold_origin_ms(tf: Timeframe) -> i64 {
     tf.fold_origin_ms()
 }
@@ -52,6 +54,8 @@ pub fn fold_origin_ms(tf: Timeframe) -> i64 {
 /// The bucket a stamp belongs to. Thin delegation to
 /// [`Timeframe::bucket_start_ms`], kept so no caller changes.
 #[must_use]
+/// The bucket a stamp belongs to. Thin delegation to
+/// [`Timeframe::bucket_start_ms`], kept so no caller changes.
 pub fn bucket_start(tf: Timeframe, ts_ms: i64) -> i64 {
     tf.bucket_start_ms(ts_ms)
 }
@@ -60,6 +64,9 @@ pub fn bucket_start(tf: Timeframe, ts_ms: i64) -> i64 {
 /// consumed by the planner and the read path — [`fold_bars`] itself folds a
 /// bar slice range-free, so it takes no policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// How a read treats bucket edges. The policy rides the read request and is
+/// consumed by the planner and the read path — [`fold_bars`] itself folds a
+/// bar slice range-free, so it takes no policy.
 pub enum FoldPolicy {
     /// Widen the fetch to enclosing bucket boundaries, fold, then narrow
     /// back to the request — so a returned `open` is always the true bucket

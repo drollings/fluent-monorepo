@@ -17,6 +17,8 @@ use thiserror::Error;
 /// Which path a model call serves. Query dispatch admits `Interactive`;
 /// sync and maintenance loops admit `Background`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which path a model call serves. Query dispatch admits `Interactive`;
+/// sync and maintenance loops admit `Background`.
 pub enum Lane {
     /// Serves a waiting query: admitted first, own timeout.
     Interactive,
@@ -29,6 +31,10 @@ pub enum Lane {
 /// behaves like today's direct calls; tighten budgets only from measured
 /// contention (the saturation test pins the mechanism, not the numbers).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Per-lane in-flight budgets and timeouts. Defaults bind nothing under
+/// normal load and match the model-role timeout, so an unconfigured gate
+/// behaves like today's direct calls; tighten budgets only from measured
+/// contention (the saturation test pins the mechanism, not the numbers).
 pub struct LaneConfig {
     /// Max concurrent interactive calls.
     pub interactive_in_flight: usize,
@@ -42,6 +48,7 @@ pub struct LaneConfig {
 
 /// Default lane budgets (see `LaneConfig` for the policy).
 #[must_use]
+/// Default lane budgets (see `LaneConfig` for the policy).
 pub fn default_lane_config() -> LaneConfig {
     LaneConfig {
         interactive_in_flight: 16,
@@ -59,7 +66,13 @@ impl Default for LaneConfig {
 
 /// How lane admission failed. Saturation is absent by design: waiting is
 /// deferral, and only a closed gate (unreachable in practice) errors.
+/// Transport failure (`Unavailable`) is neither: the ladder signal passes
+/// through intact so callers can wait without consuming attempts.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+/// How lane admission failed. Saturation is absent by design: waiting is
+/// deferral, and only a closed gate (unreachable in practice) errors.
+/// Transport failure (`Unavailable`) is neither: the ladder signal passes
+/// through intact so callers can wait without consuming attempts.
 pub enum LaneError {
     /// The call body outran its lane timeout.
     #[error("lane {lane:?} timed out after {timeout_ms}ms")]
@@ -72,6 +85,22 @@ pub enum LaneError {
     /// The gate shut down mid-wait.
     #[error("lane gate closed")]
     Closed,
+    /// Backend busy or unreachable: wait and retry later, never a timeout.
+    #[error("lane {lane:?} unavailable: {detail}")]
+    Unavailable {
+        /// Lane the call waited on.
+        lane: Lane,
+        /// Backend reason, verbatim.
+        detail: String,
+    },
+}
+
+impl LaneError {
+    /// Whether this is a transport failure (wait), not a budget failure.
+    #[must_use]
+    pub fn is_unavailable(&self) -> bool {
+        matches!(self, Self::Unavailable { .. })
+    }
 }
 
 /// Admission gate over two semaphores (the same primitive as the shared
@@ -109,6 +138,28 @@ impl LaneGate {
     where
         F: FnOnce() -> Fut + Send,
         Fut: std::future::Future<Output = T> + Send,
+    {
+        self.admit_checked(lane, || async { Ok(call().await) })
+            .await
+            .map(|inner: Result<T, std::convert::Infallible>| {
+                inner.expect("infallible call cannot fail")
+            })
+    }
+
+    /// Fallible admission with the same budgets, deferral, and timeout:
+    /// lane mechanics stay outer (`LaneError`), the call's own error —
+    /// including the ladder's `Unavailable` — passes through intact as
+    /// the inner `Err`, never converted into a timeout. Background still
+    /// waits for spare interactive capacity first, so an unavailable
+    /// backend waits (no attempt consumed upstream) instead of failing.
+    pub async fn admit_checked<F, Fut, T, E>(
+        &self,
+        lane: Lane,
+        call: F,
+    ) -> Result<Result<T, E>, LaneError>
+    where
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<T, E>> + Send,
     {
         // Budget permits live to the end of the function, across the call;
         // dropping them in the match arms below would release the budget

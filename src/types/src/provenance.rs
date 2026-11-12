@@ -24,6 +24,14 @@ use serde::{Deserialize, Serialize};
 /// - **HumanReview** — a human reviewer overrode or confirmed the claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The producing authority of a ledger annotation. Ordered by strength:
+/// `Deterministic < LocalModel < Frontier < HumanReview`.
+/// 
+/// - **Deterministic** — pure, model-free output (tokenizer, ArcEager/rule
+/// parser, deterministic frame extraction).
+/// - **LocalModel** — a local enrichment model (the ONNX LLM, an encoder rung).
+/// - **Frontier** — a frontier/remote provider (a future substitution point).
+/// - **HumanReview** — a human reviewer overrode or confirmed the claim.
 pub enum ProvenanceTier {
     Deterministic,
     LocalModel,
@@ -37,6 +45,10 @@ pub enum ProvenanceTier {
 /// version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The lifecycle status of one annotation claim (parallels spacy-rs
+/// `ReviewStatus`): a claim is `Provisional` until confirmed, and `Superseded`
+/// (never deleted) when a higher-tier claim replaces it for the same node
+/// version.
 pub enum ClaimStatus {
     /// Not yet authoritative; waiting on a higher-tier confirmation.
     Provisional,
@@ -50,6 +62,9 @@ pub enum ClaimStatus {
 /// the node it describes). The version (`claim_id`) is managed by the
 /// `AnnotationStore`; this is the logical claim a writer produces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One tiered annotation claim on one node **version** (the `content_hash` of
+/// the node it describes). The version (`claim_id`) is managed by the
+/// `AnnotationStore`; this is the logical claim a writer produces.
 pub struct AnnotationClaim {
     /// The claim's identity within a node version (e.g. a frame key or an
     /// annotation record key). Two claims with the same key on the same hash

@@ -191,6 +191,8 @@ impl IntegrationLiteSignal {
 /// Shareable evaluation inputs (the signal itself is not `Clone` over the
 /// trait object boundary concerns; the instance holds this instead).
 #[derive(Clone)]
+/// Shareable evaluation inputs (the signal itself is not `Clone` over the
+/// trait object boundary concerns; the instance holds this instead).
 struct InstanceShared {
     indicator: LiteIndicatorParams,
     strategy: IntegrationLiteStrategyConfig,
@@ -420,6 +422,12 @@ fn realised_volatility(closes: &[f64]) -> Option<f64> {
 /// evidence that the trend triggers also fired.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)] // six independent verdicts, not a state machine
+/// Which triggers armed one bar, by side and by family.
+/// 
+/// The split matters because the counter-trend arm is a different trade thesis:
+/// it may be admitted through its own filter set, and it must not be read as
+/// evidence that the trend triggers also fired.
+/// six independent verdicts, not a state machine
 struct Armed {
     /// Any long trigger fired.
     long: bool,
@@ -459,6 +467,7 @@ impl Armed {
 
 /// Which filters apply to one admission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which filters apply to one admission.
 enum FilterSet {
     /// Every enabled filter (the trend path).
     Full,
@@ -518,6 +527,16 @@ fn filter_params_for_slot(slot: &FilterSlot) -> serde_json::Value {
 /// behavior-neutral. A stateful row must never be added here without moving
 /// the build to bind time.
 #[must_use]
+/// Build the trigger set from the nested entry section, in row order.
+/// 
+/// This is the canonical assembly: the flat config reaches the slots only
+/// through the [`entry_from_config`] projection. Unknown row kinds refuse
+/// at build time (the catalog errors); they never silently arm nothing.
+/// 
+/// The rows are stateless (every trigger is `Copy` with no bar state), so
+/// rebuilding per call — as the position exit path does every bar — is
+/// behavior-neutral. A stateful row must never be added here without moving
+/// the build to bind time.
 pub fn build_triggers_from_entry(entry: &EntrySpec) -> Vec<Arc<dyn Trigger>> {
     use crate::slots::trigger::triggers;
 
@@ -538,6 +557,11 @@ pub fn build_triggers_from_entry(entry: &EntrySpec) -> Vec<Arc<dyn Trigger>> {
 /// can carry bar state (the regime hysteresis) build once per instance at
 /// bind time, never per bar.
 #[must_use]
+/// Build the admission guards from the nested entry section, in row order.
+/// 
+/// Same canonicality contract as [`build_triggers_from_entry`]: rows that
+/// can carry bar state (the regime hysteresis) build once per instance at
+/// bind time, never per bar.
 pub fn build_filters_from_entry(entry: &EntrySpec) -> Vec<Arc<dyn Filter>> {
     use crate::slots::filter::filters;
 
@@ -561,6 +585,13 @@ pub fn build_filters_from_entry(entry: &EntrySpec) -> Vec<Arc<dyn Filter>> {
 /// the canonical assembly. The order matters because the first arming side
 /// wins a tie only through the ambiguity refusal.
 #[must_use]
+/// Build the trigger set from the flat config, in the reference's dispatch
+/// order.
+/// 
+/// Compatibility wrapper: the flat config projects onto the nested entry
+/// and builds from there, so the flat struct reaches the slots only through
+/// the canonical assembly. The order matters because the first arming side
+/// wins a tie only through the ambiguity refusal.
 pub fn build_triggers(strategy: &IntegrationLiteStrategyConfig) -> Vec<Arc<dyn Trigger>> {
     build_triggers_from_entry(&entry_from_config(strategy))
 }
@@ -588,6 +619,9 @@ fn triggers_at(triggers: &[Arc<dyn Trigger>], tape: &Tape<'_>) -> Armed {
 /// trigger before filters (the position exit path: an opposite trigger closes
 /// a trade whether or not it would have passed the entry filters).
 #[must_use]
+/// The entry triggers armed on the closing bar, for callers that need the raw
+/// trigger before filters (the position exit path: an opposite trigger closes
+/// a trade whether or not it would have passed the entry filters).
 pub fn entry_triggers(
     strategy: &IntegrationLiteStrategyConfig,
     legs: &LiteLegs,
@@ -615,6 +649,15 @@ pub fn entry_triggers(
 /// (the regime hysteresis), the build happens once per signal instance at
 /// bind time, never per bar.
 #[must_use]
+/// Build the admission guards from the flat config, in the reference's
+/// evaluation order.
+/// 
+/// Compatibility wrapper: the flat config projects onto the nested entry
+/// and builds from there. The order is load-bearing: the regime label is
+/// written last, so an earlier block leaves the hysteresis state untouched
+/// exactly as the inline pass did — and because rows can carry bar state
+/// (the regime hysteresis), the build happens once per signal instance at
+/// bind time, never per bar.
 pub fn build_filters(strategy: &IntegrationLiteStrategyConfig) -> Vec<Arc<dyn Filter>> {
     build_filters_from_entry(&entry_from_config(strategy))
 }

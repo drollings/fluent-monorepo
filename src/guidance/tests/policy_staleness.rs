@@ -21,7 +21,10 @@ fn policy_content_change_moves_fingerprint() {
 
 #[test]
 fn version_bump_rederives_unchanged_version_does_not() {
-    let current = MaintenancePolicy { version: 2, ..MaintenancePolicy::default() };
+    let current = MaintenancePolicy {
+        version: 2,
+        ..MaintenancePolicy::default()
+    };
     assert!(policy_stale(Some(1), &current));
     assert!(!policy_stale(Some(2), &current));
 }
@@ -35,6 +38,20 @@ fn missing_stored_version_is_stale() {
 fn defaults_pin_mechanical_rustfmt_and_three_attempts() {
     let policy = MaintenancePolicy::default();
     assert_eq!(policy.version, 1);
-    assert_eq!(policy.mechanical_classes, vec!["rustfmt".to_string()]);
+    assert_eq!(
+        policy.mechanical_classes,
+        vec!["rustfmt".to_string(), "clippy-fix".to_string()]
+    );
     assert_eq!(policy.attempt_limit, 3);
+}
+
+#[test]
+fn autonomy_l0_is_index_only() {
+    use super::autonomy_allows_fix;
+    let mut policy = MaintenancePolicy::default();
+    assert!(autonomy_allows_fix(&policy));
+    policy.autonomy = "L0".to_string();
+    assert!(!autonomy_allows_fix(&policy));
+    policy.autonomy = "L3".to_string();
+    assert!(autonomy_allows_fix(&policy));
 }

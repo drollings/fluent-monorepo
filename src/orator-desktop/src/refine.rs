@@ -19,6 +19,7 @@ pub use orator::prompts::REFINE_PROMPT as DEFAULT_REFINE_PROMPT;
 
 /// Which rung produced the final text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which rung produced the final text.
 pub enum RefineSource {
     /// LLM polish pass.
     Llm,
@@ -28,6 +29,7 @@ pub enum RefineSource {
 
 /// Refined dictation: final text plus its source rung.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Refined dictation: final text plus its source rung.
 pub struct RefinedTranscript {
     /// Final text (polished or raw, never lost).
     pub text: String,
@@ -79,6 +81,9 @@ pub fn refine_transcript(
 /// the tool loop's envelope so refined prompts never disagree about
 /// untrusted content.
 #[must_use]
+/// Wrap `raw` as untrusted transcript data for the LLM rung, sharing
+/// the tool loop's envelope so refined prompts never disagree about
+/// untrusted content.
 pub fn wrap_transcript(raw: &str) -> String {
     orator::wrap_untrusted("dictation", raw)
 }

@@ -73,6 +73,8 @@ const POC_BORDER_TRANSPARENCY: f64 = 20.0;
 /// One bin of a volume profile: a price slice and the volume/imbalance that
 /// traded inside it.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One bin of a volume profile: a price slice and the volume/imbalance that
+/// traded inside it.
 pub struct VolumeBin {
     /// Lower price edge of the bin.
     pub price_low: f64,
@@ -86,6 +88,7 @@ pub struct VolumeBin {
 
 /// One bar's display primitives behind the profile.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One bar's display primitives behind the profile.
 pub struct ProfileBar {
     /// Bar high.
     pub high: f64,
@@ -101,6 +104,7 @@ pub struct ProfileBar {
 
 /// A complete volume profile over a window.
 #[derive(Debug, Clone, PartialEq)]
+/// A complete volume profile over a window.
 pub struct DeltaVolumeProfile {
     /// Bins in ascending price order.
     pub bins: Vec<VolumeBin>,
@@ -142,6 +146,15 @@ impl DeltaVolumeProfile {
 /// non-finite `value_area_pct`) yield an empty profile instead of a guessed
 /// one.
 #[must_use]
+/// Build a volume profile over `bars` with `bins` price slices and a value
+/// area covering `value_area_pct` of the traded volume.
+/// 
+/// Each bar's volume is spread across the bins its `[low, high]` range
+/// overlaps in proportion to the overlap (a zero-range bar lands entirely in
+/// its single bin). The buy share is taken as given in [`ProfileBar::buy`].
+/// Degenerate inputs (no bars, `bins == 0`, a flat or non-finite range, a
+/// non-finite `value_area_pct`) yield an empty profile instead of a guessed
+/// one.
 pub fn build_profile(bars: &[ProfileBar], bins: usize, value_area_pct: f64) -> DeltaVolumeProfile {
     let empty = DeltaVolumeProfile {
         bins: Vec::new(),
@@ -306,6 +319,14 @@ fn value_area(bins: &[VolumeBin], poc: usize, pct: f64) -> (Option<f64>, Option<
 /// bear slots instead (see [`bin_palette`]), and the Style tab's `color_bull`
 /// / `color_bear` overrides reach the profile through the same two slots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The two endpoints a profile bin's gradient interpolates between: the
+/// support end a buy-dominant bin reads as, and the resistance end a
+/// sell-dominant bin reads as.
+/// 
+/// The reference defaults these to Pine's `color_support` / `color_resistance`
+/// ; a terminal that paints through a theme resolves them from its bull and
+/// bear slots instead (see [`bin_palette`]), and the Style tab's `color_bull`
+/// / `color_bear` overrides reach the profile through the same two slots.
 pub struct BinPalette {
     /// Buy-side color; the gradient's upper end.
     pub support: [u8; 3],
@@ -316,6 +337,8 @@ pub struct BinPalette {
 /// One bin's ported fill: gradient RGB plus the Pine transparency percent that
 /// the painter turns into byte opacity.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One bin's ported fill: gradient RGB plus the Pine transparency percent that
+/// the painter turns into byte opacity.
 pub struct BinFill {
     /// Gradient red channel.
     pub red: u8,
@@ -357,6 +380,9 @@ pub fn bin_palette(style: &IndicatorStyle, theme: &ThemeConfig) -> Result<BinPal
 /// clamped to `[0, 1]` — the continuous form of Pine's
 /// `color.from_gradient(value, low, high, …)`.
 #[must_use]
+/// The position a gradient value maps to between `low` and `high` bounds,
+/// clamped to `[0, 1]` — the continuous form of Pine's
+/// `color.from_gradient(value, low, high, …)`.
 fn gradient_position(value: f64, low: f64, high: f64) -> f64 {
     if !value.is_finite() || (high - low).abs() < f64::EPSILON {
         return 0.0;
@@ -372,6 +398,13 @@ fn gradient_position(value: f64, low: f64, high: f64) -> f64 {
 /// reference guards, and a non-finite bin reads neutral rather than painting a
 /// color nobody measured.
 #[must_use]
+/// One bin's buy/sell imbalance as a share of the most it could hold, clamped
+/// to `[-1, +1]` — a port of the reference `getImbalanceRatio`.
+/// 
+/// A bin below [`VOLUME_EPSILON`] and a bin whose maximum possible imbalance
+/// is itself negligible both read as exactly neutral (`0.0`), mirroring the
+/// reference guards, and a non-finite bin reads neutral rather than painting a
+/// color nobody measured.
 pub fn imbalance_ratio(bin: &VolumeBin) -> f64 {
     if !bin.volume.is_finite() || !bin.imbalance.is_finite() || bin.volume < VOLUME_EPSILON {
         return 0.0;
@@ -403,6 +436,25 @@ pub fn imbalance_ratio(bin: &VolumeBin) -> f64 {
 /// exactly as the reference returns `COLOR_NONE`; the caller then paints
 /// nothing for that bin rather than substituting neutral gray.
 #[must_use]
+/// The ported `_DeltaVolumeProfileProtopyne.pine :: getBinColors`: one bin's
+/// gradient color and its Pine transparency.
+/// 
+/// The reference reads a bin as two coupled signals instead of one up/down
+/// flip, and so does this:
+/// 
+/// - **Color** follows the *imbalance*, amplified non-linearly around a
+/// neutral midpoint — `0.5 + |ratio|^0.7 * sign(ratio) * 1.5`, clamped —
+/// and mapped across the `0.2..0.8` gradient band from the resistance end to
+/// the support end. Because the exponent is below one, a mildly lopsided bin
+/// already reads off-neutral, and adjacent bins move continuously instead of
+/// alternating between two flat colors.
+/// - **Transparency** follows the *volume* relative to the mean bin
+/// (`75 - (ratio / 4)^2 * 70`, clamped to `5..95`), so thickness reads as
+/// density and a thin bin stays faint rather than recolored.
+/// 
+/// `None` for an index past the last bin or a bin under [`VOLUME_EPSILON`],
+/// exactly as the reference returns `COLOR_NONE`; the caller then paints
+/// nothing for that bin rather than substituting neutral gray.
 pub fn bin_fill(
     profile: &DeltaVolumeProfile,
     index: usize,
@@ -446,6 +498,8 @@ pub fn bin_fill(
 /// One painted profile bar: a rectangle at the chart's right edge plus the
 /// ported fill it carries.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One painted profile bar: a rectangle at the chart's right edge plus the
+/// ported fill it carries.
 pub struct ProfileBox {
     /// Rectangle in pane-local pixels.
     pub rect: egui::Rect,
@@ -466,6 +520,13 @@ pub struct ProfileBox {
 /// [`VOLUME_EPSILON`], which the ported shading refuses. A degenerate profile
 /// (no bins or no volume) yields no boxes.
 #[must_use]
+/// Lay a profile out as horizontal bars anchored at `anchor_index`,
+/// extending leftward by up to `width_slots` bars.
+/// 
+/// `origin` is the pane's top-left. Off-window bins are skipped so the profile
+/// never paints past the visible price range, as are bins under
+/// [`VOLUME_EPSILON`], which the ported shading refuses. A degenerate profile
+/// (no bins or no volume) yields no boxes.
 pub fn profile_boxes(
     profile: &DeltaVolumeProfile,
     viewport: &Viewport,
@@ -516,6 +577,11 @@ pub fn profile_boxes(
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// The native plugin configuration, schema-driven from these fields.
+/// 
+/// The reference indicator exposes four independent visibility toggles
+/// (profile, VWAP, value area, POC); splitting them into sub-structs would
+/// fragment the one settings schema the modal renders from.
 pub struct DeltaVolumeProfileConfig {
     /// Number of price bins across the lookback range.
     #[field(desc = "Number of price bins", min = 8, max = 600)]

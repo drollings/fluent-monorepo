@@ -12,6 +12,9 @@ pub const CONTINUATION_WINDOW: Duration = Duration::from_secs(10);
 /// `previous`, both into the same window (`same_window`). Empty when the
 /// window lapsed, the window changed, or there was no previous paste.
 #[must_use]
+/// Leading separator for a paste landing `now` after a previous paste at
+/// `previous`, both into the same window (`same_window`). Empty when the
+/// window lapsed, the window changed, or there was no previous paste.
 pub fn continuation_prefix(
     previous: Option<Instant>,
     same_window: bool,

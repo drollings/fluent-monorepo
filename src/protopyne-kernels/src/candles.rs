@@ -22,42 +22,49 @@ pub const TA_EPSILON: f64 = 1e-8;
 
 /// Body length: `|close - open|`.
 #[must_use]
+/// Body length: `|close - open|`.
 pub fn real_body(bar: BarTick) -> f64 {
     (bar.close - bar.open).abs()
 }
 
 /// Upper shadow: `high - max(open, close)`.
 #[must_use]
+/// Upper shadow: `high - max(open, close)`.
 pub fn upper_shadow(bar: BarTick) -> f64 {
     bar.high - upper_body(bar)
 }
 
 /// Lower shadow: `min(open, close) - low`.
 #[must_use]
+/// Lower shadow: `min(open, close) - low`.
 pub fn lower_shadow(bar: BarTick) -> f64 {
     lower_body(bar) - bar.low
 }
 
 /// Full range: `high - low`.
 #[must_use]
+/// Full range: `high - low`.
 pub fn high_low_range(bar: BarTick) -> f64 {
     bar.high - bar.low
 }
 
 /// Upper edge of the body: `max(open, close)`.
 #[must_use]
+/// Upper edge of the body: `max(open, close)`.
 pub fn upper_body(bar: BarTick) -> f64 {
     bar.open.max(bar.close)
 }
 
 /// Lower edge of the body: `min(open, close)`.
 #[must_use]
+/// Lower edge of the body: `min(open, close)`.
 pub fn lower_body(bar: BarTick) -> f64 {
     bar.open.min(bar.close)
 }
 
 /// Combined shadow length: range minus body.
 #[must_use]
+/// Combined shadow length: range minus body.
 pub fn shadows(bar: BarTick) -> f64 {
     high_low_range(bar) - real_body(bar)
 }
@@ -65,6 +72,8 @@ pub fn shadows(bar: BarTick) -> f64 {
 /// In-bar market efficiency: displacement over approximate distance
 /// travelled, `body / (2 * range - body + eps)`.
 #[must_use]
+/// In-bar market efficiency: displacement over approximate distance
+/// travelled, `body / (2 * range - body + eps)`.
 pub fn efficiency_ratio(bar: BarTick) -> f64 {
     let body = real_body(bar);
     let distance = 2.0 * high_low_range(bar) - body;
@@ -78,54 +87,63 @@ fn legs_finite(bar: BarTick) -> bool {
 
 /// Bullish-or-flat bar: `close >= open`.
 #[must_use]
+/// Bullish-or-flat bar: `close >= open`.
 pub fn candle_color(bar: BarTick) -> bool {
     legs_finite(bar) && bar.close >= bar.open
 }
 
 /// Four-price bar: the whole range fits inside epsilon.
 #[must_use]
+/// Four-price bar: the whole range fits inside epsilon.
 pub fn four_price_doji(bar: BarTick) -> bool {
     legs_finite(bar) && bar.low >= bar.high - TA_EPSILON
 }
 
 /// Doji (including four-price and T shapes): `|open - close| <= eps`.
 #[must_use]
+/// Doji (including four-price and T shapes): `|open - close| <= eps`.
 pub fn doji(bar: BarTick) -> bool {
     legs_finite(bar) && (bar.open - bar.close).abs() <= TA_EPSILON
 }
 
 /// Dragonfly: a doji with a lower tail.
 #[must_use]
+/// Dragonfly: a doji with a lower tail.
 pub fn dragonfly(bar: BarTick) -> bool {
     doji(bar) && bar.low < bar.close - TA_EPSILON
 }
 
 /// Gravestone: a doji with an upper tail.
 #[must_use]
+/// Gravestone: a doji with an upper tail.
 pub fn gravestone(bar: BarTick) -> bool {
     doji(bar) && bar.high > bar.close + TA_EPSILON
 }
 
 /// Gap up: the bar's range opens above the prior bar's high.
 #[must_use]
+/// Gap up: the bar's range opens above the prior bar's high.
 pub fn gap_up(prev: BarTick, bar: BarTick) -> bool {
     legs_finite(prev) && legs_finite(bar) && bar.low > prev.high
 }
 
 /// Gap down: the bar's range opens below the prior bar's low.
 #[must_use]
+/// Gap down: the bar's range opens below the prior bar's low.
 pub fn gap_down(prev: BarTick, bar: BarTick) -> bool {
     legs_finite(prev) && legs_finite(bar) && bar.high < prev.low
 }
 
 /// Real-body gap up: the body's lower edge clears the prior upper edge.
 #[must_use]
+/// Real-body gap up: the body's lower edge clears the prior upper edge.
 pub fn real_body_gap_up(prev: BarTick, bar: BarTick) -> bool {
     legs_finite(prev) && legs_finite(bar) && lower_body(bar) > upper_body(prev)
 }
 
 /// Real-body gap down: the body's upper edge sits under the prior lower edge.
 #[must_use]
+/// Real-body gap down: the body's upper edge sits under the prior lower edge.
 pub fn real_body_gap_down(prev: BarTick, bar: BarTick) -> bool {
     legs_finite(prev) && legs_finite(bar) && upper_body(bar) < lower_body(prev)
 }

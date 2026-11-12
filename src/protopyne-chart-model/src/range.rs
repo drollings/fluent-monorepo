@@ -13,6 +13,7 @@ pub const MONTH_SECONDS: i64 = 30 * 24 * 3_600;
 
 /// Quick-pick lookback windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// Quick-pick lookback windows.
 pub enum DateRange {
     /// One day.
     Day1,

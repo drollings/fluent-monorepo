@@ -35,6 +35,9 @@ pub const VOICE_BOOT_TIMEOUT: Duration = Duration::from_secs(240);
 /// (kept together: the binary finds its `.so` siblings by runpath).
 /// `None` when no home base resolves.
 #[must_use]
+/// Managed home holding the voice-server binary plus its libraries
+/// (kept together: the binary finds its `.so` siblings by runpath).
+/// `None` when no home base resolves.
 pub fn audio_server_home() -> Option<PathBuf> {
     orator::paths::home_dir().map(|home| home.join(".local/share/orator/servers/liquid-audio"))
 }
@@ -63,6 +66,13 @@ fn audio_server_search_table() -> Vec<PathBuf> {
 /// Shared filter home: `orator::paths::filter_validated_binaries`;
 /// the override classification is `orator::paths::ExplicitBinary`.
 #[must_use]
+/// Every voice-server candidate binary in try order: the
+/// `LLAMA_AUDIO_SERVER` override alone when set, else the validated
+/// search table. Boot tries each until one answers readiness: a
+/// pre-LFM3 install fails fast on the bundle and the next serves,
+/// instead of one shadowed binary vetoing voice.
+/// Shared filter home: `orator::paths::filter_validated_binaries`;
+/// the override classification is `orator::paths::ExplicitBinary`.
 pub fn resolve_audio_server_candidates() -> Vec<PathBuf> {
     let explicit = orator::paths::ExplicitBinary::from_env(AUDIO_SERVER_ENV);
     match explicit.path {
@@ -84,6 +94,14 @@ pub fn resolve_audio_server_candidates() -> Vec<PathBuf> {
 /// turn is at stake: the first candidate may be a pre-LFM3 install
 /// that fails the bundle fast while a later one serves.
 #[must_use]
+/// Resolve the voice-server binary: the first of
+/// [`resolve_audio_server_candidates`]. Searched hits pass the
+/// ownership gate for the current uid and are refused (`None`) when
+/// untrusted; explicit overrides log their owner/mode/fingerprint
+/// (the user accepts responsibility). `None` when installed nowhere
+/// trusted. Prefer the candidate list plus a boot attempt wherever a
+/// turn is at stake: the first candidate may be a pre-LFM3 install
+/// that fails the bundle fast while a later one serves.
 pub fn resolve_audio_server() -> Option<PathBuf> {
     let candidates = resolve_audio_server_candidates();
     if candidates.len() == 1 && std::env::var_os(AUDIO_SERVER_ENV).is_some() {
@@ -110,6 +128,12 @@ pub fn resolve_audio_server() -> Option<PathBuf> {
 /// (LFM2.5). The supervised spawn renders the same bytes through
 /// [`orator_supervise::build_args`] over [`audio_supervisor_config`].
 #[must_use]
+/// Render the exact argv for a voice-server spawn. Unit-testable, no
+/// side effects. Loopback-only; stock `llama-server` shape (`-m`
+/// backbone, `--mmproj` projector) plus the legacy `-mv`/
+/// `--tts-speaker-file` pair only when the bundle carries them
+/// (LFM2.5). The supervised spawn renders the same bytes through
+/// [`orator_supervise::build_args`] over [`audio_supervisor_config`].
 pub fn voice_server_args(bundle: &AudioBundle, port: u16) -> Vec<String> {
     let mut args = vec![
         "-m".to_string(),
@@ -139,6 +163,12 @@ pub fn voice_server_args(bundle: &AudioBundle, port: u16) -> Vec<String> {
 /// served-model tag stays empty here — callers that know it set
 /// `config.model` themselves.
 #[must_use]
+/// Audio `SupervisorConfig`: the bundle as weights/projector on a
+/// loopback port, readied by the completions `OPTIONS` probe. The
+/// legacy vocoder/speaker pair rides along only when present
+/// (LFM2.5); LFM3 voices from backbone + projector alone. The
+/// served-model tag stays empty here — callers that know it set
+/// `config.model` themselves.
 pub fn audio_supervisor_config(bundle: &AudioBundle, port: u16) -> SupervisorConfig {
     let vocoder = (!bundle.vocoder.as_os_str().is_empty() && bundle.vocoder.exists())
         .then(|| bundle.vocoder.clone());
@@ -177,6 +207,8 @@ pub async fn wait_ready(base: &str, timeout: Duration) -> Result<(), S2sError> {
 /// Managed-home binary path, for diagnostics. `None` when no home
 /// base resolves.
 #[must_use]
+/// Managed-home binary path, for diagnostics. `None` when no home
+/// base resolves.
 pub fn managed_binary() -> Option<PathBuf> {
     audio_server_home().map(|home| home.join(AUDIO_SERVER_BIN))
 }

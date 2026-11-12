@@ -12,6 +12,8 @@ use std::fmt::Write as _;
 
 /// Indexed file row (mirrors the P0 `FileInfo` contract).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// -- P1 fragment records, filter, and FTS match builder ---------------------
+/// Indexed file row (mirrors the P0 `FileInfo` contract).
 pub struct FileRecord {
     /// Stable file id.
     pub id: String,
@@ -61,6 +63,8 @@ impl FileRecord {
 /// Freshness fingerprint of a file's committed fragment row (see
 /// [`GuidanceDb::fragment_freshness`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Freshness fingerprint of a file's committed fragment row (see
+/// [`GuidanceDb::fragment_freshness`]).
 pub struct FragmentFreshness {
     /// File size in bytes at ingest time.
     pub size_bytes: u64,
@@ -85,6 +89,20 @@ pub struct FragmentFreshness {
 /// that refuses a mismatched index and rebuilds. Headerless legacy files
 /// contribute path, mtime, and size instead, documented as content-blind.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Change fingerprint for the node-sync gate (see
+/// [`GuidanceDb::sync_from_dir`]): the doc set is unchanged iff both
+/// the file count and the newest mtime match the last successful sync.
+/// The mtime is carried at nanosecond resolution — a millisecond stamp
+/// cannot separate two same-length rewrites that land inside one
+/// millisecond, so a doc edited that way would read as unchanged and be
+/// skipped. Same risk class as all mtime discipline here: a delete+add
+/// pair that keeps the count with an older-or-equal max mtime reads as
+/// fresh (change detection, not content addressing).
+/// 
+/// `gen` is the disposable-index marker: a hash over the sidecar header
+/// manifest (one first line per file, so the gate never pays for bodies)
+/// that refuses a mismatched index and rebuilds. Headerless legacy files
+/// contribute path, mtime, and size instead, documented as content-blind.
 pub(crate) struct NodeSyncFingerprint {
     /// Newest member-doc mtime (ns epoch), 0 when unreadable.
     pub(crate) max_mtime_ns: i64,
@@ -132,6 +150,9 @@ pub(crate) fn node_sync_fingerprint(json_files: &[std::path::PathBuf]) -> NodeSy
 /// `cjk_text` is the space-joined bigram expansion computed by the
 /// guidance-core ingestion helper).
 #[derive(Debug, Clone, PartialEq)]
+/// Fragment row for ingestion (mirrors the P0 `EntityFragment` contract;
+/// `cjk_text` is the space-joined bigram expansion computed by the
+/// guidance-core ingestion helper).
 pub struct FragmentRecord {
     /// Fragment id (unique per file).
     pub id: String,
@@ -169,6 +190,7 @@ pub struct FragmentRecord {
 
 /// Lemma row for the `fragment_lemmas` L2 table.
 #[derive(Debug, Clone, PartialEq)]
+/// Lemma row for the `fragment_lemmas` L2 table.
 pub struct FragmentLemma {
     /// Owning fragment id.
     pub fragment_id: String,
@@ -181,6 +203,8 @@ pub struct FragmentLemma {
 /// Identity row for one definition: the stable symbol key plus the two
 /// fingerprints that separate interface edits from body edits.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Identity row for one definition: the stable symbol key plus the two
+/// fingerprints that separate interface edits from body edits.
 pub struct SymbolRecord {
     /// Stable symbol id (fragment id of the defining chunk).
     pub symbol_id: String,
@@ -217,6 +241,7 @@ impl SymbolRecord {
 
 /// Full fragment row for hit materialization.
 #[derive(Debug, Clone, PartialEq)]
+/// Full fragment row for hit materialization.
 pub struct FragmentRow {
     /// Fragment id.
     pub id: String,
@@ -271,6 +296,7 @@ impl FragmentRow {
 
 /// Recall filter pushed into fragment queries.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Recall filter pushed into fragment queries.
 pub struct FragmentFilter {
     /// File allow-list (`None` = no path selection; `Some([])` = no files).
     pub file_ids: Option<Vec<String>>,
@@ -288,6 +314,7 @@ pub struct FragmentFilter {
 
 /// One ranked recall hit (rank assignment stays with the recall loop).
 #[derive(Debug, Clone, PartialEq)]
+/// One ranked recall hit (rank assignment stays with the recall loop).
 pub struct ScoredFragment {
     /// Fragment id.
     pub id: String,
@@ -351,6 +378,12 @@ pub(crate) fn append_fragment_filter(
 /// `common_core::string` helpers; only the column bindings are
 /// fragment-specific.
 #[must_use]
+/// Build the FTS5 `MATCH` expression for a query: ASCII tokens hit the
+/// text/symbol columns, CJK runs hit the bigram column (P0 `cjk-bigram`
+/// contract). Returns `None` when nothing is indexable — callers return
+/// empty (never match-all). Tokenizing/quoting compose the shared
+/// `common_core::string` helpers; only the column bindings are
+/// fragment-specific.
 pub fn build_fts_match(query: &str) -> Option<String> {
     use common_core::string::{cjk_bigrams, fts_match_tokens, fts_quote};
     let ascii = fts_match_tokens(query);
@@ -359,7 +392,7 @@ pub fn build_fts_match(query: &str) -> Option<String> {
     if !ascii.is_empty() {
         let or: Vec<String> = ascii.iter().map(|t| fts_quote(t)).collect();
         parts.push(format!(
-            "{{content_text symbol_name}} : ({})",
+            "{{content_text symbol_name doc}} : ({})",
             or.join(" OR ")
         ));
     }

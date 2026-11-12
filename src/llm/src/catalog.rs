@@ -8,6 +8,14 @@
 
 /// Backend that serves a catalog entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Pinned embedding-model catalog: the single source of truth for model
+/// metadata (mirrors, per-artifact sha256/size, dims, metric, batch / context
+/// / concurrency limits).
+/// 
+/// Every entry mirrors the upstream table field-for-field; the `catalog`
+/// integration test pins the values so mirror drift fails here instead of at
+/// download time.
+/// Backend that serves a catalog entry.
 pub enum EmbeddingBackend {
     LlamaCpp,
     Model2Vec,
@@ -17,10 +25,12 @@ pub enum EmbeddingBackend {
 
 /// Pinned `(repo, revision)` mirror coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Pinned `(repo, revision)` mirror coordinates.
 pub struct ArtifactMirror(pub &'static str, pub &'static str);
 
 /// Hugging Face + ModelScope mirrors for one entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Hugging Face + ModelScope mirrors for one entry.
 pub struct ArtifactSources {
     pub hugging_face: ArtifactMirror,
     pub model_scope: ArtifactMirror,
@@ -28,6 +38,7 @@ pub struct ArtifactSources {
 
 /// One pinned file inside a model snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One pinned file inside a model snapshot.
 pub struct PinnedArtifact {
     pub path: &'static str,
     pub size: u64,
@@ -38,6 +49,9 @@ pub struct PinnedArtifact {
 /// backends; every entry always carries reference/backend/provider/model,
 /// dimension, metric, artifacts and `max_batch_size`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One pinned catalog row. Backend-specific fields are `None` for other
+/// backends; every entry always carries reference/backend/provider/model,
+/// dimension, metric, artifacts and `max_batch_size`.
 pub struct CatalogEntry {
     pub reference: &'static str,
     pub backend: EmbeddingBackend,
@@ -772,12 +786,14 @@ pub static EMBEDDING_MODEL_CATALOG: &[CatalogEntry] = &[
 
 /// All pinned entries, in catalog order.
 #[must_use]
+/// All pinned entries, in catalog order.
 pub fn list_embedding_models() -> &'static [CatalogEntry] {
     EMBEDDING_MODEL_CATALOG
 }
 
 /// Look up one entry by `provider/model` reference.
 #[must_use]
+/// Look up one entry by `provider/model` reference.
 pub fn get_embedding_model_catalog_entry(reference: &str) -> Option<&'static CatalogEntry> {
     EMBEDDING_MODEL_CATALOG
         .iter()

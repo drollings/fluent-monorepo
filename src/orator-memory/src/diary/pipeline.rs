@@ -25,6 +25,7 @@ pub const STEPS: [&str; 7] = [
 
 /// Per-step run state.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Per-step run state.
 pub enum StepState {
     /// Never ran.
     #[default]

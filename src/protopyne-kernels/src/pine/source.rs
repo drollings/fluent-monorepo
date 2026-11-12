@@ -26,6 +26,8 @@ pub const SUPPORTED_PINE_VERSION: u64 = 6;
 /// Identity of one imported Pine library: `publisher/name/version`, as in
 /// `import showmethegrail/libUtil/12 as UTIL`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Identity of one imported Pine library: `publisher/name/version`, as in
+/// `import showmethegrail/libUtil/12 as UTIL`.
 pub struct LibraryId {
     /// Publisher namespace (`showmethegrail`).
     pub publisher: String,
@@ -43,6 +45,7 @@ impl fmt::Display for LibraryId {
 
 /// One `import` line: which library, under which local alias.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One `import` line: which library, under which local alias.
 pub struct ImportDecl {
     /// Imported library identity.
     pub library: LibraryId,
@@ -54,6 +57,9 @@ pub struct ImportDecl {
 /// of the current work and scan as [`SourceKind::Unknown`]; the later
 /// parser owns precise header grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Which header a source file declares. Strategy scripts are not a target
+/// of the current work and scan as [`SourceKind::Unknown`]; the later
+/// parser owns precise header grammar.
 pub enum SourceKind {
     /// `library('name')` declaration with the declared name.
     Library {
@@ -69,6 +75,8 @@ pub enum SourceKind {
 /// A version finding that warns instead of refusing: the declared version
 /// (or its absence) travels with the loaded source for later stages.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A version finding that warns instead of refusing: the declared version
+/// (or its absence) travels with the loaded source for later stages.
 pub struct VersionWarn {
     /// Declared `//@version`, or `None` when the header is missing.
     pub declared: Option<u64>,
@@ -80,6 +88,9 @@ pub struct VersionWarn {
 /// Version findings ride along as [`warnings`](Self::warnings); only an
 /// empty text fails [`validation`](fluent_wvr::validate::Validate).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One loaded `.pine` file: byte-identical text plus its scanned identity.
+/// Version findings ride along as [`warnings`](Self::warnings); only an
+/// empty text fails [`validation`](fluent_wvr::validate::Validate).
 pub struct PineSource {
     /// Source path as loaded, for audit and error context.
     pub path: String,
@@ -98,6 +109,8 @@ pub struct PineSource {
 /// Scan `text` into a [`PineSource`] attributed to `path`. Pure over values:
 /// no I/O, no refusal — unrecognized lines belong to the later parser.
 #[must_use]
+/// Scan `text` into a [`PineSource`] attributed to `path`. Pure over values:
+/// no I/O, no refusal — unrecognized lines belong to the later parser.
 pub fn parse_pine_source(path: &str, text: &str) -> PineSource {
     let mut version: Option<u64> = None;
     let mut saw_version_line = false;

@@ -9,6 +9,12 @@ use thiserror::Error;
 /// error means the inputs themselves were unusable, so the caller cannot
 /// trust any decision built on them.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Errors from strategy evaluation, proposal transitions, risk checks, and
+/// grant administration. Refusals of individual proposals are data
+/// ([`RiskRefused`](crate::risk::RiskRefused),
+/// [`GrantDecision::Deny`](crate::grant::GrantDecision)), never errors: an
+/// error means the inputs themselves were unusable, so the caller cannot
+/// trust any decision built on them.
 pub enum StrategyError {
     /// A lifecycle event does not apply to the proposal's current state.
     #[error("invalid transition: {0}")]

@@ -17,6 +17,7 @@ use crate::search_types::RetrievalTier;
 
 /// Which axis a confidence value stands on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which axis a confidence value stands on.
 pub enum ConfidenceAxis {
     /// Producer self-doubt (rule score, model entropy): orders work or
     /// abstains, never certifies, never persists a verdict.
@@ -28,6 +29,7 @@ pub enum ConfidenceAxis {
 
 /// One confidence value with its axis attached.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One confidence value with its axis attached.
 pub struct AnswerConfidence {
     /// Confidence magnitude in `[0.0, 1.0]`.
     pub value: f64,
@@ -35,9 +37,16 @@ pub struct AnswerConfidence {
     pub axis: ConfidenceAxis,
 }
 
+/// Machine-readable answer schema version. Bumped on any field
+/// addition, removal, or rename; consumers reject what they do not know.
+pub const ENVELOPE_SCHEMA_VERSION: u32 = 1;
+
 /// Machine-readable answer plus human-renderable fields.
 #[derive(Debug, Clone)]
+/// Machine-readable answer plus human-renderable fields.
 pub struct AnswerEnvelope {
+    /// Schema version of this envelope (`ENVELOPE_SCHEMA_VERSION`).
+    pub schema_version: u32,
     /// Classified intent.
     pub intent: QueryIntent,
     /// Search primitive that answered (`word_index`, `fts`, `hybrid`, …).
@@ -71,6 +80,7 @@ impl AnswerEnvelope {
         let gaps = gaps_of(&stages, grounded);
         let prechecked = super::strategy::intent_precheck(class).is_some();
         Self {
+            schema_version: ENVELOPE_SCHEMA_VERSION,
             intent: class.intent,
             route: route.to_string(),
             confidence: AnswerConfidence {
@@ -135,6 +145,7 @@ impl AnswerEnvelope {
         };
         let prechecked = super::strategy::intent_precheck(class).is_some();
         Self {
+            schema_version: ENVELOPE_SCHEMA_VERSION,
             intent: class.intent,
             route: route.to_string(),
             confidence: AnswerConfidence {
@@ -172,7 +183,9 @@ impl AnswerEnvelope {
     /// check: grounded excerpts exist, never inferred from confidence.
     #[must_use]
     pub fn is_answerable(&self) -> bool {
-        self.gaps.iter().all(|gap| !gap.starts_with("no results") && !gap.starts_with("synthesis withheld"))
+        self.gaps
+            .iter()
+            .all(|gap| !gap.starts_with("no results") && !gap.starts_with("synthesis withheld"))
     }
 
     /// Human-readable markdown rendering.
@@ -205,11 +218,14 @@ impl AnswerEnvelope {
 
 /// `source:line` citations from grounded code stages only.
 #[must_use]
+/// `source:line` citations from grounded code stages only.
 pub fn citations_of(stages: &[Stage]) -> Vec<String> {
     stages
         .iter()
         .filter(|stage| {
-            stage.kind == fluent_types::StageKind::Code && !stage.source.is_empty() && stage.line.is_some()
+            stage.kind == fluent_types::StageKind::Code
+                && !stage.source.is_empty()
+                && stage.line.is_some()
         })
         .map(|stage| format!("{}:{}", stage.source, stage.line.unwrap_or(0)))
         .collect()
@@ -217,6 +233,7 @@ pub fn citations_of(stages: &[Stage]) -> Vec<String> {
 
 /// Honest gaps: empty results, withheld ungrounded synthesis, ambiguity.
 #[must_use]
+/// Honest gaps: empty results, withheld ungrounded synthesis, ambiguity.
 pub fn gaps_of(stages: &[Stage], grounded: bool) -> Vec<String> {
     let mut gaps = Vec::new();
     if stages.is_empty() {
@@ -233,7 +250,8 @@ pub fn gaps_of(stages: &[Stage], grounded: bool) -> Vec<String> {
             *counts.entry(name).or_default() += 1;
         }
     }
-    let mut names: Vec<(&str, usize)> = counts.into_iter().filter(|(_, count)| *count > 1).collect();
+    let mut names: Vec<(&str, usize)> =
+        counts.into_iter().filter(|(_, count)| *count > 1).collect();
     names.sort_unstable();
     for (name, count) in names {
         gaps.push(format!("ambiguous: {count} candidates for `{name}`"));
@@ -248,6 +266,12 @@ pub fn gaps_of(stages: &[Stage], grounded: bool) -> Vec<String> {
 /// and re-sorting by size would corrupt it. Keeps stages while the running
 /// estimate fits; drops the tail, never the head.
 #[must_use]
+/// Rank-preserving budget fit over stages in rank order.
+///
+/// Shares the `TokenBudget` estimator with the rest of the workspace, but
+/// deliberately not `ffd_pack`: rank order is part of the answer's meaning
+/// and re-sorting by size would corrupt it. Keeps stages while the running
+/// estimate fits; drops the tail, never the head.
 pub fn fit_stages_to_budget(stages: &[Stage], max_tokens: usize) -> Vec<Stage> {
     let mut budget = TokenBudget(max_tokens);
     let mut out = Vec::new();
@@ -266,6 +290,9 @@ pub fn fit_stages_to_budget(stages: &[Stage], max_tokens: usize) -> Vec<Stage> {
 /// identifier or path, lexical intents by keyword, semantic intents by
 /// model-backed concept recall. Pure naming over the classified intent.
 #[must_use]
+/// Tier label for a legacy fallback answer: exact intents resolve by
+/// identifier or path, lexical intents by keyword, semantic intents by
+/// model-backed concept recall. Pure naming over the classified intent.
 pub fn tier_for_intent(intent: QueryIntent) -> RetrievalTier {
     match intent {
         QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier | QueryIntent::FilePath => {
@@ -281,6 +308,8 @@ pub fn tier_for_intent(intent: QueryIntent) -> RetrievalTier {
 /// Distinct tier names across cited stages, falling back to the intent
 /// tier when no citation carries a known tier.
 #[must_use]
+/// Distinct tier names across cited stages, falling back to the intent
+/// tier when no citation carries a known tier.
 pub fn tiers_for_cited(class: &QueryClass, cited: &[StageCitation]) -> Vec<String> {
     let mut tiers: Vec<String> = cited
         .iter()
@@ -298,6 +327,9 @@ pub fn tiers_for_cited(class: &QueryClass, cited: &[StageCitation]) -> Vec<Strin
 /// rung. Producer-side gate: high-confidence deterministic intents never
 /// pay vector recall; ambiguous queries keep the full ladder.
 #[must_use]
+/// Whether an exact precheck verdict restricts dispatch to its primary
+/// rung. Producer-side gate: high-confidence deterministic intents never
+/// pay vector recall; ambiguous queries keep the full ladder.
 pub fn should_short_circuit(class: &QueryClass) -> bool {
     matches!(
         class.intent,

@@ -16,6 +16,8 @@ use crate::onnx_error::OrtError;
 /// selection, and the boot sanity-check against the model's `config.json`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The task a declared ONNX model performs. Drives registry typing, accessor
+/// selection, and the boot sanity-check against the model's `config.json`.
 pub enum OnnxTask {
     /// Base bidirectional encoder: `input_ids` + `attention_mask` →
     /// `last_hidden_state` (sentence embeddings via mean-pool).
@@ -76,6 +78,9 @@ impl OnnxTask {
 /// per-model against its fp32 reference before use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Quantization of an ONNX model. `Fp32` is the reference; `Fp16` is known
+/// broken for this architecture (RMSNorm overflow) and must be validated
+/// per-model against its fp32 reference before use.
 pub enum Quant {
     Fp32,
     Fp16,
@@ -204,6 +209,25 @@ fn default_io_conv_layers() -> Vec<usize> {
 /// validated against the graph, and a mismatch is a loud load error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[builder(start_fn = new)]
+/// The generative `CausalLm` IO contract: the input/output
+/// tensor names, KV-cache dtype, and the per-layer conv/KV structure of the
+/// transformers.js-style causal-LM export, so the decoder knows exactly which
+/// graph inputs to build and which output to read — one place to edit, one
+/// place to fail loudly.
+/// 
+/// The defaults match the LFM2.5-2.6B export (`Lfm2ForCausalLM`): prefill via
+/// `input_ids`/`attention_mask`/`position_ids`, a per-layer conv state
+/// (`past_conv.{L}`, shape `[1, hidden_size, conv_L_cache]`) for the 22 conv
+/// layers and a per-layer KV cache (`past_key_values.{L}.key/value`, shape
+/// `[1, num_key_value_heads, past_len, head_dim]`) for the 8 full-attention
+/// layers, the `logits` output, and `kv_cache_dtype` from the model's
+/// `transformers.js_config`. The M1 live probe discovered this contract
+/// empirically and committed it as the golden fixture
+/// (`tests/live/fixtures/lfm25_26b_io.json`) — the fixture is the single
+/// source of truth, and these defaults align with it. When a config carries a
+/// `None` `LlmIo`, the decoder introspects the graph at load time and derives
+/// the contract from the declared inputs; a provided `Some(LlmIo)` is
+/// validated against the graph, and a mismatch is a loud load error.
 pub struct LlmIo {
     /// Prefill + decode token-id input tensor (default `"input_ids"`).
     #[serde(default = "default_io_input_ids")]
@@ -289,6 +313,19 @@ pub struct LlmIo {
 /// fails boot loudly rather than silently serving the base encoder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[builder(start_fn = new)]
+/// The trained-encoder annotation-heads contract.
+/// 
+/// A finetuned `FillMask` Encoder export carries three per-token heads — UPOS,
+/// dependency label, and head position — in the **same graph** as the base
+/// `last_hidden_state`. Each head's ONNX output tensor name is configurable
+/// (bon defaults `"upos_logits"` / `"dep_logits"` / `"head_logits"`), and the
+/// closed label vocabularies live in a separate `labels` file
+/// (`annotation_labels.json`: `{"upos": [...], "dep": [...]}`) — the single
+/// source of truth for logit-index → label, so `fluent-onnx` never imports
+/// `spacy-rs`; the labels cross as data. `OnnxConfig::validate` requires the
+/// declared head output names to appear in the model's `config.json`
+/// `onnx.outputs` and loads/parses the labels file, so a mis-exported finetune
+/// fails boot loudly rather than silently serving the base encoder.
 pub struct AnnotationHeads {
     /// ONNX output tensor for per-token UPOS logits (default `"upos_logits"`).
     #[serde(default = "default_pos_output")]
@@ -316,6 +353,12 @@ pub struct AnnotationHeads {
 /// the single source of truth for logit-index → label, and `fluent-onnx` never
 /// imports `spacy-rs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The closed label vocabularies for the annotation heads, loaded from the
+/// `AnnotationHeads::labels` file. `upos` is the 17-label `Upos` set
+/// (`src/spacy-rs/src/labels.rs`) in training order; `dep` is the
+/// `DepLabelSet` union the finetune was trained on. Pure serde data — it is
+/// the single source of truth for logit-index → label, and `fluent-onnx` never
+/// imports `spacy-rs`.
 pub struct AnnotationLabels {
     /// UPOS labels in training order (`N_UPOS` = this list's length).
     pub upos: Vec<String>,
@@ -352,6 +395,11 @@ impl AnnotationLabels {
 /// load on first use (`ensure_loaded`) and may be released.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+/// Whether a declared onnx model is resident for the process lifetime.
+/// 
+/// `Always` models load at boot into the `OrtSessionRegistry` and are never
+/// evicted or unloaded (`/models/unload` refuses them). `Unloadable` models
+/// load on first use (`ensure_loaded`) and may be released.
 pub enum ResidencyPolicy {
     Always,
     Unloadable {
@@ -414,6 +462,8 @@ fn default_max_gen_tokens() -> usize {
 /// field carries a default so an `onnx` block is backward-compatible.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Builder)]
 #[builder(start_fn = new)]
+/// Full onnx model declaration for a `ModelEntry`. Pure serde + builder; every
+/// field carries a default so an `onnx` block is backward-compatible.
 pub struct OnnxConfig {
     /// Path to the ONNX model file (or a directory containing a
     /// quant-appropriate `*.onnx` plus `config.json`).
@@ -641,6 +691,7 @@ impl OnnxConfig {
 
 /// The subset of a model `config.json` the boot sanity-check reads.
 #[derive(Debug, Deserialize)]
+/// The subset of a model `config.json` the boot sanity-check reads.
 struct ModelConfigJson {
     #[serde(default)]
     architectures: Option<Vec<String>>,
@@ -728,6 +779,19 @@ fn discover_config_json(model_path: &Path) -> Option<PathBuf> {
 /// (so a role config needs no `task` field).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// ── Role-based fleet declarations ────────────────────────────────────────────
+/// 
+/// A top-level `onnx` section keys one optional `OnnxRoleConfig` per role
+/// (Encoder / PII / Router / Policy / ColBERT). Every role is optional and the
+/// pipeline is fully functional (pure-deterministic) with none of them loaded.
+/// The config vocabulary parallels the llama.cpp `ModelEntry` + `roles.<role>.params`
+/// surface — resident/pinned residency, run/idle timeouts, and sampling
+/// `params` merged into dispatch — because the same operator thinks about both
+/// fleets; the difference is that onnx models run in-process via `ort`, never
+/// as a spawned `llama-server`.
+/// The role an in-process ONNX model serves. Each role maps 1:1 to an
+/// [`OnnxTask`] and a stable registry key; declaring the role implies the task
+/// (so a role config needs no `task` field).
 pub enum OnnxRole {
     /// Base bidirectional encoder (optionally with trained annotation heads).
     Encoder,
@@ -816,6 +880,17 @@ fn default_onnx_instance_count() -> u32 {
 /// `num_ctx` clamps the window at materialization).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::struct_excessive_bools)]
+/// One declared context window for an onnx role — a self-contained,
+/// serde-compatible twin of the router's `InstanceProfile` (the llama
+/// `ModelEntry.instances` vocabulary). `fluent-onnx` deliberately does not
+/// import router config; the composition root (`ort.rs`) maps this type
+/// to/from `InstanceProfile` where the two fleets must be driven uniformly.
+/// 
+/// The map key on `OnnxRoleConfig.instances` provides the default context
+/// name; `count > 1` expands into sibling contexts named `<key>-0` ..
+/// `<key>-{count-1}` sharing the profile's group. `num_ctx` is the context
+/// window size; `max_ctx` caps how large `resize` may grow it (a cap below
+/// `num_ctx` clamps the window at materialization).
 pub struct OnnxInstanceProfile {
     /// Context name; default = the map key (expanded `<name><i>` for count > 1).
     #[serde(default)]
@@ -874,6 +949,12 @@ impl OnnxInstanceProfile {
 /// fields mirror the llama.cpp lifecycle surface. The task is implied by the
 /// role and injected by [`OnnxRoleConfig::to_onnx_config`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A llama.cpp-parallel, role-scoped ONNX model declaration.
+/// 
+/// The `model` fields are flattened [`OnnxConfig`] (model/tokenizer paths,
+/// provider, threads, quantization, context, heads/labels); the surrounding
+/// fields mirror the llama.cpp lifecycle surface. The task is implied by the
+/// role and injected by [`OnnxRoleConfig::to_onnx_config`].
 pub struct OnnxRoleConfig {
     /// Exempt from lazy unload/eviction (parallel to a llama instance's
     /// `pinned`). `resident: true` (in the flattened model block) already
@@ -928,6 +1009,8 @@ impl OnnxRoleConfig {
 /// The top-level role-keyed ONNX fleet. Every role is optional; an all-`None`
 /// fleet is fully fail-open (pure-deterministic pipeline).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// The top-level role-keyed ONNX fleet. Every role is optional; an all-`None`
+/// fleet is fully fail-open (pure-deterministic pipeline).
 pub struct OnnxFleetConfig {
     #[serde(default)]
     pub encoder: Option<OnnxRoleConfig>,

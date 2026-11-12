@@ -26,6 +26,7 @@ use serde::Serialize;
 /// Router-relevant tool names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+/// Router-relevant tool names.
 pub enum ToolName {
     Search,
     Embed,
@@ -41,6 +42,7 @@ pub enum ToolName {
 /// Provider categories for routing decisions — never the provider name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+/// Provider categories for routing decisions — never the provider name.
 pub enum ProviderCategory {
     FirstPartyCloud,
     ThirdPartyCloud,
@@ -52,6 +54,7 @@ pub enum ProviderCategory {
 /// Feature names for usage tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+/// Feature names for usage tracking.
 pub enum FeatureName {
     OutputSanitization,
     InjectionDetection,
@@ -74,6 +77,12 @@ pub enum FeatureName {
 /// A structured telemetry event. Every variant carries only controlled-vocabulary or numeric fields. No free strings, no PII.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
+/// ─── Structured events ───────
+/// The event contract follows the vocabulary — it is typed over the
+/// three enums above. `FailureClass` (the one generic piece) stays in
+/// `common-core`; the variants below reference it through the single
+/// `http_class` re-export, never a duplicate definition.
+/// A structured telemetry event. Every variant carries only controlled-vocabulary or numeric fields. No free strings, no PII.
 pub enum TelemetryEvent {
     ToolInvoked {
         tool: ToolName,

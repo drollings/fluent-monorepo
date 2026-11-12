@@ -2,6 +2,8 @@
 
 /// Fail-closed refusal for chart-model constructors.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Typed errors for headless chart-model construction.
+/// Fail-closed refusal for chart-model constructors.
 pub enum ChartModelError {
     /// A transform parameter (brick size, reversal, …) is not usable.
     #[error("invalid parameter for {what}: {reason}")]

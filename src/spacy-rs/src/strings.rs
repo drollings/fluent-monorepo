@@ -22,6 +22,7 @@ use crate::hash::hash_utf8;
 
 /// Thread-safe `StringStore`: hash → interned string.
 #[derive(Debug, Default)]
+/// Thread-safe `StringStore`: hash → interned string.
 pub struct StringStore {
     by_hash: RwLock<HashMap<u64, ArcIntern<str>>>,
 }

@@ -18,6 +18,24 @@
 
 /// What one trigger or classifier is allowed to decide.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Trigger and classifier registry for the bytecode track.
+/// 
+/// Two kinds of gate decide things in this engine, and they must never be
+/// confused:
+/// 
+/// * **Confidence** gates choose a *representation*. A miss, a veto, or a
+/// deopt only changes which code path serves the same values, so a
+/// confidence gate can never make an outcome wrong — at worst it makes it
+/// slower.
+/// * **Correctness** gates choose *whether an engine may run at all*. They
+/// are static (compile/link classification) or structural bounds, their
+/// corpora are must-fire/must-NOT-fire, and none of them consults a
+/// measurement.
+/// 
+/// A new trigger must be classified in [`TRIGGERS`]; the calibration suite
+/// asserts the table and the pinned constants agree, so an unclassified gate
+/// fails the build's tests instead of drifting into the wrong category.
+/// What one trigger or classifier is allowed to decide.
 pub enum TriggerKind {
     /// Chooses a representation; never decides correctness.
     Confidence,
@@ -37,6 +55,7 @@ pub const TRIGGERS: &[(&str, TriggerKind)] = &[
 
 /// The kind of one named trigger, when it is registered.
 #[must_use]
+/// The kind of one named trigger, when it is registered.
 pub fn trigger_kind(name: &str) -> Option<TriggerKind> {
     TRIGGERS
         .iter()

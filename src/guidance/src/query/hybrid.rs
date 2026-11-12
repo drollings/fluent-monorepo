@@ -13,6 +13,9 @@ use crate::search_types::{
 /// route construction (not narrowing): identifier-shaped intents prefer
 /// symbol-filtered recall downstream.
 #[must_use]
+/// Build a two-route hybrid plan from a query string. `FsmEngine` feeds
+/// route construction (not narrowing): identifier-shaped intents prefer
+/// symbol-filtered recall downstream.
 pub fn plan_from_query(query: &str, intent: QueryIntent, limit: usize) -> SearchPlan {
     use crate::search_types::SearchPlanRouteMode::{Fts, Vector};
     SearchPlan {
@@ -42,6 +45,11 @@ pub fn plan_from_query(query: &str, intent: QueryIntent, limit: usize) -> Search
 /// never cited. (`verify_citations` itself checks citations in synthesis
 /// output against these stages downstream.)
 #[must_use]
+/// Convert fused hits into stages with trace provenance.
+/// Grounding gate (G-1.ground): `Code` stages without a verifiable
+/// `file:line` are dropped before render — unverified hits are downgraded,
+/// never cited. (`verify_citations` itself checks citations in synthesis
+/// output against these stages downstream.)
 pub fn stages_from_hits(hits: &[SearchHit]) -> Vec<Stage> {
     hits.iter()
         .map(stage_from_hit)
@@ -54,6 +62,7 @@ pub fn stages_from_hits(hits: &[SearchHit]) -> Vec<Stage> {
 
 /// Convert one fused hit into a stage.
 #[must_use]
+/// Convert one fused hit into a stage.
 pub fn stage_from_hit(hit: &SearchHit) -> Stage {
     let (kind, content) = match &hit.entity.metadata {
         Some(EntityMetadata::Code { signature, .. }) => (
@@ -81,7 +90,11 @@ pub fn stage_from_hit(hit: &SearchHit) -> Stage {
         member_type: None,
         trace: hit.trace.as_ref().map(|trace| StageTrace {
             matched_by: matched_by_name(hit.matched_by).to_string(),
-            tier: Some(crate::search_types::RetrievalTier::from(hit.matched_by).as_str().to_string()),
+            tier: Some(
+                crate::search_types::RetrievalTier::from(hit.matched_by)
+                    .as_str()
+                    .to_string(),
+            ),
             score: hit.score,
             rank: hit.rank,
             recall: trace
@@ -101,11 +114,13 @@ pub fn stage_from_hit(hit: &SearchHit) -> Stage {
 
 /// zvec `matchedBy` vocabulary for a fused hit.
 #[must_use]
+/// zvec `matchedBy` vocabulary for a fused hit.
 pub fn matched_by_name(matched_by: SearchMatchedBy) -> &'static str {
     match matched_by {
         SearchMatchedBy::Fts => "fts",
         SearchMatchedBy::Vector => "vector",
         SearchMatchedBy::FtsAndVector => "fts+vector",
+        SearchMatchedBy::Summary => "summary",
     }
 }
 
@@ -119,6 +134,8 @@ fn hit_text(hit: &SearchHit) -> String {
 /// Convert one storage-level hit into a stage (lemma / single-route paths
 /// that skip full fusion).
 #[must_use]
+/// Convert one storage-level hit into a stage (lemma / single-route paths
+/// that skip full fusion).
 pub fn stage_from_storage_hit(hit: &crate::search_types::StorageHit) -> Stage {
     let (kind, content, member_name) = match &hit.fragment.metadata {
         Some(EntityMetadata::Code {

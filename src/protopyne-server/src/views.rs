@@ -1281,6 +1281,7 @@ pub(crate) fn decide_journaled(
 
 /// One broker's capability view.
 #[must_use]
+/// One broker's capability view.
 pub fn broker_capabilities_of(bundle: &BrokerBundle) -> BrokerCapabilityView {
     BrokerCapabilityView {
         venue: bundle.id.to_string(),
@@ -1295,6 +1296,7 @@ pub fn broker_capabilities_of(bundle: &BrokerBundle) -> BrokerCapabilityView {
 
 /// One account summary view.
 #[must_use]
+/// One account summary view.
 pub fn broker_account_of(venue: &str, summary: &AccountSummary) -> BrokerAccountView {
     BrokerAccountView {
         venue: venue.to_owned(),
@@ -1309,6 +1311,7 @@ pub fn broker_account_of(venue: &str, summary: &AccountSummary) -> BrokerAccount
 
 /// One order view, reusing the venue order record.
 #[must_use]
+/// One order view, reusing the venue order record.
 pub fn broker_order_of(venue: &str, account: &str, record: &OrderRecord) -> BrokerOrderView {
     let legs = record
         .intent
@@ -1351,6 +1354,7 @@ pub fn broker_order_of(venue: &str, account: &str, record: &OrderRecord) -> Brok
 
 /// One deal view, reusing the deal's own [`Fill`](protopyne_venue::Fill).
 #[must_use]
+/// One deal view, reusing the deal's own [`Fill`](protopyne_venue::Fill).
 pub fn broker_deal_of(venue: &str, account: &str, deal: &BrokerDeal) -> BrokerDealView {
     BrokerDealView {
         venue: venue.to_owned(),
@@ -1380,6 +1384,13 @@ pub fn broker_deal_of(venue: &str, account: &str, deal: &BrokerDeal) -> BrokerDe
 /// The composition description plus the registry enumerations a form picker
 /// must offer. Data only: no strategy type crosses into the view.
 #[must_use]
+/// Backtest result contract: the terminal's author/run/read surface. The
+/// route and the gateway share these builders, so the HTTP body and the
+/// in-process read cannot drift. Every money value rides decimal text; every
+/// refusal names the field that refused.
+/// 
+/// The composition description plus the registry enumerations a form picker
+/// must offer. Data only: no strategy type crosses into the view.
 pub fn backtest_schema_of() -> BacktestSchemaView {
     use protopyne_strategy::integration_lite::IntegrationLiteSpec;
     use protopyne_strategy::integration_lite::IntegrationLiteStrategyConfig;

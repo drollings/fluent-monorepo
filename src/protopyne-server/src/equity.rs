@@ -21,6 +21,7 @@ use crate::runner::BarDecision;
 
 /// Which resting line a level point belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which resting line a level point belongs to.
 pub enum LevelKind {
     /// The trailing/breakeven resting stop.
     Stop,
@@ -33,6 +34,10 @@ pub enum LevelKind {
 /// one polyline per kind from these points, breaking the line wherever a
 /// bar carries no point for it.
 #[derive(Debug, Clone, PartialEq)]
+/// One resting level as it stood at a bar close: the stop or an unfilled
+/// target while a position is open, nothing while flat. The terminal draws
+/// one polyline per kind from these points, breaking the line wherever a
+/// bar carries no point for it.
 pub struct LevelPoint {
     /// Bar index.
     pub bar: usize,
@@ -52,6 +57,15 @@ pub struct LevelPoint {
 /// `quantity`/`entry_avg`/`reason` there) and the canonical JSON covers
 /// this shape, so renaming either side would move pinned bytes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One closed equity trade, in close order.
+/// 
+/// Deliberately not the session book's trade record: this run is
+/// single-symbol (no `underlying`), prices in `f64`, carries `bars_held`,
+/// and reuses this same record for partial fills, while the session book
+/// averages in `Money` and never books partials. The field names differ
+/// (`qty`/`entry_price`/`exit_reason` here vs
+/// `quantity`/`entry_avg`/`reason` there) and the canonical JSON covers
+/// this shape, so renaming either side would move pinned bytes.
 pub struct EquityTrade {
     /// Signal side that opened the trade.
     pub long: bool,
@@ -222,6 +236,9 @@ pub(crate) fn status_of(equity: f64, ctx: &StatusCtx<'_>) -> BacktestStatusView 
 /// three always move together, so no bar can carry a curve value without its
 /// table row, and a resting line never invents a point for a flat bar.
 #[allow(clippy::too_many_arguments)]
+/// Push one equity-curve point with its status row and resting levels: the
+/// three always move together, so no bar can carry a curve value without its
+/// table row, and a resting line never invents a point for a flat bar.
 pub(crate) fn push_point(
     curve: &mut Vec<Money>,
     status: &mut Vec<BacktestStatusView>,
@@ -287,6 +304,17 @@ pub(crate) fn mark_equity(cash: f64, position: Option<&OpenPosition>, close: f64
 /// report still folds [`cycles_of`] over the complete vectors; the tally
 /// only serves the per-bar row, with identical values.
 #[derive(Debug, Clone, Copy, Default)]
+/// Running closed-cycle tally: the per-bar status row's win rate and net
+/// P&L without refolding every closed trade on every bar.
+/// 
+/// Updated once per full close, in close order (the same order
+/// [`cycles_of`] folds): a cycle's P&L is its closing slice plus every
+/// partial sharing its entry bar and side. Later partials can never join
+/// an earlier cycle — positions are sequential (single book), entries
+/// precede their exits within the loop's exits-before-entries order, so a
+/// later partial's entry bar always exceeds a closed cycle's. The final
+/// report still folds [`cycles_of`] over the complete vectors; the tally
+/// only serves the per-bar row, with identical values.
 pub(crate) struct ClosedTally {
     /// Closed cycles so far.
     pub(crate) closed: u64,

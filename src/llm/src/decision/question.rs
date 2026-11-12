@@ -29,6 +29,25 @@ use fluent_wvr::{ArcIntern, WorkContext, WorkError, WorkOutput, WorkUnit};
 /// ```
 #[derive(Debug, Clone, fluent_wvr::FieldAccess, fluent_wvr::Describable, bon::Builder)]
 #[builder(start_fn = new)]
+/// Control-plane question spec: id, version, kind, prompt template,
+/// single-token option list, per-point thresholds, timeout, cache flag.
+/// 
+/// ```rust
+/// use fluent_llm::decision::QuestionSpec;
+/// 
+/// let spec = QuestionSpec::new()
+/// .id("intent".to_string())
+/// .version(1)
+/// .kind("choice".to_string())
+/// .prompt_template("Pick.".to_string())
+/// .options_csv("A,B".to_string())
+/// .act_threshold(0.9)
+/// .review_threshold(0.7)
+/// .timeout_ms(2000)
+/// .cacheable(true)
+/// .build();
+/// assert!(spec.validate().is_ok());
+/// ```
 pub struct QuestionSpec {
     #[field(desc = "Question id")]
     pub id: String,
@@ -170,6 +189,7 @@ impl WorkUnit for QuestionSpec {
 
 /// Concrete hot-loop question: borrows its spec plus state (no `dyn`).
 #[derive(Debug, Clone, Copy)]
+/// Concrete hot-loop question: borrows its spec plus state (no `dyn`).
 pub struct Question<'a> {
     pub spec: &'a QuestionSpec,
     pub state: &'a str,
@@ -249,6 +269,20 @@ pub const MAX_DECISION_OPTIONS: usize = 10;
 /// );
 /// ```
 #[must_use]
+/// Order `options` for one rendering under `mode` (`none`/`rotate`/
+/// `shuffle`), deterministically from `(seed, salt)`. Unknown modes pass
+/// through declared order (fail-open rendering; `validate` refuses them).
+/// 
+/// ```rust
+/// use fluent_llm::decision::rotated_options;
+/// 
+/// let options = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+/// assert_eq!(rotated_options(&options, "none", 7, 3), options);
+/// assert_eq!(
+/// rotated_options(&options, "rotate", 7, 3),
+/// rotated_options(&options, "rotate", 7, 3)
+/// );
+/// ```
 pub fn rotated_options(options: &[String], mode: &str, seed: u64, salt: u64) -> Vec<String> {
     if options.len() < 2 {
         return options.to_vec();
@@ -293,6 +327,14 @@ pub fn rotated_options(options: &[String], mode: &str, seed: u64, salt: u64) -> 
 /// assert!(out.starts_with("ST") && out.ends_with("Q?"));
 /// ```
 #[must_use]
+/// Render state-first/question-last without a spec (shared layout core).
+/// 
+/// ```rust
+/// use fluent_llm::decision::render_prompt;
+/// 
+/// let out = render_prompt("ST", "Q?", &["A", "B"]);
+/// assert!(out.starts_with("ST") && out.ends_with("Q?"));
+/// ```
 pub fn render_prompt(state: &str, question: &str, options: &[&str]) -> String {
     render_prompt_full(state, "", &options.join(","), question)
 }

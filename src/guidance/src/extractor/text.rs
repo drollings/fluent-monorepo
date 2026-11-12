@@ -30,6 +30,7 @@ pub fn extract_plain_text_fragments(
 
 /// A text window with its range.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A text window with its range.
 pub struct TextChunk {
     /// Window text.
     pub text: String,
@@ -39,6 +40,7 @@ pub struct TextChunk {
 
 /// Split text into budgeted windows (port of `chunkText`).
 #[must_use]
+/// Split text into budgeted windows (port of `chunkText`).
 pub fn chunk_text(text: &str, options: ChunkOptions) -> Vec<TextChunk> {
     if text.trim().is_empty() {
         return Vec::new();
@@ -88,6 +90,7 @@ pub fn chunk_text(text: &str, options: ChunkOptions) -> Vec<TextChunk> {
 
 /// Byte offsets of each line start.
 #[must_use]
+/// Byte offsets of each line start.
 pub fn compute_line_offsets(lines: &[&str]) -> Vec<usize> {
     let mut offsets = Vec::with_capacity(lines.len());
     let mut offset = 0;
@@ -151,6 +154,9 @@ fn byte_offset_for_units(line: &str, units: usize) -> usize {
 /// whitespace > hyphen/slash, scanned over `[0.7*max, max)`, latest wins
 /// on ties (`>=`).
 #[must_use]
+/// Scored intra-line cut (port of `findLineCut`): sentence > clause >
+/// whitespace > hyphen/slash, scanned over `[0.7*max, max)`, latest wins
+/// on ties (`>=`).
 pub fn find_line_cut(line: &str, max_chars: usize) -> usize {
     if utf16_len(line) <= max_chars {
         return utf16_len(line);

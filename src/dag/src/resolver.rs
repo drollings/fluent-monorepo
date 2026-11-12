@@ -61,6 +61,7 @@ impl ExecutionPlan {
 
 /// Provider-selection policy for the resolver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Provider-selection policy for the resolver.
 pub enum ProviderSelection {
     /// Classic include-all semantics: every provider produces a distinct
     /// artifact. Correct for build graphs where multiple providers for the
@@ -505,6 +506,11 @@ impl<'a> DependencyResolver<'a> {
 /// while the abstract self-provision branch ignores it (the capability may
 /// simply have no other claimant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a contested capability with zero surviving providers resolves after
+/// narrowing. The two narrowing call sites differ exactly here: the
+/// dependency-driven branch treats it as a missing provider (strict error),
+/// while the abstract self-provision branch ignores it (the capability may
+/// simply have no other claimant).
 enum EmptyNarrowing {
     Error,
     Ignore,

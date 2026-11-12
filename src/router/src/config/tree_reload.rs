@@ -24,6 +24,7 @@ use crate::config::compiled_tree::CompiledTree;
 
 /// Errors from regeneration and reload.
 #[derive(Debug, Clone, thiserror::Error)]
+/// Errors from regeneration and reload.
 pub enum ReloadError {
     /// The node path resolves to no node.
     #[error("unknown tree path: {path}")]
@@ -55,6 +56,10 @@ pub enum ReloadError {
 /// generation) + the alias map that covers its topology change (empty for
 /// tuning-only reloads).
 #[derive(Debug, Clone)]
+/// A live tree generation: monotonic version + content + its precompiled
+/// form (compiled once per accepted version, shared by all readers of the
+/// generation) + the alias map that covers its topology change (empty for
+/// tuning-only reloads).
 struct TreeGeneration {
     version: u64,
     tree: ClassificationTree,
@@ -72,6 +77,8 @@ fn precompile(tree: &ClassificationTree) -> Arc<CompiledTree> {
 /// The versioned live holder. `Send + Sync`; snapshots clone under a read
 /// lock so reloads never tear a reader's view.
 #[derive(Debug)]
+/// The versioned live holder. `Send + Sync`; snapshots clone under a read
+/// lock so reloads never tear a reader's view.
 pub struct VersionedTree {
     current: RwLock<TreeGeneration>,
     previous: RwLock<Option<TreeGeneration>>,

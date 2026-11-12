@@ -11,6 +11,7 @@ use fluent_llm::decision::{decide_verdict, Decision, ThresholdSet, Verdict};
 
 /// One shadow observation at a named decision point.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One shadow observation at a named decision point.
 pub struct ShadowRecord {
     /// Decision point: `intent`, `sufficiency`, or `excerpt`.
     pub point: String,
@@ -56,6 +57,8 @@ fn record(
 /// Intent-Choice shadow: the deterministic `QueryIntent` wins; the decision
 /// is only logged with its would-have-acted verdict.
 #[must_use]
+/// Intent-Choice shadow: the deterministic `QueryIntent` wins; the decision
+/// is only logged with its would-have-acted verdict.
 pub fn intent_shadow(
     authoritative_intent: &str,
     decision: Option<&Decision>,
@@ -67,6 +70,8 @@ pub fn intent_shadow(
 /// Evidence-sufficiency Noul shadow over recall/fusion outputs: logs whether
 /// the decision would have filtered the evidence set.
 #[must_use]
+/// Evidence-sufficiency Noul shadow over recall/fusion outputs: logs whether
+/// the decision would have filtered the evidence set.
 pub fn sufficiency_shadow(
     evidence_count: usize,
     decision: Option<&Decision>,
@@ -85,6 +90,8 @@ pub fn sufficiency_shadow(
 /// Excerpt filter/rerank shadow: rank delta of each candidate between the
 /// prior order and the model order, with the decisions that produced it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Excerpt filter/rerank shadow: rank delta of each candidate between the
+/// prior order and the model order, with the decisions that produced it.
 pub struct RankDelta {
     pub candidate: String,
     pub prior_rank: Option<usize>,
@@ -204,5 +211,51 @@ mod tests {
         assert_eq!((c.prior_rank, c.model_rank), (Some(2), Some(0)));
         let b = deltas.iter().find(|d| d.candidate == "b").expect("b");
         assert_eq!((b.prior_rank, b.model_rank), (Some(1), None));
+    }
+}
+/// Summary-route shadow: agreement between the deterministic candidates and
+/// the summary route, without fusing. `would_have_acted` names the
+/// task-value question (would the route add anything?) — never a model
+/// verdict. Recorded through the recall loop; the deterministic result
+/// stays authoritative.
+#[must_use]
+/// Summary-route shadow: agreement between the deterministic candidates and
+/// the summary route, without fusing. `would_have_acted` names the
+/// task-value question (would the route add anything?) — never a model
+/// verdict. Recorded through the recall loop; the deterministic result
+/// stays authoritative.
+pub fn summary_route_shadow(
+    authoritative: &std::collections::HashSet<&str>,
+    summary: &[&str],
+) -> ShadowRecord {
+    let mut would_add: Vec<&str> = summary
+        .iter()
+        .filter(|id| !authoritative.contains(**id))
+        .copied()
+        .collect();
+    would_add.sort_unstable();
+    would_add.dedup();
+    let overlap = summary
+        .iter()
+        .filter(|id| authoritative.contains(**id))
+        .count();
+    ShadowRecord {
+        point: "summary_index".to_string(),
+        label: if would_add.is_empty() {
+            "agreement".to_string()
+        } else {
+            "divergence".to_string()
+        },
+        confidence: if summary.is_empty() {
+            1.0
+        } else {
+            overlap as f64 / summary.len() as f64
+        },
+        margin: 0.0,
+        latency_ms: 0,
+        cached: false,
+        verdict: "review".to_string(),
+        would_have_acted: !would_add.is_empty(),
+        authoritative: format!("{} deterministic candidates", authoritative.len()),
     }
 }

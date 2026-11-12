@@ -26,6 +26,10 @@ use crate::error::KernelError;
 /// not part of the identity — version mismatch warns, never refuses — so it
 /// travels on the claimed [`LibraryId`] instead.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// Identity of one resolvable Pine module: publisher and library name, as in
+/// `import showmethegrail/libUtil/12`. The pinned version is deliberately
+/// not part of the identity — version mismatch warns, never refuses — so it
+/// travels on the claimed [`LibraryId`] instead.
 pub struct ModuleId {
     /// Publisher namespace (`showmethegrail`).
     pub publisher: String,
@@ -59,6 +63,8 @@ impl fmt::Display for ModuleId {
 /// One module offered to the resolver: claimed identity plus the loaded
 /// source (import lines, version findings) and its parsed program (exports).
 #[derive(Debug, Clone)]
+/// One module offered to the resolver: claimed identity plus the loaded
+/// source (import lines, version findings) and its parsed program (exports).
 pub struct ModuleInput {
     /// Claimed publisher/name/version (version retained, never enforced).
     pub id: LibraryId,
@@ -88,6 +94,7 @@ impl ModuleInput {
 
 /// One resolved module: everything later stages need, in dependency order.
 #[derive(Debug, Clone)]
+/// One resolved module: everything later stages need, in dependency order.
 pub struct ResolvedModule {
     /// Claimed identity (pinned version retained as metadata).
     pub id: LibraryId,
@@ -102,6 +109,8 @@ pub struct ResolvedModule {
 /// A linked multi-file program: modules in dependency-first order with
 /// per-importer alias tables and export-filtered visibility.
 #[derive(Debug, Clone)]
+/// A linked multi-file program: modules in dependency-first order with
+/// per-importer alias tables and export-filtered visibility.
 pub struct ModuleGraph {
     /// Module identities, dependencies before dependents.
     order: Vec<ModuleId>,

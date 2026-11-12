@@ -27,6 +27,23 @@ use tokio::sync::RwLock;
 /// let context = cap.prefetch("user question", &ctx).await;
 /// ```
 #[derive(Clone)]
+/// Capability token that grants access to the memory plugin system.
+/// 
+/// Must be passed explicitly — no ambient authority. This is the
+/// `fluent-concurrency` pattern for bounded resource access applied
+/// to the memory subsystem.
+/// 
+/// # Usage
+/// 
+/// ```text
+/// // At startup:
+/// let registry = Arc::new(RwLock::new(MemoryPluginRegistry::new()));
+/// let cap = MemoryCapability::new(Arc::clone(&registry));
+/// 
+/// // In query pipeline:
+/// let results = cap.search(&MemorySearchRequest { ... }).await?;
+/// let context = cap.prefetch("user question", &ctx).await;
+/// ```
 pub struct MemoryCapability {
     registry: Arc<RwLock<MemoryPluginRegistry>>,
 }

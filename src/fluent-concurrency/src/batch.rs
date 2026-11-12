@@ -18,6 +18,7 @@ use tokio::task::JoinSet;
 
 /// Events emitted by tasks running inside a `SupervisedBatch`.
 #[derive(Debug, Clone)]
+/// Events emitted by tasks running inside a `SupervisedBatch`.
 pub enum SupervisedBatchEvent {
     Completed {
         name: ArcIntern<str>,
@@ -39,6 +40,7 @@ pub enum SupervisedBatchEvent {
 
 /// Reasons why a supervised-batch task was cancelled.
 #[derive(Debug, Clone)]
+/// Reasons why a supervised-batch task was cancelled.
 pub enum CancelReason {
     Timeout,
     DependencyFailed,
@@ -47,6 +49,7 @@ pub enum CancelReason {
 
 /// Configuration for a `SupervisedBatch`.
 #[derive(Debug, Clone, Copy)]
+/// Configuration for a `SupervisedBatch`.
 pub struct SupervisedBatchConfig {
     /// Maximum number of tasks to poll per `SupervisedBatch::poll` invocation.
     /// Prevents a single SupervisedBatch from starving the executor.
@@ -99,6 +102,7 @@ pub enum SupervisedBatchError {
 
 /// Summary of a SupervisedBatch.s execution result.
 #[derive(Debug, Default)]
+/// Summary of a SupervisedBatch.s execution result.
 pub struct SupervisedBatchSummary {
     pub completed: Vec<SupervisedBatchEvent>,
     pub panicked: Vec<SupervisedBatchEvent>,
@@ -127,6 +131,26 @@ pub struct SupervisedBatchSummary {
 /// # }
 /// ```
 #[must_use = "SupervisedBatch must be awaited to completion to get a SupervisedBatchSummary"]
+/// A SupervisedBatch that manages a group of `WorkUnit` tasks with retry, timeout,
+/// and dependency-based cancellation. Implements `Future` to drive task completion.
+/// 
+/// # Examples
+/// 
+/// ```no_run
+/// use std::sync::Arc;
+/// use fluent_concurrency::batch::SupervisedBatch;
+/// use fluent_wvr::{CapabilitySet, WorkContext};
+/// use fluent_wvr::wrapper::ComponentAdapter;
+/// 
+/// # async fn example() {
+/// let rt: Arc<dyn fluent_wvr::Runtime> = Arc::new(fluent_concurrency::runtime::tokio::TokioRuntime);
+/// let mut batch = SupervisedBatch::new(rt, CapabilitySet::new());
+/// // batch.register(component_a);
+/// // batch.register(component_b);
+/// let summary = batch.await;
+/// assert!(summary.panicked.is_empty() && summary.failed.is_empty());
+/// # }
+/// ```
 pub struct SupervisedBatch {
     runtime: Arc<dyn Runtime>,
     caps: CapabilitySet,

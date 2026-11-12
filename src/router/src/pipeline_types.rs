@@ -52,6 +52,7 @@ pub trait StageDecisionProducer: Send + Sync + 'static {
 
 /// Emitted by every pipeline stage. Flows through tracing spans.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Emitted by every pipeline stage. Flows through tracing spans.
 pub struct StageDecision {
     pub stage: PipelineStage,
     pub verdict: StageVerdict,
@@ -145,6 +146,13 @@ impl<'de> serde::Deserialize<'de> for PipelineStage {
 /// `PipelineStage::Classifier` with a `warn!` (see the `Deserialize` impl
 /// above); fresh telemetry never emits `"Router"`.
 #[derive(Debug, Clone, thiserror::Error)]
+/// Pipeline-level error (M9): replaces the synthetic `PipelineStage::Router`
+/// `StageDecision` push. `Stage` carries the failing stage + source `WorkError`;
+/// `Internal` covers non-stage pipeline failures.
+/// 
+/// Compatibility: historical `"Router"` stage labels deserialize to
+/// `PipelineStage::Classifier` with a `warn!` (see the `Deserialize` impl
+/// above); fresh telemetry never emits `"Router"`.
 pub enum PipelineError {
     #[error("stage {stage:?} failed: {source}")]
     Stage {
@@ -167,6 +175,8 @@ pub enum StageVerdict {
 /// Structured PII verdict recorded by the deterministic pre-filter for
 /// output-filter decisions (the `"pii_filter"` handoff key).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Structured PII verdict recorded by the deterministic pre-filter for
+/// output-filter decisions (the `"pii_filter"` handoff key).
 pub struct PiiVerdict {
     pub pattern: String,
     pub action: FilterAction,
@@ -212,6 +222,11 @@ mod optional_flat_refine_reason {
 /// confidence / ArcEager (or encoder) source marks the request "needs
 /// disambiguation".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The NLP stage's confidence handoff: the producing rung
+/// and the margin-aware parse confidence, plus how many interlingua collisions
+/// the resolve step surfaced. Consumed by the escalation ladder — a low
+/// confidence / ArcEager (or encoder) source marks the request "needs
+/// disambiguation".
 pub struct NlpConfidenceSummary {
     /// The rung that produced the parse (`Llm | ArcEager | RuleRung |
     /// HumanReview | Encoder`).
@@ -256,6 +271,10 @@ impl NlpConfidenceSummary {
 /// The classifier merges these as deterministic routing context; a redirect
 /// from a top hint is a separate opt-in behind `overlay_redirect_threshold`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A route hint the overlay stage publishes for the classifier: a route name
+/// and the two-tower score that recommends it.
+/// The classifier merges these as deterministic routing context; a redirect
+/// from a top hint is a separate opt-in behind `overlay_redirect_threshold`.
 pub struct RouteHint {
     pub route: String,
     pub score: f64,
@@ -266,6 +285,10 @@ pub struct RouteHint {
 /// the signals' uncovered roles — the ArcEager → overlay → classifier record
 /// in one place, so no consumer traverses raw string keys.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The typed residual handover: what the deterministic parse leaves for the
+/// overlay and the classifier. Built from the [`NlpConfidenceSummary`] plus
+/// the signals' uncovered roles — the ArcEager → overlay → classifier record
+/// in one place, so no consumer traverses raw string keys.
 pub struct NlpResidual {
     /// The parse-level confidence (matches the summary's `overall`).
     pub overall: f64,
@@ -325,6 +348,12 @@ impl NlpResidual {
 /// is unchanged, so the wire/serde shape of `StageDecision` is identical.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
+/// Typed access to the documented `StageDecision.metadata` handoff keys.
+/// 
+/// Producers build metadata through the typed setters and consumers read it
+/// through the typed getters — no raw string-key traversal of the handoff
+/// vocabulary outside this type. The underlying `serde_json::Value` storage
+/// is unchanged, so the wire/serde shape of `StageDecision` is identical.
 pub struct StageMetadata(serde_json::Value);
 
 impl Default for StageMetadata {
@@ -525,6 +554,12 @@ impl From<serde_json::Value> for StageMetadata {
 /// deserialize from the borrowed value (`T::deserialize(&Value)`) rather
 /// than cloning the subtree through `from_value` first.
 #[derive(Debug, Clone, Copy)]
+/// A borrowed view of [`StageMetadata`]: the same typed getters, reading
+/// directly from a stored `serde_json::Value` with no clone.
+/// 
+/// Construct with [`StageMetadata::metadata_ref`]. Structured getters
+/// deserialize from the borrowed value (`T::deserialize(&Value)`) rather
+/// than cloning the subtree through `from_value` first.
 pub struct StageMetadataRef<'a>(&'a serde_json::Value);
 
 impl<'a> StageMetadataRef<'a> {

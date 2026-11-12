@@ -33,7 +33,10 @@ fn prompt_change_backdates_only_model_cache_receipts() {
         before.components["prompt:triage"].clone(),
     );
     let mut lint_receipt = BTreeMap::new();
-    lint_receipt.insert(COMP_LINT_CFG.to_string(), before.components[COMP_LINT_CFG].clone());
+    lint_receipt.insert(
+        COMP_LINT_CFG.to_string(),
+        before.components[COMP_LINT_CFG].clone(),
+    );
     assert!(
         !receipt_reusable(&prompt_receipt, &after.components, &["prompt:triage"]),
         "prompt receipt must invalidate on prompt rotation"
@@ -50,14 +53,25 @@ fn lint_change_backdates_only_lint_receipts() {
     let before = ComponentVector::current_with(&policy, &inputs_with("p", "lint-1", "tc", "emb"));
     let after = ComponentVector::current_with(&policy, &inputs_with("p", "lint-2", "tc", "emb"));
     let mut lint_receipt = BTreeMap::new();
-    lint_receipt.insert(COMP_LINT_CFG.to_string(), before.components[COMP_LINT_CFG].clone());
-    assert!(!receipt_reusable(&lint_receipt, &after.components, &[COMP_LINT_CFG]));
+    lint_receipt.insert(
+        COMP_LINT_CFG.to_string(),
+        before.components[COMP_LINT_CFG].clone(),
+    );
+    assert!(!receipt_reusable(
+        &lint_receipt,
+        &after.components,
+        &[COMP_LINT_CFG]
+    ));
     let mut prompt_receipt = BTreeMap::new();
     prompt_receipt.insert(
         "prompt:triage".to_string(),
         before.components["prompt:triage"].clone(),
     );
-    assert!(receipt_reusable(&prompt_receipt, &after.components, &["prompt:triage"]));
+    assert!(receipt_reusable(
+        &prompt_receipt,
+        &after.components,
+        &["prompt:triage"]
+    ));
 }
 
 #[test]
@@ -68,8 +82,14 @@ fn toolchain_moves_toolchain_consumers_but_not_embeddings() {
     // A lint receipt that consumed the toolchain (as real lint receipts
     // do) invalidates; one that consumed only lint config survives.
     let mut lint_with_toolchain = BTreeMap::new();
-    lint_with_toolchain.insert(COMP_TOOLCHAIN.to_string(), before.components[COMP_TOOLCHAIN].clone());
-    lint_with_toolchain.insert(COMP_LINT_CFG.to_string(), before.components[COMP_LINT_CFG].clone());
+    lint_with_toolchain.insert(
+        COMP_TOOLCHAIN.to_string(),
+        before.components[COMP_TOOLCHAIN].clone(),
+    );
+    lint_with_toolchain.insert(
+        COMP_LINT_CFG.to_string(),
+        before.components[COMP_LINT_CFG].clone(),
+    );
     assert!(
         !receipt_reusable(
             &lint_with_toolchain,
@@ -79,13 +99,19 @@ fn toolchain_moves_toolchain_consumers_but_not_embeddings() {
         "toolchain consumer must invalidate on toolchain change"
     );
     let mut lint_only = BTreeMap::new();
-    lint_only.insert(COMP_LINT_CFG.to_string(), before.components[COMP_LINT_CFG].clone());
+    lint_only.insert(
+        COMP_LINT_CFG.to_string(),
+        before.components[COMP_LINT_CFG].clone(),
+    );
     assert!(
         receipt_reusable(&lint_only, &after.components, &[COMP_LINT_CFG]),
         "narrow lint-only receipt survives toolchain change"
     );
     let mut emb_receipt = BTreeMap::new();
-    emb_receipt.insert(COMP_EMBEDDER.to_string(), before.components[COMP_EMBEDDER].clone());
+    emb_receipt.insert(
+        COMP_EMBEDDER.to_string(),
+        before.components[COMP_EMBEDDER].clone(),
+    );
     assert!(
         receipt_reusable(&emb_receipt, &after.components, &[COMP_EMBEDDER]),
         "embeddings must survive toolchain change"
@@ -129,14 +155,12 @@ fn sweep_end_to_end_backdates_only_consumers() {
     let before = ComponentVector::current_with(&policy, &inputs_with("p1", "lint", "tc", "emb"));
     std::fs::write(sources.path().join("prompt.rs"), "fn a() {}").expect("src");
     std::fs::write(sources.path().join("lint.rs"), "fn b() {}").expect("src");
-    for (name, key) in [
-        ("prompt.rs", "prompt:triage"),
-        ("lint.rs", COMP_LINT_CFG),
-    ] {
+    for (name, key) in [("prompt.rs", "prompt:triage"), ("lint.rs", COMP_LINT_CFG)] {
         let header = SidecarHeader {
             src: name.to_string(),
             body: "b".to_string(),
             src_hash: None,
+            stuck: false,
             components: [(key.to_string(), before.components[key].clone())]
                 .into_iter()
                 .collect(),

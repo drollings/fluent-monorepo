@@ -30,6 +30,7 @@ pub const SPILL_CAP_FRAMES: usize = 1500;
 
 /// One closed segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One closed segment.
 pub struct SegmentMeta {
     /// Owning channel.
     pub channel: Channel,
@@ -47,6 +48,7 @@ pub struct SegmentMeta {
 
 /// The archive manifest: every closed segment, in order.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// The archive manifest: every closed segment, in order.
 pub struct Manifest {
     /// Closed segments, oldest first.
     pub segments: Vec<SegmentMeta>,
@@ -54,6 +56,7 @@ pub struct Manifest {
 
 /// Clock offsets aligning mic and system channels.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Clock offsets aligning mic and system channels.
 pub struct ClockOffsets {
     /// System-channel offset in samples relative to mic.
     pub sys_offset_samples: i64,
@@ -161,6 +164,9 @@ impl SegmentWriter {
 /// bytes, encoded input waits here instead of blocking the feed; overflow
 /// drops the oldest and counts it loudly. Last resort, never silent.
 #[derive(Debug)]
+/// Bounded oldest-drop spill for stalled disks. When the disk cannot take
+/// bytes, encoded input waits here instead of blocking the feed; overflow
+/// drops the oldest and counts it loudly. Last resort, never silent.
 struct SpillQueue {
     queue: VecDeque<(Channel, Vec<f32>)>,
     cap_frames: usize,
@@ -191,6 +197,7 @@ impl SpillQueue {
 
 /// Durable feed item: raw PCM at the archive rate.
 #[derive(Debug, Clone)]
+/// Durable feed item: raw PCM at the archive rate.
 pub enum ArchiveItem {
     /// 16 kHz mono samples for a channel (any length; split into frames).
     Pcm {

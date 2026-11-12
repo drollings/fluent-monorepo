@@ -37,6 +37,10 @@ use crate::value::PineValue;
 /// handles with no theme-key mapping, so the paint layer assigns one style
 /// key per primitive kind (display-only, documented at the paint site).
 #[derive(Debug, Clone, PartialEq)]
+/// One paint-ready overlay primitive in domain coordinates: an absolute-bar
+/// index plus a price. Colors ride no primitive: Pine colors lower to opaque
+/// handles with no theme-key mapping, so the paint layer assigns one style
+/// key per primitive kind (display-only, documented at the paint site).
 pub enum PlotPrimitive {
     /// One `plot()` call site: title plus one slot per bar of the run's
     /// cursor space, in order — warmup bars stay `None` holes, so the series
@@ -89,6 +93,8 @@ pub enum PlotPrimitive {
 /// One projected run: primitives in capture order (plots, shapes, levels,
 /// then drawings in creation order).
 #[derive(Debug, Clone, PartialEq, Default)]
+/// One projected run: primitives in capture order (plots, shapes, levels,
+/// then drawings in creation order).
 pub struct OverlayProjection {
     /// Projected primitives, in capture order.
     pub primitives: Vec<PlotPrimitive>,
@@ -97,6 +103,8 @@ pub struct OverlayProjection {
 /// Why a run has no overlay projection. Every variant refuses instead of
 /// miscomputing; the paint layer renders the reason as an "unsupported" chip.
 #[derive(Debug, Clone, PartialEq, Error)]
+/// Why a run has no overlay projection. Every variant refuses instead of
+/// miscomputing; the paint layer renders the reason as an "unsupported" chip.
 pub enum ProjectionRefusal {
     /// The engine captures the construct but the overlay has no primitive
     /// for it yet (tables first): refuse instead of dropping the drawing.
@@ -239,6 +247,12 @@ fn bar_index(value: Option<&PineValue>) -> Option<usize> {
 /// idiom would never place; a fractional float still denotes no bar and
 /// stays unplaced.
 #[allow(clippy::float_cmp)]
+/// Whether a float denotes exactly one bar: finite, integral, and below
+/// 2^63, so the cast widens neither by saturation nor by rounding. Integer
+/// arithmetic with a literal widens to float in this engine (`bar_index - 2`
+/// reads `Float` while staying integral), so without this the common offset
+/// idiom would never place; a fractional float still denotes no bar and
+/// stays unplaced.
 fn is_whole_bar(value: f64) -> bool {
     value.is_finite() && value.trunc() == value && value >= 0.0 && value < 2f64.powi(63)
 }

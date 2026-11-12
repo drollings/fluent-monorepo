@@ -81,6 +81,13 @@ pub const DEFAULT_MAX_BARS: usize = 5_000_000;
 /// `common_core::cache`. Do not swap policies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
 #[builder(start_fn = new)]
+/// How a file-backed store bounds its in-memory footprint. Both fields are
+/// **cost bounds** in the seal-options sense: they cap what the producer
+/// holds, never what the data means.
+/// 
+/// NOT-A-BYTE-BUDGET-CACHE (M8.3): this is a fixed-count bar bound with
+/// refuse-on-overflow, not the weighted byte-budget LRU in
+/// `common_core::cache`. Do not swap policies.
 pub struct TapeOptions {
     /// Most bars the whole store holds across every tape. Checked at open
     /// against the replayed total and at append against the projected
@@ -94,6 +101,9 @@ pub struct TapeOptions {
 /// stored one. The operation is what makes replay converge: inserts keep
 /// the first row they meet, replaces overwrite with the row they carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What one log row records: an insert of a new stamp or a replace of a
+/// stored one. The operation is what makes replay converge: inserts keep
+/// the first row they meet, replaces overwrite with the row they carry.
 enum TapeOp {
     Insert,
     Replace,
@@ -118,6 +128,7 @@ impl TapeOp {
 
 /// One logged bar: the operation plus the bar's fields in storage encoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One logged bar: the operation plus the bar's fields in storage encoding.
 struct TapeRecord {
     op: TapeOp,
     ts_ms: i64,

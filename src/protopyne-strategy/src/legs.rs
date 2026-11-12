@@ -44,10 +44,14 @@ use crate::proposal::{Direction, StructureKind};
 /// lives in the documented rules above, frozen by tests.
 #[derive(Debug, Clone, Copy, Default, bon::Builder)]
 #[builder(start_fn = new)]
+/// Pinned leg-selection policy. Built through the builder so construction
+/// reads like configuration and stays forward-compatible; the policy itself
+/// lives in the documented rules above, frozen by tests.
 pub struct LegSelector {}
 
 /// How the near-the-money anchor strike is chosen.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// How the near-the-money anchor strike is chosen.
 pub enum StrikePolicy {
     /// The listed strike closest to the underlying touch.
     #[default]
@@ -62,6 +66,8 @@ pub enum StrikePolicy {
 /// One directional selection request. The caller supplies the touch and the
 /// time slice; the selector never reads a clock.
 #[derive(Debug, Clone, Copy)]
+/// One directional selection request. The caller supplies the touch and the
+/// time slice; the selector never reads a clock.
 pub struct LegRequest<'a> {
     /// Requested structure.
     pub structure: StructureKind,
@@ -88,6 +94,8 @@ pub struct LegRequest<'a> {
 /// Why leg selection refused: inadequate data for the request, never a
 /// claim about the trade's economics.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Why leg selection refused: inadequate data for the request, never a
+/// claim about the trade's economics.
 pub enum LegSelectRefusal {
     /// Single-leg proposals need no leg selection.
     #[error("single-leg proposals need no leg selection")]

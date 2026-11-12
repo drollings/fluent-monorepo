@@ -37,6 +37,12 @@ use common_core::format::render_markdown_table;
 /// `any`) carry no static target, so they render as `-` across
 /// `MODEL`/`CTX`/`REASONING`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One resolved route row: the route name, one fallback level of the
+/// serving role's `models` chain (route → role → member, in configured
+/// order), the effective serving window (`CTX`), and the effective
+/// reasoning level (`REASONING`). Availability-sentinel levels (`last` /
+/// `any`) carry no static target, so they render as `-` across
+/// `MODEL`/`CTX`/`REASONING`.
 pub struct RouteRow {
     pub route: String,
     pub model: String,
@@ -50,6 +56,11 @@ pub struct RouteRow {
 /// maps are sorted; file order is not preserved). Built from the resolved
 /// config file, never synthesized.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One config section listing: resolved routes (route → one row per
+/// fallback level + `CTX` + `REASONING`) and models (key, intelligence,
+/// weights path) — routes sorted by key for deterministic output (serde
+/// maps are sorted; file order is not preserved). Built from the resolved
+/// config file, never synthesized.
 pub struct ConfigListing {
     pub routes: Vec<RouteRow>,
     pub models: Vec<(String, u8, Option<String>)>,

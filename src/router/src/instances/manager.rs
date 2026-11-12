@@ -27,6 +27,10 @@ use super::{instance_grammar_string, management_base_url, validate_instances};
 /// the weights file on the CLI's host. The router computes it from the file it
 /// actually loaded (authoritative); empty when the model has no weights path.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// The weights-file identity of one managed model, surfaced on the aggregate
+/// `/instances` envelope so `coral-router ps` can display it without needing
+/// the weights file on the CLI's host. The router computes it from the file it
+/// actually loaded (authoritative); empty when the model has no weights path.
 pub struct WeightsIdentity {
     pub short_id: String,
     pub arch: String,

@@ -31,6 +31,9 @@ pub const DEFAULT_MAX_MARKETS: usize = 4_096;
 /// materialization rather than defaulted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// What kind of instrument a market row names. Stored as lowercase text;
+/// anything else in the column is a corrupt row, refused at
+/// materialization rather than defaulted.
 pub enum AssetClass {
     /// Equities and equity ETFs.
     Stock,
@@ -92,6 +95,17 @@ impl AssetClass {
     Describable,
 )]
 #[builder(start_fn = new)]
+/// Decimal digits a market's prices may carry past the point: the
+/// representability bound the append path enforces.
+/// 
+/// A price fits when its stored form — [`Decimal::normalize` text, which is
+/// what the tape keeps — carries no more fraction digits than this. Trailing
+/// zeros carry no information, so `100.50` fits a scale of 1 exactly as
+/// `100.5` does; the check never refuses on representation. Construction
+/// through [`PriceScale::of`] validates; the builder form exists for the
+/// schema-driven surface and must pass [`Validate::validate`] before use —
+/// every registration validates, so an unvalidated builder value cannot
+/// reach the table.
 pub struct PriceScale {
     /// Decimal digits a market price may carry past the point.
     #[field(
@@ -138,6 +152,7 @@ impl Validate for PriceScale {
 
 /// One registered instrument: the durable row behind a [`SymbolId`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One registered instrument: the durable row behind a [`SymbolId`].
 pub struct Market {
     /// The durable identity allocated at registration.
     pub symbol_id: SymbolId,

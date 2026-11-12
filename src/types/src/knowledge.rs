@@ -14,6 +14,7 @@ use crate::{ContentNode, KnnHit, NodeId};
 
 /// Errors from a `KnowledgeCapability` implementation.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Errors from a `KnowledgeCapability` implementation.
 pub enum KnowledgeError {
     /// A node with the given id was not found.
     NotFound(NodeId),

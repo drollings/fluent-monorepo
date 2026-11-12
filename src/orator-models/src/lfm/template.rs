@@ -14,6 +14,8 @@ use crate::lfm::arch::{AUDIO_OUT_TOKEN_ID, AUDIO_TOKEN_ID};
 /// One audio conditioning clip: mel-frame count (10 ms hop at
 /// 16 kHz) the encoder will consume.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One audio conditioning clip: mel-frame count (10 ms hop at
+/// 16 kHz) the encoder will consume.
 pub struct AudioClip {
     /// Mel frames (`samples / 160`).
     pub mel_frames: usize,
@@ -22,6 +24,8 @@ pub struct AudioClip {
 /// One codec-frame row of output codes (12 codebooks), used only to
 /// count placeholder expansion.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One codec-frame row of output codes (12 codebooks), used only to
+/// count placeholder expansion.
 pub struct AudioOutClip {
     /// Codec frames at 12.5 Hz.
     pub frames: usize,
@@ -29,6 +33,7 @@ pub struct AudioOutClip {
 
 /// One prompt turn: role plus ordered content pieces.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One prompt turn: role plus ordered content pieces.
 pub struct TextTurn {
     /// `system`, `user`, `assistant`, or `tool`.
     pub role: String,
@@ -45,6 +50,10 @@ pub struct TextTurn {
 /// exactly its marker in the text (audio and audio_out alike); a
 /// marker needs its clip.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Template errors: the reference validates one marker per clip, so
+/// assembly refuses anything else instead of guessing. A clip needs
+/// exactly its marker in the text (audio and audio_out alike); a
+/// marker needs its clip.
 pub enum TemplateError {
     /// More than one `<|audio|>` marker in one turn.
     MultipleAudioMarkers,

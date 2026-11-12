@@ -33,6 +33,11 @@ pub const MAX_UNDO_DEPTH: usize = 32;
 /// retracts the most recent append into a bounded retraction log. There is
 /// no redo: a retracted annotation re-enters only via [`append`](Self::append).
 #[derive(Debug, Clone, Default)]
+/// Append-only annotation store with bounded undo.
+/// 
+/// Published entries are never edited or reordered; [`undo`](Self::undo)
+/// retracts the most recent append into a bounded retraction log. There is
+/// no redo: a retracted annotation re-enters only via [`append`](Self::append).
 pub struct AnnotationSet {
     live: Vec<Annotation>,
     undone: Vec<Annotation>,
@@ -99,6 +104,16 @@ impl<'a> IntoIterator for &'a AnnotationSet {
 /// than building a [`TimeIndex`] for one marker. The batch path
 /// ([`crate::paint::marker_dots`]) builds one index per frame instead.
 #[must_use]
+/// Resolve one annotation to pane-local pixels: the key's timestamp names
+/// the bar index in the passed window, the key's price maps through the
+/// viewport. `None` when the bar sits outside the window, when its timestamp
+/// repeats in the window (duplicates bind nothing, never the first match),
+/// or when the price is unmappable or off-window — markers decorate published
+/// bars only, never neighbors.
+/// 
+/// Linear scan, no map allocation: the single-resolve path stays cheaper
+/// than building a [`TimeIndex`] for one marker. The batch path
+/// ([`crate::paint::marker_dots`]) builds one index per frame instead.
 pub fn resolve_annotation(
     annotation: &Annotation,
     rows: &[ChartRow],
@@ -128,6 +143,15 @@ pub fn resolve_annotation(
 /// binding either row would decorate a bar the key does not name, so both
 /// stay unpainted rather than silently binding the first match.
 #[derive(Debug, Clone, Default)]
+/// One frame's timestamp-to-bar map, built once.
+/// 
+/// The batch path ([`crate::paint::marker_dots`]) builds one of these per
+/// frame and resolves every annotation through it instead of scanning the
+/// window per marker. A timestamp with exactly one row maps to that row; a
+/// timestamp with none — or with more than one — maps to nothing. Duplicate
+/// timestamps are a data fault (two bars claiming one close time), and
+/// binding either row would decorate a bar the key does not name, so both
+/// stay unpainted rather than silently binding the first match.
 pub struct TimeIndex {
     /// Timestamps with exactly one row, plus their bar index.
     unique: HashMap<i64, usize>,
@@ -195,6 +219,18 @@ impl TimeIndex {
 /// entirely. A click whose bar has no representable price (non-finite close)
 /// creates nothing instead of pinning a substituted value.
 #[must_use]
+/// Click-to-annotate: a radius-confirmed pointer hit becomes an operator
+/// annotation, or `None` when the click names no bar.
+/// 
+/// The hit radius answers "did the operator mean this candle" — doubt about
+/// intent, never about which bar is right. The candidate bar comes from the
+/// pointer's slot alone ([`hit_test`]); the radius only decides whether that
+/// candidate counts. Once a hit returns, the bar's data fixes the key
+/// (close time plus close price) and the radius has no further say. The
+/// radius never selects the bar directly and never gates whether a bar is
+/// annotatable — Pine-converted and programmatic appends bypass it
+/// entirely. A click whose bar has no representable price (non-finite close)
+/// creates nothing instead of pinning a substituted value.
 pub fn annotate_at(
     pointer: (f32, f32),
     viewport: &Viewport,

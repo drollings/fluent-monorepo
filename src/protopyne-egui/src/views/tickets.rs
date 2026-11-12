@@ -11,6 +11,8 @@ use protopyne_view::{GatewayError, TerminalGateway, TicketDraft, TicketDriftView
 /// Read-only ticket split: rows awaiting the human's fill report versus
 /// flagged disagreements.
 #[derive(Debug, Clone, PartialEq)]
+/// Read-only ticket split: rows awaiting the human's fill report versus
+/// flagged disagreements.
 pub struct TicketModel {
     /// Tickets still waiting, in ticket order.
     waiting: Vec<TicketView>,
@@ -53,6 +55,11 @@ impl TicketModel {
 /// core alone parses it); applying it invokes exactly one gateway verb, so
 /// a rendered click can never fan out into a second write.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One operator decision on a manual ticket.
+/// 
+/// The action carries only the opaque document the gateway forwards (the
+/// core alone parses it); applying it invokes exactly one gateway verb, so
+/// a rendered click can never fan out into a second write.
 pub enum TicketAction {
     /// Issue a ticket the operator places by hand.
     Issue {

@@ -6,10 +6,11 @@
 //! never thrown.
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use guidance_core::graph_index::GraphIndex;
-use guidance_core::query::ingest::{ingest_text_file, LazyNlp};
-use guidance_core::search_types::{FileInfo, FileKind};
+use guidance_core::query::ingest::{tree_sitter_format, LazyNlp};
+use guidance_core::search_types::FileKind;
 use guidance_core::selection::{select_files, FileSelection, ScanDiagnostics, SelectedFile};
 use guidance_core::sync_engine::SyncEngine;
 use search_vector::GuidanceDb;
@@ -63,6 +64,7 @@ pub fn run_index(
 
 /// Fragment-ingestion counts (stored data, never thrown).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Fragment-ingestion counts (stored data, never thrown).
 pub struct FragmentIngestStats {
     /// Files ingested into the fragment index (FTS + lemmas; embeddings skipped without
     /// a configured backend).
@@ -86,6 +88,13 @@ pub struct FragmentIngestStats {
     /// post-purge closure cannot expand deleted seeds, so without this
     /// the dependents of a deletion would silently miss re-processing).
     pub deleted_dependents: Vec<String>,
+    /// Changed files whose committed interface moved (new, deleted, or
+    /// rehashed symbols): the only seeds whose dependents re-process.
+    /// Missing stored rows fail open toward regeneration.
+    pub sig_moved: Vec<String>,
+    /// Changed files defining macros: syntactic edges are unreliable, so
+    /// their package re-processes conservatively.
+    pub macro_moved: Vec<String>,
 }
 
 /// Absolute paths the selection yielded (every kind, including skipped
@@ -97,11 +106,8 @@ fn selected_paths(files: &[SelectedFile]) -> std::collections::HashSet<String> {
         .collect()
 }
 
-/// Ingest workspace source files into the fragment index (FTS5 +
-/// `fragment_lemmas`; no embedder, no NLP pipeline — L1+L2 only, L3 arrives
-/// with a configured embedding backend). Thin shell over
-/// `ingest_text_file`; selection honors `.gitignore` (search-index noise
-/// discipline, matching `zg`).
+/// Ingest selected files into the fragment index (FTS5 + lemmas; L3
+/// vectors arrive via item chunks). NLP runs for natural-language files only.
 pub fn ingest_workspace_fragments(
     db_path: &Path,
     workspace: &Path,
@@ -113,22 +119,37 @@ pub fn ingest_workspace_fragments(
     // index time at zero embedding cost. Built lazily on the first
     // file that actually ingests — fully-skipped syncs never pay it.
     let nlp = LazyNlp::new();
-    // L3 embedder from the workspace project config (offline
-    // construction; absent backend degrades to unembedded fragments,
-    // counted in stats — same contract as before, now actually usable).
-    let cfg = guidance_core::config::load_config(workspace).unwrap_or_default();
-    let embedder = crate::embed::embedder_from_config(&cfg);
+    // Whole-file embeddings belong to the item-chunk pipeline; the live
+    // writer's text exceeds the embed server batch and looped forever.
     let mut stats = FragmentIngestStats::default();
-    // One parser for the whole sync: per-file graph harvest reuses the
-    // harvest `assemble` consumes (never a second parser, never per-file
-    // parser construction).
+    // Accumulated phase time, reported once by `GUIDANCE_PROFILE=1`.
+    let mut t_select = 0u128;
+    let mut t_freshness = 0u128;
+    let mut t_read = 0u128;
+    let mut t_ingest = 0u128;
+    let mut t_graph = 0u128;
+    // One parser for the whole sync: fragments, comment blocks, and
+    // graph inputs share one parse per file (never a second parser,
+    // never per-file parser construction).
     let mut parser = guidance_core::ast_parser::AstParser::new();
     // Every path selection yields, across all src dirs: presence on disk
     // is what the deleted purge below diffs against (images included —
-    // they exist even though they never ingest).
+    // they exist even though they never ingest). A root may be a single
+    // file (the `sync --file` scope) or a directory; missing roots stay
+    // skipped, and the purge is scoped per root so a file root never
+    // dooms the files beside it.
     let mut present: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // One fingerprint scan for the whole pass: per-file probes cost a
+    // round-trip each (seconds on thousand-file trees). An empty map on
+    // read failure keeps the old fail-open: everything re-ingests.
+    let fingerprints = {
+        let bulk_start = Instant::now();
+        let map = db.all_fragment_freshness().unwrap_or_default();
+        t_freshness += bulk_start.elapsed().as_millis();
+        map
+    };
     for src_dir in src_dirs {
-        if !src_dir.is_dir() {
+        if !src_dir.exists() {
             continue;
         }
         let selection = FileSelection {
@@ -140,35 +161,49 @@ pub fn ingest_workspace_fragments(
             max_bytes_override: None,
         };
         let mut diag = ScanDiagnostics::default();
+        let select_start = Instant::now();
         let files = select_files(&selection, &mut diag)
             .map_err(|error| format!("selection failed: {error}"))?;
+        t_select += select_start.elapsed().as_millis();
         present.extend(selected_paths(&files));
         for selected in files {
+            // Index metadata is never content: the generation marker
+            // lives beside the database by design, and ingesting it
+            // would re-index a bookkeeping write on every run.
+            if selected
+                .path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == guidance_core::index_generation::GENERATION_FILE)
+            {
+                continue;
+            }
             if selected.kind == FileKind::Image {
                 stats.skipped_images += 1;
                 continue;
             }
             // Change gate: an unchanged file keeps its committed row —
-            // skip the read + lemmatize + embed + upsert entirely. The
-            // probe fails open (ingest as before) so a read error here
-            // can never lose index content. A configured embedder still
-            // re-ingests unembedded rows to backfill vectors.
+            // skip the read + lemmatize + upsert entirely. Fingerprints
+            // load once per pass (one scan, not one probe per file).
             let file_id = selected.path.to_string_lossy().into_owned();
-            let unchanged = match db.fragment_freshness(&file_id) {
-                Ok(Some(fresh)) => {
+            let freshness_start = Instant::now();
+            let unchanged = match fingerprints.get(&file_id) {
+                Some(fresh) => {
                     fresh.size_bytes == selected.size_bytes
                         && fresh.last_modified_time == selected.modified_ms
-                        && (embedder.is_none() || fresh.embedded)
                 }
-                _ => false,
+                None => false,
             };
+            t_freshness += freshness_start.elapsed().as_millis();
             if unchanged {
                 stats.skipped_unchanged += 1;
                 continue;
             }
+            let read_start = Instant::now();
             let text = match std::fs::read_to_string(&selected.path) {
                 Ok(text) => text,
                 Err(_) => {
+                    t_read += read_start.elapsed().as_millis();
                     stats.failed += 1;
                     continue;
                 }
@@ -179,9 +214,11 @@ pub fn ingest_workspace_fragments(
                 .and_then(|ext| ext.to_str())
                 .unwrap_or("")
                 .to_string();
-            let file = FileInfo {
+            let absolute_path = selected.path.to_string_lossy().into_owned();
+            let defines_macros = guidance_core::invalidation::defines_macros(&text);
+            let record = search_vector::db::FileRecord {
                 id: file_id,
-                absolute_path: selected.path.to_string_lossy().into_owned(),
+                absolute_path: absolute_path.clone(),
                 relative_path: selected.relative.clone(),
                 root_path: workspace.to_string_lossy().into_owned(),
                 size_bytes: selected.size_bytes,
@@ -190,36 +227,145 @@ pub fn ingest_workspace_fragments(
                 // ambiguity-window tiebreak reads it back next sync).
                 // Free: the bytes are already in hand — no extra read.
                 content_hash: Some(common_core::hash::sha256_hex(text.as_bytes())),
-                kind: Some(selected.kind),
+                kind: Some(selected.kind.as_str().to_string()),
                 format,
-                index_status: None,
+                index_status: Some("indexed".to_string()),
+                fail_count: 0,
+                last_error: None,
             };
-            match ingest_text_file(&db, &file, &text, embedder.as_deref(), nlp.get()) {
-                Ok(ingested) => {
-                    // Persist the file's graph inputs from the same bytes
+            t_read += read_start.elapsed().as_millis();
+            let ingest_start = Instant::now();
+            // One extract pass per file: item chunks, comment blocks, and
+            // graph inputs share a single parse (never a second parser).
+            let source_format = tree_sitter_format(&record.format)
+                .unwrap_or(record.format.as_str())
+                .to_string();
+            let source = guidance_core::extractor::ExtractSource {
+                file_id: record.id.clone(),
+                text,
+                format: source_format,
+                kind: selected.kind,
+            };
+            let chunk_options = match guidance_core::extractor::ChunkOptions::resolve(None, None) {
+                Ok(options) => options,
+                Err(error) => {
+                    eprintln!("prepare failed for {}: {error}", record.absolute_path);
+                    t_ingest += ingest_start.elapsed().as_millis();
+                    stats.failed += 1;
+                    continue;
+                }
+            };
+            let (mut fragments, harvest, blocks) =
+                match guidance_core::index_pipeline::prepare_fragments(
+                    &mut parser,
+                    &source,
+                    chunk_options,
+                ) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        eprintln!("prepare failed for {}: {error}", record.absolute_path);
+                        t_ingest += ingest_start.elapsed().as_millis();
+                        stats.failed += 1;
+                        continue;
+                    }
+                };
+            if let Some(module) =
+                guidance_core::extractor::code::module_fragment_for(&record.id, &blocks)
+            {
+                fragments.push(module);
+            }
+            // Spacy pays off on prose, not code: whole-file lemmatization
+            // cost seconds per source file and only added punctuation.
+            let nlp_for_file = if selected.kind == FileKind::Text {
+                nlp.get()
+            } else {
+                None
+            };
+            let before: Vec<(String, String)> = db
+                .symbols_for_file(&record.id)
+                .map(|rows| {
+                    rows.into_iter()
+                        // Module fragments carry comments, not interfaces:
+                        // their appearance must not expand dependents.
+                        .filter(|row| row.name.as_deref() != Some("$file"))
+                        .map(|row| (row.symbol_id, row.interface_hash))
+                        .collect()
+                })
+                .unwrap_or_default();
+            match guidance_core::query::writer::FragmentWriter::write_items(
+                &db,
+                &record,
+                selected.kind,
+                &fragments,
+                &blocks,
+                &[],
+                nlp_for_file,
+                guidance_core::query::writer::VectorPolicy::Optional,
+            ) {
+                Ok(count) => {
+                    let file_ms = ingest_start.elapsed().as_millis();
+                    t_ingest += file_ms;
+                    if crate::profile::enabled() && file_ms >= 50 {
+                        eprintln!(
+                            "[profile] slow ingest {}: {} ms ({} bytes, {:?}, {} fragments)",
+                            selected.relative, file_ms, selected.size_bytes, selected.kind, count
+                        );
+                    }
+                    let graph_start = Instant::now();
+                    // Persist the file's graph inputs from the same pass
                     // (changed files only — unchanged files keep their
                     // committed rows via the gate above). A graph-write
                     // failure rolls the fragment rows back so the next
                     // sync re-ingests the file instead of going stale.
-                    let (specifiers, symbols) = guidance_core::graph_index::harvest_graph_inputs(
-                        &mut parser,
-                        &file.format,
-                        file.kind.unwrap_or(FileKind::Text),
-                        &text,
-                    );
+                    let symbols: Vec<(String, Vec<String>)> = harvest
+                        .symbols
+                        .iter()
+                        .map(|symbol| {
+                            (
+                                symbol.name.clone().unwrap_or_default(),
+                                symbol.calls.clone(),
+                            )
+                        })
+                        .collect();
                     if let Err(error) =
-                        db.replace_file_graph(&file.absolute_path, &specifiers, &symbols)
+                        db.replace_file_graph(&record.absolute_path, &harvest.imports, &symbols)
                     {
-                        eprintln!("graph persist failed for {}: {error}", file.absolute_path);
-                        let _ = db.delete_file(&file.id);
+                        eprintln!("graph persist failed for {}: {error}", record.absolute_path);
+                        let _ = db.delete_file(&record.id);
+                        t_graph += graph_start.elapsed().as_millis();
                         stats.failed += 1;
                         continue;
                     }
+                    t_graph += graph_start.elapsed().as_millis();
                     stats.files += 1;
-                    stats.fragments += ingested.fragments;
-                    stats.changed.push(file.absolute_path.clone());
+                    stats.fragments += count;
+                    stats.changed.push(record.absolute_path.clone());
+                    let after: Vec<(String, String)> = db
+                        .symbols_for_file(&record.id)
+                        .map(|rows| {
+                            rows.into_iter()
+                                .filter(|row| row.name.as_deref() != Some("$file"))
+                                .map(|row| (row.symbol_id, row.interface_hash))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    // Sig gate: only interface moves expand to dependents.
+                    // Missing stored rows (new or legacy files) fail open
+                    // toward regeneration, never toward a silent skip.
+                    if before.is_empty()
+                        || guidance_core::invalidation::file_sig_changed(&before, &after)
+                    {
+                        stats.sig_moved.push(record.absolute_path.clone());
+                    }
+                    if defines_macros {
+                        stats.macro_moved.push(record.absolute_path.clone());
+                    }
                 }
-                Err(_) => stats.failed += 1,
+                Err(error) => {
+                    eprintln!("commit failed for {}: {error}", record.absolute_path);
+                    t_ingest += ingest_start.elapsed().as_millis();
+                    stats.failed += 1;
+                }
             }
         }
     }
@@ -233,6 +379,7 @@ pub fn ingest_workspace_fragments(
     // re-processing). The resolved dependents join the caller's seed set
     // via `deleted_dependents`; the doomed paths themselves stay in
     // `deleted` for sidecar removal.
+    let purge_start = Instant::now();
     let mut doomed: Vec<(String, String)> = Vec::new();
     match db.list_files() {
         Ok(rows) => {
@@ -268,6 +415,20 @@ pub fn ingest_workspace_fragments(
             }
         }
     }
+    let t_purge = purge_start.elapsed().as_millis();
+    // Segment merge is meaningful only after a bulk pass; a 1-file
+    // refresh should not pay a whole-index merge.
+    if stats.files >= 64 {
+        if let Err(error) = db.optimize_fts() {
+            eprintln!("warning: fts optimize failed: {error}");
+        }
+    }
+    crate::profile::report("index.ingest.select", t_select);
+    crate::profile::report("index.ingest.freshness", t_freshness);
+    crate::profile::report("index.ingest.read", t_read);
+    crate::profile::report("index.ingest.lemma_db", t_ingest);
+    crate::profile::report("index.ingest.graph", t_graph);
+    crate::profile::report("index.ingest.purge", t_purge);
     Ok(stats)
 }
 

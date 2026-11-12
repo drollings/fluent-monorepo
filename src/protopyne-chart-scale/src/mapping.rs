@@ -12,6 +12,7 @@ use crate::error::ScaleError;
 
 /// How raw prices are reshaped before mapping to pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+/// How raw prices are reshaped before mapping to pixels.
 pub enum PriceScaleMode {
     /// Absolute prices, linear.
     #[default]
@@ -54,6 +55,7 @@ impl FromStr for PriceScaleMode {
 
 /// A min/max price window in display space.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+/// A min/max price window in display space.
 pub struct PriceRange {
     /// Lowest visible price.
     pub min: f64,
@@ -99,6 +101,12 @@ impl PriceRange {
 /// Construct once per visible window; recompute only on scroll/zoom, never
 /// per frame per bar.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Index/price mapping over one pane of fixed pixel geometry.
+/// 
+/// `bar_spacing` is pixels per bar, `height` the pane height in pixels, and
+/// `base_value` the first-visible reference for percentage/indexed modes.
+/// Construct once per visible window; recompute only on scroll/zoom, never
+/// per frame per bar.
 pub struct PriceScale {
     mode: PriceScaleMode,
     range: PriceRange,

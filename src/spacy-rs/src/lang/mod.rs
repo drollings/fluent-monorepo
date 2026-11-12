@@ -27,6 +27,9 @@ pub mod url;
 /// the Vocab to every language before the `lower` fallback,
 /// `vocab.pyx:34-36`).
 #[must_use]
+/// The base `NORM` exception for `text`, if any (`BASE_NORMS` — applied by
+/// the Vocab to every language before the `lower` fallback,
+/// `vocab.pyx:34-36`).
 pub fn base_norm(text: &str) -> Option<&'static str> {
     norm_exceptions::BASE_NORMS
         .iter()

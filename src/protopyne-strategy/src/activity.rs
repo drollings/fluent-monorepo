@@ -52,6 +52,7 @@ pub const DEFAULT_MAX_QUOTE_AGE_SECS: i64 = 15 * 60;
 
 /// Bounded chain-activity proxy over near-the-money strikes.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Bounded chain-activity proxy over near-the-money strikes.
 pub struct ChainActivityScore {
     near_money_band: f64,
     max_quote_age_secs: i64,

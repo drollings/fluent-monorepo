@@ -19,6 +19,7 @@ use crate::OntologyError;
 
 /// Runtime YaGO view.
 #[derive(Debug)]
+/// Runtime YaGO view.
 pub struct YagoView {
     // Lexicon index: curie -> id. `HashMap` is the recorded decision (not a
     // placeholder): class counts are ~10^2 embedded / ~10^5 full, lookups are

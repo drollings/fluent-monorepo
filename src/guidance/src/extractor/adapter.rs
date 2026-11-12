@@ -9,6 +9,7 @@ use crate::search_types::{CodeEntityModifier, CodeSymbolType, LanguageAdapter};
 
 /// A borrowed tree-sitter node with its source text.
 #[derive(Clone, Copy)]
+/// A borrowed tree-sitter node with its source text.
 pub struct NodeView<'a> {
     /// The node.
     pub node: tree_sitter::Node<'a>,
@@ -118,6 +119,7 @@ impl<'a> NodeView<'a> {
 
 /// Adapter family (shared per-family helpers, mirroring `families/*`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Adapter family (shared per-family helpers, mirroring `families/*`).
 pub enum AdapterFamily {
     /// Rust (`extractCommonModifiers` + generic signature/doc).
     Rust,
@@ -351,6 +353,7 @@ static ADAPTERS: &[TsAdapter] = &[
 
 /// Resolve the adapter for a format id (registry search, never a match).
 #[must_use]
+/// Resolve the adapter for a format id (registry search, never a match).
 pub fn resolve_adapter(format: &str) -> Option<&'static TsAdapter> {
     // M5: registry find, not a fallback walk — one lookup, a miss is
     // terminal `None` (never "try the next adapter"). Stays.
@@ -363,6 +366,11 @@ pub fn resolve_adapter(format: &str) -> Option<&'static TsAdapter> {
 /// that divergence is documented at the canonical home, never unified
 /// implicitly).
 #[must_use]
+/// Resolve the format id for a file extension (registry scan).
+/// Delegates to the canonical `fluent_types::file_kind` adapter map
+/// (`h` parses as C here — the ingest tagger maps it to C++ instead;
+/// that divergence is documented at the canonical home, never unified
+/// implicitly).
 pub fn format_for_extension(ext: &str) -> Option<&'static str> {
     let lowered = ext.to_ascii_lowercase();
     fluent_types::file_kind::code_format_for_extension(&lowered)
@@ -370,6 +378,7 @@ pub fn format_for_extension(ext: &str) -> Option<&'static str> {
 
 /// Structured code formats with grammars (port of `STRUCTURED_CODE_FORMATS`).
 #[must_use]
+/// Structured code formats with grammars (port of `STRUCTURED_CODE_FORMATS`).
 pub fn structured_code_formats() -> Vec<&'static str> {
     ADAPTERS.iter().map(|adapter| adapter.format).collect()
 }
@@ -562,6 +571,7 @@ impl TsAdapter {
 
 /// Generic node classification (port of `classifyCodeNode`).
 #[must_use]
+/// Generic node classification (port of `classifyCodeNode`).
 pub fn classify_code_node(node: NodeView<'_>, breadcrumb: &[String]) -> CodeSymbolType {
     let kind = node.kind();
     if kind == "decorated_definition" {
@@ -620,6 +630,7 @@ pub fn classify_code_node(node: NodeView<'_>, breadcrumb: &[String]) -> CodeSymb
 
 /// Structural symbol types (port of `STRUCTURAL_SYMBOL_TYPES`).
 #[must_use]
+/// Structural symbol types (port of `STRUCTURAL_SYMBOL_TYPES`).
 pub fn is_structural_symbol(symbol: CodeSymbolType) -> bool {
     matches!(
         symbol,
@@ -630,6 +641,8 @@ pub fn is_structural_symbol(symbol: CodeSymbolType) -> bool {
 /// Generic signature: text before the body block, one line, trailing
 /// `{`/`;` trimmed (port of `extractGenericSignature`).
 #[must_use]
+/// Generic signature: text before the body block, one line, trailing
+/// `{`/`;` trimmed (port of `extractGenericSignature`).
 pub fn extract_generic_signature(node: NodeView<'_>) -> Option<String> {
     let body = node.field("body").or_else(|| {
         node.named_children().into_iter().find(|child| {
@@ -673,6 +686,7 @@ pub fn extract_generic_signature(node: NodeView<'_>) -> Option<String> {
 
 /// First non-empty line, trimmed.
 #[must_use]
+/// First non-empty line, trimmed.
 pub fn first_non_empty_line(text: &str) -> String {
     text.lines()
         .map(str::trim)
@@ -681,64 +695,19 @@ pub fn first_non_empty_line(text: &str) -> String {
         .to_string()
 }
 
-/// Preceding doc comment (port of `extractPrecedingDoc`).
+/// Preceding doc comment: one collector owns comment scope.
 #[must_use]
+/// Preceding doc comment: one collector owns comment scope.
 pub fn extract_preceding_doc(node: NodeView<'_>) -> Option<String> {
-    let mut comments = Vec::new();
-    let mut sibling = node.prev_named_sibling();
-    while let Some(view) = sibling {
-        if !matches!(
-            view.kind(),
-            "comment" | "line_comment" | "block_comment" | "documentation_comment"
-        ) {
-            break;
-        }
-        comments.push(clean_comment_text(view.text()));
-        sibling = view.prev_named_sibling();
-    }
-    comments.reverse();
-    let doc = comments.join("\n").trim().to_string();
-    if doc.is_empty() {
-        None
-    } else {
-        Some(doc)
-    }
-}
-
-fn clean_comment_text(text: &str) -> String {
-    let mut out = text.to_string();
-    if let Some(stripped) = out.strip_prefix("/**").or_else(|| out.strip_prefix("/*")) {
-        out = stripped.to_string();
-    }
-    if let Some(stripped) = out.strip_suffix("*/") {
-        out = stripped.to_string();
-    }
-    let mut lines = Vec::new();
-    for line in out.lines() {
-        let stripped = if let Some(rest) = line.strip_prefix("//") {
-            // `//`, optional third `/`, one optional space (zvec parity).
-            let rest = rest.strip_prefix('/').unwrap_or(rest);
-            rest.strip_prefix(' ').unwrap_or(rest)
-        } else if let Some(rest) = line.strip_prefix('#') {
-            rest.strip_prefix(' ').unwrap_or(rest)
-        } else {
-            // `*`-led block-comment continuations only (zvec parity:
-            // lines without `*` keep their indentation).
-            let trimmed = line.trim_start();
-            if let Some(rest) = trimmed.strip_prefix('*') {
-                rest.strip_prefix(' ').unwrap_or(rest)
-            } else {
-                line
-            }
-        };
-        lines.push(stripped);
-    }
-    lines.join("\n").trim().to_string()
+    let source = std::str::from_utf8(node.source).ok()?;
+    crate::ast_parser::preceding_doc_text(&node.node, source)
 }
 
 /// Common modifiers from the signature tokens (port of
 /// `extractCommonModifiers`); `pub` normalizes to `public`.
 #[must_use]
+/// Common modifiers from the signature tokens (port of
+/// `extractCommonModifiers`); `pub` normalizes to `public`.
 pub fn extract_common_modifiers(node: NodeView<'_>) -> Vec<CodeEntityModifier> {
     let mut modifiers = Vec::new();
     let push = |m: CodeEntityModifier, list: &mut Vec<CodeEntityModifier>| {
@@ -767,6 +736,7 @@ pub fn extract_common_modifiers(node: NodeView<'_>) -> Vec<CodeEntityModifier> {
 
 // -- Go ---------------------------------------------------------------------
 
+/// -- Go ---------------------------------------------------------------------
 fn extract_go_receiver_type(node: NodeView<'_>) -> Option<String> {
     let receiver = node.field("receiver")?;
     let text = receiver.text();
@@ -820,6 +790,7 @@ fn extract_go_modifiers(node: NodeView<'_>) -> Vec<CodeEntityModifier> {
 
 // -- Python ------------------------------------------------------------------
 
+/// -- Python ------------------------------------------------------------------
 fn inner_python_definition(node: NodeView<'_>) -> Option<NodeView<'_>> {
     if node.kind() != "decorated_definition" {
         return None;
@@ -1180,6 +1151,7 @@ fn typedef_wraps_class_like_body(node: NodeView<'_>) -> bool {
 
 // -- Name-field (Java) --------------------------------------------------------
 
+/// -- Name-field (Java) --------------------------------------------------------
 fn name_field(node: NodeView<'_>) -> Option<String> {
     node.field("name")
         .map(|n| n.text().to_string())

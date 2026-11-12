@@ -16,6 +16,9 @@ use crate::pine::manifest::ManifestFile;
 /// calling crate's manifest directory (unit tests pass `env!("CARGO_MANIFEST_DIR")`).
 /// A pure path join: it assumes no file, only the root.
 #[must_use]
+/// Data directory holding the Pine sources and histories, derived from the
+/// calling crate's manifest directory (unit tests pass `env!("CARGO_MANIFEST_DIR")`).
+/// A pure path join: it assumes no file, only the root.
 pub fn closure_data_root(manifest_dir: &str) -> PathBuf {
     PathBuf::from(manifest_dir).join("../../data/protopyne-rs")
 }
@@ -25,6 +28,10 @@ pub fn closure_data_root(manifest_dir: &str) -> PathBuf {
 /// indicator last. Versions ride each file's own header (metadata only,
 /// never enforced).
 #[derive(Debug, Clone, PartialEq)]
+/// One indicator closure discovered from the directory: the root plus its
+/// transitively resolved libraries, keyed `publisher/name` with the
+/// indicator last. Versions ride each file's own header (metadata only,
+/// never enforced).
 pub struct DiscoveredClosure {
     /// File stem of the indicator (`_FastMAs`).
     pub stem: String,
@@ -39,6 +46,10 @@ pub struct DiscoveredClosure {
 /// (unparseable text, unsupported version, unknown import) — never a
 /// silent absence.
 #[derive(Debug, Clone, PartialEq)]
+/// Discovery outcome per indicator file: linked with its closure, or
+/// refused with the reason it cannot run. A refusal names its cause
+/// (unparseable text, unsupported version, unknown import) — never a
+/// silent absence.
 pub enum ClosureOutcome {
     /// The indicator parsed and every import resolved.
     Linked(DiscoveredClosure),
@@ -87,6 +98,11 @@ fn library_keys(relpath: &str) -> Vec<String> {
 /// name), and report the linked sources or the refusal. Pure over values:
 /// no I/O, deterministic in directory order.
 #[must_use]
+/// Discover every indicator closure over caller-supplied files: for each
+/// `indicators/*.pine`, parse the header, resolve its import closure
+/// transitively against `libraries/*.pine` (one on-disk source per library
+/// name), and report the linked sources or the refusal. Pure over values:
+/// no I/O, deterministic in directory order.
 pub fn discover_closures(
     indicators: &[ManifestFile],
     libraries: &[ManifestFile],

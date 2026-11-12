@@ -19,6 +19,7 @@ pub struct Stage {
 
 /// Hybrid recall provenance carried on index-built stages.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Hybrid recall provenance carried on index-built stages.
 pub struct StageTrace {
     /// zvec `matchedBy` vocabulary (`fts` / `vector` / `fts+vector`).
     pub matched_by: String,
@@ -36,6 +37,7 @@ pub struct StageTrace {
 
 /// One route recall entry on a stage trace.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// One route recall entry on a stage trace.
 pub struct StageRecall {
     /// Recall path (`fts` / `vector` / `lemma`).
     pub path: String,

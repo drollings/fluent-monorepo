@@ -25,6 +25,8 @@ use crate::error::EguiError;
 /// Cache key: icon name, render size in whole pixels (the caller rounds),
 /// and the theme fingerprint the bytes were rasterized under.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Cache key: icon name, render size in whole pixels (the caller rounds),
+/// and the theme fingerprint the bytes were rasterized under.
 pub struct IconKey {
     /// Icon name the renderer resolves.
     pub name: String,

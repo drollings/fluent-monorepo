@@ -14,6 +14,7 @@ use crate::doc::Doc;
 
 /// A byte-offset span into the doc's reconstructed text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// A byte-offset span into the doc's reconstructed text.
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -44,6 +45,10 @@ impl Span {
 /// presented with tree-sitter's certainty) and its interlingua lemma id when
 /// the resolve stage stamped it.
 #[derive(Debug, Clone, PartialEq)]
+/// A lemma-grep hit: a span whose token lemma equals the query, **always**
+/// carrying its per-token parse confidence (heuristic matches are never
+/// presented with tree-sitter's certainty) and its interlingua lemma id when
+/// the resolve stage stamped it.
 pub struct LemmaGrepHit {
     pub span: Span,
     pub lemma: String,

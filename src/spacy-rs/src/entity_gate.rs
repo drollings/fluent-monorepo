@@ -54,6 +54,11 @@ pub const CALIBRATED_SCORE_THRESHOLD: f64 = 0.75;
 /// callers pass an explicit threshold (the calibrated constant) so the gate
 /// stays opt-in.
 #[derive(Debug, Clone, Copy)]
+/// The two-gate promotion policy. Stamping is per-pattern opt-in: nothing in
+/// the pipeline constructs this by default (candidates-only default holds).
+/// There is deliberately no `Default` impl and no production default value —
+/// callers pass an explicit threshold (the calibrated constant) so the gate
+/// stays opt-in.
 pub struct EntityStampGate {
     /// Gate-1 bar: candidate scores reach (`>=`) this to stamp. NaN never
     /// reaches any bar (`NaN >= t` is false).
@@ -71,6 +76,7 @@ impl EntityStampGate {
 
 /// Why a candidate stayed a candidate (audit-facing, not an error).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why a candidate stayed a candidate (audit-facing, not an error).
 pub enum KeepReason {
     /// No such token in the doc.
     UnknownToken,
@@ -86,6 +92,7 @@ pub enum KeepReason {
 
 /// One promotion request: a candidate score for an entity at a token.
 #[derive(Debug, Clone, Copy)]
+/// One promotion request: a candidate score for an entity at a token.
 pub struct StampCandidate {
     /// Token index in the doc.
     pub token: usize,
@@ -97,6 +104,7 @@ pub struct StampCandidate {
 
 /// A stamp that passed both gates, content-keyed for invalidation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A stamp that passed both gates, content-keyed for invalidation.
 pub struct StampedSpan {
     /// Token index in the doc.
     pub token: usize,
@@ -108,6 +116,7 @@ pub struct StampedSpan {
 
 /// The outcome per candidate, in request order.
 #[derive(Debug, Clone)]
+/// The outcome per candidate, in request order.
 pub enum StampOutcome {
     /// Both gates passed; the doc now carries the id.
     Stamped(StampedSpan),

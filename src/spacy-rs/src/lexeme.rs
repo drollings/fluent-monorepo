@@ -23,6 +23,10 @@ pub const OOV_RANK: u64 = u64::MAX;
 /// ids 19–55 are the closed-class function-word flags populated per
 /// language from [`LexiconConfig::function_words`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// The 64-bit lexeme flag bitmask. Bit `i` is set iff attribute id `i` is
+/// true (ids 1–18 are the named surface flags from `spacy/attrs.pxd`;
+/// ids 19–55 are the closed-class function-word flags populated per
+/// language from [`LexiconConfig::function_words`).
 pub struct LexemeFlags(u64);
 
 impl LexemeFlags {
@@ -348,6 +352,9 @@ impl LexemeFlags {
 /// tokens of that form. Field-for-field against `LexemeC`
 /// (`spacy/structs.pxd:10-24`).
 #[derive(Debug, Clone)]
+/// A word-type record: the surface-shape facts for one orth, shared by all
+/// tokens of that form. Field-for-field against `LexemeC`
+/// (`spacy/structs.pxd:10-24`).
 pub struct Lexeme {
     pub flags: LexemeFlags,
     /// Language id hash.
@@ -406,6 +413,8 @@ impl Lexeme {
 /// Per-lexicon attribute configuration: language, stop words, and norm
 /// overrides. Supplied by the language data (e.g. English) at construction.
 #[derive(Debug, Clone, Default)]
+/// Per-lexicon attribute configuration: language, stop words, and norm
+/// overrides. Supplied by the language data (e.g. English) at construction.
 pub struct LexiconConfig {
     /// Language tag hash (e.g. `"en"`); `0` leaves `Lexeme.lang` unset.
     pub lang: u64,
@@ -429,6 +438,9 @@ pub struct LexiconConfig {
 /// from the deterministic [`crate::lex_attrs`] table. Thread-safe and shared
 /// across docs and tokenizers.
 #[derive(Debug)]
+/// The lexicon: one immutable `Arc<Lexeme>` per orth, computed on first sight
+/// from the deterministic [`crate::lex_attrs`] table. Thread-safe and shared
+/// across docs and tokenizers.
 pub struct Lexicon {
     strings: Arc<StringStore>,
     by_orth: RwLock<HashMap<u64, Arc<Lexeme>>>,

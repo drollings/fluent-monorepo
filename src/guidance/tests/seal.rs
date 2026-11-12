@@ -123,6 +123,9 @@ fn exit_codes_match_the_contract() {
         ],
         [0, 1, 2, 3, 4]
     );
-    assert_eq!(discover_packages(std::path::Path::new("/nonexistent-root-xyz")), Vec::<PathBuf>::new());
+    assert_eq!(
+        discover_packages(std::path::Path::new("/nonexistent-root-xyz")),
+        Vec::<PathBuf>::new()
+    );
     const { assert!(budgets::DEF_P50_MS < budgets::DEF_P99_MS) }
 }

@@ -34,6 +34,11 @@ use crate::runtime::{LlmContext, LlmWeights};
 // capability, all false by default); the struct stays a plain data bag.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// ─── Capabilities / readiness ───────────────────────────────────────────────
+/// What a backend can do. All flags default to false; each backend adapter
+/// reports the flags its transport actually honors.
+/// Capability flags are the intentional shape here (one bool per transport
+/// capability, all false by default); the struct stays a plain data bag.
 pub struct BackendCaps {
     /// Serves named context windows with per-context KV state.
     pub named_contexts: bool,
@@ -61,6 +66,7 @@ impl BackendCaps {
 
 /// Load state of one model key on a backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Load state of one model key on a backend.
 pub enum Readiness {
     /// Resident and serving.
     Loaded,
@@ -84,6 +90,9 @@ pub const DEFAULT_CONTEXT_GROUP: &str = "default";
 /// profile field-for-field without importing it, so callers describe a
 /// window once for any backend that serves named contexts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Declarative shape of a named context window. Mirrors the onnx context
+/// profile field-for-field without importing it, so callers describe a
+/// window once for any backend that serves named contexts.
 pub struct ContextProfile {
     /// The context's group.
     pub group: String,
@@ -116,6 +125,10 @@ impl Default for ContextProfile {
 /// backends keep working; this enum covers the built-in ids for exhaustive
 /// matching at decision points.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// ─── Backend loader seam ────────────────────────────────────────────────────
+/// Well-known backend identifiers. Registry keys stay `String` so third-party
+/// backends keep working; this enum covers the built-in ids for exhaustive
+/// matching at decision points.
 pub enum WellKnownBackend {
     Llama,
     Onnx,
@@ -124,6 +137,7 @@ pub enum WellKnownBackend {
 /// Refusal for backend identifiers outside the well-known set.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("unknown backend: {0}")]
+/// Refusal for backend identifiers outside the well-known set.
 pub struct WellKnownBackendParseError(pub String);
 
 impl WellKnownBackend {
@@ -169,6 +183,7 @@ pub trait BackendLoader: Send + Sync {
 
 /// A backend load failure.
 #[derive(Debug, thiserror::Error)]
+/// A backend load failure.
 pub enum BackendError {
     /// Transport or spawn failure before serving.
     #[error("backend load failed: {0}")]
@@ -371,6 +386,10 @@ impl std::fmt::Debug for InferenceRegistry {
 /// pattern: holders route through the shared registry; an empty registry
 /// resolves to `None` (graceful no-op) rather than an error.
 #[derive(Clone)]
+/// ─── Capability mediation ───────────────────────────────────────────────────
+/// Capability token mediating registry access, mirroring the memory-plugin
+/// pattern: holders route through the shared registry; an empty registry
+/// resolves to `None` (graceful no-op) rather than an error.
 pub struct InferenceCapability {
     registry: Arc<std::sync::RwLock<InferenceRegistry>>,
 }
@@ -406,6 +425,16 @@ impl InferenceCapability {
 /// working. `score` is confidence (regex `1.0`, classifier average), never
 /// redaction task-value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// ─── Neutral consumer types ─────────────────────────────────────────────────
+/// Moved here so backend consumers share one definition. Backend crates keep
+/// re-exporting these paths; the shapes below are the single source of truth.
+/// A detected PII span: byte offsets into the scanned text, the label (the
+/// regex pattern name or the token-classification label, e.g.
+/// `"credential.password"`), and the detector's confidence.
+/// 
+/// `label` stays `String` on the wire so open-vocabulary producers keep
+/// working. `score` is confidence (regex `1.0`, classifier average), never
+/// redaction task-value.
 pub struct PiiSpan {
     /// Byte offset of the span's start within the scanned text.
     pub start: usize,
@@ -458,6 +487,8 @@ impl PiiSpan {
 /// A PII detection failure. The review pre-filter treats every error as an
 /// empty span set (fail-open — never a job drop and never a rejection).
 #[derive(Debug, thiserror::Error)]
+/// A PII detection failure. The review pre-filter treats every error as an
+/// empty span set (fail-open — never a job drop and never a rejection).
 pub enum PiiError {
     #[error("PII classifier inference failed: {0}")]
     Inference(String),
@@ -477,6 +508,11 @@ pub trait PiiSpanDetector: Send + Sync {
 /// with confidence `1.0`. Always available — no model, no feature gate,
 /// fail-open by construction.
 #[derive(Debug, Clone, Default)]
+/// The deterministic PII baseline: wraps the canonical
+/// [`crate::pii_patterns`] table (never a duplicated pattern list) and
+/// reports every regex match as a `PiiSpan` at the pattern's byte offsets
+/// with confidence `1.0`. Always available — no model, no feature gate,
+/// fail-open by construction.
 pub struct RegexPiiDetector;
 
 impl PiiSpanDetector for RegexPiiDetector {
@@ -494,6 +530,7 @@ impl PiiSpanDetector for RegexPiiDetector {
 /// What kind of parse residual a sentence (or span) carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// What kind of parse residual a sentence (or span) carries.
 pub enum ResidualKind {
     /// A sentence whose parse was uncertain below the confidence floor.
     Disambiguation,
@@ -510,6 +547,8 @@ pub enum ResidualKind {
 /// A deterministic parse residual: the sentence/span the deterministic layer
 /// was unsure about, plus byte span and structured context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A deterministic parse residual: the sentence/span the deterministic layer
+/// was unsure about, plus byte span and structured context.
 pub struct Residual {
     pub kind: ResidualKind,
     /// Optional byte span into the source request text.
@@ -536,6 +575,7 @@ impl Residual {
 
 /// The result of running an overlay over a residual.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The result of running an overlay over a residual.
 pub struct OverlayContribution {
     pub kind: ResidualKind,
     /// The overlay's primary score, when the contribution is score-shaped.
@@ -548,6 +588,8 @@ pub struct OverlayContribution {
 /// An overlay failure. The overlay stage treats every error as skip-and-log
 /// (fail-open enrichment, never a gate).
 #[derive(Debug, thiserror::Error)]
+/// An overlay failure. The overlay stage treats every error as skip-and-log
+/// (fail-open enrichment, never a gate).
 pub enum OverlayError {
     #[error("overlay inference failed: {0}")]
     Inference(String),
@@ -568,6 +610,8 @@ pub trait ResidualOverlay: Send + Sync {
 /// A route the disambiguation overlay scores against: its config key and the
 /// description the prompt line is built from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A route the disambiguation overlay scores against: its config key and the
+/// description the prompt line is built from.
 pub struct RouteLabel {
     pub route: String,
     pub description: String,

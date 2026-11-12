@@ -20,6 +20,12 @@ pub const DEFAULT_LEDGER_MAX_SUMMARY_TOKENS: u32 = 200;
 /// ledger at boot - so existing deployments are untouched until they opt in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// Ledger composition section - the `ledger` block of `RouterConfig`.
+/// 
+/// `Some` opts the composition root (`main.rs`) into opening a
+/// `ContentNodeStore` and attaching a `Summarizer` backend targeting the
+/// named `ledger` instance. `None` (absent) keeps today's behavior - no
+/// ledger at boot - so existing deployments are untouched until they opt in.
 pub struct LedgerConfig {
     /// Durable store path. `None` falls back to an in-memory ledger with a
     /// `warn!` (ephemeral, still functional for LOD derivation).

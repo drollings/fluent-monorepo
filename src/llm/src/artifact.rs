@@ -21,6 +21,7 @@ use crate::artifact_lock::{acquire_artifact_cache_lock, LockError, LockOptions};
 
 /// Where an artifact snapshot may come from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Where an artifact snapshot may come from.
 pub enum SourceKind {
     HuggingFace,
     ModelScope,
@@ -44,6 +45,7 @@ pub type FallbackHook<'a> = &'a (dyn Fn(&str) + Send + Sync);
 
 /// One download source: mirror coordinates plus the local cache layout.
 #[derive(Debug, Clone)]
+/// One download source: mirror coordinates plus the local cache layout.
 pub struct ModelArtifactSource {
     pub kind: SourceKind,
     pub repo: String,
@@ -55,6 +57,7 @@ pub struct ModelArtifactSource {
 
 /// One pinned file inside a snapshot.
 #[derive(Debug, Clone)]
+/// One pinned file inside a snapshot.
 pub struct ModelArtifact {
     pub path: String,
     pub size: u64,
@@ -63,6 +66,7 @@ pub struct ModelArtifact {
 
 /// Per-artifact download progress event.
 #[derive(Debug, Clone)]
+/// Per-artifact download progress event.
 pub struct ModelArtifactDownloadProgress {
     pub model: String,
     pub source: SourceKind,
@@ -73,6 +77,7 @@ pub struct ModelArtifactDownloadProgress {
 
 /// A resolved, integrity-checked local snapshot.
 #[derive(Debug, Clone)]
+/// A resolved, integrity-checked local snapshot.
 pub struct ResolvedModelArtifacts {
     pub source: ModelArtifactSource,
     pub directory: String,
@@ -83,6 +88,8 @@ pub struct ResolvedModelArtifacts {
 /// Download failure taxonomy. Only `fallback_allowed` kinds try the next
 /// mirror; anything else surfaces immediately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Download failure taxonomy. Only `fallback_allowed` kinds try the next
+/// mirror; anything else surfaces immediately.
 pub enum FailureKind {
     Http,
     Network,
@@ -96,6 +103,7 @@ pub enum FailureKind {
 
 /// A single-source download failure.
 #[derive(Debug, Clone)]
+/// A single-source download failure.
 pub struct ArtifactDownloadError {
     pub message: String,
     pub kind: FailureKind,
@@ -135,6 +143,8 @@ impl std::error::Error for ArtifactDownloadError {}
 /// Resolution outcome: either one source's failure, or both sources'
 /// failures preserved together.
 #[derive(Debug)]
+/// Resolution outcome: either one source's failure, or both sources'
+/// failures preserved together.
 pub enum ArtifactError {
     Download(ArtifactDownloadError),
     Resolution {
@@ -176,6 +186,7 @@ pub struct ArtifactFetchResponse {
 
 /// Fetch-level failures (mapped to [`FailureKind`] by the downloader).
 #[derive(Debug)]
+/// Fetch-level failures (mapped to [`FailureKind`] by the downloader).
 pub enum ArtifactFetchError {
     Network(String),
     Cancelled,
@@ -183,12 +194,14 @@ pub enum ArtifactFetchError {
 
 /// Streaming response body: each call yields the next chunk.
 #[async_trait]
+/// Streaming response body: each call yields the next chunk.
 pub trait ArtifactBody: Send {
     async fn next_chunk(&mut self) -> Option<Result<Vec<u8>, ArtifactFetchError>>;
 }
 
 /// Injectable HTTP boundary for artifact downloads.
 #[async_trait]
+/// Injectable HTTP boundary for artifact downloads.
 pub trait ArtifactFetcher: Send + Sync {
     async fn fetch(&self, url: &str) -> Result<ArtifactFetchResponse, ArtifactFetchError>;
 }
@@ -264,6 +277,11 @@ impl ArtifactFetcher for ReqwestArtifactFetcher {
 /// Network deadlines. The read-idle deadline resets after every chunk;
 /// there is deliberately no total deadline.
 #[derive(Debug, Clone, Copy)]
+/// ---------------------------------------------------------------------------
+/// Options.
+/// ---------------------------------------------------------------------------
+/// Network deadlines. The read-idle deadline resets after every chunk;
+/// there is deliberately no total deadline.
 pub struct ArtifactTimeouts {
     pub response_header_ms: u64,
     pub read_idle_ms: u64,
@@ -425,6 +443,10 @@ fn final_error(
 
 /// Canonical download URL for one artifact from one mirror.
 #[must_use]
+/// ---------------------------------------------------------------------------
+/// URLs.
+/// ---------------------------------------------------------------------------
+/// Canonical download URL for one artifact from one mirror.
 pub fn model_artifact_url(source: &ModelArtifactSource, artifact_path: &str) -> String {
     let base = match source.kind {
         SourceKind::HuggingFace => "https://huggingface.co",
@@ -466,6 +488,9 @@ fn percent_encode_segment(segment: &str) -> String {
 // Validation (before any filesystem or network access).
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Validation (before any filesystem or network access).
+/// ---------------------------------------------------------------------------
 fn normalize_options<'a>(
     options: &ResolveArtifactsOptions<'a>,
 ) -> Result<NormalizedOptions<'a>, ArtifactError> {
@@ -635,6 +660,9 @@ fn invalid_input(message: impl Into<String>) -> ArtifactError {
 // Manifests, markers, fingerprints.
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Manifests, markers, fingerprints.
+/// ---------------------------------------------------------------------------
 struct SourceManifest {
     fingerprint: String,
     marker_path: PathBuf,
@@ -677,6 +705,9 @@ fn create_source_manifest(
 /// (repo, revision, artifact bytes, layout) changes the fingerprint, so
 /// stale caches never validate against a new recipe.
 #[must_use]
+/// Fingerprint identifying one model snapshot recipe. Changing any pin
+/// (repo, revision, artifact bytes, layout) changes the fingerprint, so
+/// stale caches never validate against a new recipe.
 pub fn snapshot_fingerprint(
     model: &str,
     source: &ModelArtifactSource,
@@ -713,6 +744,7 @@ pub fn snapshot_fingerprint(
 
 /// Completion-marker path for one snapshot recipe.
 #[must_use]
+/// Completion-marker path for one snapshot recipe.
 pub fn snapshot_marker_path(source: &ModelArtifactSource, fingerprint: &str) -> PathBuf {
     source
         .cache_directory
@@ -721,6 +753,7 @@ pub fn snapshot_marker_path(source: &ModelArtifactSource, fingerprint: &str) -> 
 
 /// Lock path serializing writers of one snapshot recipe.
 #[must_use]
+/// Lock path serializing writers of one snapshot recipe.
 pub fn snapshot_lock_path(source: &ModelArtifactSource, fingerprint: &str) -> PathBuf {
     source
         .cache_directory
@@ -754,6 +787,9 @@ fn resolved_result(
 // Cache validation.
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Cache validation.
+/// ---------------------------------------------------------------------------
 fn validate_snapshot(
     model: &str,
     source: &ModelArtifactSource,
@@ -872,6 +908,15 @@ fn has_valid_complete_marker(
 /// stamp that did not is not evidence of change *or* of its absence, so
 /// validation falls back to the pinned content hash.
 #[derive(Debug, Clone, Copy)]
+/// The change signal recorded for one cached artifact.
+/// 
+/// Nanosecond resolution is load-bearing. A millisecond stamp cannot tell a
+/// same-size in-place rewrite from no rewrite at all, so an artifact mutated
+/// inside the same millisecond as the recorded stamp still matched its marker
+/// and the cache trusted mutated bytes. `resolved` records whether the
+/// filesystem actually reported a sub-millisecond remainder for this file; a
+/// stamp that did not is not evidence of change *or* of its absence, so
+/// validation falls back to the pinned content hash.
 struct MarkerStamp {
     mtime_ns: u64,
     ctime_ns: u64,
@@ -956,6 +1001,9 @@ fn validate_artifact(
 // Download.
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Download.
+/// ---------------------------------------------------------------------------
 async fn download_source_snapshot(
     options: &NormalizedOptions<'_>,
     source: &ModelArtifactSource,
@@ -1339,6 +1387,8 @@ async fn with_read_idle_deadline(
 // The only await inside is `cfg(windows)`-gated (`replace_on_windows`); on
 // other platforms clippy correctly sees no await, hence the allow.
 #[allow(clippy::unused_async)]
+/// The only await inside is `cfg(windows)`-gated (`replace_on_windows`); on
+/// other platforms clippy correctly sees no await, hence the allow.
 async fn install_downloaded_artifact(
     model: &str,
     source: &ModelArtifactSource,
@@ -1509,6 +1559,9 @@ async fn replace_on_windows(
 // Completion markers.
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Completion markers.
+/// ---------------------------------------------------------------------------
 fn write_complete_marker(
     source: &ModelArtifactSource,
     manifest: &SourceManifest,
@@ -1585,6 +1638,9 @@ fn write_complete_marker_best_effort(
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
+/// ---------------------------------------------------------------------------
+/// File identity + local paths.
+/// ---------------------------------------------------------------------------
 struct FileIdentity {
     device: u64,
     inode: u64,
@@ -1725,6 +1781,9 @@ fn now_ms() -> u64 {
 // Callbacks (panics become local `callback` failures, never fallback).
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Callbacks (panics become local `callback` failures, never fallback).
+/// ---------------------------------------------------------------------------
 fn invoke_download_plan_callback(
     options: &NormalizedOptions<'_>,
     missing: &[ModelArtifact],
@@ -1819,6 +1878,10 @@ impl From<ArtifactDownloadError> for ArtifactError {
 
 /// Model-level progress events surfaced to embedding callers.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// ---------------------------------------------------------------------------
+/// Aggregated progress reporter (one `downloading` event per report).
+/// ---------------------------------------------------------------------------
+/// Model-level progress events surfaced to embedding callers.
 pub enum EmbeddingProgress {
     Preparing {
         model: String,

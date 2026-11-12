@@ -3,7 +3,7 @@
     "speed.explain_p50_us": 12600.0,
     "speed.explain_p99_us": 12700.0
   },
-  "date": "2026-11-09",
+  "date": "2026-11-10",
   "history": [
     {
       "bounds": {},
@@ -106,11 +106,87 @@
         "speed.explain_p50_us": 650.0,
         "speed.explain_p99_us": 650.0
       }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "decision.calls_avoided": [
+          null,
+          1.0
+        ],
+        "loop.reprocessed_clean": [
+          null,
+          0.0
+        ],
+        "speed.explain_p50_us": [
+          6294.9529999999995,
+          6351.818
+        ],
+        "speed.explain_p99_us": [
+          6560.359,
+          6452.157
+        ]
+      },
+      "date": "2026-11-10",
+      "reason": "M7: pin loop.reprocessed_clean (=0, lower-is-better) and decision.calls_avoided (=1.0 share, higher-is-better) fast-tier ratchets",
+      "tolerances": {
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "breaker.trip_signal": [
+          null,
+          1.0
+        ],
+        "decision.triage_precision": [
+          null,
+          0.6904761904761906
+        ],
+        "decision.triage_recall": [
+          null,
+          0.6388888888888888
+        ],
+        "journal.revert_rate": [
+          null,
+          0.25
+        ],
+        "loop.passes_to_fixpoint": [
+          null,
+          3.0
+        ],
+        "speed.explain_p50_us": [
+          6351.818,
+          6158.32
+        ],
+        "speed.explain_p99_us": [
+          6452.157,
+          6249.9
+        ]
+      },
+      "date": "2026-11-10",
+      "reason": "W7: pin journal.revert_rate, decision.triage_precision/recall, loop.passes_to_fixpoint, breaker.trip_signal outcome ratchets",
+      "tolerances": {
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
     }
   ],
   "metrics": {
+    "breaker.trip_signal": 1.0,
+    "decision.calls_avoided": 1.0,
     "decision.rung_ok": 1.0,
     "decision.shadow_ok": 1.0,
+    "decision.triage_precision": 0.6904761904761906,
+    "decision.triage_recall": 0.6388888888888888,
     "fixpoint.clean_skip": 1.0,
     "fixpoint.comment_write_skips": 1.0,
     "graph.call_precision": 1.0,
@@ -118,7 +194,10 @@
     "graph.import_precision": 1.0,
     "graph.import_recall": 1.0,
     "graph.no_caller_ok": 1.0,
+    "journal.revert_rate": 0.25,
     "lane.defer_ok": 1.0,
+    "loop.passes_to_fixpoint": 3.0,
+    "loop.reprocessed_clean": 0.0,
     "mutation.clock_correct": 1.0,
     "nav.citation_valid": 1.0,
     "nav.gap_correct.heldout": 1.0,
@@ -127,10 +206,10 @@
     "nav.mrr.tune": 0.875,
     "nav.recall_at_3.heldout": 1.0,
     "nav.recall_at_3.tune": 1.0,
-    "speed.explain_p50_us": 6294.9529999999995,
-    "speed.explain_p99_us": 6560.359
+    "speed.explain_p50_us": 6158.32,
+    "speed.explain_p99_us": 6249.9
   },
-  "reason": "initial reasoned capture (M11): stable values ratchet strict, timing 10pct tolerance with 2x ceilings, bootstrap pending long-run calibration",
+  "reason": "W7: pin journal.revert_rate, decision.triage_precision/recall, loop.passes_to_fixpoint, breaker.trip_signal outcome ratchets",
   "tolerance_source": "repeat-run variance (3 fast-tier runs, max spread <1%); deterministic metrics tol 0, timing 10% of value, ceilings 2x value; bootstrap pending long-run calibration",
   "tolerances": {
     "speed.explain_p50_us": 650.0,

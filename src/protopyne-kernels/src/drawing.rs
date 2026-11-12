@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// What a drawing marks on the chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// What a drawing marks on the chart.
 pub enum DrawingKind {
     /// Text anchored at a bar and price.
     Label,
@@ -18,6 +19,7 @@ pub enum DrawingKind {
 /// One chart annotation emitted during evaluation.
 #[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// One chart annotation emitted during evaluation.
 pub struct Drawing {
     /// Label or line.
     pub kind: DrawingKind,

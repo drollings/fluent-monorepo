@@ -19,6 +19,7 @@ use crate::search_types::FileKind;
 
 /// Selection roots + filters for one index pass.
 #[derive(Debug, Clone)]
+/// Selection roots + filters for one index pass.
 pub struct FileSelection {
     /// Workspace roots (files or directories).
     pub roots: Vec<PathBuf>,
@@ -36,6 +37,7 @@ pub struct FileSelection {
 
 /// A discovered file with its kind tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A discovered file with its kind tag.
 pub struct SelectedFile {
     /// Absolute path.
     pub path: PathBuf,
@@ -55,6 +57,7 @@ pub struct SelectedFile {
 
 /// Discovery counters (zvec `FileScanDiagnostics` equivalent).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Discovery counters (zvec `FileScanDiagnostics` equivalent).
 pub struct ScanDiagnostics {
     /// Files accepted into the selection.
     pub scanned: usize,
@@ -76,6 +79,7 @@ pub struct ScanDiagnostics {
 
 /// Selection failure (missing / overlapping roots).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Selection failure (missing / overlapping roots).
 pub enum SelectionError {
     /// A root does not exist.
     #[error("selection root does not exist: {0}")]
@@ -90,6 +94,10 @@ pub enum SelectionError {
 /// Format tables are canonical in `fluent_types::file_kind` — called directly
 /// (no local wrappers) so the two maps cannot drift.
 #[must_use]
+/// Classify a path into `(kind, format)` (port of `detectFileType`).
+/// Binary extensions return `None`; unknown extensions fall back to text.
+/// Format tables are canonical in `fluent_types::file_kind` — called directly
+/// (no local wrappers) so the two maps cannot drift.
 pub fn detect_file_type(path: &Path) -> Option<(FileKind, String)> {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if let Some((kind, format)) = fluent_types::file_kind::named_file_kind(name) {
@@ -205,7 +213,13 @@ fn select_single_file(
     let entry = WalkEntry {
         path: path.to_path_buf(),
         size_bytes: meta.len(),
-        modified_ms: 0,
+        // Real mtime like the walker records: the ingest change gate
+        // compares it, and a zero here would re-ingest every pass.
+        modified_ms: meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_millis() as i64),
     };
     select_walk_entry(selection, root, &entry, diag, out);
 }
@@ -234,6 +248,19 @@ fn select_walk_entry(
         .unwrap_or(&entry.path)
         .to_string_lossy()
         .replace('\\', "/");
+    // A file root scopes the sync to itself: the strip above is empty,
+    // so fall back to the file name — downstream stores and profile
+    // lines expect a name, never "".
+    let relative = if relative.is_empty() {
+        entry
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        relative
+    };
     let display = format!("{}/{}", root.display(), relative);
     // Glob matching runs against the root-relative path (rg-style
     // relative patterns); absolute patterns match the absolute path.

@@ -11,6 +11,7 @@ use thiserror::Error;
 
 /// Glob / file-type selection failure.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+/// Glob / file-type selection failure.
 pub enum GlobError {
     /// Unknown ripgrep file-type name.
     #[error("unknown ripgrep file type: {0}")]
@@ -19,6 +20,7 @@ pub enum GlobError {
 
 /// Include/exclude glob sets in ripgrep type-map form.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Include/exclude glob sets in ripgrep type-map form.
 pub struct FileTypePatterns {
     /// Inclusion globs.
     pub include: Vec<String>,
@@ -33,6 +35,12 @@ pub struct FileTypePatterns {
 /// segments intentionally survive (pattern syntax, not a path — pinned by
 /// `m1_glob_normalizer_matrix`).
 #[must_use]
+/// Normalize a path pattern: backslashes and runs collapse to one `/`,
+/// leading `./` segments strip (absolute patterns pass through).
+/// Source: `normalizePathPattern`. Composes the canonical
+/// `common_core::path::collapse_separators` for the separator step; dot
+/// segments intentionally survive (pattern syntax, not a path — pinned by
+/// `m1_glob_normalizer_matrix`).
 pub fn normalize_path_pattern(pattern: &str) -> String {
     let mut normalized = common_core::path::collapse_separators(pattern.trim());
     if is_absolute_path_pattern(&normalized) {
@@ -47,6 +55,8 @@ pub fn normalize_path_pattern(pattern: &str) -> String {
 /// Normalize a candidate path for matching (separators only; no dot
 /// handling). Composes `common_core::path::collapse_separators`.
 #[must_use]
+/// Normalize a candidate path for matching (separators only; no dot
+/// handling). Composes `common_core::path::collapse_separators`.
 pub fn normalize_path_for_match(path: &str) -> String {
     common_core::path::collapse_separators(path)
 }
@@ -56,6 +66,10 @@ pub fn normalize_path_for_match(path: &str) -> String {
 /// backslash drives (`C:\x`) and non-alpha drives (`1:/x`) — glob-pattern
 /// semantics pinned by `m1_glob_absolute_detection_matrix`.
 #[must_use]
+/// Absolute patterns (`/…` or `X:/…`) match from the root. Stays local by
+/// design: unlike `common_core::path::is_absolute_lexical` it rejects
+/// backslash drives (`C:\x`) and non-alpha drives (`1:/x`) — glob-pattern
+/// semantics pinned by `m1_glob_absolute_detection_matrix`.
 pub fn is_absolute_path_pattern(pattern: &str) -> bool {
     if pattern.starts_with('/') {
         return true;
@@ -66,18 +80,21 @@ pub fn is_absolute_path_pattern(pattern: &str) -> bool {
 
 /// Whether a pattern carries glob metacharacters.
 #[must_use]
+/// Whether a pattern carries glob metacharacters.
 pub fn has_path_glob(pattern: &str) -> bool {
     pattern.contains(['*', '?', '['])
 }
 
 /// ripgrep-style glob match (case-sensitive).
 #[must_use]
+/// ripgrep-style glob match (case-sensitive).
 pub fn ripgrep_glob_matches(pattern: &str, path: &str) -> bool {
     ripgrep_glob_matches_with_case(pattern, path, false)
 }
 
 /// ripgrep-style glob match (case-insensitive).
 #[must_use]
+/// ripgrep-style glob match (case-insensitive).
 pub fn ripgrep_glob_matches_case_insensitive(pattern: &str, path: &str) -> bool {
     ripgrep_glob_matches_with_case(pattern, path, true)
 }
@@ -234,12 +251,15 @@ fn escape_regex_char(char: char) -> String {
 /// Exact-or-prefix path match, or glob match when the pattern carries
 /// metacharacters. Source: `pathPatternMatches`.
 #[must_use]
+/// Exact-or-prefix path match, or glob match when the pattern carries
+/// metacharacters. Source: `pathPatternMatches`.
 pub fn path_pattern_matches(pattern: &str, path: &str) -> bool {
     path_pattern_matches_with_case(pattern, path, false)
 }
 
 /// Case-insensitive `path_pattern_matches`.
 #[must_use]
+/// Case-insensitive `path_pattern_matches`.
 pub fn path_pattern_matches_case_insensitive(pattern: &str, path: &str) -> bool {
     path_pattern_matches_with_case(pattern, path, true)
 }
@@ -267,6 +287,9 @@ fn path_pattern_matches_with_case(pattern: &str, path: &str, case_insensitive: b
 /// negates. With no positive rule, everything starts included.
 /// Source: `matchesOrderedGlobs`.
 #[must_use]
+/// Ordered glob walk: later rules override earlier ones; a leading `!`
+/// negates. With no positive rule, everything starts included.
+/// Source: `matchesOrderedGlobs`.
 pub fn matches_ordered_globs(path: &str, globs: &[String], insensitive_globs: &[String]) -> bool {
     let clean = |patterns: &[String]| -> Vec<String> {
         patterns
@@ -386,6 +409,7 @@ fn type_globs(canonical: &str) -> Option<&'static [&'static str]> {
 
 /// Combined glob + type selection. Source: `matchesFileSelection`.
 #[must_use]
+/// Combined glob + type selection. Source: `matchesFileSelection`.
 pub fn matches_file_selection(
     path: &str,
     globs: &[String],

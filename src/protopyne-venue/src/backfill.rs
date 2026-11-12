@@ -32,6 +32,7 @@ pub const BACKFILL_ASSET: &str = "bars.backfilled";
 
 /// Outcome of one resync pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Outcome of one resync pass.
 pub struct BackfillReport {
     /// Whether the series is contiguous again.
     pub complete: bool,
@@ -53,6 +54,8 @@ pub trait BackfillSource: Send + Sync {
 /// Entry gate driven by backfill: a hole suspends entries while exits stay
 /// permitted (managing existing positions never stops).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Entry gate driven by backfill: a hole suspends entries while exits stay
+/// permitted (managing existing positions never stops).
 pub struct BackfillGate {
     suspended: bool,
     /// Whether the gate has answered at least once. The gate itself stays
@@ -145,6 +148,10 @@ impl BackfillGate {
 /// transition is synchronous), so a recovering mutex is the honest
 /// primitive, never a wedged gate.
 #[derive(Debug, Clone, Default)]
+/// Shared handle to the backfill entry gate: the sensor observes into it,
+/// the submission path reads it. Locking never crosses an await (every
+/// transition is synchronous), so a recovering mutex is the honest
+/// primitive, never a wedged gate.
 pub struct BackfillHandle {
     inner: Arc<Mutex<BackfillGate>>,
 }
@@ -209,6 +216,11 @@ impl BackfillHandle {
 /// idempotent while guaranteeing post-resync evaluation keeps its headroom
 /// even past a trimmed tail.
 #[must_use]
+/// The missing closed-bar range for one gap, widened by the indicator
+/// warmup headroom. Fetching headroom the window already holds is harmless:
+/// [`splice`] skips bars at or behind the tip, so the widened fetch stays
+/// idempotent while guaranteeing post-resync evaluation keeps its headroom
+/// even past a trimmed tail.
 pub fn missing_range(gap: &BarGap, timeframe: Timeframe, warmup: usize) -> AdjustedBounds {
     adjust_fetch_bounds(
         Some(gap.expected_ts.timestamp_millis()),
@@ -265,6 +277,9 @@ pub fn fetch_through(
 /// bars waiting for their hole to close. One lock covers both, so a note
 /// and a resync never interleave halfway through a splice.
 #[derive(Debug)]
+/// The resync sensor's mutable state: the evaluated series plus reconnect
+/// bars waiting for their hole to close. One lock covers both, so a note
+/// and a resync never interleave halfway through a splice.
 struct ResyncState {
     ctx: SeriesContext,
     stash: Vec<Bar>,

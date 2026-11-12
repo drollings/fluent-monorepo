@@ -140,6 +140,15 @@ fn approved_for(intent: &OrderIntent) -> Result<protopyne_strategy::RiskApproved
 /// stream half of the storm drives [`SupervisedStream`] directly, and the
 /// reconcile half observes a scripted drift.
 #[must_use]
+/// The deterministic fault schedule every soak run executes, in order.
+/// 
+/// Three fault episodes behind the existing [`Fault`] queue, one per
+/// submitted intent: a dropped connection the protocol retries into a fill,
+/// four 5xx answers that exhaust the retry budget into a deterministic
+/// refusal recording nothing, and a lost acknowledgement whose banked order
+/// resolves by query-by-ID with no second order. No second injector: the
+/// stream half of the storm drives [`SupervisedStream`] directly, and the
+/// reconcile half observes a scripted drift.
 pub fn fault_schedule() -> Vec<Fault> {
     vec![
         Fault::DropConnection,
@@ -220,6 +229,7 @@ impl ReconcileSource for Agreed {
 /// What one soak run proved, as numbers the pass criteria assert directly.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
+/// What one soak run proved, as numbers the pass criteria assert directly.
 pub struct SoakOutcome {
     /// Intent rows the journal holds at the end of the run.
     pub intents_journaled: usize,

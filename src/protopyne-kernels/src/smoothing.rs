@@ -26,6 +26,7 @@ pub const DEFAULT_PARAM2: f64 = 6.0;
 
 /// Which smoothing family an arm selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Which smoothing family an arm selects.
 pub enum SmoothingFamily {
     /// Pass-through: the data itself.
     Na,
@@ -396,6 +397,7 @@ impl fluent_wvr::Describable for SmoothingFamily {
 
 /// One parameter slot in `factorySmoothing` order.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One parameter slot in `factorySmoothing` order.
 pub enum ParamSpec {
     /// Window length, every arm validates it positive.
     Length,
@@ -459,6 +461,8 @@ impl ParamSpec {
 /// Pine-mirrored smoothing arguments: `factorySmoothing(data, smoothing,
 /// length, n1 = 0.85, param2 = 6)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Pine-mirrored smoothing arguments: `factorySmoothing(data, smoothing,
+/// length, n1 = 0.85, param2 = 6)`.
 pub struct SmoothingArgs {
     /// Window length (validated positive by every arm, like the Pine gate).
     pub length: i64,
@@ -541,6 +545,8 @@ impl fluent_wvr::Describable for SmoothingCatalog {
 /// One smoothing row for catalog-backed pickers: the catalog id plus the
 /// UI-relevant payload, so pickers list the catalog without re-spelling it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One smoothing row for catalog-backed pickers: the catalog id plus the
+/// UI-relevant payload, so pickers list the catalog without re-spelling it.
 pub struct SmoothingOption {
     /// Canonical catalog id (the config value).
     pub id: String,
@@ -556,6 +562,7 @@ pub struct SmoothingOption {
 
 /// Every smoothing family in Pine-dispatch order: the smoothing picker.
 #[must_use]
+/// Every smoothing family in Pine-dispatch order: the smoothing picker.
 pub fn smoothing_options() -> Vec<SmoothingOption> {
     SmoothingFamily::all()
         .iter()
@@ -572,6 +579,9 @@ pub fn smoothing_options() -> Vec<SmoothingOption> {
 /// every family in Pine-dispatch order, including the alpha-driven `eit`
 /// and pass-through `na` that length-only arms refuse.
 #[must_use]
+/// Ids a smoothing picker may hold when an alpha/param1 dial rides along:
+/// every family in Pine-dispatch order, including the alpha-driven `eit`
+/// and pass-through `na` that length-only arms refuse.
 pub fn smoothing_ids() -> Vec<String> {
     SmoothingFamily::all()
         .iter()
@@ -582,6 +592,8 @@ pub fn smoothing_ids() -> Vec<String> {
 /// Ids a length-only arm may hold: exactly what arm validation accepts, so
 /// selector schemas and validators read one list.
 #[must_use]
+/// Ids a length-only arm may hold: exactly what arm validation accepts, so
+/// selector schemas and validators read one list.
 pub fn length_smoothing_ids() -> Vec<String> {
     SmoothingFamily::all()
         .iter()

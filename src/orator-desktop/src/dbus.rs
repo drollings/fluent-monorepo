@@ -26,6 +26,7 @@ pub const SIGNALS: [&str; 5] = [
 
 /// Content signals, off unless the user opts in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Content signals, off unless the user opts in.
 pub struct SignalPolicy {
     /// Whether transcript/reply signals emit.
     pub content_signals: bool,
@@ -53,6 +54,7 @@ impl SignalPolicy {
 
 /// Where an approval answer arrived from.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Where an approval answer arrived from.
 pub enum Caller {
     /// The credentialed socket.
     Socket,
@@ -76,6 +78,8 @@ impl Caller {
 /// Whether `method` is served on the control API. The table is the
 /// wire contract — one set, never two.
 #[must_use]
+/// Whether `method` is served on the control API. The table is the
+/// wire contract — one set, never two.
 pub fn serves(method: &str) -> bool {
     METHOD_NAMES.contains(&method)
 }

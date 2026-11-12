@@ -27,6 +27,8 @@ use protopyne_venue::{CorporateEvent, CorporateEventArgs};
 /// What was run, pinned for replay. Deterministic serialization order makes
 /// reruns byte-identical: the same inputs always produce the same JSON.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// What was run, pinned for replay. Deterministic serialization order makes
+/// reruns byte-identical: the same inputs always produce the same JSON.
 pub struct RunManifest {
     /// Pinned history identifier.
     pub data_version: String,
@@ -64,6 +66,9 @@ pub struct RunManifest {
 /// JSON-stable facts. The origin rides as a string (not the store enum) so
 /// the manifest never couples its serialized form to the store's type.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// How one served span was produced: the planner's [`SpanPlan`] reduced to
+/// JSON-stable facts. The origin rides as a string (not the store enum) so
+/// the manifest never couples its serialized form to the store's type.
 pub struct SpanOriginSummary {
     /// Where the span was served from (`"stored"` today; the string is the
     /// seam a second tier would extend without breaking old manifests).
@@ -153,6 +158,7 @@ impl RunManifest {
 
 /// Count bars whose close is non-positive (skipped by quote synthesis).
 #[must_use]
+/// Count bars whose close is non-positive (skipped by quote synthesis).
 pub fn count_unquotable_bars(bars: &[Bar]) -> u64 {
     bars.iter().filter(|bar| bar.c <= Decimal::ZERO).count() as u64
 }
@@ -165,6 +171,13 @@ pub fn count_unquotable_bars(bars: &[Bar]) -> u64 {
 /// so callers pass bars ascending and identical inputs byte-identify.
 /// A different coverage frames different bytes and digests differently.
 #[must_use]
+/// Canonical bytes for tape data: the exact replayed bars plus the planner
+/// spans that served them, framed with the parameter encoding's
+/// length-prefixed idiom — one framing implementation, reused, never
+/// re-derived. Prices ride as normalized decimal strings (exact, never
+/// float); volumes saturate instead of wrapping; order is the slice order,
+/// so callers pass bars ascending and identical inputs byte-identify.
+/// A different coverage frames different bytes and digests differently.
 pub fn tape_canonical_bytes(bars: &[Bar], provenance: &[SpanPlan]) -> Vec<u8> {
     fn push(bytes: &mut Vec<u8>, value: &PineValue) {
         encode_param_value(bytes, value);
@@ -237,6 +250,10 @@ pub fn tape_canonical_bytes(bars: &[Bar], provenance: &[SpanPlan]) -> Vec<u8> {
 /// Axis: **(correctness)** invariant input, not a tunable. Empty curves draw
 /// down zero.
 #[must_use]
+/// Peak-to-trough drawdown of an equity curve in account-currency units.
+/// 
+/// Axis: **(correctness)** invariant input, not a tunable. Empty curves draw
+/// down zero.
 pub fn max_drawdown(equity: &[Decimal]) -> Decimal {
     let mut peak = Decimal::ZERO;
     let mut worst = Decimal::ZERO;
@@ -259,6 +276,10 @@ pub fn max_drawdown(equity: &[Decimal]) -> Decimal {
 /// Negative-or-zero steps are floored at zero: flat or rising steps are not
 /// losses. Empty or single-point curves report zero.
 #[must_use]
+/// Worst single-step equity decline (tail-loss proxy for the prototype).
+/// 
+/// Negative-or-zero steps are floored at zero: flat or rising steps are not
+/// losses. Empty or single-point curves report zero.
 pub fn worst_step_loss(equity: &[Decimal]) -> Decimal {
     let mut worst = Decimal::ZERO;
     for window in equity.windows(2) {
@@ -279,6 +300,14 @@ pub fn worst_step_loss(equity: &[Decimal]) -> Decimal {
 /// not manufactured. Mid-curve zeros report `-1` (total loss), which is
 /// defined, not missing.
 #[must_use]
+/// Total cumulative return of an equity curve: `last / base - 1` where the
+/// base is the first deployed (nonzero) capital, the summary analog of the
+/// reference skipping nulls to its first print.
+/// 
+/// Returns `None` when no capital was ever deployed (empty, single-point,
+/// or all-zero curves): there is no base to compound from, and a zero is
+/// not manufactured. Mid-curve zeros report `-1` (total loss), which is
+/// defined, not missing.
 pub fn cum_return(equity: &[Decimal]) -> Option<Decimal> {
     if equity.len() < 2 {
         return None;
@@ -293,6 +322,11 @@ pub fn cum_return(equity: &[Decimal]) -> Option<Decimal> {
 /// non-finite: the reference yields `-inf`/`NaN` there, and the report
 /// carries absence instead.
 #[must_use]
+/// Simple rate to log rate: `ln(1 + r)`.
+/// 
+/// Returns `None` when the log is undefined (`1 + r <= 0`) or the input is
+/// non-finite: the reference yields `-inf`/`NaN` there, and the report
+/// carries absence instead.
 pub fn simple_to_log_return(rate: Decimal) -> Option<Decimal> {
     use rust_decimal::prelude::ToPrimitive as _;
     let shifted = rate.to_f64()? + 1.0;
@@ -307,6 +341,10 @@ pub fn simple_to_log_return(rate: Decimal) -> Option<Decimal> {
 /// Returns `None` on non-finite input or overflow (the exponential leaves
 /// `f64` range): honest absence, never an infinite decimal.
 #[must_use]
+/// Log rate to simple rate: `exp(r) - 1`.
+/// 
+/// Returns `None` on non-finite input or overflow (the exponential leaves
+/// `f64` range): honest absence, never an infinite decimal.
 pub fn log_to_simple_return(rate: Decimal) -> Option<Decimal> {
     use rust_decimal::prelude::ToPrimitive as _;
     let simple = rate.to_f64()?.exp() - 1.0;
@@ -318,6 +356,10 @@ pub fn log_to_simple_return(rate: Decimal) -> Option<Decimal> {
 /// Returns `None` when nothing was reserved (no efficiency to report rather
 /// than a misleading zero-over-zero).
 #[must_use]
+/// Capital efficiency proxy: filled notional per unit of reserved notional.
+/// 
+/// Returns `None` when nothing was reserved (no efficiency to report rather
+/// than a misleading zero-over-zero).
 pub fn capital_efficiency(filled_notional: Decimal, reserved_notional: Decimal) -> Option<f64> {
     if reserved_notional <= Decimal::ZERO || filled_notional < Decimal::ZERO {
         return None;
@@ -336,6 +378,11 @@ pub fn capital_efficiency(filled_notional: Decimal, reserved_notional: Decimal) 
 /// need option-chain data the prototype has no feed for, so
 /// `greeks_note` says so explicitly instead of shipping invented curves.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// The honest report for one backtest run.
+/// 
+/// Metrics sit beside the assumptions and limits that qualify them. Greeks
+/// need option-chain data the prototype has no feed for, so
+/// `greeks_note` says so explicitly instead of shipping invented curves.
 pub struct BacktestReport {
     /// What ran (pin for replay).
     pub manifest: RunManifest,
@@ -450,6 +497,9 @@ impl BacktestReport {
 /// Reducing the source to this and rendering it in one place keeps the report
 /// from claiming a "single CSV history" for a store-backed tape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Where a run's bars came from: the one source fact `data_limits` names.
+/// Reducing the source to this and rendering it in one place keeps the report
+/// from claiming a "single CSV history" for a store-backed tape.
 pub enum HistoryKind {
     /// File candidates in fallback order.
     Files,
@@ -500,6 +550,10 @@ pub const ABSENT_CAPABILITIES_WITH_CHAINS: &str =
 /// states what it traded off. `None` when the run held no chain source, in
 /// which case reports read exactly as before.
 #[must_use]
+/// The chain-data line for `data_limits`: the run's chain coverage (quote
+/// count plus stamped range) beside the metrics, so a spread-priced run
+/// states what it traded off. `None` when the run held no chain source, in
+/// which case reports read exactly as before.
 pub fn chain_data_limit_line(quotes: &[ChainQuote]) -> Option<String> {
     if quotes.is_empty() {
         return None;
@@ -528,6 +582,8 @@ pub fn chain_data_limit_line(quotes: &[ChainQuote]) -> Option<String> {
 /// The source line for `data_limits`: the arm, its pinned version, and its
 /// bar count, derived from the source rather than asserted.
 #[must_use]
+/// The source line for `data_limits`: the arm, its pinned version, and its
+/// bar count, derived from the source rather than asserted.
 pub fn history_source_limit(kind: HistoryKind, data_version: &str, bar_count: usize) -> String {
     format!(
         "{} history '{data_version}', {bar_count} bars",
@@ -539,6 +595,9 @@ pub fn history_source_limit(kind: HistoryKind, data_version: &str, bar_count: us
 /// mix. `None` when the run consumed no tape, so untaped reports read exactly
 /// as before.
 #[must_use]
+/// The corporate-action tape line for `data_limits`: the event count and its
+/// mix. `None` when the run consumed no tape, so untaped reports read exactly
+/// as before.
 pub fn corporate_action_limit_line(actions: &[CorporateEventArgs]) -> Option<String> {
     if actions.is_empty() {
         return None;
@@ -565,6 +624,10 @@ pub fn corporate_action_limit_line(actions: &[CorporateEventArgs]) -> Option<Str
 /// `None` when the source is planner-backed — the tape line off the manifest
 /// names that coverage instead.
 #[must_use]
+/// The coverage-omission line: a source with no planner provenance has an
+/// uncertified coverage the report must name, never let read as certified.
+/// `None` when the source is planner-backed — the tape line off the manifest
+/// names that coverage instead.
 pub fn uncertified_coverage_limit(planner_certified: bool) -> Option<String> {
     (!planner_certified).then(|| "no planner provenance: coverage not certified".to_owned())
 }
@@ -576,6 +639,12 @@ pub fn uncertified_coverage_limit(planner_certified: bool) -> Option<String> {
 /// name the same unresolved gaps. `None` when the manifest carries no tape
 /// data, in which case reports read exactly as before.
 #[must_use]
+/// The tape-data line for `data_limits`: the tape's coverage (bar count
+/// plus range) and any span the planner served but could not certify whole.
+/// A partial span is the manifest's honest remainder — the buckets whose
+/// edges the planner flagged — reported here so the tearsheet and the JSON
+/// name the same unresolved gaps. `None` when the manifest carries no tape
+/// data, in which case reports read exactly as before.
 pub fn tape_data_limit_line(manifest: &RunManifest) -> Option<String> {
     let (digest, first, last, count, provenance) = (
         manifest.data_digest.as_ref()?,
@@ -610,6 +679,13 @@ pub fn tape_data_limit_line(manifest: &RunManifest) -> Option<String> {
 /// line verbatim, no chain line. `mark_basis` is the run's own mark basis,
 /// read from the same facts.
 #[must_use]
+/// Assemble a report from run facts. Pure function: same inputs, same
+/// report. `chain_quotes` carries the run's chain source facts (`None` when
+/// the run held none): a chained run names its coverage in `data_limits`,
+/// drops the no-chains clause from the absence line, and says which greeks
+/// absence it has, while a chainless run reads exactly as before — absence
+/// line verbatim, no chain line. `mark_basis` is the run's own mark basis,
+/// read from the same facts.
 pub fn build_report(
     manifest: RunManifest,
     fill_assumptions: Vec<String>,
@@ -694,6 +770,9 @@ pub fn build_report(
 /// realized P&L after fees, the signal side that opened it, and how long it
 /// lived. Returns are P&L over entry notional (`None` on zero notional).
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One closed trade's economics, as the trades analysis sees it: signed
+/// realized P&L after fees, the signal side that opened it, and how long it
+/// lived. Returns are P&L over entry notional (`None` on zero notional).
 pub struct TradePnl {
     /// Signal side that opened the trade.
     pub long: bool,
@@ -723,6 +802,10 @@ impl TradePnl {
 /// yield `None`, never invented. Computed once via [`TradesAnalysis::of`];
 /// reruns over the same closed trades are byte-identical.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Trade-level Strategy Analysis parity set: expectancy, outliers, largest
+/// profit/loss, return moments, and by-side breakdown. Zero denominators
+/// yield `None`, never invented. Computed once via [`TradesAnalysis::of`];
+/// reruns over the same closed trades are byte-identical.
 pub struct TradesAnalysis {
     /// Closed trades counted.
     pub closed_trades: u64,
@@ -875,6 +958,8 @@ impl TradesAnalysis {
 /// Strategy-Analysis tabs the prototype cannot render, each named with the
 /// feed it would need. One constant so the honest absences cannot drift.
 #[must_use]
+/// Strategy-Analysis tabs the prototype cannot render, each named with the
+/// feed it would need. One constant so the honest absences cannot drift.
 pub fn absent_tabs() -> Vec<String> {
     [
         "Performance attribution: no benchmark feed (buy-and-hold only)",
@@ -895,6 +980,11 @@ pub fn absent_tabs() -> Vec<String> {
 /// exact decimal form. The portfolio section appears only when the report
 /// carries an aggregation.
 #[must_use]
+/// Render one human-readable tearsheet from the same structs the JSON report
+/// serializes: every line reads a report field, so text and JSON cannot
+/// disagree. Absent stats print `n/a` (never zero); money prints in its
+/// exact decimal form. The portfolio section appears only when the report
+/// carries an aggregation.
 pub fn render_tearsheet(report: &BacktestReport) -> String {
     fn stat(value: Option<f64>) -> String {
         value.map_or_else(|| "n/a".to_owned(), |number| number.to_string())
@@ -1036,6 +1126,7 @@ fn manifest_bar_count(equity_curve: &[Money], _proposals: u64, _fills: u64) -> u
 
 /// Describe one bar timestamp for manifest ranges.
 #[must_use]
+/// Describe one bar timestamp for manifest ranges.
 pub fn rfc3339(ts: &DateTime<Utc>) -> String {
     ts.to_rfc3339()
 }

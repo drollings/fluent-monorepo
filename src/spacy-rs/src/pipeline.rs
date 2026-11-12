@@ -121,6 +121,10 @@ static SENTENCIZE_PROVIDES: std::sync::LazyLock<[ArcIntern<str>; 1]> =
 /// WasmComponent interior-mutability pattern). Stages never hold request
 /// state; the orchestrator owns the cell.
 #[derive(Default)]
+/// Per-request state shared between the orchestrator and the stages through
+/// the typed `WorkContext.outputs` channel (an `Arc<Mutex<..>>` handoff — the
+/// WasmComponent interior-mutability pattern). Stages never hold request
+/// state; the orchestrator owns the cell.
 pub struct PipelineState {
     /// The tokenized doc (the shared canvas). Seeded by the orchestrator,
     /// mutated by the attach stage.
@@ -157,6 +161,11 @@ const ANNOTATION_JSON_KEY: &str = "annotation_json";
 /// Stage 1 — reads the ladder's raw JSON reply and parses it into typed
 /// annotations. Pure (`predict`); provides the `"annotations"` asset.
 #[derive(Debug, Clone, Default)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// Pipeline stages (each a `Component`/`WorkUnit`)
+/// ─────────────────────────────────────────────────────────────────────────
+/// Stage 1 — reads the ladder's raw JSON reply and parses it into typed
+/// annotations. Pure (`predict`); provides the `"annotations"` asset.
 pub struct AnnotateStage;
 
 impl WorkUnit for AnnotateStage {
@@ -202,6 +211,9 @@ impl_component!(AnnotateStage);
 /// returns `WorkError::Execution`, so the supervisor cancels the attach
 /// dependent (the "reject, never partially apply" contract). Pure.
 #[derive(Debug, Clone)]
+/// Stage 2 — the 7-check gate. Depends on `"annotations"`; on rejection it
+/// returns `WorkError::Execution`, so the supervisor cancels the attach
+/// dependent (the "reject, never partially apply" contract). Pure.
 pub struct ValidateStage {
     validator: Arc<AnnotationValidator>,
 }
@@ -263,6 +275,9 @@ impl_component!(ValidateStage);
 /// into the shared canvas and rebuilds the dependency tree. Depends on
 /// `"validated"`, provides `"annotated_doc"`.
 #[derive(Debug, Clone, Default)]
+/// Stage 3 — the `set_annotations` mutate step: writes the validated records
+/// into the shared canvas and rebuilds the dependency tree. Depends on
+/// `"validated"`, provides `"annotated_doc"`.
 pub struct AttachStage;
 
 impl WorkUnit for AttachStage {
@@ -315,6 +330,13 @@ impl_component!(AttachStage);
 /// resolve stage runs only after frames are available (the DAG is
 /// `annotate → validate → attach → frame → resolve → sentencize`).
 #[derive(Debug, Clone)]
+/// Stage 3.5 — deterministic frame extraction. Reads the attached
+/// doc and the ladder's oracle margins, derives the [`crate::frame::Frame`]s +
+/// ambiguities, and mints provisional-vs-permanent [`crate::frame::FrameKey`]s
+/// into the shared state. PURE over the concept store (boot-only registration
+/// invariant, C2). Depends on `"annotated_doc"`, provides `"framed"` — the
+/// resolve stage runs only after frames are available (the DAG is
+/// `annotate → validate → attach → frame → resolve → sentencize`).
 pub struct FrameStage {
     extractor: crate::frame::FrameExtractor,
 }
@@ -388,6 +410,12 @@ impl_component!(FrameStage);
 /// only shared-state writes are the `TokenRecord` fields this stage owns.
 /// Depends on `"annotated_doc"`, provides `"interlingua_resolved"`.
 #[derive(Debug, Clone)]
+/// Stage 4 — resolve each token's lemma hash into an [`InterlinguaId`] and
+/// stamp per-token confidence. **PURE and read-only** over
+/// the [`ConceptStore`](fluent_concept::ConceptStore) (C2): all
+/// registration happens at boot; corrections happen in the review worker. The
+/// only shared-state writes are the `TokenRecord` fields this stage owns.
+/// Depends on `"annotated_doc"`, provides `"interlingua_resolved"`.
 pub struct ResolveStage {
     resolver: Arc<InterlinguaResolver>,
 }
@@ -451,6 +479,11 @@ impl_component!(ResolveStage);
 /// unless the sentencizer's `overwrite` flag is set (spaCy's
 /// `BACKWARD_OVERWRITE`).
 #[derive(Debug, Clone)]
+/// Stage 4 — the deterministic sentencizer: marks `sent_start` from the
+/// punctuation rules on the attached doc (walkthrough §8.2). Depends on
+/// `"annotated_doc"`, provides `"sents"`. Honors a pre-existing annotation
+/// unless the sentencizer's `overwrite` flag is set (spaCy's
+/// `BACKWARD_OVERWRITE`).
 pub struct SentencizeStage {
     sentencizer: Sentencizer,
 }
@@ -709,6 +742,10 @@ impl StagePipeline {
 
 /// A transport-seam error from an LLM fetch.
 #[derive(Debug, Error)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// The annotation ladder (§10.3): deterministic base → gated model refine
+/// ─────────────────────────────────────────────────────────────────────────
+/// A transport-seam error from an LLM fetch.
 pub enum AnnotateError {
     /// The LLM call itself failed (network, timeout, empty reply).
     #[error("LLM fetch failed: {0}")]
@@ -770,6 +807,11 @@ pub trait AnnotationRung: Send + Sync {
 /// deterministic base. Pure decision data; no I/O.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// ─────────────────────────────────────────────────────────────────────────
+/// Refine policy
+/// ─────────────────────────────────────────────────────────────────────────
+/// Whether (and when) the model refiners are consulted after the
+/// deterministic base. Pure decision data; no I/O.
 pub enum RefineMode {
     /// Never consult models (today's `deterministic_first` = deterministic
     /// only). The base parse is final.
@@ -806,6 +848,11 @@ fn default_unresolved_token_threshold() -> f64 {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(default)]
 #[allow(clippy::struct_excessive_bools)]
+/// The decision policy for when the model refiners run after the
+/// deterministic base parse. Pure data — no I/O, no side effects.
+/// 
+/// Four independent serde-configured toggles; folding them into a bitflags
+/// word would break the config schema for no gain.
 pub struct RefinePolicy {
     /// Whether refiners are off, conditional, or always-on.
     #[serde(default)]
@@ -863,6 +910,7 @@ impl Default for RefinePolicy {
 /// The fine-grained confidence trigger that fired (M5.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The fine-grained confidence trigger that fired (M5.1).
 pub enum ConfidenceReason {
     /// `ParseConfidence.overall < min_overall`.
     Overall,
@@ -875,6 +923,7 @@ pub enum ConfidenceReason {
 /// The fine-grained task-value trigger that fired (M5.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The fine-grained task-value trigger that fired (M5.1).
 pub enum TaskValueReason {
     /// A routing-critical role (predicate, subject, or direct object) is
     /// structurally present but interlingua-unresolved.
@@ -889,6 +938,8 @@ pub enum TaskValueReason {
 /// `should_refine` truth table — the bool is just `reason != NoTrigger`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Why the refine decision fired (M5.1).  The discriminants mirror the
+/// `should_refine` truth table — the bool is just `reason != NoTrigger`.
 pub enum RefineReason {
     /// No trigger — keep the base.
     NoTrigger,
@@ -1072,6 +1123,12 @@ pub fn should_refine(
 /// retained for hermetic tests. `signals` is `&[(RoutingSignal,
 /// InterlinguaSignal)]` in document order.
 #[must_use]
+/// Aggregated variant for a multi-sentence document: `token_ids` fraction is
+/// computed over the whole document (total unresolved / total tokens), and an
+/// unresolved critical role in *any* sentence triggers `UnresolvedCriticalRole`.
+/// The ladder's hot path uses this; the single-sentence `should_refine` is
+/// retained for hermetic tests. `signals` is `&[(RoutingSignal,
+/// InterlinguaSignal)]` in document order.
 pub fn should_refine_aggregated(
     base: &AnnotationResult,
     signals: &[(RoutingSignal, InterlinguaSignal)],
@@ -1087,6 +1144,12 @@ pub fn should_refine_aggregated(
 /// `UnresolvedCriticalRole` check triggers if *any* sentence has a
 /// structurally present but unresolved role.
 #[must_use]
+/// Aggregated `RefineReason` for a multi-sentence document.
+/// 
+/// See [`refine_reason`] for trigger order. The `UnresolvedPropn` threshold
+/// is evaluated **aggregated across the whole document**; the
+/// `UnresolvedCriticalRole` check triggers if *any* sentence has a
+/// structurally present but unresolved role.
 pub fn refine_reason_aggregated(
     base: &AnnotationResult,
     signals: &[(RoutingSignal, InterlinguaSignal)],
@@ -1138,6 +1201,11 @@ fn refine_focus_inner(
 /// included when the **aggregated** `unresolved_fraction` exceeds the
 /// threshold. Single-sentence callers use [`refine_focus`].
 #[must_use]
+/// Aggregated token indices the span-scoped refiner should reconsider for a
+/// multi-sentence document: indices are document-global (0..total_tokens).
+/// Confidence and margin indices are document-global; unresolved tokens are
+/// included when the **aggregated** `unresolved_fraction` exceeds the
+/// threshold. Single-sentence callers use [`refine_focus`].
 pub fn refine_focus_aggregated(
     base: &AnnotationResult,
     signals: &[(RoutingSignal, InterlinguaSignal)],
@@ -1191,6 +1259,14 @@ pub fn refine_focus(
 
 /// Snapshot of per-reason refine trigger counts (M5.4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// Per-reason trigger-rate counters (M5.4) — instance-owned, lightweight
+/// atomics, no alloc, lock-free. Owned by the router's `NlpStage` (A3a);
+/// the pipeline itself is pure and never touches metrics — it returns the
+/// `RefineReason` and the caller records it. `spacy-rs` keeps the types
+/// but no global state.
+/// ─────────────────────────────────────────────────────────────────────────
+/// Snapshot of per-reason refine trigger counts (M5.4).
 pub struct RefineMetricsSnapshot {
     pub no_trigger: u64,
     pub always_policy: u64,
@@ -1221,6 +1297,9 @@ impl RefineMetricsSnapshot {
 /// `NlpStage` owns one `Arc<RefineMetrics>` and records each ladder
 /// decision; `spacy-rs` tests construct a local instance.
 #[derive(Debug, Default)]
+/// Instance-owned, lock-free per-reason counters (A3a). The router's
+/// `NlpStage` owns one `Arc<RefineMetrics>` and records each ladder
+/// decision; `spacy-rs` tests construct a local instance.
 pub struct RefineMetrics {
     no_trigger: std::sync::atomic::AtomicU64,
     always: std::sync::atomic::AtomicU64,
@@ -1414,6 +1493,13 @@ impl AnnotationRefiner for EncoderRefiner {
 /// focus token indices. Implementors send `prompt` to the model and return
 /// the raw corrections-object reply.
 #[derive(Debug, Clone)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// Span-scoped refinement
+/// ─────────────────────────────────────────────────────────────────────────
+/// The payload handed to a span-scoped refine seam: the canonical
+/// [`crate::llm::LlmRefinePrompt`] text, the deterministic orth list, and the
+/// focus token indices. Implementors send `prompt` to the model and return
+/// the raw corrections-object reply.
 pub struct LlmRefineRequest {
     pub prompt: String,
     pub tokens: Vec<String>,
@@ -1448,6 +1534,10 @@ pub type EncoderResidualFetch = Arc<
 /// default) preserves the M1 behavior exactly: refinement stays
 /// full-reannotation through the existing seams.
 #[derive(Clone, Default)]
+/// The model seams available to the refine phase beyond the whole-doc
+/// [`LlmFetchSync`] / [`EncoderFetchSync`] closures. All-`None` (the
+/// default) preserves the M1 behavior exactly: refinement stays
+/// full-reannotation through the existing seams.
 pub struct RefineSeams {
     /// Span-scoped LLM corrections (M2.2) — the `OnUncertain` default LLM
     /// refiner when wired.
@@ -1530,6 +1620,8 @@ impl AnnotationRefiner for LlmRefineRung {
 /// The shared focused-LLM refinement body — the single implementation both
 /// the async [`LlmRefineRung`] and the sync ladder consume (DRY).
 #[allow(dead_code)]
+/// The shared focused-LLM refinement body — the single implementation both
+/// the async [`LlmRefineRung`] and the sync ladder consume (DRY).
 fn refine_llm_scoped(
     doc: &Doc,
     base: &AnnotationResult,
@@ -1678,6 +1770,10 @@ impl AnnotationRefiner for EncoderResidualRung {
 /// (DRY — M2.4: `OnUncertain` prefers the focused variants, `Always` keeps
 /// the full re-annotation adapters, today's behavior).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which seam shape each refine-phase slot runs. The single slot-selection
+/// decision both the async [`refiner_order`] and the sync ladder consume
+/// (DRY — M2.4: `OnUncertain` prefers the focused variants, `Always` keeps
+/// the full re-annotation adapters, today's behavior).
 enum EncoderSlot {
     Off,
     Full,
@@ -1737,6 +1833,7 @@ fn refine_slots<F>(
 
 /// The LLM rung: fetch JSON, parse it, and accept only if it passes the gate.
 #[derive(Clone)]
+/// The LLM rung: fetch JSON, parse it, and accept only if it passes the gate.
 pub struct LlmRung {
     fetch: LlmFetch,
     validator: Arc<AnnotationValidator>,
@@ -1788,6 +1885,18 @@ impl AnnotationRung for LlmRung {
 /// ([`NlpPipeline::process_sync_with_confidence`]), where the router bounds
 /// the call at its own call site.
 #[derive(Clone)]
+/// The trained-encoder rung: the injected encoder
+/// closure maps the doc's orth/idx onto LFM predictions and returns an
+/// [`AnnotationSet`] aligned by construction. Accepted only if it passes the
+/// gate; any failure falls through to the deterministic rungs (never empty).
+/// 
+/// The closure is a blocking CPU call (an ort session run). The async rung
+/// calls it inline — a single ms-scale forward — because the closure itself is
+/// expected to be internally bounded (the router builds it with a swarm-wide
+/// `Limiter` capping concurrent ort runs at 2–4, the red-team thread-budget
+/// rule); the production annotation path is the *sync* ladder
+/// ([`NlpPipeline::process_sync_with_confidence`]), where the router bounds
+/// the call at its own call site.
 pub struct EncoderRung {
     encoder: EncoderFetchSync,
     validator: Arc<AnnotationValidator>,
@@ -1826,6 +1935,9 @@ impl AnnotationRung for EncoderRung {
 /// the ladder never exhausts without an answer (the escalation philosophy:
 /// "a fallback always lands on a model that will answer the request").
 #[derive(Debug, Clone)]
+/// The deterministic rule rung: always produces a valid (if coarse) parse, so
+/// the ladder never exhausts without an answer (the escalation philosophy:
+/// "a fallback always lands on a model that will answer the request").
 pub struct RuleRung {
     rule: Arc<RuleAnnotator>,
 }
@@ -2043,6 +2155,10 @@ impl RuleAnnotator {
 
 /// Errors surfaced by the orchestrator.
 #[derive(Debug, Error)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// The pipeline orchestrator
+/// ─────────────────────────────────────────────────────────────────────────
+/// Errors surfaced by the orchestrator.
 pub enum PipelineError {
     /// The tokenizer failed.
     #[error("tokenization failed: {0}")]
@@ -2073,6 +2189,8 @@ pub enum PipelineError {
 /// A stage-level failure discriminated by the `SupervisedBatch` event
 /// taxonomy (`completed` is not a failure).
 #[derive(Debug, Error)]
+/// A stage-level failure discriminated by the `SupervisedBatch` event
+/// taxonomy (`completed` is not a failure).
 pub enum PipelineStageFailure {
     #[error("stage {0} failed")]
     Failed(String, String),
@@ -2723,6 +2841,17 @@ fn refiner_order(
 ///    validated, non-regressing result is adopted; otherwise the base is
 ///    kept.
 #[allow(clippy::too_many_arguments)]
+/// The two-phase annotation ladder:
+/// 
+/// 1. **Base phase** (deterministic, unconditional): `first_accept_in_order`
+/// over `[ArcEager, Rule]`. Always produces a validated `AnnotationResult`.
+/// 2. **Refine phase** (model, conditional): when `should_refine` (its
+/// frame-completeness view taken via [`parse_view`] over the base), runs
+/// `first_accept_in_order` over the model refiners `[Encoder, Llm]` —
+/// focused variants when the [`RefineSeams`] are wired and the mode is
+/// `OnUncertain`, full re-annotation otherwise. A refiner that returns a
+/// validated, non-regressing result is adopted; otherwise the base is
+/// kept.
 async fn run_ladder_for(
     doc: &Doc,
     eager: &Arc<ArcEagerAnnotator>,
@@ -2840,6 +2969,13 @@ enum SyncRung {
 /// rung-error swallowing (`.ok()` / `Err(_) => None`): sync rungs never
 /// produce `Err`, only `None`.
 #[allow(clippy::too_many_arguments)]
+/// Run one sync refine rung to an optional candidate (M6): the per-rung
+/// bodies of the sync refine walk, extracted so the walk itself is the
+/// shared `first_accept_in_order_sync` combinator rather than a bespoke
+/// loop. Behavior-identical to the historical inline match (only borrow
+/// shapes adjusted for the new signature), including the fail-open
+/// rung-error swallowing (`.ok()` / `Err(_) => None`): sync rungs never
+/// produce `Err`, only `None`.
 fn run_sync_refiner(
     rung: SyncRung,
     doc: &Doc,
@@ -2935,6 +3071,17 @@ fn run_sync_refiner(
 /// the same code the async walk runs. The sync ladder never errors / never
 /// exhausts (the rule rung is infallible).
 #[allow(clippy::too_many_arguments)]
+/// The synchronous two-phase ladder walk:
+/// 
+/// 1. **Base phase**: `first_accept_in_order_sync` over `[ArcEager, Rule]`.
+/// 2. **Refine phase** (conditional): when `should_refine`, tries model
+/// refiners via `first_accept_in_order_sync` with the same adoption gate.
+/// 
+/// Reuses `should_refine` / `refine_slots` / `refine_focus` /
+/// `frame_coverage` / `parse_view` / `refine_llm_scoped` — no duplicated
+/// decision logic; the slot selection and the focused-refinement body are
+/// the same code the async walk runs. The sync ladder never errors / never
+/// exhausts (the rule rung is infallible).
 fn run_ladder_sync(
     doc: &Doc,
     eager: &Arc<ArcEagerAnnotator>,
@@ -3087,6 +3234,12 @@ fn pool_error(e: fluent_concurrency::pool::ResultPoolError<PipelineError>) -> St
 /// for the Coral Router control plane (roadmap §5); **compatibility surface**
 /// with no in-tree consumer until the router integration lands (Milestone 6).
 #[derive(Debug, Clone, Serialize, Deserialize, FieldAccess, Describable, Builder)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// Configuration / reflection surface (scaffold — roadmap §5)
+/// ─────────────────────────────────────────────────────────────────────────
+/// Pipeline configuration. Derives `FieldAccess`/`Describable`/`bon::Builder`
+/// for the Coral Router control plane (roadmap §5); **compatibility surface**
+/// with no in-tree consumer until the router integration lands (Milestone 6).
 pub struct NlpPipelineConfig {
     /// Dependency labels the validator accepts (comma-joined; parses through
     /// `DepLabelSet::FromStr`).

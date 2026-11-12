@@ -362,6 +362,16 @@ pub const AUX_DEP: &str = "aux";
 /// through [`FromStr`]/[`Display`] (comma-joined), so a model's `label_data`
 /// can override the default accepted set (§10.6, roadmap §5).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// A configurable set of dependency labels accepted by the annotation
+/// validator (§10.2 check 2). The default starts from the canonical
+/// [`DepRel`] reference set and adds the Universal-Dependencies labels a
+/// modern `en_core_web_sm` actually emits (`compound`, `case`, `flat`, …),
+/// so a finetuned model is not rejected for using current UD labels while
+/// still failing closed on garbage.
+/// 
+/// The set is serde-able (serialized as the label list) and round-trips
+/// through [`FromStr`]/[`Display`] (comma-joined), so a model's `label_data`
+/// can override the default accepted set (§10.6, roadmap §5).
 pub struct DepLabelSet {
     labels: std::collections::HashSet<String>,
 }

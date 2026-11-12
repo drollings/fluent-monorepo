@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 
 /// Modifier keys in canonical order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Modifier keys in canonical order.
 pub enum Modifier {
     /// Control.
     Ctrl,
@@ -20,6 +21,7 @@ pub enum Modifier {
 
 /// A parsed hotkey chord: modifiers plus one key.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A parsed hotkey chord: modifiers plus one key.
 pub struct Chord {
     /// Active modifiers, canonicalized.
     pub modifiers: BTreeSet<Modifier>,
@@ -31,6 +33,9 @@ pub struct Chord {
 /// insensitive, `-` or `+` separators. Returns `None` on empty keys,
 /// lone modifiers, or unknown modifier names.
 #[must_use]
+/// Parse `Ctrl-Alt-d`-style chords. Modifiers in any order, case
+/// insensitive, `-` or `+` separators. Returns `None` on empty keys,
+/// lone modifiers, or unknown modifier names.
 pub fn parse_chord(text: &str) -> Option<Chord> {
     let mut modifiers = BTreeSet::new();
     let mut key: Option<String> = None;
@@ -137,6 +142,9 @@ impl Chord {
 /// interface is absent (the reliable COSMIC path), the user binds these
 /// commands to keys directly. Always available, never a handshake.
 #[must_use]
+/// Compositor custom-shortcut fallback: when the portal GlobalShortcuts
+/// interface is absent (the reliable COSMIC path), the user binds these
+/// commands to keys directly. Always available, never a handshake.
 pub fn fallback_bindings() -> Vec<(&'static str, &'static str)> {
     vec![
         ("orator chat --ptt", "push-to-talk chat"),

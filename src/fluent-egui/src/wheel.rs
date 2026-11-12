@@ -22,6 +22,28 @@
 
 /// What a wheel gesture over a chart region acts on.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Region-aware wheel routing: where a wheel gesture acts.
+/// 
+/// A chart is not one surface: the candle plot scrolls on the time (x) axis,
+/// each pane's price labels drive that pane's own y zoom, a floating list
+/// (the hot-slot legend) scrolls under the pointer instead of the chart, and
+/// a floating overlay (the slot settings pane while it is open) consumes the
+/// gesture for its own scrolled content. This
+/// module is the single decision that maps a hover point to *what a wheel acts
+/// on*, kept headless (plain `f32` rectangles, no `egui` types) so the routing
+/// is unit-testable without a UI context and the terminal never re-decides it.
+/// 
+/// Routing is disjoint by construction: zones are tested in a fixed priority
+/// (overlay, then list, then each pane's axis strip, then its plot) and the first zone whose
+/// rectangle contains the point wins, so a point on a boundary belongs to
+/// exactly one target. Each target carries a *pane-local* anchor — the pixel
+/// the gesture keeps fixed — so the caller forwards it straight into the
+/// existing [`crate::interaction`] wheel inputs without re-deriving geometry.
+/// 
+/// The module names no indicator, no pane layout, and no domain: it routes
+/// rectangles. Which rectangle is a price axis or a list is the caller's
+/// vocabulary, decided once when it builds the [`WheelZones`].
+/// What a wheel gesture over a chart region acts on.
 pub enum WheelTarget {
     /// Zoom the shared time (x) axis, keeping the bar under the anchor pixel
     /// fixed. `pane` identifies the zone's pane (see [`WheelZones::route`])
@@ -52,6 +74,7 @@ impl WheelTarget {
 
 /// One pane's wheel zones: its data plot and its right-hand price axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One pane's wheel zones: its data plot and its right-hand price axis.
 pub struct PaneZones {
     /// The pane's data area (candles / sub-pane series). A wheel here zooms
     /// the shared time axis.
@@ -70,6 +93,14 @@ pub struct PaneZones {
 /// overlay, then list, then each pane in order, so a floating surface on
 /// top of a pane wins.
 #[derive(Debug, Clone, Default)]
+/// The wheel zones of one chart frame: the price pane, the oscillator pane,
+/// the floating list, and the floating overlay (when a settings pane is
+/// open), resolved into disjoint hit regions.
+/// 
+/// Built once per frame from the pane layout; handed to
+/// [`route`](Self::route) with the pointer to decide the target. Priority is
+/// overlay, then list, then each pane in order, so a floating surface on
+/// top of a pane wins.
 pub struct WheelZones {
     /// Panes in priority order (index 0 is the price pane, index 1 the
     /// oscillator pane, …). The index doubles as the `pane` field of a
@@ -161,6 +192,13 @@ impl WheelZones {
 /// (non-finite or negative) read as zero; a non-finite anchor reads as the
 /// screen origin.
 #[must_use]
+/// Place a floating card of `size` near `anchor` inside `screen`: try the
+/// preferred side first (`below` picks under over above, `after` picks right
+/// over left), flip along an axis whose preferred side would overflow, then
+/// clamp. A card that fits the screen always lands fully inside it; a card
+/// that cannot fit pins its origin to the screen origin. Degenerate sizes
+/// (non-finite or negative) read as zero; a non-finite anchor reads as the
+/// screen origin.
 pub fn flip_within(screen: Rect, size: (f32, f32), anchor: Pos2, below: bool, after: bool) -> Rect {
     let mut width = size.0;
     if !width.is_finite() || width < 0.0 {
@@ -205,6 +243,8 @@ pub fn flip_within(screen: Rect, size: (f32, f32), anchor: Pos2, below: bool, af
 /// Place a context menu for a trigger: below the cursor extending right,
 /// flipping above or left near the screen edges (see [`flip_within`]).
 #[must_use]
+/// Place a context menu for a trigger: below the cursor extending right,
+/// flipping above or left near the screen edges (see [`flip_within`]).
 pub fn menu_anchor(screen: Rect, size: (f32, f32), trigger: Pos2) -> Rect {
     flip_within(screen, size, trigger, true, true)
 }
@@ -213,6 +253,9 @@ pub fn menu_anchor(screen: Rect, size: (f32, f32), trigger: Pos2) -> Rect {
 /// right, dropping below or flipping left near the screen edges (see
 /// [`flip_within`]).
 #[must_use]
+/// Place a crosshair readout for a data point: above the point extending
+/// right, dropping below or flipping left near the screen edges (see
+/// [`flip_within`]).
 pub fn readout_anchor(screen: Rect, size: (f32, f32), point: Pos2) -> Rect {
     flip_within(screen, size, point, false, true)
 }
@@ -221,6 +264,9 @@ pub fn readout_anchor(screen: Rect, size: (f32, f32), point: Pos2) -> Rect {
 /// testable without an `egui` context; callers with an `egui::Rect` convert at
 /// the boundary via [`Rect::new`].
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A minimal 2D rectangle in screen pixels. Headless by design so routing is
+/// testable without an `egui` context; callers with an `egui::Rect` convert at
+/// the boundary via [`Rect::new`].
 pub struct Rect {
     /// Left edge.
     pub min_x: f32,
@@ -269,6 +315,7 @@ impl Rect {
 
 /// A minimal 2D point in screen pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A minimal 2D point in screen pixels.
 pub struct Pos2 {
     /// Horizontal pixel.
     pub x: f32,

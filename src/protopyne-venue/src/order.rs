@@ -20,12 +20,16 @@ use crate::venue::LegExecution;
 /// attempt counter. Attempt 0 is the first try; any retry reuses its own ID
 /// so the journal can tell attempts apart while the venue dedups each one.
 #[must_use]
+/// Deterministic client ID for an order attempt: the proposal id plus the
+/// attempt counter. Attempt 0 is the first try; any retry reuses its own ID
+/// so the journal can tell attempts apart while the venue dedups each one.
 pub fn client_id_for(proposal_id: &str, attempt: u32) -> String {
     format!("{proposal_id}#{attempt}")
 }
 
 /// Which side an order takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Which side an order takes.
 pub enum OrderSide {
     /// Buy at a limit (or better).
     Buy,
@@ -44,6 +48,7 @@ impl fmt::Display for OrderSide {
 
 /// How long a working order stays open.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// How long a working order stays open.
 pub enum TimeInForce {
     /// Cancelled automatically at the session close.
     #[default]
@@ -67,6 +72,7 @@ impl fmt::Display for TimeInForce {
 /// What the trader wants: one limit order described before any venue touch.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// What the trader wants: one limit order described before any venue touch.
 pub struct OrderIntent {
     /// Deterministic client ID (see [`client_id_for`]).
     pub client_id: String,
@@ -114,6 +120,7 @@ impl From<&OrderIntent> for OrderShape {
 
 /// Lifecycle of one order, from journaled intent to terminal state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Lifecycle of one order, from journaled intent to terminal state.
 pub enum OrderStatus {
     /// Journaled, not yet sent.
     Pending,
@@ -165,6 +172,10 @@ impl OrderStatus {
 /// here by construction — [`OrderStatus::to_active`] returns `None` for
 /// them, so matching on this type proves liveness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// The active side of the order typestate: what an order looks like while
+/// the venue may still change it. Terminal states have no representation
+/// here by construction — [`OrderStatus::to_active`] returns `None` for
+/// them, so matching on this type proves liveness.
 pub enum ActiveOrderState {
     /// Sent, acknowledgement outstanding.
     OpenInFlight,
@@ -201,6 +212,7 @@ impl ActiveOrderState {
 /// One executed fill: quantity at one average price plus commission.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// One executed fill: quantity at one average price plus commission.
 pub struct Fill {
     /// Contracts (or shares) filled.
     pub quantity: u32,
@@ -213,6 +225,7 @@ pub struct Fill {
 /// The journaled and venue-side record of one order.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// The journaled and venue-side record of one order.
 pub struct OrderRecord {
     /// The original intent.
     pub intent: OrderIntent,
@@ -263,6 +276,7 @@ impl OrderRecord {
 /// Net position in one underlying/structure pair.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Net position in one underlying/structure pair.
 pub struct Position {
     /// Underlying symbol.
     pub underlying: String,
@@ -303,6 +317,10 @@ impl Position {
 /// position. Cash amount and the affected option contract live on
 /// [`CorporateEventArgs`], so the kind stays a pure discriminant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Explicit corporate-action and expiry kinds. The venue applies them to its
+/// books with journaled outcomes — never silently, and never by deleting a net
+/// position. Cash amount and the affected option contract live on
+/// [`CorporateEventArgs`], so the kind stays a pure discriminant.
 pub enum CorporateEvent {
     /// Listed options at or past expiry close at intrinsic.
     Expiry,
@@ -339,6 +357,10 @@ impl CorporateEvent {
 /// intrinsic per share).
 #[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// One corporate action as a replay input: which instrument, which option
+/// contract when the action is option-specific, when it takes effect, and the
+/// cash amount the venue books (dividend per share, or expiry/assignment
+/// intrinsic per share).
 pub struct CorporateEventArgs {
     /// Underlying symbol the action applies to.
     pub underlying: String,
@@ -360,6 +382,10 @@ pub struct CorporateEventArgs {
 /// (dividend), every contract the action touched, and whether the book now
 /// needs broker reconciliation. Never a string-only outcome.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// What the venue booked for one corporate action: the option legs it closed,
+/// the stock leg it generated (assignment/exercise), cash it credited
+/// (dividend), every contract the action touched, and whether the book now
+/// needs broker reconciliation. Never a string-only outcome.
 pub struct CorporateOutcome {
     /// Human-readable note for the journal row.
     pub note: String,
@@ -385,6 +411,7 @@ pub struct CorporateOutcome {
 
 /// Quantity held as [`Qty`] for strategy-facing math.
 #[must_use]
+/// Quantity held as [`Qty`] for strategy-facing math.
 pub fn qty_of(contracts: u32) -> Qty {
     Qty::new(Decimal::from(contracts))
 }

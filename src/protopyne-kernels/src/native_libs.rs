@@ -37,6 +37,10 @@ use crate::value::{EnumHandle, FieldTable, NativeCall, PineValue, UserInstance};
 /// Versions never participate in identity — the same pair resolves the same
 /// way for every pinned version — matching how the import graph keys modules.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Identity of one natively servable Pine library: publisher and name only.
+/// 
+/// Versions never participate in identity — the same pair resolves the same
+/// way for every pinned version — matching how the import graph keys modules.
 pub struct NativeLibraryId {
     /// Publisher namespace (`showmethegrail`).
     pub publisher: String,
@@ -79,6 +83,11 @@ impl From<&crate::pine::ModuleId> for NativeLibraryId {
 /// Rows for planned libraries are present but disabled, so the table
 /// documents intent while every lookup still refuses and Pine keeps serving.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One row of the native table: which `publisher/name` pair may be served
+/// natively, and whether serving is currently switched on.
+/// 
+/// Rows for planned libraries are present but disabled, so the table
+/// documents intent while every lookup still refuses and Pine keeps serving.
 pub struct NativeLibraryEntry {
     /// Publisher namespace.
     pub publisher: &'static str,
@@ -141,6 +150,12 @@ pub fn find_native(
 /// Returns false for pairs outside the table — those are not version-ignored
 /// native candidates, they are unknown.
 #[must_use]
+/// Prove that versions play no role for `publisher/name`: every pinned
+/// version from 1 to 99 plus an unpinned request resolves identically, and
+/// the pair names a row of the native table.
+/// 
+/// Returns false for pairs outside the table — those are not version-ignored
+/// native candidates, they are unknown.
 pub fn version_is_ignored(publisher: &str, name: &str) -> bool {
     if !NATIVE_LIBRARIES
         .iter()
@@ -154,6 +169,7 @@ pub fn version_is_ignored(publisher: &str, name: &str) -> bool {
 
 /// Which implementation served a library link: the Pine oracle or Rust.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which implementation served a library link: the Pine oracle or Rust.
 pub enum NativeServed {
     /// Served from the shipped Pine source.
     Pine,
@@ -175,6 +191,10 @@ impl fmt::Display for NativeServed {
 /// The requested version and the Pine SHA travel as metadata only; serving
 /// never branches on them.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One audit row for a library link: what was requested against what served.
+/// 
+/// The requested version and the Pine SHA travel as metadata only; serving
+/// never branches on them.
 pub struct NativeAudit {
     /// Requested publisher namespace.
     pub requested_publisher: String,
@@ -325,6 +345,11 @@ pub fn fetch_tick_from_frame(ctx: &MethodCtx) -> crate::bars::NativeFetchTick {
 /// uncached). Frame and store homes with the same name stay distinct keys,
 /// matching the take order that prefers the frame.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Key of one leased object slot: the plain-variable homes a resident ring
+/// may serve. Nested, map-entry, and lexical-receiver takes never lease —
+/// they run the hydrate-every-tick bridge as today (correct, just
+/// uncached). Frame and store homes with the same name stay distinct keys,
+/// matching the take order that prefers the frame.
 pub enum LeaseKey {
     /// Plain frame binding (`self.variables`).
     Variables(String),
@@ -351,6 +376,9 @@ impl LeaseKey {
 /// version it was synced at. A hit serves with zero hydrate; any version
 /// skew re-hydrates instead of guessing.
 #[derive(Debug)]
+/// One cached resident ring: the ring itself, its cursor, and the table
+/// version it was synced at. A hit serves with zero hydrate; any version
+/// skew re-hydrates instead of guessing.
 pub struct LeasedRing {
     /// Resident ring, current through the last served tick.
     pub ring: crate::bars::BarRing,
@@ -371,6 +399,16 @@ pub struct LeasedRing {
 /// asserted: pinning them would turn a telemetry change into a build
 /// break.
 #[derive(Debug, Clone, Copy, Default)]
+/// NOT-A-LADDER: commit-vs-fallback telemetry for the leased `fetch` seam: `commits`
+/// counts resident-ring serves with zero hydrate (the `Commit` signal
+/// carried through to a served call value); `fallbacks` counts every fetch
+/// through the seam that did not commit — lease misses (provider bridge
+/// plus re-hydrate), lease-hit declines (Pine body takes over, entry
+/// dropped), and errors (entry dropped, next tick re-hydrates).
+/// Slot-based takes run the uncached bridge outside the lease and are not
+/// counted. Values are observed (acceptance record, benches), never
+/// asserted: pinning them would turn a telemetry change into a build
+/// break.
 pub struct FetchCounters {
     commits: u64,
     fallbacks: u64,
@@ -632,6 +670,15 @@ pub(crate) fn provider_for(publisher: &str, name: &str) -> Option<&'static dyn N
 /// `find_native` only (pinned all-disabled — serving follows provider
 /// existence under this switch, never a per-library call-site flag).
 #[derive(Debug, Clone)]
+/// Link-time switch for native serving. The single default rule: links
+/// route native where a provider exists (`enabled: true` stays the link
+/// default — Pine stays linked underneath for audit and parity, and
+/// unserved symbols still fall through to Pine); execution follows the
+/// same default through the engine (explicit `enabled: false` keeps
+/// Pine-oracle runs). Construct explicitly with `enabled: false` for
+/// Pine-oracle runs. The row `enabled` flags are lookup intent for
+/// `find_native` only (pinned all-disabled — serving follows provider
+/// existence under this switch, never a per-library call-site flag).
 pub struct NativeOptions {
     /// Whether linked libraries with a native provider serve natively.
     pub enabled: bool,
@@ -653,6 +700,8 @@ impl Default for NativeOptions {
 /// Per-tick legs for a natively served method call, converted once at the
 /// call cursor (same decimal-to-float reading as the kernel batch path).
 #[derive(Debug, Clone, Copy)]
+/// Per-tick legs for a natively served method call, converted once at the
+/// call cursor (same decimal-to-float reading as the kernel batch path).
 pub struct TickLegs {
     /// Bar-so-far open.
     pub open: f64,
@@ -674,6 +723,13 @@ pub struct TickLegs {
 /// their own frames through new provider methods, never by redefining this
 /// one.
 #[derive(Debug, Clone, Copy)]
+/// Call-site frame for a natively served instance method: the bar flags and
+/// legs the Pine body would observe through its builtins, extracted by the
+/// engine before dispatch so providers stay engine-free. Today this is the
+/// Bars tick frame (bar-open time where Pine reads `time`, side-channel
+/// stamp where it reads `timenow`); future providers extend dispatch with
+/// their own frames through new provider methods, never by redefining this
+/// one.
 pub struct MethodCtx {
     /// `barstate.isnew` at the call cursor.
     pub is_new: bool,
@@ -736,6 +792,7 @@ pub struct BarContextServe<'a> {
 
 /// Where one `ALIAS.item` reference resolves: the native table or Pine.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Where one `ALIAS.item` reference resolves: the native table or Pine.
 pub enum NativeResolution {
     /// Served natively: owning library plus the Pine-visible symbol.
     Native {
@@ -846,6 +903,10 @@ impl<'graph> NativeOverlay<'graph> {
 /// (no second hash implementation lives here). Audit identity only (change
 /// detection across links) — never tamper-proofing.
 #[must_use]
+/// Hex digest of kept Pine source for audit rows: FNV-1a over the
+/// byte-identical text via the shared [`common_core::hash::fnv1a64`] helper
+/// (no second hash implementation lives here). Audit identity only (change
+/// detection across links) — never tamper-proofing.
 pub fn pine_sha_of(text: &str) -> String {
     format!("{:016x}", common_core::hash::fnv1a64(text.as_bytes()))
 }

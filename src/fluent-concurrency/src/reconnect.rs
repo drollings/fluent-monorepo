@@ -33,6 +33,7 @@ use crate::feed_worker::{CreditedFeedWorker, FeedConfig};
 
 /// Whether a backfilled series must be contiguous.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Whether a backfilled series must be contiguous.
 pub enum GapPolicy {
     /// Non-contiguous series: accept anything newer, never report a gap.
     #[default]
@@ -43,6 +44,7 @@ pub enum GapPolicy {
 
 /// Configuration for a [`ReconnectWorker`].
 #[derive(Debug, Clone)]
+/// Configuration for a [`ReconnectWorker`].
 pub struct ReconnectConfig {
     /// Feed/credit/concurrency shape of the composed delivery worker.
     pub feed: FeedConfig,
@@ -76,6 +78,7 @@ impl ReconnectConfig {
 
 /// One sequenced payload: the sequence number is the dedupe and gap key.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One sequenced payload: the sequence number is the dedupe and gap key.
 pub struct Sequenced<T> {
     /// Monotone source sequence number.
     pub seq: u64,
@@ -93,6 +96,7 @@ impl<T> Sequenced<T> {
 
 /// Source-side events driving a [`ReconnectWorker`].
 #[derive(Debug)]
+/// Source-side events driving a [`ReconnectWorker`].
 pub enum SourceEvent<T> {
     /// One live item from the subscription.
     Live(Sequenced<T>),
@@ -108,6 +112,7 @@ pub enum SourceEvent<T> {
 
 /// What one [`ReconnectWorker::handle`] call did.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What one [`ReconnectWorker::handle`] call did.
 pub enum HandleReport {
     /// A live item was accepted (`true`) or dropped as a duplicate (`false`).
     Live {
@@ -128,6 +133,7 @@ pub enum HandleReport {
 
 /// Outcome of one backfill enqueue.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Outcome of one backfill enqueue.
 pub struct BackfillReport {
     /// Items enqueued for delivery.
     pub accepted: usize,

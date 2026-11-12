@@ -56,7 +56,10 @@ fn measuring_labels_without_changing_handling() {
     }
     // Measuring emits the pack with labels; handling unchanged.
     let (_pack, manifest) = build_task_pack(&input_with(&attacks[..1]));
-    assert!(manifest.suspicious, "labels record the flag in measuring mode");
+    assert!(
+        manifest.suspicious,
+        "labels record the flag in measuring mode"
+    );
 }
 
 #[test]
@@ -68,7 +71,10 @@ fn enforcing_holds_flagged_packs_for_review() {
     let emitted = build_task_pack_screened(&clean, ScreeningMode::Enforcing);
     assert!(emitted.is_ok(), "clean packs emit under enforcing");
     let measuring = build_task_pack_screened(&flagged, ScreeningMode::Measuring);
-    assert!(measuring.is_ok(), "measuring emits with labels, never holds");
+    assert!(
+        measuring.is_ok(),
+        "measuring emits with labels, never holds"
+    );
 }
 
 #[test]
@@ -109,8 +115,7 @@ fn calibration_bars_precision_recall_no_control_fires() {
             control_fires += 1;
         }
     }
-    let precision =
-        f64::from(true_positives) / f64::from(true_positives + control_fires);
+    let precision = f64::from(true_positives) / f64::from(true_positives + control_fires);
     let recall = f64::from(true_positives) / attacks.len() as f64;
     assert_eq!(control_fires, 0, "single control fire blocks promotion");
     assert!(precision >= 0.9, "precision {precision}");

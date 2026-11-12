@@ -30,6 +30,7 @@ pub const REPORT_SCORE_WINDOW: usize = 600;
 
 /// Which rung of the ladder a score lands on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which rung of the ladder a score lands on.
 pub enum Rung {
     /// Emit at full quantity.
     Full,
@@ -43,6 +44,9 @@ pub enum Rung {
 /// `score >= hold` is [`Rung::Half`], anything lower — or no score — is
 /// [`Rung::Veto`]. Pure over values; a missing score vetoes.
 #[must_use]
+/// Score thresholds only: `score >= entry` is [`Rung::Full`],
+/// `score >= hold` is [`Rung::Half`], anything lower — or no score — is
+/// [`Rung::Veto`]. Pure over values; a missing score vetoes.
 pub fn ladder_rung(score: Option<f64>, entry: f64, hold: f64) -> Rung {
     match score {
         Some(value) if value >= entry => Rung::Full,
@@ -54,6 +58,8 @@ pub fn ladder_rung(score: Option<f64>, entry: f64, hold: f64) -> Rung {
 /// Ranking weight: conviction times activity. Linear in conviction at fixed
 /// activity, so re-sorts track signal strength and nothing else.
 #[must_use]
+/// Ranking weight: conviction times activity. Linear in conviction at fixed
+/// activity, so re-sorts track signal strength and nothing else.
 pub fn utility(conviction: f64, activity_score: f64) -> f64 {
     conviction * activity_score
 }
@@ -62,6 +68,9 @@ pub fn utility(conviction: f64, activity_score: f64) -> f64 {
 /// than the window or carries no variance). Same kernels function and the
 /// same last-finite reading the backtest report uses.
 #[must_use]
+/// Latest finite RSRS score over `bars` (`None` when the history is shorter
+/// than the window or carries no variance). Same kernels function and the
+/// same last-finite reading the backtest report uses.
 pub fn rsrs_score(bars: &[Bar], slope_lookback: usize, score_window: usize) -> Option<f64> {
     // Last-value only: the full series exists for the offline research
     // surface, but every in-tree consumer keeps one score — materializing
@@ -82,6 +91,9 @@ pub fn rsrs_score(bars: &[Bar], slope_lookback: usize, score_window: usize) -> O
 /// RSRS ladder; prices, loss, notional, and expiry come from the caller's
 /// quote and structure math — the generator never invents them.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Caller-supplied economics for one generation attempt. Bars feed the
+/// RSRS ladder; prices, loss, notional, and expiry come from the caller's
+/// quote and structure math — the generator never invents them.
 pub struct GenerateInput<'a> {
     /// Strategy name for attribution.
     pub strategy: &'a str,
@@ -121,6 +133,8 @@ pub struct Generator {
 /// Builder for [`Generator`]: ladder lookbacks and thresholds, defaulting
 /// to the report's lookbacks and a 1.0/0.0 entry/hold ladder.
 #[derive(Default)]
+/// Builder for [`Generator`]: ladder lookbacks and thresholds, defaulting
+/// to the report's lookbacks and a 1.0/0.0 entry/hold ladder.
 pub struct GeneratorBuilder {
     slope_lookback: Option<usize>,
     score_window: Option<usize>,
@@ -261,6 +275,7 @@ impl Generator {
 
 /// One attributed open exposure feeding portfolio derivation.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One attributed open exposure feeding portfolio derivation.
 pub struct Exposure {
     /// Underlying symbol.
     pub underlying: String,
@@ -274,6 +289,11 @@ pub struct Exposure {
 /// portfolio at any step, so a carried portfolio and a fresh derivation
 /// agree by construction.
 #[must_use]
+/// Derive the portfolio for `underlying` from attributed exposures:
+/// deterministic handle and name, sorted unique strategies, no accounts
+/// (the prototype has no account feed). Same exposures derive the same
+/// portfolio at any step, so a carried portfolio and a fresh derivation
+/// agree by construction.
 pub fn portfolio_for(underlying: &str, exposures: &[Exposure]) -> Portfolio {
     let mut strategies: Vec<String> = exposures
         .iter()
@@ -292,6 +312,8 @@ pub fn portfolio_for(underlying: &str, exposures: &[Exposure]) -> Portfolio {
 /// How wide the rebalancer may operate. A reconcile mismatch narrows to
 /// [`RebalanceMode::NoNewTrades`]: entries halt, exits stay open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How wide the rebalancer may operate. A reconcile mismatch narrows to
+/// [`RebalanceMode::NoNewTrades`]: entries halt, exits stay open.
 pub enum RebalanceMode {
     /// Entries and exits both flow.
     Full,
@@ -302,6 +324,8 @@ pub enum RebalanceMode {
 /// One rebalance pass: entries, exits, the mode they ran under, and banked
 /// monitor alerts for out-of-band delivery.
 #[derive(Debug, Clone, PartialEq)]
+/// One rebalance pass: entries, exits, the mode they ran under, and banked
+/// monitor alerts for out-of-band delivery.
 pub struct RebalanceOutcome {
     /// Mode this pass ran under.
     pub mode: RebalanceMode,
@@ -321,6 +345,12 @@ pub struct RebalanceOutcome {
 /// [`RebalanceMode::NoNewTrades`] with entries held, exits open, and one
 /// banked monitor alert naming the portfolio.
 #[must_use]
+/// Split `proposals` into entries and exits under the reconciliation
+/// reading. Callers pass the venue's `ReconcileGate` read as
+/// `reconciliation_healthy` (the same bit that feeds
+/// `RiskState::reconciliation_healthy`); on mismatch the pass narrows to
+/// [`RebalanceMode::NoNewTrades`] with entries held, exits open, and one
+/// banked monitor alert naming the portfolio.
 pub fn rebalance(
     proposals: Vec<Proposal>,
     reconciliation_healthy: bool,

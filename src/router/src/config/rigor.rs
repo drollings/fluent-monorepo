@@ -12,6 +12,12 @@ use super::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 /// `build_plan_route`/`default_adjudicator_backend`). `None` at the
 /// `RouterConfig` level leaves `/v1/rigor` present but unconfigured.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Rigor-route configuration - the `rigor` section of `RouterConfig`.
+/// 
+/// Model keys select entries from `config.models`; backends are built **only**
+/// in `coral-router`'s `build_rigor_route` (DIP, mirroring
+/// `build_plan_route`/`default_adjudicator_backend`). `None` at the
+/// `RouterConfig` level leaves `/v1/rigor` present but unconfigured.
 pub struct RigorConfig {
     /// Model key for the blue-team candidate-answer backend.
     #[serde(default)]

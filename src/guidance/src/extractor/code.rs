@@ -14,12 +14,12 @@ use super::{
     vector_content::chunk_options_for_metadata,
     ChunkOptions, ExtractError, ExtractSource, FragmentMetadata, FragmentRange, PreparedFragment,
 };
-use crate::ast_parser::AstParser;
+use crate::ast_parser::{AstParser, CommentBlock};
 use crate::search_constants::{
     OUTLINE_HEADER_MAX_CHARS, OUTLINE_HEADER_MAX_LINES, OUTLINE_MAX_CALLS, OUTLINE_MAX_LINE_CHARS,
     OUTLINE_MAX_MEMBERS, OUTLINE_WALK_MAX_DEPTH,
 };
-use crate::search_types::{CodeEntityModifier, FileKind};
+use crate::search_types::{CodeEntityModifier, CodeSymbolType, FileKind};
 
 /// Code fragment extractor (one impl; formats dispatch via the adapter
 /// registry, never a match).
@@ -44,30 +44,33 @@ impl CodeExtractor {
         parser: &mut AstParser,
         source: &ExtractSource,
         options: ChunkOptions,
-    ) -> Result<(Vec<PreparedFragment>, HarvestedFile), ExtractError> {
+    ) -> Result<(Vec<PreparedFragment>, HarvestedFile, Vec<CommentBlock>), ExtractError> {
         if source.kind != FileKind::Code {
-            return Ok((Vec::new(), HarvestedFile::default()));
+            return Ok((Vec::new(), HarvestedFile::default(), Vec::new()));
         }
         if super::adapter::COMPONENT_CODE_FORMATS.contains(&source.format.as_str()) {
             let blocks = extract_script_blocks(parser, source, options)?;
             if !blocks.is_empty() {
-                return Ok((blocks, HarvestedFile::default()));
+                return Ok((blocks, HarvestedFile::default(), Vec::new()));
             }
             return Ok((
                 fallback_fragments(source, options)?,
                 HarvestedFile::default(),
+                Vec::new(),
             ));
         }
         let Some(adapter) = resolve_adapter(&source.format) else {
             return Ok((
                 fallback_fragments(source, options)?,
                 HarvestedFile::default(),
+                Vec::new(),
             ));
         };
         if !AstParser::has_grammar(&source.format) {
             return Ok((
                 fallback_fragments(source, options)?,
                 HarvestedFile::default(),
+                Vec::new(),
             ));
         }
         let tree = parser
@@ -78,11 +81,26 @@ impl CodeExtractor {
             node: tree.root_node(),
             source: source_bytes,
         };
+        Self::extract_from_root(adapter, source, root, options)
+    }
+
+    /// Fragment extraction over an already-parsed tree: one parse serves
+    /// fragments, graph inputs, and comment blocks together.
+    pub fn extract_from_root(
+        adapter: &TsAdapter,
+        source: &ExtractSource,
+        root: NodeView<'_>,
+        options: ChunkOptions,
+    ) -> Result<(Vec<PreparedFragment>, HarvestedFile, Vec<CommentBlock>), ExtractError> {
         let mut entities = Vec::new();
         walk_code_node(root, adapter, &[], &mut entities);
         // Imports ride the same tree — an entity-less file (pure
         // re-exports) still contributes its edges on the fallback path.
         let imports = adapter.import_specifiers(root);
+        // Comment scopes ride the same tree — a comment-only file still
+        // contributes its module block even with no entities.
+        let blocks =
+            crate::ast_parser::collect_comment_blocks(&root.node, &source.text, &source.format);
         if entities.is_empty() {
             return Ok((
                 fallback_fragments(source, options)?,
@@ -90,6 +108,7 @@ impl CodeExtractor {
                     symbols: Vec::new(),
                     imports,
                 },
+                blocks,
             ));
         }
         let mut fragments = Vec::new();
@@ -100,6 +119,7 @@ impl CodeExtractor {
             return Ok((
                 fallback_fragments(source, options)?,
                 HarvestedFile::default(),
+                blocks,
             ));
         }
         let harvested = HarvestedFile {
@@ -113,12 +133,13 @@ impl CodeExtractor {
                 .collect(),
             imports,
         };
-        Ok((fragments, harvested))
+        Ok((fragments, harvested, blocks))
     }
 }
 
 /// A harvested code symbol (graph edges; no fragments, no embeddings).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A harvested code symbol (graph edges; no fragments, no embeddings).
 pub struct HarvestedSymbol {
     /// Declared name, if any.
     pub name: Option<String>,
@@ -132,11 +153,52 @@ pub struct HarvestedSymbol {
 /// import specifiers. Reuses the entity walker (same trees, same
 /// adapters) — never a second parser.
 #[derive(Debug, Clone, Default)]
+/// Harvested per-file graph inputs: symbols with call names plus raw
+/// import specifiers. Reuses the entity walker (same trees, same
+/// adapters) — never a second parser.
 pub struct HarvestedFile {
     /// Defined symbols.
     pub symbols: Vec<HarvestedSymbol>,
     /// Raw import specifiers.
     pub imports: Vec<String>,
+}
+
+/// Stable id for the module fragment owning top-of-file comments.
+#[must_use]
+/// Stable id for the module fragment owning top-of-file comments.
+pub fn module_fragment_id(file_id: &str) -> String {
+    format!("{file_id}#$file")
+}
+
+/// Synthetic module fragment carrying the top-of-file comment block, so
+/// file-level commentary stays retrievable with its own fragment id.
+#[must_use]
+/// Synthetic module fragment carrying the top-of-file comment block, so
+/// file-level commentary stays retrievable with its own fragment id.
+pub fn module_fragment_for(file_id: &str, blocks: &[CommentBlock]) -> Option<PreparedFragment> {
+    let block = blocks.iter().find(|block| block.node_key == "$file")?;
+    Some(PreparedFragment {
+        id: module_fragment_id(file_id),
+        content_text: block.text.clone(),
+        embedding_text: None,
+        range: FragmentRange {
+            start_line: block.start_line as usize,
+            end_line: block.end_line as usize,
+            start_offset: block.start_byte,
+            end_offset: block.end_byte,
+        },
+        group: None,
+        metadata: Some(FragmentMetadata::Code {
+            symbol_type: CodeSymbolType::Module,
+            symbol_name: Some("$file".to_string()),
+            scope: None,
+            node_type: "module".to_string(),
+            signature: None,
+            doc: Some(block.text.clone()),
+            modifiers: Vec::new(),
+        }),
+        calls: Vec::new(),
+    })
 }
 
 /// Harvest graph inputs for one code file (P3 `graph_index` consumer).
@@ -184,6 +246,7 @@ fn fallback_fragments(
 
 /// A statement span for window grouping (bytes into the file source).
 #[derive(Debug, Clone)]
+/// A statement span for window grouping (bytes into the file source).
 struct StmtSpan {
     start_byte: usize,
     end_byte: usize,
@@ -370,6 +433,7 @@ fn code_metadata(entity: &OwnedEntity) -> FragmentMetadata {
 
 // -- Outlines ---------------------------------------------------------------
 
+/// -- Outlines ---------------------------------------------------------------
 fn code_entity_outline(entity: &OwnedEntity, max_chars: usize) -> String {
     let header = extract_code_header(&entity.text);
     let mut lines = vec![if header.is_empty() {
@@ -623,6 +687,7 @@ fn normalize_call_name(value: &str) -> Option<String> {
 
 // -- Statement windows --------------------------------------------------------
 
+/// -- Statement windows --------------------------------------------------------
 struct CodeWindow {
     text: String,
     embedding_text: Option<String>,
@@ -919,6 +984,7 @@ fn byte_offset_for_units(line: &str, units: usize) -> usize {
 
 // -- Script blocks -------------------------------------------------------------
 
+/// -- Script blocks -------------------------------------------------------------
 struct ScriptBlock {
     text: String,
     format: String,

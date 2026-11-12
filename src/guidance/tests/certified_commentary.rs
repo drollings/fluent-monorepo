@@ -17,13 +17,22 @@ fn valid_prose_passes() {
 
 #[test]
 fn unknown_symbol_never_lands() {
-    assert_eq!(certified_write(SOURCE, "Calls `qux`.", Some(1), KNOWN, 100), None);
+    assert_eq!(
+        certified_write(SOURCE, "Calls `qux`.", Some(1), KNOWN, 100),
+        None
+    );
 }
 
 #[test]
 fn unresolvable_line_never_lands() {
-    assert_eq!(certified_write(SOURCE, "Calls `foo`.", Some(99), KNOWN, 100), None);
-    assert_eq!(certified_write(SOURCE, "Calls `foo`.", None, KNOWN, 100), None);
+    assert_eq!(
+        certified_write(SOURCE, "Calls `foo`.", Some(99), KNOWN, 100),
+        None
+    );
+    assert_eq!(
+        certified_write(SOURCE, "Calls `foo`.", None, KNOWN, 100),
+        None
+    );
 }
 
 #[test]

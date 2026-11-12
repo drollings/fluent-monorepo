@@ -27,6 +27,7 @@ fn test_component_trait_object() {
 // --- Derive macro tests ---
 
 #[derive(FieldAccess, Describable)]
+/// --- Derive macro tests ---
 struct BasicConfig {
     name: String,
     count: u32,
@@ -359,6 +360,7 @@ fn format_attribute_reaches_field_schema() {
 // --- FieldAccess derive: string sanitization tests ---
 
 #[derive(FieldAccess, Describable)]
+/// --- FieldAccess derive: string sanitization tests ---
 struct SanitizedConfig {
     #[field(max_len = 10)]
     short_name: String,
@@ -633,6 +635,7 @@ fn describable_option_field_not_required() {
 // --- Runtime type identification and typed data tests ---
 
 #[test]
+/// --- Runtime type identification and typed data tests ---
 fn as_any_returns_correct_concrete_type() {
     let comp = TestComponent {
         name: ArcIntern::from("test"),
@@ -791,6 +794,7 @@ fn set_field_on_shared_arc_returns_readonly() {
 
 // --- `impl_fieldless!` macro tests ---
 
+/// --- `impl_fieldless!` macro tests ---
 struct FieldlessUnit;
 
 impl WorkUnit for FieldlessUnit {

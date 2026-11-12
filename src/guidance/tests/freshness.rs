@@ -187,3 +187,26 @@ fn m12_hash_tiebreak_at_home() {
     assert!(!hash_decides_fresh("abc123", None));
     assert!(!hash_decides_fresh("", None));
 }
+
+#[test]
+fn stuck_flag_survives_identical_bytes() {
+    use crate::freshness::{mark_stuck_sidecar, sidecar_stuck};
+    // A stuck record reads stale even when nothing changed: the flag,
+    // not the clock, carries the verdict past the hash shortcut.
+    let dir = fluent_wvr_testutil::tempdir();
+    let sidecar = dir.path().join("a.rs.json");
+    std::fs::write(
+        &sidecar,
+        "GHDR1 src=a.rs\tbody=b\tsrchash=s\tcomp=toolchain=t\n{\"members\":[]}",
+    )
+    .expect("write");
+    assert!(!sidecar_stuck(&sidecar));
+    assert!(mark_stuck_sidecar(&sidecar));
+    assert!(sidecar_stuck(&sidecar));
+    assert!(mark_stuck_sidecar(&sidecar), "idempotent");
+    // Headerless legacy files refuse the mark instead of corrupting.
+    let bare = dir.path().join("bare.json");
+    std::fs::write(&bare, "{\"members\":[]}").expect("write");
+    assert!(!mark_stuck_sidecar(&bare));
+    assert!(!sidecar_stuck(&bare));
+}

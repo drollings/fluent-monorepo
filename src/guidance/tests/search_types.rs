@@ -84,6 +84,14 @@ fn matched_by_provenance_matches_default() {
         derive_matched_by(&[RecallPath::Fts, RecallPath::Vector]),
         SearchMatchedBy::FtsAndVector
     );
+    assert_eq!(
+        derive_matched_by(&[RecallPath::Summary]),
+        SearchMatchedBy::Summary
+    );
+    assert_eq!(
+        derive_matched_by(&[RecallPath::Fts, RecallPath::Summary]),
+        SearchMatchedBy::Summary
+    );
     // zvec default: empty sources read as fts.
     assert_eq!(derive_matched_by(&[]), SearchMatchedBy::Fts);
 }

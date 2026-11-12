@@ -1,6 +1,8 @@
 //! Generation guard: matching markers serve, anything else refuses.
 
-use crate::index_generation::{generation_of, verify_generation, write_generation, GenerationVerdict};
+use crate::index_generation::{
+    generation_of, verify_generation, write_generation, GenerationVerdict,
+};
 use fluent_wvr_testutil::tempdir;
 
 fn write_sidecar(dir: &std::path::Path, name: &str, header: &str) {
@@ -87,7 +89,9 @@ struct GenerationFake {
 }
 
 impl crate::query::recall::RecallStorage for GenerationFake {
-    fn list_files(&self) -> Result<Vec<crate::search_types::FileInfo>, crate::query::plan::RecallError> {
+    fn list_files(
+        &self,
+    ) -> Result<Vec<crate::search_types::FileInfo>, crate::query::plan::RecallError> {
         Ok(Vec::new())
     }
 
@@ -122,10 +126,7 @@ impl crate::query::recall::RecallStorage for GenerationFake {
         &self,
         _entity_id: &str,
     ) -> Result<
-        Option<(
-            crate::search_types::Entity,
-            crate::search_types::FileInfo,
-        )>,
+        Option<(crate::search_types::Entity, crate::search_types::FileInfo)>,
         crate::query::plan::RecallError,
     > {
         Ok(None)
@@ -135,10 +136,7 @@ impl crate::query::recall::RecallStorage for GenerationFake {
         &self,
         _file_id: &str,
     ) -> Result<
-        Vec<(
-            crate::search_types::Entity,
-            crate::search_types::FileInfo,
-        )>,
+        Vec<(crate::search_types::Entity, crate::search_types::FileInfo)>,
         crate::query::plan::RecallError,
     > {
         Ok(Vec::new())

@@ -28,6 +28,9 @@ use fluent_llm::backend::{OverlayError, ResidualOverlay, RouteLabel};
 /// residual sentence against the route descriptions it was built with, exposed
 /// as route hints in the contribution payload.
 #[cfg(feature = "onnx")]
+/// The M2 disambiguation overlay: a `TwoTowerWorker` (Prompt-Router) scoring a
+/// residual sentence against the route descriptions it was built with, exposed
+/// as route hints in the contribution payload.
 pub struct PromptRouterOverlay {
     worker: Arc<crate::two_tower::TwoTowerWorker>,
     labels: Vec<RouteLabel>,
@@ -85,6 +88,9 @@ impl ResidualOverlay for PromptRouterOverlay {
 /// ZeroShotRouting`), or `None` when the model is absent or mis-typed. The
 /// router (composition root) supplies the route labels from `RoutingConfig`.
 #[cfg(feature = "onnx")]
+/// Build a `PromptRouterOverlay` for a registered two-tower model (`task:
+/// ZeroShotRouting`), or `None` when the model is absent or mis-typed. The
+/// router (composition root) supplies the route labels from `RoutingConfig`.
 pub fn build_prompt_router_overlay(
     registry: &crate::session::OrtSessionRegistry,
     model_key: &str,

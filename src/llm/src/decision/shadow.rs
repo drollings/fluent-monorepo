@@ -17,6 +17,7 @@ use crate::decision::{decide_verdict, Decision, ThresholdSet, Verdict};
 
 /// What the shadow decision would have done, had it been authoritative.
 #[derive(Debug, Clone, PartialEq)]
+/// What the shadow decision would have done, had it been authoritative.
 pub struct ShadowOutcome {
     pub label: String,
     pub confidence: f64,
@@ -70,6 +71,14 @@ impl ShadowOutcome {
 /// assert!(log.is_empty());
 /// ```
 #[derive(Default)]
+/// Shared append-only shadow log.
+/// 
+/// ```rust
+/// use fluent_llm::decision::{Decision, ShadowLog, ShadowOutcome, ThresholdSet};
+/// 
+/// let log = ShadowLog::new();
+/// assert!(log.is_empty());
+/// ```
 pub struct ShadowLog {
     outcomes: Mutex<Vec<ShadowOutcome>>,
 }
@@ -128,6 +137,29 @@ impl ShadowLog {
 /// assert!(shadowed.execute(&WorkContext::default()).is_ok());
 /// ```
 #[must_use]
+/// Wrap `inner` so `execute` runs it, records `outcome`, and returns the
+/// inner output unchanged.
+/// 
+/// ```rust
+/// use std::sync::Arc;
+/// use fluent_llm::decision::{Decision, ShadowLog, ShadowOutcome, ThresholdSet, shadow_adapter};
+/// use fluent_llm::testutil::StubBackend;
+/// use fluent_wvr::{Component, WorkContext, WorkUnit};
+/// 
+/// let inner: Arc<dyn Component> = Arc::new(StubBackend::new("stub", vec!["m"], "hi"));
+/// let d = Decision::from_distribution(
+/// "B",
+/// vec![("B".to_string(), 0.97), ("A".to_string(), 0.03)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("decision");
+/// let outcome = ShadowOutcome::record(&d, &ThresholdSet { act: 0.9, review: 0.7 }, true);
+/// let shadowed = shadow_adapter(inner, Arc::new(ShadowLog::new()), outcome);
+/// assert!(shadowed.execute(&WorkContext::default()).is_ok());
+/// ```
 pub fn shadow_adapter(
     inner: Arc<dyn Component>,
     log: Arc<ShadowLog>,

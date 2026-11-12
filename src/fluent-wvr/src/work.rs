@@ -195,6 +195,50 @@ impl std::fmt::Display for WorkOutput {
 /// assert_eq!(ctx.get::<i32>("attempt"), Some(&2));
 /// ```
 #[derive(Clone)]
+/// Execution context passed to `WorkUnit::execute`. Carries configuration
+/// (dry-run, retries, timeout), typed metadata, a runtime, and a capability set.
+/// 
+/// # Data channels — the decision rule
+/// 
+/// A `WorkContext` exposes four data channels with different typing fidelity.
+/// The rule for choosing between them is:
+/// 
+/// 1. **`outputs` (the typed store, [`OutputStore`])** — the *primary* channel
+/// for in-process handoff between stages / work units. Values are written
+/// with [`WorkContext::set::<T>`] and read with [`WorkContext::get::<T>`],
+/// so the type is pinned at the call site and no serialize/deserialize
+/// round-trip happens between producers and consumers in the same process.
+/// 2. **`WorkOutput.data` (`serde_json::Value`)** — reserved exclusively for
+/// payloads that genuinely cross a serialization boundary: WASM units,
+/// network dispatch, and a `WorkUnit`'s output consumed by a generic
+/// orchestrator. Do not use it for same-process handoffs.
+/// 3. **`metadata` (`HashMap<String, MetadataValue>`)** — only for genuinely
+/// dynamic / stringly-typed fields such as debug annotations, where the
+/// value's type is not known at the call site.
+/// 4. **`structured` (`HashMap<String, serde_json::Value>`)** — the JSON
+/// handoff channel for payloads that are natively `serde_json::Value`-shaped
+/// (e.g. a serialized `RouterRequest`). Prefer `outputs` whenever the type
+/// is known at compile time.
+/// 
+/// # Examples
+/// 
+/// ```no_run
+/// use fluent_wvr::{WorkContext, CapabilitySet, NoopRuntime};
+/// use std::sync::Arc;
+/// 
+/// let mut ctx = WorkContext {
+/// dry_run: true,
+/// max_retries: 3,
+/// timeout_ms: 10_000,
+/// metadata: Default::default(),
+/// structured: Default::default(),
+/// outputs: Default::default(),
+/// rt: Arc::new(NoopRuntime),
+/// caps: CapabilitySet::new(),
+/// };
+/// ctx.set("attempt", 2_i32);
+/// assert_eq!(ctx.get::<i32>("attempt"), Some(&2));
+/// ```
 pub struct WorkContext {
     pub dry_run: bool,
     pub max_retries: u32,

@@ -27,6 +27,12 @@ use crate::error::DbError;
 /// across multiple statements use `with_conn`/`with_conn_mut` and the typed
 /// helpers inside one closure.
 #[derive(Debug)]
+/// A single-connection SQLite store with WAL mode enabled.
+/// 
+/// The connection is wrapped in a `Mutex` because `rusqlite::Connection` is not
+/// `Sync`; every operation serializes on it. Consumers that need to hold the lock
+/// across multiple statements use `with_conn`/`with_conn_mut` and the typed
+/// helpers inside one closure.
 pub struct SqliteStore {
     pub(crate) conn: Mutex<Connection>,
 }

@@ -18,6 +18,7 @@ use crate::venue::LegExecution;
 
 /// One position-level disagreement.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One position-level disagreement.
 pub struct ReconcileMismatch {
     /// Underlying that disagrees.
     pub underlying: String,
@@ -31,6 +32,7 @@ pub struct ReconcileMismatch {
 
 /// Outcome of one reconciliation pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Outcome of one reconciliation pass.
 pub struct ReconcileReport {
     /// Whether every position agrees.
     pub matched: bool,
@@ -55,6 +57,8 @@ impl ReconcileReport {
 /// Compare journaled fills (as signed quantities by underlying) against
 /// venue-truth positions. Pure function: no I/O, deterministic.
 #[must_use]
+/// Compare journaled fills (as signed quantities by underlying) against
+/// venue-truth positions. Pure function: no I/O, deterministic.
 pub fn reconcile<S: std::hash::BuildHasher>(
     journal_signed_qty: &HashMap<String, i64, S>,
     venue: &[Position],
@@ -79,6 +83,10 @@ pub fn reconcile<S: std::hash::BuildHasher>(
 /// shape as [`reconcile`]: any disagreement halts entries through the same
 /// [`ReconcileGate`].
 #[must_use]
+/// Compare leg-aware journal fills (signed quantities by contract OCC
+/// symbol) against leg-aware venue truth on the same keys. Same pure compare
+/// shape as [`reconcile`]: any disagreement halts entries through the same
+/// [`ReconcileGate`].
 pub fn reconcile_legs<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
     journal_signed_qty: &HashMap<String, i64, S>,
     venue_signed_qty: &HashMap<String, i64, T>,
@@ -152,6 +160,8 @@ fn compare_nets<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
 /// Entry gate driven by reconciliation: a mismatch halts entries while exits
 /// stay permitted (managing existing positions never stops).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Entry gate driven by reconciliation: a mismatch halts entries while exits
+/// stay permitted (managing existing positions never stops).
 pub struct ReconcileGate {
     halted: bool,
     alerts: AlertBuffer,
@@ -223,6 +233,9 @@ impl ReconcileGate {
 /// records. Kept beside reconciliation (not in the journal) so replay and
 /// live share the same accumulation.
 #[must_use]
+/// Net signed quantity the journal implies, for one underlying, from filled
+/// records. Kept beside reconciliation (not in the journal) so replay and
+/// live share the same accumulation.
 pub fn journal_net(fills: &[(String, i64)]) -> HashMap<String, i64> {
     let mut net: HashMap<String, i64> = HashMap::new();
     for (underlying, qty) in fills {
@@ -240,6 +253,9 @@ pub const RECONCILE_ASSET: &str = "reconcile.agreed";
 /// compare) and by OCC contract (the leg compare). Built once per pass from
 /// the live fold.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// The journal's view of the book: signed quantity by underlying (the net
+/// compare) and by OCC contract (the leg compare). Built once per pass from
+/// the live fold.
 pub struct JournalBook {
     /// Signed quantity per underlying.
     pub net: HashMap<String, i64>,
@@ -266,6 +282,10 @@ pub trait ReconcileSource: Send + Sync {
 /// transition is synchronous), so a recovering mutex is the honest
 /// primitive, never a wedged gate.
 #[derive(Debug, Clone, Default)]
+/// Shared handle to the reconciliation entry gate: the driver observes into
+/// it, the submission path reads it. Locking never crosses an await (every
+/// transition is synchronous), so a recovering mutex is the honest
+/// primitive, never a wedged gate.
 pub struct ReconcileHandle {
     inner: Arc<Mutex<ReconcileGate>>,
 }

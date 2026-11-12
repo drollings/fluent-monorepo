@@ -23,6 +23,8 @@ use std::sync::Arc;
 /// Outcome of a pre-submission dry run: margin and sanity checks against
 /// current buying power, before anything is journaled as submitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Outcome of a pre-submission dry run: margin and sanity checks against
+/// current buying power, before anything is journaled as submitted.
 pub struct DryRunOutcome {
     /// Whether submission may proceed.
     pub allowed: bool,
@@ -32,6 +34,7 @@ pub struct DryRunOutcome {
 
 /// One cash balance line: an asset and its venue-reported amount.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One cash balance line: an asset and its venue-reported amount.
 pub struct BalanceEntry {
     /// Asset or currency code (e.g. `USD`).
     pub asset: String,
@@ -48,6 +51,14 @@ pub struct BalanceEntry {
 /// Incremental changes arrive as [`AccountEvent`]s, never as partial
 /// snapshots.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// The whole account view at one instant: balances, working orders, recent
+/// fills.
+/// 
+/// Update semantics are snapshot-replace: receiving a snapshot discards the
+/// previous view entirely. An empty snapshot reads as "no account state",
+/// never as "unknown" — a venue with nothing to report returns the default.
+/// Incremental changes arrive as [`AccountEvent`]s, never as partial
+/// snapshots.
 pub struct AccountSnapshot {
     /// Cash balances by asset.
     #[serde(default)]
@@ -75,6 +86,12 @@ impl AccountSnapshot {
 /// prior entry under that key. Trades are append-only: each [`Fill`](crate::order::Fill)
 /// is a new execution, never an update to an earlier one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One incremental account update.
+/// 
+/// Update semantics are upsert: each event carries one entry keyed by its
+/// natural key — orders by client ID, balances by asset — replacing any
+/// prior entry under that key. Trades are append-only: each [`Fill`](crate::order::Fill)
+/// is a new execution, never an update to an earlier one.
 pub enum AccountEvent {
     /// One balance line changed; replaces the line for the same asset.
     BalanceUpdated(BalanceEntry),
@@ -89,6 +106,10 @@ pub enum AccountEvent {
 /// Journaled per leg (see `LEG_FILL_KIND`) so replay and reconciliation see
 /// the same atomic package the venue executed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One executed spread leg: which contract filled, in which direction,
+/// how many contracts, at what slipped price, for what commission.
+/// Journaled per leg (see `LEG_FILL_KIND`) so replay and reconciliation see
+/// the same atomic package the venue executed.
 pub struct LegExecution {
     /// Contract this leg filled in, as its OCC symbol.
     pub contract: ContractId,

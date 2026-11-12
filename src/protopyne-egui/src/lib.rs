@@ -131,6 +131,8 @@ pub use workspace::{
 /// Terminal marker; touches the linked paint dependency so wiring breaks
 /// loudly if the dependency stops resolving.
 #[must_use]
+/// Terminal marker; touches the linked paint dependency so wiring breaks
+/// loudly if the dependency stops resolving.
 pub fn is_terminal_edge() -> bool {
     let _ = egui::Color32::WHITE;
     true

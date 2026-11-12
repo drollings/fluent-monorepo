@@ -19,6 +19,8 @@ use std::ops::Range;
 /// The alignment between the LFM (HF) token stream and the spacy-rs token
 /// stream, computed purely from byte offsets.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The alignment between the LFM (HF) token stream and the spacy-rs token
+/// stream, computed purely from byte offsets.
 pub struct SpacyTokenAlignment {
     /// For each LFM token: the spacy-rs token index whose byte span contains
     /// it. `None` for special / zero-width tokens (`[CLS]`, `[SEP]`,
@@ -50,6 +52,8 @@ impl SpacyTokenAlignment {
 /// The pure byte-offset aligner. Stateless — one shared instance serves every
 /// worker (fluent-wvr "pure and shared" principle).
 #[derive(Debug, Clone, Copy, Default)]
+/// The pure byte-offset aligner. Stateless — one shared instance serves every
+/// worker (fluent-wvr "pure and shared" principle).
 pub struct SpacyTokenAligner;
 
 impl SpacyTokenAligner {

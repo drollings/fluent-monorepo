@@ -19,6 +19,9 @@ use crate::value::PineValue;
 /// or a call expression, numbered in source order per parsed program. Nothing
 /// is hashed, so identities are stable across runs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Parser-assigned identity of one scoping node: a `var`/`varip` declaration
+/// or a call expression, numbered in source order per parsed program. Nothing
+/// is hashed, so identities are stable across runs.
 pub struct NodeId(u32);
 
 impl NodeId {
@@ -51,6 +54,11 @@ pub type ModuleKey = String;
 /// Node ids are numbered per parsed program, so the module is part of the
 /// identity — two modules' expression number 7 are different call sites.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// One call expression on the path that reached a body: the module owning the
+/// expression and the expression's node.
+/// 
+/// Node ids are numbered per parsed program, so the module is part of the
+/// identity — two modules' expression number 7 are different call sites.
 pub struct CallSite {
     /// Module owning the call expression.
     pub module: Option<ModuleKey>,
@@ -74,6 +82,13 @@ impl CallSite {
 /// owns two cells, and a `var` declared at the top level belongs to the
 /// module's root scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Identity of one persistent cell: the module whose body declares it, the
+/// call expressions that reached that body (outermost first, empty at a
+/// module's top level), and the declaration node.
+/// 
+/// A call expression is one instance, so a function called from two places
+/// owns two cells, and a `var` declared at the top level belongs to the
+/// module's root scope.
 pub struct ScopeKey {
     /// Module owning the declaring body.
     pub module: Option<ModuleKey>,
@@ -97,6 +112,7 @@ impl ScopeKey {
 
 /// Bar-persistent cell: survives [`VarStore::next_bar`].
 #[derive(Debug, Clone, PartialEq, Default)]
+/// Bar-persistent cell: survives [`VarStore::next_bar`].
 pub struct Var {
     value: Option<PineValue>,
 }
@@ -116,6 +132,7 @@ impl Var {
 
 /// Intrabar cell: cleared by [`VarStore::next_bar`].
 #[derive(Debug, Clone, PartialEq, Default)]
+/// Intrabar cell: cleared by [`VarStore::next_bar`].
 pub struct VarIp {
     value: Option<PineValue>,
 }
@@ -135,6 +152,7 @@ impl VarIp {
 
 /// One occupied slot: the spelling its declaration used beside the value.
 #[derive(Debug, Clone, PartialEq)]
+/// One occupied slot: the spelling its declaration used beside the value.
 struct Slot<V> {
     name: String,
     cell: V,
@@ -144,6 +162,9 @@ struct Slot<V> {
 /// them. One store per [`RunCtx`](crate::context::RunCtx); stores are never
 /// shared between runs, which is what makes parallel backtests isolated.
 #[derive(Debug, Clone, PartialEq, Default)]
+/// Per-run persistent cells, keyed by the declaration instance that owns
+/// them. One store per [`RunCtx`](crate::context::RunCtx); stores are never
+/// shared between runs, which is what makes parallel backtests isolated.
 pub struct VarStore {
     vars: HashMap<ScopeKey, Slot<Var>>,
     varips: HashMap<ScopeKey, Slot<VarIp>>,

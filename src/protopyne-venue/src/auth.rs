@@ -26,6 +26,7 @@ use crate::tastytrade::TransportError;
 
 /// A secret credential value. `Debug` is redacted by construction.
 #[derive(Clone, PartialEq, Eq)]
+/// A secret credential value. `Debug` is redacted by construction.
 pub struct Credential(String);
 
 impl Credential {
@@ -56,6 +57,7 @@ impl fmt::Debug for Credential {
 
 /// One issued credential with its validity window and generation.
 #[derive(Clone, Debug)]
+/// One issued credential with its validity window and generation.
 pub struct CredentialState {
     /// The bearer/session secret.
     pub credential: Credential,
@@ -110,6 +112,7 @@ impl CredentialState {
 
 /// A generation-stamped read of the current credential.
 #[derive(Clone, Debug)]
+/// A generation-stamped read of the current credential.
 pub struct CredentialLease {
     state: CredentialState,
 }
@@ -148,6 +151,7 @@ impl CredentialLease {
 
 /// How a credential is acquired.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// How a credential is acquired.
 pub enum AuthMethod {
     /// Username/password session login.
     SessionLogin,
@@ -159,6 +163,7 @@ pub enum AuthMethod {
 
 /// Credential acquisition failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Credential acquisition failure.
 pub enum AuthError {
     /// The venue refused: retrying cannot authenticate.
     #[error("terminal auth failure: {0}")]
@@ -200,6 +205,8 @@ impl AuthError {
 /// threshold here: a credential inside it must be renewed before use.
 #[derive(Debug, Clone, bon::Builder, Serialize, Deserialize, FieldAccess, Describable)]
 #[builder(start_fn = new)]
+/// Credential tunables. The early-refresh margin is the one correctness
+/// threshold here: a credential inside it must be renewed before use.
 pub struct AuthConfig {
     /// Refresh when the credential expires inside this many seconds.
     #[field(desc = "Early-refresh margin in seconds", min = 0, max = 86_400)]
@@ -322,6 +329,7 @@ impl_component!(AuthConfig);
 
 /// Published credential health: validity and refresh degradation.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Published credential health: validity and refresh degradation.
 pub struct AuthHealth {
     /// Whether the current credential is usable.
     pub valid: bool,
@@ -479,6 +487,7 @@ pub trait CredentialStore: Send + Sync {
 
 /// In-memory credential store.
 #[derive(Debug, Default)]
+/// In-memory credential store.
 pub struct MemoryCredentialStore {
     state: Mutex<Option<CredentialState>>,
 }
@@ -509,6 +518,9 @@ impl CredentialStore for MemoryCredentialStore {
 /// the secret; it is written atomically, owner-only where supported, and
 /// never debug-printed.
 #[derive(Debug, Clone)]
+/// Opt-in file store: one redacted-at-rest? No — the file necessarily holds
+/// the secret; it is written atomically, owner-only where supported, and
+/// never debug-printed.
 pub struct FileCredentialStore {
     path: PathBuf,
 }
@@ -870,6 +882,7 @@ impl TokenManager {
 
 /// Publication handle for gate readers: a manager plus its last reading.
 #[derive(Clone, Debug)]
+/// Publication handle for gate readers: a manager plus its last reading.
 pub struct AuthHandle {
     manager: Arc<TokenManager>,
 }

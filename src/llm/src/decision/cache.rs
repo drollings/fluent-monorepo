@@ -75,6 +75,27 @@ impl Drop for Retire<'_> {
 /// assert_eq!(input.key().len(), 64);
 /// ```
 #[derive(Debug, Clone)]
+/// Composite cache-key input: every identity axis in one struct so the key
+/// can grow (fingerprint today) without another signature break. `key()`
+/// frames each part with its length; an absent fingerprint contributes
+/// nothing, so legacy callers hash exactly as before.
+/// 
+/// ```rust
+/// use fluent_llm::decision::CacheKeyInput;
+/// 
+/// let input = CacheKeyInput {
+/// state: "s".to_string(),
+/// question: "q?".to_string(),
+/// question_id: "id".to_string(),
+/// version: 1,
+/// model: "m".to_string(),
+/// endpoint: "http://a".to_string(),
+/// extras: serde_json::json!({}),
+/// think: None,
+/// fingerprint: None,
+/// };
+/// assert_eq!(input.key().len(), 64);
+/// ```
 pub struct CacheKeyInput {
     pub state: String,
     pub question: String,
@@ -132,6 +153,17 @@ impl CacheKeyInput {
 /// ```
 #[must_use]
 #[allow(clippy::too_many_arguments)]
+/// Legacy constructor: identical bytes to the struct form with no
+/// fingerprint. Prefer `CacheKeyInput` for new callers.
+/// 
+/// ```rust
+/// use fluent_llm::decision::decision_cache_key;
+/// 
+/// let extras = serde_json::json!({});
+/// let a = decision_cache_key("s", "q?", "id", 1, "m", "http://a", &extras, None);
+/// let b = decision_cache_key("s", "q!", "id", 1, "m", "http://a", &extras, None);
+/// assert_ne!(a, b);
+/// ```
 pub fn decision_cache_key(
     state: &str,
     question: &str,

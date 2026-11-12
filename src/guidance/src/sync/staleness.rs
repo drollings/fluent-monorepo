@@ -34,6 +34,17 @@ pub fn should_generate(json_path: &Path, source_path: &Path) -> bool {
 /// Decision delegates to the single home (`crate::freshness::mtime_skew`);
 /// this shell only fetches mtimes (either missing → not ambiguous).
 #[must_use]
+/// Resolution-window probe: true when the two mtimes alone cannot decide
+/// freshness — the source is at-or-newer than the sidecar but within the
+/// 1-second timestamp-resolution window.
+///
+/// Axis statement: the window measures *producer self-doubt* (filesystem
+/// timestamp granularity), never task value. Inside it the clock is
+/// evidence-free, so the content hash decides instead. The threshold
+/// gates which evidence to consult, never the conclusion.
+///
+/// Decision delegates to the single home (`crate::freshness::mtime_skew`);
+/// this shell only fetches mtimes (either missing → not ambiguous).
 pub fn in_ambiguity_window(json_path: &Path, source_path: &Path) -> bool {
     let (Some(json_mtime), Some(source_mtime)) = (
         common_core::io::mtime(json_path),
@@ -97,7 +108,9 @@ pub fn should_generate_with_granularity(
 /// values migrate lazily — a missing hash recomputes on the next regen,
 /// never fails, and one regen refreshes every member in the file.
 pub fn match_hash_from_signature(signature: &str) -> String {
-    common_core::hash::blake3_hex(crate::item_hashes::normalize_signature_text(signature).as_bytes())
+    common_core::hash::blake3_hex(
+        crate::item_hashes::normalize_signature_text(signature).as_bytes(),
+    )
 }
 
 #[cfg(test)]

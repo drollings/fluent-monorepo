@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 /// Async overlay configuration. `None` (the default)
 /// disables the overlay worker and its request-path hook.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// Async overlay configuration. `None` (the default)
+/// disables the overlay worker and its request-path hook.
 pub struct OverlayConfig {
     /// Opt-in entity-link overlay (M6.2): when `true`, the request path submits
     /// `EntityLink` residuals (unresolved PROPN spans) to a credit-gated
@@ -42,6 +44,11 @@ pub struct OverlayConfig {
 /// mentions it. The numeric knobs mirror the overlay worker's `OverlayWorkerConfig`
 /// defaults (the `CreditedFeedWorker` load-bearing constants).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// The `arc_ready` annotation-overlay configuration (OVERLAYS §8). Opt-in and
+/// additive: every field defaults to off/absent so a config with no
+/// `overlay.arc_ready` block is byte-identical to a deployment that never
+/// mentions it. The numeric knobs mirror the overlay worker's `OverlayWorkerConfig`
+/// defaults (the `CreditedFeedWorker` load-bearing constants).
 pub struct ArcReadyConfig {
     /// Master switch. `false` (the default) leaves the overlays off.
     #[serde(default)]

@@ -26,6 +26,10 @@ use crate::runner::{run_backtest, BacktestRun, RunnerConfig};
 /// history. The test window begins exactly where training ends, so no bar is
 /// evaluated in both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One walk-forward fold: an in-sample window immediately followed by a
+/// non-overlapping out-of-sample window, as bar-index bounds into one shared
+/// history. The test window begins exactly where training ends, so no bar is
+/// evaluated in both.
 pub struct WalkForwardFold {
     /// First in-sample bar index (inclusive).
     pub train_start: usize,
@@ -144,6 +148,11 @@ pub fn walk_forward_folds(
 /// the report; this view only selects them. `None` is a metric's own
 /// zero-denominator refusal, never invented.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One window's generalization metrics, projected from its [`BacktestReport`]
+/// so the IS/OOS section and the standalone report can never disagree.
+/// [`metrics`](crate::metrics) computed the underlying numbers once, inside
+/// the report; this view only selects them. `None` is a metric's own
+/// zero-denominator refusal, never invented.
 pub struct WalkMetrics {
     /// Bars replayed in the window.
     pub bars: u64,
@@ -192,6 +201,7 @@ impl From<&BacktestReport> for WalkMetrics {
 
 /// Side-by-side in-sample / out-of-sample metrics for one fold.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Side-by-side in-sample / out-of-sample metrics for one fold.
 pub struct FoldComparison {
     /// Metrics over the fold's train window.
     pub in_sample: WalkMetrics,
@@ -212,6 +222,9 @@ impl FoldComparison {
 /// window it generalizes to. Fold boundaries live once, on
 /// [`WalkForwardManifest::folds`]; this list is parallel to that one.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One fold's completed runs: the in-sample window and the out-of-sample
+/// window it generalizes to. Fold boundaries live once, on
+/// [`WalkForwardManifest::folds`]; this list is parallel to that one.
 pub struct WalkForwardFoldRun {
     /// Run over the fold's train window.
     pub in_sample: BacktestRun,
@@ -223,6 +236,9 @@ pub struct WalkForwardFoldRun {
 /// fold order. A projection of the fold runs, so the section and the reports
 /// always read the same numbers.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// The walk-forward report section: side-by-side IS/OOS metrics per fold, in
+/// fold order. A projection of the fold runs, so the section and the reports
+/// always read the same numbers.
 pub struct WalkForwardReport {
     /// Per-fold comparisons, in fold input order.
     pub comparisons: Vec<FoldComparison>,
@@ -242,6 +258,9 @@ impl WalkForwardReport {
 /// boundaries in input order. Serialization order is struct order, so reruns
 /// are byte-identical.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// The walk-forward pin: code version, shared seed, history size, and the fold
+/// boundaries in input order. Serialization order is struct order, so reruns
+/// are byte-identical.
 pub struct WalkForwardManifest {
     /// Crate version at run time.
     pub code_version: String,
@@ -266,6 +285,8 @@ impl WalkForwardManifest {
 /// One completed walk-forward run: the pin, per-fold IS/OOS runs in fold
 /// order, and the side-by-side report section.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// One completed walk-forward run: the pin, per-fold IS/OOS runs in fold
+/// order, and the side-by-side report section.
 pub struct WalkForwardRun {
     /// Reproducibility pin (code version, seed, fold boundaries).
     pub manifest: WalkForwardManifest,
@@ -326,6 +347,16 @@ struct FoldJob {
 /// are byte-identical with or without the pool. The result is evidence: no
 /// aggregate or per-fold threshold is applied here.
 #[allow(clippy::too_many_arguments)]
+/// Run the shared decide path once per fold: train on the in-sample window,
+/// evaluate on the out-of-sample window that follows.
+/// 
+/// Every fold runs through the same [`run_backtest`] the single-symbol path
+/// uses, so a walk-forward verdict equals a standalone run on the same window
+/// bit for bit. Folds fan out over the shared
+/// [`ResultPool`](fluent_concurrency::pool::ResultPool) with outcomes
+/// re-sorted by fold index, so parallelism never perturbs determinism: reruns
+/// are byte-identical with or without the pool. The result is evidence: no
+/// aggregate or per-fold threshold is applied here.
 pub async fn run_walk_forward(
     strategy: &Strategy,
     risk: &RiskEngine,

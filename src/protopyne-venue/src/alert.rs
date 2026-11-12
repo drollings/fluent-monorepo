@@ -26,6 +26,7 @@ use crate::stream::StreamBreaker;
 
 /// Which trigger raised the alert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Which trigger raised the alert.
 pub enum AlertSource {
     /// The producer-confidence breaker tripped.
     BreakerTrip,
@@ -39,6 +40,7 @@ pub enum AlertSource {
 
 /// Which side of the threshold split the trigger sits on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Which side of the threshold split the trigger sits on.
 pub enum AlertClass {
     /// The decision's inputs may be wrong; entries halt.
     Correctness,
@@ -62,6 +64,7 @@ impl AlertSource {
 
 /// One delivered alert: what tripped, which side, why, when.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One delivered alert: what tripped, which side, why, when.
 pub struct Alert {
     /// Which trigger raised it.
     pub source: AlertSource,
@@ -108,6 +111,7 @@ pub trait AlertSink: Send + Sync {
 
 /// In-memory sink: inspection for tests and the soak harness. Never fails.
 #[derive(Debug, Clone, Default)]
+/// In-memory sink: inspection for tests and the soak harness. Never fails.
 pub struct MemorySink {
     inner: Arc<Mutex<Vec<Alert>>>,
 }
@@ -137,6 +141,9 @@ impl AlertSink for MemorySink {
 /// platform. The alert survives the UI by construction. Unwritable paths
 /// refuse fail-closed instead of buffering silently.
 #[derive(Debug, Clone)]
+/// Append-only file sink: one JSON object per line, parseable without the
+/// platform. The alert survives the UI by construction. Unwritable paths
+/// refuse fail-closed instead of buffering silently.
 pub struct FileSink {
     path: PathBuf,
 }
@@ -176,6 +183,10 @@ impl AlertSink for FileSink {
 /// Delivery is per-member all-or-reporting — a dark member never blocks a
 /// live one.
 #[derive(Clone, Default)]
+/// Fan-out over member sinks: every member is attempted even when an
+/// earlier one fails, and the failure reports each dark member by name.
+/// Delivery is per-member all-or-reporting — a dark member never blocks a
+/// live one.
 pub struct FanoutSink {
     members: Vec<Arc<dyn AlertSink>>,
 }
@@ -210,6 +221,8 @@ impl AlertSink for FanoutSink {
 /// Edge state for [`poll_alerts`]: which level triggers already reported,
 /// so sticky trips and held halts alert once, never per poll.
 #[derive(Debug, Default)]
+/// Edge state for [`poll_alerts`]: which level triggers already reported,
+/// so sticky trips and held halts alert once, never per poll.
 pub struct AlertCursor {
     breaker_reported: bool,
     last_state: Option<TradingState>,
@@ -226,6 +239,8 @@ impl AlertCursor {
 /// The gates one poll reads. `None` skips the gate: watch only what the
 /// deployment runs.
 #[derive(Debug)]
+/// The gates one poll reads. `None` skips the gate: watch only what the
+/// deployment runs.
 pub struct GateWatch<'a> {
     /// Producer-confidence breaker; alerts once per trip.
     pub breaker: Option<&'a StreamBreaker>,

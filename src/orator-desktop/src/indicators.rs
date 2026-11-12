@@ -10,12 +10,14 @@ use crate::tray::{TrayState, TrayStatus};
 
 /// Whether `kind` forces visible indicators that ignore configuration.
 #[must_use]
+/// Whether `kind` forces visible indicators that ignore configuration.
 pub fn indicators_mandatory(kind: &str) -> bool {
     matches!(kind, "meeting" | "listen" | "listen-in")
 }
 
 /// Consent reminder spoken or shown when capture starts.
 #[must_use]
+/// Consent reminder spoken or shown when capture starts.
 pub fn consent_reminder(kind: &str) -> String {
     match kind {
         "meeting" => "Recording this meeting: microphone and system audio are being captured and transcribed.".to_string(),
@@ -30,6 +32,9 @@ pub fn consent_reminder(kind: &str) -> String {
 /// tray row is recording for mandatory kinds no matter what the
 /// configuration requests.
 #[must_use]
+/// Indicator state for a session start: tray plus notification. The
+/// tray row is recording for mandatory kinds no matter what the
+/// configuration requests.
 pub fn session_indicator(kind: &str) -> (TrayState, Notification) {
     let tray = TrayState::for_session(kind, None);
     assert!(

@@ -23,6 +23,9 @@ pub struct VerifyReport {
 /// one model (empty verifies all); `check` runs the cryptographic
 /// pass for a pinned-and-present row and names its failure.
 #[must_use]
+/// Classify every catalog `row` for `models verify`. `name` selects
+/// one model (empty verifies all); `check` runs the cryptographic
+/// pass for a pinned-and-present row and names its failure.
 pub fn verify_report(
     rows: &[ModelStatus],
     name: &str,
@@ -67,6 +70,10 @@ pub fn verify_report(
 /// entry. Single home for the text; the binary prints it per entry
 /// as hashing completes (stdout keeps the full report unchanged).
 #[must_use]
+/// stderr progress text for one hashed entry: mirrors the report
+/// wording so the progress channel and the report agree entry by
+/// entry. Single home for the text; the binary prints it per entry
+/// as hashing completes (stdout keeps the full report unchanged).
 pub fn verify_progress_line(name: &str, outcome: &Result<bool, String>) -> String {
     match outcome {
         Ok(true) => format!("verify {name}: ok"),

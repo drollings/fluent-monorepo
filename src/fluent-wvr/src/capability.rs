@@ -64,6 +64,7 @@ tokio::task_local! {
 
 /// Why a capability request was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Why a capability request was refused.
 pub enum CapabilityError {
     /// The capability was not present in the current task-local `CapabilitySet`.
     Missing { name: &'static str },
@@ -97,6 +98,12 @@ impl From<CapabilityError> for std::io::Error {
 /// caller keeps its own error taxonomy instead of funnelling it through this
 /// type. Nothing here substitutes a value for a failed join.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Why a capability-scoped blocking operation failed to produce a value.
+/// 
+/// A panic on the dedicated worker thread is the only failure: the closure's
+/// own result (including any error it carries) travels inside `R`, so each
+/// caller keeps its own error taxonomy instead of funnelling it through this
+/// type. Nothing here substitutes a value for a failed join.
 pub struct BlockingJoinError {
     /// The panic message, when the worker carried one, or a generic
     /// description if it did not.
@@ -203,6 +210,21 @@ pub trait Capability: Send + Sync + 'static {
 /// assert!(caps.get::<FsCapability>().is_some());
 /// ```
 #[derive(Default, Debug)]
+/// A type-map of capability tokens, used to gate access to resources.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use fluent_wvr::{Capability, CapabilitySet};
+/// 
+/// struct FsCapability;
+/// impl Capability for FsCapability {
+/// fn name(&self) -> &'static str { "fs" }
+/// }
+/// 
+/// let caps = CapabilitySet::new().with(FsCapability);
+/// assert!(caps.get::<FsCapability>().is_some());
+/// ```
 pub struct CapabilitySet {
     caps: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }

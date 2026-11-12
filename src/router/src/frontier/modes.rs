@@ -23,6 +23,16 @@ use serde::{Deserialize, Serialize};
 /// list deserializes from config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// A stage of the frontier escalation ladder.
+/// 
+/// Each stage is a discrete policy governing how much context, data, and
+/// agency the frontier model receives (doc/router/VISION.md §"The four
+/// modes"). Stages escalate filter → question → team → turnover: the
+/// less-permissive stages are tried first so frontier calls are
+/// progressively more expensive, never all-or-nothing.
+/// 
+/// `serde` is derived so a configured `roles.<role>.escalation.modes`
+/// list deserializes from config.
 pub enum EscalationMode {
     /// Deterministic PII/anonymization rules strip sensitive content; the
     /// filtered query is sent as a one-shot prompt to frontier. Frontier
@@ -51,6 +61,7 @@ pub enum EscalationMode {
 
 /// Result of a frontier interaction.
 #[derive(Debug, Clone)]
+/// Result of a frontier interaction.
 pub struct FrontierResult {
     pub mode: EscalationMode,
     pub response: String,
@@ -63,6 +74,11 @@ pub struct FrontierResult {
 /// emits it via `crate::audit::emit` with `kind = "escalation"` plus the
 /// `mode`/`accepted` fields.
 #[derive(Debug, Clone)]
+/// The audit payload shape for one frontier interaction — the same fields the
+/// durable audit record carries (`payload`/`raw_response`/`trigger`/
+/// `timestamp`). `crate::dispatch::escalation` builds one per mode run and
+/// emits it via `crate::audit::emit` with `kind = "escalation"` plus the
+/// `mode`/`accepted` fields.
 pub struct AuditEntry {
     pub payload: String,
     pub raw_response: String,

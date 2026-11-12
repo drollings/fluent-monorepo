@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Fixed round count for rigor/any loop (VISION: terminate, don't loop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Fixed round count for rigor/any loop (VISION: terminate, don't loop).
 pub struct BoundedRounds(u8);
 impl BoundedRounds {
     pub const MAX: u8 = 8;
@@ -71,6 +72,9 @@ pub trait ThresholdTag: Send + Sync + 'static {
 /// four hand-rolled newtypes; the old names survive as aliases below with
 /// identical validation, wire shape, error text, and defaults.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One validated 0.0–1.0 threshold, parameterized by consumer tag. Replaces
+/// four hand-rolled newtypes; the old names survive as aliases below with
+/// identical validation, wire shape, error text, and defaults.
 pub struct UnitThreshold<Tag: ThresholdTag>(f64, std::marker::PhantomData<Tag>);
 
 impl<Tag: ThresholdTag> UnitThreshold<Tag> {
@@ -101,6 +105,7 @@ impl<'de, Tag: ThresholdTag> Deserialize<'de> for UnitThreshold<Tag> {
 
 /// Tag for [`SeverityThreshold`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Tag for [`SeverityThreshold`].
 pub struct SeverityTag;
 impl ThresholdTag for SeverityTag {
     const NAME: &'static str = "SeverityThreshold";
@@ -109,6 +114,7 @@ impl ThresholdTag for SeverityTag {
 
 /// Tag for [`EscalationConfidence`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Tag for [`EscalationConfidence`].
 pub struct EscalationTag;
 impl ThresholdTag for EscalationTag {
     const NAME: &'static str = "EscalationConfidence";
@@ -117,6 +123,7 @@ impl ThresholdTag for EscalationTag {
 
 /// Tag for [`TaskRelevanceThreshold`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Tag for [`TaskRelevanceThreshold`].
 pub struct TaskRelevanceTag;
 impl ThresholdTag for TaskRelevanceTag {
     const NAME: &'static str = "TaskRelevanceThreshold";
@@ -125,6 +132,7 @@ impl ThresholdTag for TaskRelevanceTag {
 
 /// Tag for [`ProducerConfidenceThreshold`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Tag for [`ProducerConfidenceThreshold`].
 pub struct ProducerConfidenceTag;
 impl ThresholdTag for ProducerConfidenceTag {
     const NAME: &'static str = "ProducerConfidenceThreshold";

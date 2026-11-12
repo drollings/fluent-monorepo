@@ -15,6 +15,7 @@
     "default": "llama:code",
     "fast": "llama:code",
     "thinking": "llama:code",
+    "decision": "llama:decision",
     "batch": "llama:code",
     "embed": "llama:embed"
   },

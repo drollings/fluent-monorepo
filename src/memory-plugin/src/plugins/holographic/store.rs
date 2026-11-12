@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS memory_banks (
 
 /// Configuration for the holographic store.
 #[derive(Debug, Clone)]
+/// Configuration for the holographic store.
 pub struct StoreConfig {
     /// Path to the SQLite database file.
     pub db_path: PathBuf,
@@ -111,6 +112,7 @@ impl Default for StoreConfig {
 
 /// A fact stored in the database.
 #[derive(Debug, Clone, serde::Serialize)]
+/// A fact stored in the database.
 pub struct Fact {
     /// Unique fact identifier.
     pub fact_id: i64,

@@ -147,6 +147,9 @@ pub trait DispatchBackend: Send + Sync {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Internal helpers
+/// ---------------------------------------------------------------------------
 fn build_chat_body(
     request: &RouterRequest,
     model: &str,
@@ -464,6 +467,9 @@ async fn with_total_timeout<T>(
 // OpenAiChatBackend - single-attempt OpenAI-compatible HTTP backend
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// OpenAiChatBackend - single-attempt OpenAI-compatible HTTP backend
+/// ---------------------------------------------------------------------------
 pub struct OpenAiChatBackend {
     client: reqwest::Client,
     endpoint_url: String,
@@ -794,6 +800,9 @@ impl DispatchBackend for OpenAiChatBackend {
 // RetryBackend - wraps a DispatchBackend with exponential-backoff retry
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// RetryBackend - wraps a DispatchBackend with exponential-backoff retry
+/// ---------------------------------------------------------------------------
 pub struct RetryBackend {
     inner: Arc<dyn DispatchBackend>,
     retry_count: u32,
@@ -908,6 +917,9 @@ impl DispatchBackend for RetryBackend {
 // BackendChain - tries backends in order
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// BackendChain - tries backends in order
+/// ---------------------------------------------------------------------------
 pub struct BackendChain {
     backends: Vec<Arc<dyn DispatchBackend>>,
 }

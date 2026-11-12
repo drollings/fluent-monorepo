@@ -48,6 +48,7 @@ pub trait ColbertRerank: Send + Sync {
 
 /// How well a request fits a chart.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// How well a request fits a chart.
 pub enum ChartFit {
     /// The chart is fully bound by the provided entities — executable now.
     Exact,
@@ -60,6 +61,7 @@ pub enum ChartFit {
 
 /// The result of selecting a chart for a request.
 #[derive(Debug, Clone)]
+/// The result of selecting a chart for a request.
 pub struct ChartMatch {
     /// Selected chart name. Empty for `ChartFit::Mismatch`.
     pub chart: String,
@@ -557,6 +559,10 @@ fn deterministic_pick(candidates: &[Entity]) -> Entity {
 /// derived from entity binding so a hallucinated "exact" never overrides a
 /// demonstrably unbound dep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ── Adjudicator prompt + strict-JSON parsing ─────────────────────────────
+/// The candidate's `fit` as judged by the LLM. A hint: final `ChartFit` is
+/// derived from entity binding so a hallucinated "exact" never overrides a
+/// demonstrably unbound dep.
 enum AdjudicatorFit {
     Exact,
     Partial,
@@ -565,6 +571,7 @@ enum AdjudicatorFit {
 
 /// Parsed adjudicator output.
 #[derive(Debug, Clone)]
+/// Parsed adjudicator output.
 struct AdjudicatorOutput {
     chart: Option<String>,
     fit: AdjudicatorFit,

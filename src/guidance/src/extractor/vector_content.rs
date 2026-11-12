@@ -11,6 +11,7 @@ pub const METADATA_BUDGET_RATIO: f64 = 0.25;
 
 /// Metadata lines for a fragment (port of `vectorMetadataText`).
 #[must_use]
+/// Metadata lines for a fragment (port of `vectorMetadataText`).
 pub fn metadata_lines(metadata: &Option<FragmentMetadata>) -> Vec<String> {
     let Some(metadata) = metadata else {
         return Vec::new();
@@ -73,6 +74,7 @@ pub fn metadata_lines(metadata: &Option<FragmentMetadata>) -> Vec<String> {
 
 /// Budget for the metadata prefix (port of `metadataBudget`).
 #[must_use]
+/// Budget for the metadata prefix (port of `metadataBudget`).
 pub fn metadata_budget(max_chars: Option<usize>) -> Option<usize> {
     max_chars.map(|max| (max as f64 * METADATA_BUDGET_RATIO).floor() as usize)
 }
@@ -80,6 +82,8 @@ pub fn metadata_budget(max_chars: Option<usize>) -> Option<usize> {
 /// Join metadata lines, truncated to `max_chars` (port of
 /// `compactMetadataLines` + `fitTextToChars`).
 #[must_use]
+/// Join metadata lines, truncated to `max_chars` (port of
+/// `compactMetadataLines` + `fitTextToChars`).
 pub fn compact_metadata_lines(lines: &[String], max_chars: Option<usize>) -> String {
     let text = lines
         .iter()
@@ -96,6 +100,8 @@ pub fn compact_metadata_lines(lines: &[String], max_chars: Option<usize>) -> Str
 /// Embedding text for a fragment: metadata prefix + content (port of
 /// `vectorContentForFragment`). Widths are UTF-16 units (zvec parity).
 #[must_use]
+/// Embedding text for a fragment: metadata prefix + content (port of
+/// `vectorContentForFragment`). Widths are UTF-16 units (zvec parity).
 pub fn vector_content_for_fragment(
     metadata: &Option<FragmentMetadata>,
     content: &str,
@@ -111,6 +117,8 @@ pub fn vector_content_for_fragment(
 /// Shrink the content budget by the metadata prefix (port of
 /// `chunkOptionsForMetadata`).
 #[must_use]
+/// Shrink the content budget by the metadata prefix (port of
+/// `chunkOptionsForMetadata`).
 pub fn chunk_options_for_metadata(
     max_chunk_chars: usize,
     chunk_overlap_chars: usize,
@@ -132,6 +140,8 @@ pub fn chunk_options_for_metadata(
 /// Truncate to `max_chars` UTF-16 units with a `...` marker (port of
 /// `fitTextToChars`); never splits a character.
 #[must_use]
+/// Truncate to `max_chars` UTF-16 units with a `...` marker (port of
+/// `fitTextToChars`); never splits a character.
 pub fn fit_text_to_chars(value: &str, max_chars: usize) -> String {
     if utf16_len(value) <= max_chars {
         return value.to_string();

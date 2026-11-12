@@ -24,6 +24,9 @@ use crate::error::StoreError;
 /// confidence reading: it answers "is the data behind this decision
 /// reachable and current", never "how sure are we".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Observed store liveness. A **task-value** fact, not a producer
+/// confidence reading: it answers "is the data behind this decision
+/// reachable and current", never "how sure are we".
 pub struct StoreHealth {
     /// Whether the store answered its last coverage probe.
     pub reachable: bool,

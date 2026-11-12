@@ -33,6 +33,7 @@ use crate::range::TimeRange;
 
 /// One observed stamp on the tape's high-water mark.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// One observed stamp on the tape's high-water mark.
 pub struct Watermark {
     /// The stamp in epoch milliseconds.
     pub ts_ms: i64,
@@ -56,6 +57,23 @@ pub struct Watermark {
 ///
 /// [`holes`]: Coverage::holes
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Where the tape covers, as maximal half-open bar spans plus the counts that
+/// interpret them.
+/// 
+/// The fields are read access, not construction surface: build through
+/// [`Coverage::from_bars`] or [`Coverage::from_runs`]. The first and last
+/// stamps bound the tape; `bars` is the observed row count; `runs` are the
+/// maximal covered spans in ascending order, each `[first_stamp,
+/// last_stamp + step)` so a hole between two runs is exactly the missing
+/// bars' span.
+/// 
+/// A deviation from the usual shape, stated plainly: this type cannot be
+/// `Copy`. Locating an interior hole needs the run boundaries, and the three
+/// pinned fields cannot name them. Dropping `Copy` is what keeps [`holes`]
+/// honest — a `Copy` coverage could name how far the tape reaches but never
+/// where it is torn, and the repair loop needs the second fact.
+/// 
+/// [`holes`]: Coverage::holes
 pub struct Coverage {
     /// First observed stamp.
     pub first: Watermark,
@@ -252,6 +270,8 @@ fn run_span(first_ms: i64, last_ms: i64, step: i64) -> TimeRange {
 /// What the tape's coverage means for a repair decision. Every variant is a
 /// verdict — repair or not — never a confidence reading.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What the tape's coverage means for a repair decision. Every variant is a
+/// verdict — repair or not — never a confidence reading.
 pub enum GapClass {
     /// The store holds no rows at all.
     Empty,
@@ -295,6 +315,10 @@ pub const DEFAULT_MAX_LAG_BARS: u64 = 1;
 /// one place.
 #[derive(Debug, Clone, Copy, bon::Builder, FieldAccess, Describable)]
 #[builder(start_fn = new)]
+/// Repair bounds a tape is held to. Configurable from the schema-driven
+/// settings form rather than a hardcoded constant, so the operator's
+/// thresholds and the classifier's thresholds are the same value read from
+/// one place.
 pub struct FreshnessPolicy {
     /// Bars the tape may trail the clock before it reads stale. The boundary
     /// is inclusive: exactly this far behind is still [`GapClass::Fresh`].
@@ -367,6 +391,15 @@ impl_component!(FreshnessPolicy);
 /// while the session was closed, so a closed session produces no lag — not a
 /// flag on this function.
 #[must_use]
+/// Say what a tape's coverage means: repair, or leave it alone.
+/// 
+/// `None` is an empty table, reported as [`GapClass::Empty`] — distinctly
+/// from "the store could not be reached", which never gets here. The tail is
+/// judged first: a tape that is both stale and torn reports
+/// [`GapClass::Stale`], because the tail is what a repair pass fixes first.
+/// Weekend handling is the caller's choice of `now_ms` — no bars were due
+/// while the session was closed, so a closed session produces no lag — not a
+/// flag on this function.
 pub fn classify(
     coverage: Option<Coverage>,
     now_ms: i64,

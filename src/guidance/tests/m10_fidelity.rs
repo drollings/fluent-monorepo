@@ -56,12 +56,22 @@ fn matrix_verifies_per_file_per_cell() {
     std::fs::create_dir_all(&package).expect("mkdir");
     std::fs::write(package.join("Cargo.toml"), "[package]\nname = \"x\"\n").expect("manifest");
     let cells = CfgMatrix::default_cells();
-    assert_eq!(cells, vec!["default", "all-features", "no-default-features"]);
+    assert_eq!(
+        cells,
+        vec!["default", "all-features", "no-default-features"]
+    );
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let file = package.join("src/a.rs").to_string_lossy().into_owned();
     let files = vec![file.clone()];
-    let reports = [(package.clone(), cell_reports(&clean_report()))].into_iter().collect();
-    let matrix = run_clippy_matrix(&package, &files, &cells, &runner_for(reports, Arc::clone(&calls)));
+    let reports = [(package.clone(), cell_reports(&clean_report()))]
+        .into_iter()
+        .collect();
+    let matrix = run_clippy_matrix(
+        &package,
+        &files,
+        &cells,
+        &runner_for(reports, Arc::clone(&calls)),
+    );
     assert_eq!(matrix.cells.len(), 3);
     assert!(matrix.cells.iter().all(|cell| cell.clean));
     assert_eq!(
@@ -88,7 +98,9 @@ fn matrix_verifies_per_file_per_cell() {
         &runner_for(reports, calls),
     );
     assert!(!matrix.cells[0].clean);
-    assert!(matrix.cells[0].dirty_files.contains(&"src/a.rs".to_string()));
+    assert!(matrix.cells[0]
+        .dirty_files
+        .contains(&"src/a.rs".to_string()));
     assert!(!matrix.verified.contains_key(&file));
 }
 
@@ -132,17 +144,30 @@ fn cfg_gated_and_detached_files_are_findings_not_clean() {
     let stray = dir.path().join("stray.rs");
     std::fs::write(&stray, "pub fn s() {}\n").expect("write");
     let files = vec![
-        (gated.to_string_lossy().into_owned(), std::fs::read_to_string(&gated).expect("read")),
-        (plain.to_string_lossy().into_owned(), std::fs::read_to_string(&plain).expect("read")),
-        (stray.to_string_lossy().into_owned(), std::fs::read_to_string(&stray).expect("read")),
+        (
+            gated.to_string_lossy().into_owned(),
+            std::fs::read_to_string(&gated).expect("read"),
+        ),
+        (
+            plain.to_string_lossy().into_owned(),
+            std::fs::read_to_string(&plain).expect("read"),
+        ),
+        (
+            stray.to_string_lossy().into_owned(),
+            std::fs::read_to_string(&stray).expect("read"),
+        ),
     ];
     let findings = scan_fidelity(&files);
     assert!(
-        findings.iter().any(|f| f.kind == FidelityKind::UnverifiedCfg && f.path.ends_with("gated.rs")),
+        findings
+            .iter()
+            .any(|f| f.kind == FidelityKind::UnverifiedCfg && f.path.ends_with("gated.rs")),
         "cfg-gated items surface: {findings:?}"
     );
     assert!(
-        findings.iter().any(|f| f.kind == FidelityKind::Detached && f.path.ends_with("stray.rs")),
+        findings
+            .iter()
+            .any(|f| f.kind == FidelityKind::Detached && f.path.ends_with("stray.rs")),
         "package-less files surface: {findings:?}"
     );
     assert!(
@@ -163,10 +188,7 @@ fn deletion_answers_are_never_yes() {
     );
     assert_eq!(safe_to_delete(true, &[], false), DeleteVerdict::Unknown);
     // Public surface is never deletable by index evidence alone.
-    assert_eq!(
-        safe_to_delete(false, &[], true),
-        DeleteVerdict::Unknown
-    );
+    assert_eq!(safe_to_delete(false, &[], true), DeleteVerdict::Unknown);
 }
 
 #[test]

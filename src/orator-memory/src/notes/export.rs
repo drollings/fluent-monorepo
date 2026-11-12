@@ -27,6 +27,9 @@ fn record_worthy(kind: &str) -> bool {
 /// cursor order, and a rolling summary over the turn texts. Empty
 /// input still renders the session record — never an empty file.
 #[must_use]
+/// Render the session record: header, the session-scoped events in
+/// cursor order, and a rolling summary over the turn texts. Empty
+/// input still renders the session record — never an empty file.
 pub fn render_meeting_export(session: &str, events: &[StoredEvent]) -> String {
     let turns: Vec<&StoredEvent> = events
         .iter()

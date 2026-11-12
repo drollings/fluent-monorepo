@@ -76,8 +76,14 @@ fn cycles_do_not_hang_ordering() {
 fn witness_requires_quiet_final_wave_and_owned_remainder() {
     assert!(witness_clean(false, 0, false));
     assert!(!witness_clean(true, 0, false), "kept edit moves the tree");
-    assert!(!witness_clean(false, 1, false), "unowned remainder refuses done");
-    assert!(!witness_clean(false, 0, true), "breaker trip is halted, not done");
+    assert!(
+        !witness_clean(false, 1, false),
+        "unowned remainder refuses done"
+    );
+    assert!(
+        !witness_clean(false, 0, true),
+        "breaker trip is halted, not done"
+    );
 }
 
 #[test]

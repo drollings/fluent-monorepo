@@ -70,10 +70,11 @@ Key user-visible rules:
 
 - Purpose: the main indexing command — parse sources to JSON mirrors and refresh the search DB.
 - Selection modes:
-  - `--file <path>`: process one file (or report staleness for a directory).
+  - `--file <path>`: full single-file sync — fix, then member gen, then the fragment-index half (ingest with sig-gated dependent propagation) scoped to the file. A directory argument reports staleness only. Re-running on an unchanged file is a no-op in every half.
   - `--scan <dir>`: process one subtree.
   - Default: process every source directory from config (`src_dirs`, else the workspace root).
 - Behavior:
+  - Fix pre-pass first: stale Rust files are linted, fixed (rustfmt plus mechanical clippy fixes), and formatted before any indexing, so the mirror and the index converge on fixed bytes. After the mechanical rungs, escalated files get up to three local code-model drafts each (skipped when the generative role is disabled or unreachable). The pre-pass is capped at 32 dirty files — beyond that it skips with a pointer to `guidance run`, so cleared trees index swiftly instead of fixing the world. `--autonomy L0` skips the rewrite half but still syncs; `--dry-run` skips it too.
   - Discovers files by supported extension, skips up-to-date files unless `--force`.
   - Reports totals: files discovered, stale count, files generated.
   - Then, unless `--no-db` or `--dry-run`, syncs the JSON tree into the DB and reports nodes synced.

@@ -48,6 +48,9 @@ fn routing_to_work_result(
 // L2 — WASM workflow tier
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// L2 — WASM workflow tier
+/// ---------------------------------------------------------------------------
 pub struct L2WasmUnit {
     pub runtime: Arc<dyn crate::wasm_runtime::WasmRuntime>,
     pub tool: fluent_types::WasmTool,
@@ -170,6 +173,9 @@ impl_component!(L2WasmUnit);
 // L3 — Graph traversal / keyword search tier
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// L3 — Graph traversal / keyword search tier
+/// ---------------------------------------------------------------------------
 pub struct L3GraphUnit {
     pub router: Arc<ParallelRouter>,
     depends: Vec<ArcIntern<str>>,
@@ -234,6 +240,9 @@ impl_component!(L3GraphUnit);
 // L4 — Semantic (embedding-based) search tier
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// L4 — Semantic (embedding-based) search tier
+/// ---------------------------------------------------------------------------
 pub struct L4SemanticUnit {
     pub router: Arc<ParallelRouter>,
     pub embedder: Arc<dyn fluent_llm::EmbeddingProvider>,
@@ -310,6 +319,9 @@ impl_component!(L4SemanticUnit);
 // L5 — Frontier LLM fallback tier
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// L5 — Frontier LLM fallback tier
+/// ---------------------------------------------------------------------------
 pub struct L5FrontierUnit {
     pub config: LlmConfig,
     pub chat_backend: Option<Box<dyn ChatBackend>>,
@@ -447,6 +459,19 @@ impl_component!(L5FrontierUnit);
 // `TierRegistry` already provides the registry/execution abstraction.
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// TierRegistry — sequential tier cascade
+/// 
+/// No separate `TierRegistry` trait is needed. Each tier unit implements
+/// `WorkUnit` (and `Component`), and its `provides()` returns a unique
+/// identifier (`"coral.tier.l2"`, `"coral.tier.l3"`, etc.) that serves as
+/// the tier-identification mechanism.  `TierRegistry` is simply a
+/// `Vec<Arc<dyn Component>>` iterated in registration order — the first
+/// tier that returns `Ok` wins.  Adding a new tier means implementing
+/// `WorkUnit` + `Component` and pushing it into the registry; no additional
+/// trait or dispatch table is needed because `fluent_wvr::Component` +
+/// `TierRegistry` already provides the registry/execution abstraction.
+/// ---------------------------------------------------------------------------
 pub struct TierRegistry {
     cascade: ComponentCascade,
 }

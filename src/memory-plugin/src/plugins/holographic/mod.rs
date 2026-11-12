@@ -23,6 +23,7 @@ use store::{HolographicStore, StoreConfig};
 
 /// Holographic memory plugin configuration.
 #[derive(Debug, Clone)]
+/// Holographic memory plugin configuration.
 pub struct HolographicConfig {
     /// SQLite database path.
     pub db_path: PathBuf,

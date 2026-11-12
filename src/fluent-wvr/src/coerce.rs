@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 
 /// A single string→string shaping step applied to a boundary value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A single string→string shaping step applied to a boundary value.
 pub enum Coercion {
     /// Trim leading/trailing whitespace.
     Trim,
@@ -168,6 +169,21 @@ fn decode_escape(chars: &[char], i: usize, n: usize, quote: char) -> Option<(Str
 /// sequences verbatim precisely because it rebuilds a JSON document; this
 /// function extracts the value underneath the quotes.
 #[allow(clippy::many_single_char_names)]
+/// Strip a matching outer single- or double-quote pair and decode the inner
+/// content to its logical value:
+/// 
+/// - `'…'` / `"…"` pairs are removed and their content is JSON-escape-decoded
+/// (`\"`, `\\`, `\'`, `\n`, `\t`, `\r`, `\b`, `\f`, `\uXXXX`); unknown
+/// escapes are preserved verbatim.
+/// - An opening quote with no matching close is treated as unterminated: the
+/// decoded content is still produced (a dangling trailing backslash is
+/// preserved).
+/// - No quote pair at all (a bare value): returned unchanged.
+/// 
+/// The result is the *logical* member content — what `serde_json` will re-escape
+/// when the value is serialized. The document-repair lexer keeps escape
+/// sequences verbatim precisely because it rebuilds a JSON document; this
+/// function extracts the value underneath the quotes.
 pub fn strip_outer_quotes(s: &str) -> String {
     let chars: Vec<char> = s.chars().collect();
     if chars.is_empty() {
@@ -217,6 +233,7 @@ fn is_null_literal(s: &str) -> bool {
 
 /// Classification of a boundary string into the JSON literal it spells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Classification of a boundary string into the JSON literal it spells.
 pub enum LiteralKind {
     /// A `null`-ish spelling (`undefined`, `None`, `NaN`, `Infinity`, `null`).
     Null,

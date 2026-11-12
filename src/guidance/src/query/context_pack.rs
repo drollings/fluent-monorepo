@@ -16,6 +16,7 @@ pub const DEFAULT_PACK_TOKENS: usize = 8_000;
 
 /// One packable excerpt in caller-priority order.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One packable excerpt in caller-priority order.
 pub struct ContextItem {
     /// Excerpt text (ranked content, signature, or section).
     pub text: String,
@@ -25,6 +26,7 @@ pub struct ContextItem {
 
 /// A budget-fitted pack in caller-priority order.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// A budget-fitted pack in caller-priority order.
 pub struct ContextPack {
     /// Items that fit the budget, caller-priority order preserved.
     pub items: Vec<ContextItem>,
@@ -35,13 +37,19 @@ pub struct ContextPack {
 /// Fit excerpts to a token budget through the shared packer core.
 /// Deterministic: selection is size-driven, order is caller-priority.
 #[must_use]
+/// Fit excerpts to a token budget through the shared packer core.
+/// Deterministic: selection is size-driven, order is caller-priority.
 pub fn pack_context(items: &[ContextItem], max_tokens: usize) -> ContextPack {
     let packer = ContextPacker::new(max_tokens);
-    let refs: Vec<(&str, &ContextItem)> =
-        items.iter().map(|item| (item.text.as_str(), item)).collect();
+    let refs: Vec<(&str, &ContextItem)> = items
+        .iter()
+        .map(|item| (item.text.as_str(), item))
+        .collect();
     let kept = packer.ffd_pack(&refs);
-    let kept_set: Vec<*const ContextItem> =
-        kept.into_iter().map(std::ptr::from_ref::<ContextItem>).collect();
+    let kept_set: Vec<*const ContextItem> = kept
+        .into_iter()
+        .map(std::ptr::from_ref::<ContextItem>)
+        .collect();
     let mut packed = Vec::new();
     for item in items {
         if kept_set.contains(&std::ptr::from_ref::<ContextItem>(item)) {
@@ -80,6 +88,7 @@ pub fn pack_context_strict(
 
 /// What a change touches: dependents, owners, and narrowest gates.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What a change touches: dependents, owners, and narrowest gates.
 pub struct ImpactReport {
     /// Changed paths as given.
     pub changed: Vec<String>,
@@ -95,8 +104,23 @@ pub struct ImpactReport {
     pub tests: Vec<String>,
 }
 
+/// Channels a syntactic index can never see: answers that touch them
+/// stay conservative. Printed by impact and deletion verdicts so the
+/// unseen set travels with the answer, never as tribal knowledge.
+pub const UNSEEN_CHANNELS: &[&str] = &[
+    "macros",
+    "dynamic dispatch",
+    "FFI",
+    "build scripts",
+    "benches",
+    "examples",
+    "downstream crates",
+    "cfg-disabled code",
+];
+
 /// Join the graph closure with the component gate map. Pure: no I/O.
 #[must_use]
+/// Join the graph closure with the component gate map. Pure: no I/O.
 pub fn impact_report(graph: &GraphIndex, changed: &[String]) -> ImpactReport {
     let dependents = graph.dependents_closure(changed);
     let mut owners: Vec<(String, ComponentGate)> = dependents
@@ -104,8 +128,7 @@ pub fn impact_report(graph: &GraphIndex, changed: &[String]) -> ImpactReport {
         .map(|path| (path.clone(), component_gate_for_path(path)))
         .collect();
     owners.sort_by(|left, right| left.0.cmp(&right.0));
-    let mut gates: Vec<String> =
-        owners.iter().map(|(_, gate)| gate.gate.clone()).collect();
+    let mut gates: Vec<String> = owners.iter().map(|(_, gate)| gate.gate.clone()).collect();
     gates.sort();
     gates.dedup();
     let mut tiers: Vec<String> = graph
@@ -113,10 +136,19 @@ pub fn impact_report(graph: &GraphIndex, changed: &[String]) -> ImpactReport {
         .iter()
         .filter(|edge| dependents.contains(&edge.importer))
         .map(|edge| edge.tier.as_str().to_string())
-        .chain(graph.call_edges().iter().filter(|edge| {
-            dependents.contains(&edge.caller_file)
-                || edge.callee_files.iter().any(|file| dependents.contains(file))
-        }).map(|edge| edge.tier.as_str().to_string()))
+        .chain(
+            graph
+                .call_edges()
+                .iter()
+                .filter(|edge| {
+                    dependents.contains(&edge.caller_file)
+                        || edge
+                            .callee_files
+                            .iter()
+                            .any(|file| dependents.contains(file))
+                })
+                .map(|edge| edge.tier.as_str().to_string()),
+        )
         .collect();
     tiers.sort();
     tiers.dedup();
@@ -126,14 +158,21 @@ pub fn impact_report(graph: &GraphIndex, changed: &[String]) -> ImpactReport {
         owners,
         gates,
         tiers,
-        tests: Vec::new(),
+        tests: graph.tests_touching_files(changed),
     }
 }
 
-/// Impact with tests-touching: the dependents closure plus the test
-/// files exercising the changed items. Test files pair `(path, text)`;
-/// item names pair with the changed paths by position.
+/// Impact with tests-touching for callers without a hydrated graph:
+/// the dependents closure plus caller-supplied test files matched by
+/// token mention. Heuristic fallback (identifier tokens, not recorded
+/// refs) — prefer `impact_report` over a hydrated graph, which reads
+/// the same edges the index committed.
 #[must_use]
+/// Impact with tests-touching for callers without a hydrated graph:
+/// the dependents closure plus caller-supplied test files matched by
+/// token mention. Heuristic fallback (identifier tokens, not recorded
+/// refs) — prefer `impact_report` over a hydrated graph, which reads
+/// the same edges the index committed.
 pub fn impact_report_with_tests(
     graph: &GraphIndex,
     changed: &[String],
@@ -147,8 +186,17 @@ pub fn impact_report_with_tests(
 
 /// Test files exercising an item: files whose text names it as a token
 /// (identifier boundaries, not substrings, so `food` never matches
-/// `foo`). Read-only evidence for packs and impact, never an edit set.
+/// `foo`). Heuristic fallback for callers without a hydrated graph —
+/// read-only evidence for packs and impact, never an edit set. The
+/// graph-backed `GraphIndex::tests_touching` reads committed edges
+/// instead and is preferred wherever the index is hydrated.
 #[must_use]
+/// Test files exercising an item: files whose text names it as a token
+/// (identifier boundaries, not substrings, so `food` never matches
+/// `foo`). Heuristic fallback for callers without a hydrated graph —
+/// read-only evidence for packs and impact, never an edit set. The
+/// graph-backed `GraphIndex::tests_touching` reads committed edges
+/// instead and is preferred wherever the index is hydrated.
 pub fn tests_touching(test_files: &[(String, String)], item_names: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for (path, text) in test_files {
@@ -175,6 +223,10 @@ fn mentions_token(text: &str, name: &str) -> bool {
 /// one level resolve by the caller's order, so the same inputs always
 /// render the same pack.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Deterministic pack inputs in priority order: target, diagnostic,
+/// callee signatures, callers, siblings, test excerpts. Ties within
+/// one level resolve by the caller's order, so the same inputs always
+/// render the same pack.
 pub struct PackInput {
     /// Target item source text.
     pub target_source: String,
@@ -197,6 +249,8 @@ pub struct PackInput {
 /// Citation manifest for a pack: one citation plus one hash per kept
 /// item, in pack order, for audit without re-reading sources.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Citation manifest for a pack: one citation plus one hash per kept
+/// item, in pack order, for audit without re-reading sources.
 pub struct PackManifest {
     /// Kept item sources in pack order.
     pub citations: Vec<String>,
@@ -213,6 +267,9 @@ pub struct PackManifest {
 /// bytes and symbol signatures are exact; collected callers, siblings,
 /// and test excerpts are lexical. Pure naming over the source label.
 #[must_use]
+/// Tier label for a pack item by provenance label. Verbatim target
+/// bytes and symbol signatures are exact; collected callers, siblings,
+/// and test excerpts are lexical. Pure naming over the source label.
 pub fn tier_for_pack_source(source: &str, target_path: &str) -> &'static str {
     if source == target_path || source == "signatures" {
         crate::search_types::RetrievalTier::Exact.as_str()
@@ -225,6 +282,9 @@ pub fn tier_for_pack_source(source: &str, target_path: &str) -> &'static str {
 /// priority order, fit through the shared packer core, and manifest
 /// the kept items. Same inputs yield the same pack, byte-identically.
 #[must_use]
+/// Build a token-budgeted task pack deterministically: assemble in
+/// priority order, fit through the shared packer core, and manifest
+/// the kept items. Same inputs yield the same pack, byte-identically.
 pub fn build_task_pack(input: &PackInput) -> (ContextPack, PackManifest) {
     let mut items = vec![ContextItem {
         text: input.target_source.clone(),
@@ -284,6 +344,11 @@ pub fn build_task_pack(input: &PackInput) -> (ContextPack, PackManifest) {
 /// citation verification. A confident-looking excerpt can still be
 /// wrong for the task; a flagged one can still be the right evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Screening verdict over pack excerpts: which items look
+/// instruction-shaped. Producer self-doubt only (the text looks like
+/// instruction); whether an excerpt is the right evidence stays with
+/// citation verification. A confident-looking excerpt can still be
+/// wrong for the task; a flagged one can still be the right evidence.
 pub struct PackScreening {
     /// Indices into the screened items that tripped the predicate.
     pub flagged_indices: Vec<usize>,
@@ -300,6 +365,8 @@ impl PackScreening {
 /// Screen excerpts through the single triage predicate (no copy, no
 /// second list). Pure labeling; handling is the caller's mode choice.
 #[must_use]
+/// Screen excerpts through the single triage predicate (no copy, no
+/// second list). Pure labeling; handling is the caller's mode choice.
 pub fn screen_pack_items(items: &[ContextItem]) -> PackScreening {
     PackScreening {
         flagged_indices: items
@@ -313,6 +380,7 @@ pub fn screen_pack_items(items: &[ContextItem]) -> PackScreening {
 
 /// How a flagged pack is handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a flagged pack is handled.
 pub enum ScreeningMode {
     /// Record labels in the manifest; emit the pack unchanged.
     Measuring,
@@ -322,6 +390,7 @@ pub enum ScreeningMode {
 
 /// Flagged pack held for review instead of emitted.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Flagged pack held for review instead of emitted.
 pub struct HeldForReview {
     /// Why the pack was held (`untrusted-text`).
     pub reason: String,

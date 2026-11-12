@@ -13,6 +13,10 @@ use crate::sync::staleness;
 use crate::walk;
 use search_vector::GuidanceDb;
 
+/// Extensions the member/mirror pipeline can parse. The fragment index
+/// still selects markdown via `SOURCE_EXTENSIONS`.
+pub const MEMBER_SOURCE_EXTENSIONS: &[&str] = &["zig", "zon", "py", "rs"];
+
 #[derive(Error, Debug)]
 pub enum SyncEngineError {
     #[error("IO error: {0}")]
@@ -215,8 +219,7 @@ impl SyncEngine {
             granularity: self.timestamp_granularity,
         };
 
-        let mut pipeline =
-            Self::build_pipeline(&mut self.ast_parser, config.db_sync);
+        let mut pipeline = Self::build_pipeline(&mut self.ast_parser, config.db_sync);
         pipeline.run(&mut ctx)?;
         // The pipeline borrows the parser; release it before touching self.
         drop(pipeline);
@@ -246,7 +249,7 @@ impl SyncEngine {
                 Ok(())
             })
             .step(move |ctx: &mut SyncContext| {
-                match comments::sync_comments(&ctx.source_path, &ctx.doc, ast_parser) {
+                match comments::sync_comments(&ctx.source_path, &ctx.source, &ctx.doc, ast_parser) {
                     Ok(wrote) => ctx.comments_wrote_source = wrote,
                     Err(e) => {
                         tracing::warn!("comment sync failed for {:?}: {e}", ctx.source_path);
@@ -319,6 +322,12 @@ impl SyncEngine {
         if !json_path.exists() {
             return true;
         }
+        // Stuck records never count as fresh, even when the bytes are
+        // unchanged: the loop escalated the file and only a clean save
+        // clears the hold.
+        if crate::freshness::sidecar_stuck(json_path) {
+            return true;
+        }
         if let Some(stored) = self.stored_hash(source_path) {
             return crate::diff::hash_file(source_path).as_deref() != Some(stored);
         }
@@ -351,11 +360,7 @@ impl SyncEngine {
             return false;
         };
         let names: Vec<&str> = header.components.keys().map(String::as_str).collect();
-        crate::components::receipt_reusable(
-            &header.components,
-            &self.components.components,
-            &names,
-        )
+        crate::components::receipt_reusable(&header.components, &self.components.components, &names)
     }
 
     pub fn load_doc(&self, source_path: &Path) -> Result<Option<GuidanceDoc>, SyncEngineError> {
@@ -369,10 +374,11 @@ impl SyncEngine {
         let mut stale_files = 0;
         let mut up_to_date = 0;
 
-        self.walk_source_files(|source_path| {
+        // Single sweep: the shared classifier behind `status` and
+        // `stale_files`, so the two never disagree about what is stale.
+        self.each_source_file_staleness(|stale| {
             total_files += 1;
-            let json_path = self.guidance_json_path(source_path);
-            if self.should_generate_for(source_path, &json_path) {
+            if stale {
                 stale_files += 1;
             } else {
                 up_to_date += 1;
@@ -386,8 +392,39 @@ impl SyncEngine {
         })
     }
 
+    /// One walk, one staleness verdict per file: the single classifier
+    /// behind `status` and `stale_files` (no second sweep semantics).
+    fn each_source_file_staleness(&self, mut classify: impl FnMut(bool)) {
+        self.walk_source_files(|source_path| {
+            let json_path = self.guidance_json_path(source_path);
+            classify(self.should_generate_for(source_path, &json_path));
+        });
+    }
+
+    /// Stale source files (absolute as walked): the strict-mode input.
+    /// Same sweep as `status`, so the two never disagree.
+    #[must_use]
+    pub fn stale_files(&self) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        self.walk_source_files(|source_path| {
+            let json_path = self.guidance_json_path(source_path);
+            if self.should_generate_for(source_path, &json_path) {
+                out.push(source_path.to_path_buf());
+            }
+        });
+        out
+    }
+
     fn guidance_json_path(&self, source_path: &Path) -> PathBuf {
         guidance_json_path(source_path, &self.source_dir, &self.guidance_dir)
+    }
+
+    /// Sidecar path for a source file: the single shared mapping, so
+    /// out-of-engine callers (CLI verify) resolve exactly what the
+    /// pipeline reads and writes.
+    #[must_use]
+    pub fn sidecar_path(&self, source_path: &Path) -> PathBuf {
+        self.guidance_json_path(source_path)
     }
 
     /// Path-scoped generation (P2): generate docs for every source file
@@ -414,7 +451,7 @@ impl SyncEngine {
                 .path
                 .extension()
                 .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| matches!(ext, "zig" | "zon" | "py" | "rs"));
+                .is_some_and(|ext| MEMBER_SOURCE_EXTENSIONS.contains(&ext));
             if !parseable {
                 continue;
             }
@@ -461,7 +498,7 @@ impl SyncEngine {
     {
         walk::walk_files(
             &self.source_dir,
-            fluent_types::file_kind::SOURCE_EXTENSIONS,
+            MEMBER_SOURCE_EXTENSIONS,
             &mut |path: &Path| {
                 if !is_test_path(path) {
                     callback(path);
@@ -489,6 +526,14 @@ fn header_source_hash(json_path: &Path) -> Option<String> {
 /// returning it unchanged when absolutization fails. Shared path-key
 /// normalization for stored-hash lookups (DB keys are absolute).
 #[must_use]
+/// Lexical absolutization (no I/O, no symlink resolution): relative
+/// roots compare equal with the absolute paths discovery yields, so
+/// `strip_prefix` relativization and `meta` derivation agree no matter
+/// how the caller spelled the workspace. Falls back to the input when
+/// the working directory is unreadable — never a construction failure.
+/// Lexically absolutize `path` against the process working directory,
+/// returning it unchanged when absolutization fails. Shared path-key
+/// normalization for stored-hash lookups (DB keys are absolute).
 pub fn absolute_or(path: PathBuf) -> PathBuf {
     // Single shared cwd-join; unreadable directory falls back to input.
     common_core::io::make_path_absolute(&path.to_string_lossy())
@@ -497,10 +542,10 @@ pub fn absolute_or(path: PathBuf) -> PathBuf {
 }
 
 /// Compute the guidance JSON path for a source file: the path relative to
-/// `source_dir`, suffixed `.json`, under `guidance_dir/src`. The single shared
-/// implementation behind both `SyncEngine::guidance_json_path` and the
+/// Sidecar path for one source file: `guidance_dir/src/<rel>.json`.
+/// The single shared implementation behind both `SyncEngine::guidance_json_path` and the
 /// pipeline step.
-fn guidance_json_path(source_path: &Path, source_dir: &Path, guidance_dir: &Path) -> PathBuf {
+pub fn guidance_json_path(source_path: &Path, source_dir: &Path, guidance_dir: &Path) -> PathBuf {
     let source_path = absolute_or(source_path.to_path_buf());
     let source_dir = absolute_or(source_dir.to_path_buf());
     let relative = source_path
@@ -763,8 +808,7 @@ mod clock_gate_calibration_tests {
         let raw = std::fs::read_to_string(&legacy_json).expect("read sidecar");
         let (_, body) = fluent_types::sidecar::strip_header(&raw);
         std::fs::write(&legacy_json, body).expect("write body");
-        std::fs::write(legacy_source, std::fs::read(legacy_source).expect("read"))
-            .expect("touch");
+        std::fs::write(legacy_source, std::fs::read(legacy_source).expect("read")).expect("touch");
         assert!(
             !bare.gen_if_stale(legacy_source).expect("gate"),
             "control: headerless keeps mtime behavior (skip): {legacy_source:?}"

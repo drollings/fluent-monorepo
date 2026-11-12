@@ -12,7 +12,8 @@
 //! by the `query_db_storage` round-trip tests.
 
 use search_vector::db::{
-    FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceDb, SymbolRecord,
+    FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceDb,
+    SymbolRecord,
 };
 
 use crate::query::plan::RecallError;
@@ -167,6 +168,31 @@ impl RecallStorage for GuidanceDbStorage<'_> {
         Ok(out)
     }
 
+    fn search_summaries(
+        &self,
+        query: &str,
+        limit: usize,
+        filter: &StorageFilter,
+    ) -> Result<Vec<StorageHit>, RecallError> {
+        let hits = self
+            .db
+            .search_summaries(query, limit)
+            .map_err(|error| db_error(&error))?;
+        hits.into_iter()
+            .enumerate()
+            .filter(|(_, hit)| {
+                filter
+                    .file_ids
+                    .as_ref()
+                    .is_none_or(|allowed| allowed.contains(&hit.file_id))
+            })
+            .filter_map(|(index, hit)| {
+                self.storage_hit(&hit.id, &hit.file_id, hit.score, index + 1)
+                    .transpose()
+            })
+            .collect()
+    }
+
     fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, RecallError> {
         let rows = self
             .db
@@ -213,6 +239,7 @@ fn fragment_filter(filter: &StorageFilter) -> FragmentFilter {
 
 /// Convert a P0 `FileInfo` into a file row for ingestion.
 #[must_use]
+/// Convert a P0 `FileInfo` into a file row for ingestion.
 pub fn file_record(file: &FileInfo) -> FileRecord {
     FileRecord {
         id: file.id.clone(),
@@ -233,6 +260,8 @@ pub fn file_record(file: &FileInfo) -> FileRecord {
 /// Convert a P0 `EntityFragment` into a fragment row (`cjk_text` and
 /// `embedding` filled by the ingestion helper, not here).
 #[must_use]
+/// Convert a P0 `EntityFragment` into a fragment row (`cjk_text` and
+/// `embedding` filled by the ingestion helper, not here).
 pub fn fragment_record(fragment: &EntityFragment) -> FragmentRecord {
     let (symbol_type, symbol_name, scope, signature, doc, modifiers, heading, heading_level) =
         match &fragment.metadata {
@@ -308,6 +337,7 @@ pub fn fragment_record(fragment: &EntityFragment) -> FragmentRecord {
 
 /// Build a lemma row for the L2 table.
 #[must_use]
+/// Build a lemma row for the L2 table.
 pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> FragmentLemma {
     FragmentLemma {
         fragment_id: fragment_id.to_string(),
@@ -319,9 +349,17 @@ pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> Fragme
 /// Interface fingerprint: name, type, scope, and normalized signature.
 /// Body text never enters this hash, so a body-only edit keeps it stable.
 #[must_use]
+/// Interface fingerprint: name, type, scope, and normalized signature.
+/// Body text never enters this hash, so a body-only edit keeps it stable.
 pub fn interface_hash_for_entity(fragment: &EntityFragment) -> String {
     let parts = match &fragment.metadata {
-        Some(EntityMetadata::Code { symbol_type, symbol_name, scope, signature, .. }) => {
+        Some(EntityMetadata::Code {
+            symbol_type,
+            symbol_name,
+            scope,
+            signature,
+            ..
+        }) => {
             let kind = match symbol_type {
                 CodeSymbolType::Module => "module",
                 CodeSymbolType::Class => "class",
@@ -330,14 +368,19 @@ pub fn interface_hash_for_entity(fragment: &EntityFragment) -> String {
                 CodeSymbolType::Value => "value",
                 CodeSymbolType::Alias => "alias",
             };
-            let sig: String = signature.as_deref().unwrap_or("").split_whitespace().collect();
+            let sig =
+                crate::item_hashes::normalize_signature_text(signature.as_deref().unwrap_or(""));
             format!(
                 "{kind}\0{}\0{}\0{sig}",
                 symbol_name.as_deref().unwrap_or(""),
                 scope.as_deref().unwrap_or("")
             )
         }
-        Some(EntityMetadata::Markdown { heading, level, scope }) => format!(
+        Some(EntityMetadata::Markdown {
+            heading,
+            level,
+            scope,
+        }) => format!(
             "markdown\0{}\0{}\0{}",
             heading.as_deref().unwrap_or(""),
             level.map(|level| level.to_string()).unwrap_or_default(),
@@ -350,6 +393,7 @@ pub fn interface_hash_for_entity(fragment: &EntityFragment) -> String {
 
 /// Content fingerprint: the full fragment text as stored.
 #[must_use]
+/// Content fingerprint: the full fragment text as stored.
 pub fn content_hash_for_entity(fragment: &EntityFragment) -> String {
     let text = match &fragment.content {
         FragmentContent::Text { text } => text.as_str(),
@@ -362,12 +406,22 @@ pub fn content_hash_for_entity(fragment: &EntityFragment) -> String {
 /// Callers persist the returned rows alongside fragments from the same
 /// harvest pass; reads stay on fragments this milestone.
 #[must_use]
+/// Identity row for one definition; `None` for chunks without metadata.
+/// Callers persist the returned rows alongside fragments from the same
+/// harvest pass; reads stay on fragments this milestone.
 pub fn symbol_record(fragment: &EntityFragment) -> Option<SymbolRecord> {
     let (name, scope, signature) = match &fragment.metadata {
-        Some(EntityMetadata::Code { symbol_name, scope, signature, .. }) => {
-            (symbol_name.clone(), scope.clone(), signature.clone())
-        }
-        Some(EntityMetadata::Markdown { heading, scope, level }) => (
+        Some(EntityMetadata::Code {
+            symbol_name,
+            scope,
+            signature,
+            ..
+        }) => (symbol_name.clone(), scope.clone(), signature.clone()),
+        Some(EntityMetadata::Markdown {
+            heading,
+            scope,
+            level,
+        }) => (
             heading.clone(),
             scope.clone(),
             level.map(|level| format!("h{level}")),

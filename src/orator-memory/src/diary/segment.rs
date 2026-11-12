@@ -15,6 +15,7 @@ pub const HOP_SAMPLES: u64 = 12_000;
 
 /// One audio segment to attribute.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One audio segment to attribute.
 pub struct Segment {
     /// Segment index in emission order.
     pub index: usize,
@@ -42,6 +43,7 @@ impl Segment {
 
 /// Cut `total_samples` of `channel` into overlapping windows.
 #[must_use]
+/// Cut `total_samples` of `channel` into overlapping windows.
 pub fn segment(channel: Channel, total_samples: u64) -> Vec<Segment> {
     let mut segments = Vec::new();
     if total_samples == 0 {

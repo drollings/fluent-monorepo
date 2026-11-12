@@ -499,6 +499,7 @@ pub fn trim_doc_prefix(text: &str) -> String {
 
 /// Identifier case-style classification for a query string.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Identifier case-style classification for a query string.
 pub enum IdentifierKind {
     CamelCase,
     PascalCase,
@@ -563,6 +564,14 @@ pub fn slugify(text: &str) -> String {
 // Four independent option flags; a bitflags struct would break the public
 // `CHART_OPTIONS` / `legacy_default()` field-init API for no gain.
 #[allow(clippy::struct_excessive_bools)]
+/// Options for the parameterized slug primitive (P4).
+/// 
+/// `slugify(text) == slugify_with(text, &SlugOptions::legacy_default())`
+/// byte-for-byte (locked in by `slugify_characterization_table`); the
+/// router's chart-name slug is `CHART_OPTIONS` (separator `'_'`, run
+/// collapsing, trailing-separator strip, char-bounded length cap).
+/// Four independent option flags; a bitflags struct would break the public
+/// `CHART_OPTIONS` / `legacy_default()` field-init API for no gain.
 pub struct SlugOptions {
     /// `true`: ASCII-lowercase and map every other non-kept char to the
     /// separator. `false` (legacy): Unicode-lowercase, map only `' '` to the
@@ -869,6 +878,10 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
 /// bigram indexes carry no junk pairs. Shared by the FTS5 application-level
 /// CJK bigram expansion (guidance index + query sides).
 #[must_use]
+/// Whether a char is CJK (Han, Hiragana, Katakana, Hangul syllables +
+/// Jamo). Letter/syllable blocks only — CJK punctuation is excluded so
+/// bigram indexes carry no junk pairs. Shared by the FTS5 application-level
+/// CJK bigram expansion (guidance index + query sides).
 pub fn is_cjk_char(c: char) -> bool {
     matches!(c,
         '\u{1100}'..='\u{11FF}' // Hangul Jamo
@@ -888,6 +901,11 @@ pub fn is_cjk_char(c: char) -> bool {
 /// both expand CJK runs to space-joined bigrams; non-CJK text breaks runs
 /// and runs shorter than two chars emit nothing.
 #[must_use]
+/// Overlapping character bigrams over CJK runs — the application-level half
+/// of the FTS CJK contract (`FTS_CJK_STRATEGY = "cjk-bigram-expansion"`).
+/// SQLite FTS5 has no CJK dictionary tokenizer, so index and query sides
+/// both expand CJK runs to space-joined bigrams; non-CJK text breaks runs
+/// and runs shorter than two chars emit nothing.
 pub fn cjk_bigrams(text: &str) -> Vec<String> {
     fn flush(run: &mut Vec<char>, out: &mut Vec<String>) {
         for pair in run.windows(2) {
@@ -922,6 +940,19 @@ pub fn cjk_bigrams(text: &str) -> Vec<String> {
 /// assert_eq!(extract_tag("<comment></comment>", "comment"), None);
 /// ```
 #[must_use]
+/// Extract the first `<tag>...</tag>` body, trimmed (`None` when either
+/// delimiter is missing or the body trims to empty). Callers fall back to
+/// the raw response on `None` — the tag is advisory, never load-bearing.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use common_core::string::extract_tag;
+/// 
+/// assert_eq!(extract_tag("<comment> hi </comment>", "comment"), Some("hi"));
+/// assert_eq!(extract_tag("no tags", "comment"), None);
+/// assert_eq!(extract_tag("<comment></comment>", "comment"), None);
+/// ```
 pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
@@ -952,6 +983,21 @@ pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
 /// assert_eq!(ascii_alnum_tokens(""), Vec::<String>::new());
 /// ```
 #[must_use]
+/// Split a name on non-ASCII-alphanumeric separators, dropping empties.
+/// 
+/// Case-preserving (unlike [`split_tokens`]-style lowercasing tokenizers in
+/// `search-vector::tokens`): `bug_triage` → `["bug", "triage"]`, so a query
+/// naming only a fragment still matches. Moved verbatim from the router's
+/// chart store (M7.2); the indexed-doc-text join stays with the chart type.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use common_core::string::ascii_alnum_tokens;
+/// 
+/// assert_eq!(ascii_alnum_tokens("bug_triage"), vec!["bug", "triage"]);
+/// assert_eq!(ascii_alnum_tokens(""), Vec::<String>::new());
+/// ```
 pub fn ascii_alnum_tokens(name: &str) -> Vec<String> {
     AsciiAlnumTokens::new(name).map(str::to_string).collect()
 }
@@ -971,6 +1017,20 @@ pub fn ascii_alnum_tokens(name: &str) -> Vec<String> {
 /// assert_eq!(tokens, vec!["Foo", "Bar", "baz"]);
 /// ```
 #[derive(Debug, Clone)]
+/// Streaming ASCII-alphanumeric tokenizer: the zero-allocation walk behind
+/// [`ascii_alnum_tokens`], borrowing the input and yielding one case-
+/// preserved token per separator-delimited run (same contract, no `String`
+/// per token). Skips leading/trailing/repeated separators; empty input
+/// yields nothing.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use common_core::string::AsciiAlnumTokens;
+/// 
+/// let tokens: Vec<&str> = AsciiAlnumTokens::new("Foo.Bar-baz").collect();
+/// assert_eq!(tokens, vec!["Foo", "Bar", "baz"]);
+/// ```
 pub struct AsciiAlnumTokens<'a> {
     rest: &'a str,
 }
@@ -1036,6 +1096,41 @@ impl<'a> Iterator for AsciiAlnumTokens<'a> {
 /// );
 /// ```
 #[must_use]
+/// Replace byte spans rightmost-first so earlier offsets stay valid.
+/// 
+/// The one shared span-splicing stanza (scrubbers, anonymizers): sorts by
+/// `(start, end)` descending, then applies each span's replacement with
+/// [`str::replace_range`]. Total and deterministic — input order is
+/// irrelevant; degenerate spans are skipped, never panics:
+/// 
+/// - empty/inverted (`start >= end`), past-the-end, and non-`char`-boundary
+/// spans are skipped; spans straddling the end of (the current) text are
+/// clamped to what exists;
+/// - a span starting inside already-handled text is skipped (an exact
+/// duplicate, or nested inside a wider applied span);
+/// - a span straddling the handled frontier is clamped to the unhandled
+/// prefix — the rightmost replacement wins, and matched text is never
+/// left in place by an overlap (fail-closed bias: over-scrubbing clean
+/// text is safe, under-scrubbing a match is a leak).
+/// 
+/// Adjacent spans all apply; each span's replacement is used verbatim (no
+/// escaping). Callers with one replacement for every span pass the same
+/// `&str` N times.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use common_core::string::apply_spans_rightmost;
+/// 
+/// assert_eq!(
+/// apply_spans_rightmost("aaaBBBccc", vec![(6, 9, "C"), (0, 3, "A")]),
+/// "ABBBC"
+/// );
+/// assert_eq!(
+/// apply_spans_rightmost("abcdef", vec![(0, 6, "O"), (2, 4, "I")]),
+/// "OIef"
+/// );
+/// ```
 pub fn apply_spans_rightmost(text: &str, spans: Vec<(usize, usize, &str)>) -> String {
     let mut sorted = spans;
     sorted.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
@@ -1080,6 +1175,23 @@ pub fn apply_spans_rightmost(text: &str, spans: Vec<(usize, usize, &str)>) -> St
 /// assert_eq!(fts_match_tokens("!!!"), Vec::<String>::new());
 /// ```
 #[must_use]
+/// FTS5 match-expression tokenizer shared by every lexical recall arm:
+/// Unicode-alphanumeric runs, lowercased, deduped in first-seen order.
+/// Differs from [`ascii_alnum_tokens`] on purpose (Unicode-aware,
+/// case-folding, deduped): FTS5's `unicode61` tokenizer matches folded, and
+/// short match expressions keep the query planner cheap. Extracted from
+/// `search-vector`'s match builder so coral's node index composes the same
+/// token stream instead of growing a second one.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use common_core::string::fts_match_tokens;
+/// 
+/// assert_eq!(fts_match_tokens("find AlphaSymbol"), vec!["find", "alphasymbol"]);
+/// assert_eq!(fts_match_tokens("hello hello"), vec!["hello"]);
+/// assert_eq!(fts_match_tokens("!!!"), Vec::<String>::new());
+/// ```
 pub fn fts_match_tokens(query: &str) -> Vec<String> {
     let mut tokens: Vec<String> = Vec::new();
     for token in query.split(|c: char| !c.is_alphanumeric()) {
@@ -1106,6 +1218,17 @@ pub fn fts_match_tokens(query: &str) -> Vec<String> {
 /// assert_eq!(fts_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
 /// ```
 #[must_use]
+/// Quote one FTS5 match token: wrap in double quotes, doubling embedded
+/// quotes so user input can never act as an operator or break the expression.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use common_core::string::fts_quote;
+/// 
+/// assert_eq!(fts_quote("hi"), "\"hi\"");
+/// assert_eq!(fts_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
+/// ```
 pub fn fts_quote(token: &str) -> String {
     format!("\"{}\"", token.replace('"', "\"\""))
 }

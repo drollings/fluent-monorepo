@@ -59,6 +59,22 @@ pub fn load_json<T: DeserializeOwned>(path: &Path) -> Result<T, IoError> {
 /// ]);
 /// ```
 #[must_use]
+/// Return the first candidate that exists as a file, in order (project
+/// beats user beats absent). Callers build the ordered list — typically
+/// `[project_dir.join(rel), user_config_dir.join(rel)]` — so levels stay
+/// composable and unit tests stay hermetic (no ambient directories).
+/// 
+/// # Examples
+/// 
+/// ```no_run
+/// use std::path::PathBuf;
+/// use common_core::config::find_hierarchical;
+/// 
+/// let found = find_hierarchical(&[
+/// PathBuf::from("/repo/.guidance/guidance-config.json"),
+/// PathBuf::from("/home/u/.config/guidance/guidance-config.json"),
+/// ]);
+/// ```
 pub fn find_hierarchical(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|path| path.is_file()).cloned()
 }
@@ -67,6 +83,9 @@ pub fn find_hierarchical(candidates: &[PathBuf]) -> Option<PathBuf> {
 /// construction failure. The single spelling for home-anchored defaults
 /// (memory DB, state files).
 #[must_use]
+/// Home directory, falling back to `.` when it is unreadable — never a
+/// construction failure. The single spelling for home-anchored defaults
+/// (memory DB, state files).
 pub fn home_or_dot() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }

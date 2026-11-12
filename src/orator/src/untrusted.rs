@@ -61,6 +61,7 @@ fn sanitize_source(source: &str) -> String {
 
 /// Wrap `text` as untrusted data from `source` (tool name, URL, channel).
 #[must_use]
+/// Wrap `text` as untrusted data from `source` (tool name, URL, channel).
 pub fn wrap_untrusted(source: &str, text: &str) -> String {
     format!(
         "<data source=\"{}\">\n{}</data>",
@@ -71,6 +72,7 @@ pub fn wrap_untrusted(source: &str, text: &str) -> String {
 
 /// Wrap one tool's output for the next model pass.
 #[must_use]
+/// Wrap one tool's output for the next model pass.
 pub fn wrap_tool_result(name: &str, output: &str) -> String {
     wrap_untrusted(&format!("tool:{name}"), output)
 }

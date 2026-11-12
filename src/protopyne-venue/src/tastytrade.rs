@@ -69,6 +69,10 @@ pub const RETRY_JITTER_PCT: u32 = 50;
     Describable,
 )]
 #[builder(start_fn = new)]
+/// Transport configuration: endpoints plus policy knobs. Loaded via the
+/// shared JSON loader (missing or broken files read as default, loudly),
+/// never a second loader. No credential field: [`NetCapability`] sends no
+/// auth headers, so this skeleton runs unauthenticated loopback only.
 pub struct TastytradeConfig {
     /// REST base URL (empty means unconfigured: refresh refuses without
     /// dialing).
@@ -124,6 +128,9 @@ impl TastytradeConfig {
 /// retry with backoff, terminal failures stop immediately with their reason
 /// intact (first-class `Err`, never swallowed).
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
+/// Transport failures with an explicit retry taxonomy: transient failures
+/// retry with backoff, terminal failures stop immediately with their reason
+/// intact (first-class `Err`, never swallowed).
 pub enum TransportError {
     /// HTTP transport or body framing failed.
     #[error("transport failure: {0}")]
@@ -381,6 +388,8 @@ pub(crate) fn envelope_error(body: &serde_json::Value) -> Option<TransportError>
 /// How one message-pump generation ended. The pump reports; the caller
 /// (scope task or supervised driver) decides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How one message-pump generation ended. The pump reports; the caller
+/// (scope task or supervised driver) decides.
 pub enum PumpEnd {
     /// The feed republic ended (inbox closed): reconnect to resume.
     InboxClosed,

@@ -20,6 +20,7 @@ use protopyne_types::Qty;
 
 /// Sizing-mode options (script spelling).
 #[must_use]
+/// Sizing-mode options (script spelling).
 pub fn equity_size_modes() -> Vec<String> {
     ["Risk Percent", "Percent of Equity", "Fixed Quantity"]
         .iter()
@@ -32,6 +33,10 @@ pub fn equity_size_modes() -> Vec<String> {
 /// A zero total stays zero — disabled zones, whatever is left runs on the
 /// trailing stop.
 #[must_use]
+/// Normalize TP-zone weights when they exceed 100%: scale down
+/// proportionally (the script's normalization), leave smaller sums alone.
+/// A zero total stays zero — disabled zones, whatever is left runs on the
+/// trailing stop.
 pub fn normalize_tp_weights(weights: [f64; 3]) -> [f64; 3] {
     let total: f64 = weights.iter().sum();
     if total > 100.0 && total.is_finite() && total > 0.0 {
@@ -113,6 +118,12 @@ pub fn clamp_stop(distance: f64, atr: f64, min_mult: f64, max_mult: f64) -> f64 
 /// second sizing path can drift from the first. Anything unmeasurable
 /// sizes zero — downstream refuses a zero quantity with a reason.
 #[derive(Debug, Clone, PartialEq)]
+/// Sizing for one equity trade. The per-trade numbers arrive with the
+/// priced unit through [`Sizing::size_for`]: the equity path builds the
+/// unit from the close and the clamped stop distance every bar, so no
+/// per-trade state rides the instance and no
+/// second sizing path can drift from the first. Anything unmeasurable
+/// sizes zero — downstream refuses a zero quantity with a reason.
 pub struct EquitySizer {
     mode: String,
     risk_pct: f64,
@@ -234,6 +245,9 @@ impl Sizing for EquitySizer {
 /// fees and slippage do not turn a scratch into a loss. Long adds, short
 /// subtracts.
 #[must_use]
+/// Breakeven stop price: entry shifted past zero by the offset in ATRs, so
+/// fees and slippage do not turn a scratch into a loss. Long adds, short
+/// subtracts.
 pub fn breakeven_price(long: bool, entry: f64, offset_atr: f64, atr: f64) -> f64 {
     if long {
         entry + offset_atr * atr
@@ -246,6 +260,9 @@ pub fn breakeven_price(long: bool, entry: f64, offset_atr: f64, atr: f64) -> f64
 /// would loosen the stop is ignored — stops never loosen, so the worst
 /// exit only ever improves.
 #[must_use]
+/// Ratchet a long stop upward only (short: downward only). A candidate that
+/// would loosen the stop is ignored — stops never loosen, so the worst
+/// exit only ever improves.
 pub fn ratchet_stop(long: bool, current: f64, candidate: f64) -> f64 {
     if long {
         current.max(candidate)
@@ -257,6 +274,8 @@ pub fn ratchet_stop(long: bool, current: f64, candidate: f64) -> f64 {
 /// Chandelier trailing candidate: the best price since entry pulled back by
 /// the multiple in ATRs.
 #[must_use]
+/// Chandelier trailing candidate: the best price since entry pulled back by
+/// the multiple in ATRs.
 pub fn trail_chandelier(long: bool, best: f64, atr: f64, mult: f64) -> f64 {
     if long {
         best - mult * atr
@@ -267,6 +286,7 @@ pub fn trail_chandelier(long: bool, best: f64, atr: f64, mult: f64) -> f64 {
 
 /// Percent trailing candidate off the best price since entry.
 #[must_use]
+/// Percent trailing candidate off the best price since entry.
 pub fn trail_percent(long: bool, best: f64, pct: f64) -> f64 {
     if long {
         best * (1.0 - pct / 100.0)
@@ -278,6 +298,8 @@ pub fn trail_percent(long: bool, best: f64, pct: f64) -> f64 {
 /// Ribbon-edge trailing candidate: the band edge pulled back by the buffer
 /// in ATRs (long trails the lower edge, short the upper).
 #[must_use]
+/// Ribbon-edge trailing candidate: the band edge pulled back by the buffer
+/// in ATRs (long trails the lower edge, short the upper).
 pub fn trail_ribbon_edge(long: bool, edge: f64, buf_atr: f64, atr: f64) -> f64 {
     if long {
         edge - buf_atr * atr
@@ -290,6 +312,9 @@ pub fn trail_ribbon_edge(long: bool, edge: f64, buf_atr: f64, atr: f64) -> f64 {
 /// answers whether a bar may enter. A losing exit adds the extra loss
 /// cooldown. Constructed per bar from carried state — no hidden clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Cooldown gate as a pure value: the runner carries the last exit, this
+/// answers whether a bar may enter. A losing exit adds the extra loss
+/// cooldown. Constructed per bar from carried state — no hidden clock.
 pub struct CooldownGate {
     /// Cooldown after any exit, in bars.
     pub bars: i64,
@@ -323,6 +348,8 @@ impl CooldownGate {
 /// Daily trade limits as pure values: the runner carries the day's counts,
 /// these answer whether a new entry may arm.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Daily trade limits as pure values: the runner carries the day's counts,
+/// these answer whether a new entry may arm.
 pub struct DailyLimits {
     /// Maximum trades per day (0 disables).
     pub max_trades: i64,
@@ -379,6 +406,8 @@ impl DailyLimits {
 /// Session end-of-day gate as a pure value: flatten this many minutes before
 /// the session close, and refuse new entries inside the no-entry window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Session end-of-day gate as a pure value: flatten this many minutes before
+/// the session close, and refuse new entries inside the no-entry window.
 pub struct SessionGate {
     /// Minutes before the session close to flatten (0 = at the close bar).
     pub flatten_min_before: i64,
@@ -406,6 +435,9 @@ impl SessionGate {
 /// carries the flag; this answers whether the current bar may take the
 /// partial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Exhaustion partial state: fires at most once per position. The runner
+/// carries the flag; this answers whether the current bar may take the
+/// partial.
 pub struct PartialOnce {
     taken: bool,
 }

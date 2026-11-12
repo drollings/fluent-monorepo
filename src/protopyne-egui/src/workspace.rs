@@ -360,6 +360,8 @@ fn volume_color(hex: &str, slot: &str) -> Result<egui::Color32, EguiError> {
 /// Where a merged slot paints: its computation stays where it was, only
 /// the presentation moves. The default keeps the plugin's own pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Where a merged slot paints: its computation stays where it was, only
+/// the presentation moves. The default keeps the plugin's own pane.
 pub enum PaneTarget {
     /// The plugin's own pane (no override row stored).
     #[default]
@@ -372,6 +374,7 @@ pub enum PaneTarget {
 
 /// One sub-pane's identity and viewport.
 #[derive(Debug, Clone)]
+/// One sub-pane's identity and viewport.
 struct SubPaneView {
     id: String,
     viewport: Viewport,
@@ -380,6 +383,8 @@ struct SubPaneView {
 /// One pane's layout: the data plot, the right price-axis strip, and the
 /// optional bottom time strip.
 #[derive(Debug, Clone, Copy)]
+/// One pane's layout: the data plot, the right price-axis strip, and the
+/// optional bottom time strip.
 struct PaneLayout {
     /// Data area: grid, candles, overlays, and the crosshair draw here.
     plot: egui::Rect,
@@ -852,6 +857,10 @@ fn paint_crosshair_overlay(
 /// Bookmark captures the trigger candle for the active ticker, and Set
 /// Replay Boundary arms the replay button's window at the trigger candle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One canvas context-menu row, raised near the pointer on right-click or
+/// long-press: Auto Zoom refits the Y axis to the displayed candles,
+/// Bookmark captures the trigger candle for the active ticker, and Set
+/// Replay Boundary arms the replay button's window at the trigger candle.
 enum ChartContextAction {
     /// Refit Y to the displayed candles, preserving X (Refresh's Y-fit).
     AutoZoom,
@@ -873,6 +882,8 @@ enum ChartContextAction {
 /// Which pane the canvas menu opened over: the price pane, the shared
 /// oscillator, or one custom pane by id.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Which pane the canvas menu opened over: the price pane, the shared
+/// oscillator, or one custom pane by id.
 enum ContextPane {
     /// The price pane.
     Main,
@@ -937,6 +948,13 @@ impl LiveReplay {
 /// indicator modals, the upper-left hot-slot legend, the multi-pane canvas,
 /// and the dock's collapsible subpanes read and write the same truth.
 #[allow(clippy::struct_excessive_bools)]
+/// The terminal's central state store: active symbol, selectors, hot-slot
+/// stack, pane plan, pane cache, the 2D interaction machine, and the Material
+/// dock (left navigation drawer) with its cached gateway views.
+/// 
+/// One place owns all terminal state so the Material top bar, the symbol and
+/// indicator modals, the upper-left hot-slot legend, the multi-pane canvas,
+/// and the dock's collapsible subpanes read and write the same truth.
 pub struct ChartWorkspace {
     symbol_index: SymbolIndex,
     active_symbol: SymKey,
@@ -1204,6 +1222,7 @@ pub struct ChartWorkspace {
 
 /// One live chart update handed to [`ChartWorkspace`].
 #[derive(Debug, Clone, PartialEq)]
+/// One live chart update handed to [`ChartWorkspace`].
 pub enum LiveChartUpdate {
     /// A still-forming bar: display only.
     Forming(ChartRow),

@@ -22,6 +22,15 @@ use protopyne_types::Bar;
 /// revision and skips [`find_session_breaks`]; changed content bumps it and
 /// re-runs the scan. Display-side only — the durable bars are never touched.
 #[derive(Debug, Default)]
+/// Content-addressed memo of the session-break scan over closed bars.
+/// 
+/// A break depends on the full ordered series — daylight rules and session
+/// boundaries inside the window, not just its endpoints — so the key is a
+/// fingerprint of every bar timestamp plus the provider identity; a
+/// two-endpoint key could serve a stale break when the interior changes.
+/// Mirrors the pane cache's revision model: identical content keeps the
+/// revision and skips [`find_session_breaks`]; changed content bumps it and
+/// re-runs the scan. Display-side only — the durable bars are never touched.
 pub struct SessionBreakCache {
     breaks: Vec<(usize, SessionBreak)>,
     fingerprint: Option<u64>,
@@ -120,6 +129,11 @@ fn fingerprint_times(times: &[DateTime<Utc>], provider: &dyn SessionProvider) ->
 /// returned line sits exactly on its break bar's x pixel. The scan runs only
 /// when the content moves (see [`SessionBreakCache`]).
 #[must_use]
+/// Session-break gridlines over closed bars, served from `cache`.
+/// 
+/// Composes the canonical break scan with this viewport's index mapping: each
+/// returned line sits exactly on its break bar's x pixel. The scan runs only
+/// when the content moves (see [`SessionBreakCache`]).
 pub fn break_lines(
     cache: &mut SessionBreakCache,
     viewport: &Viewport,
@@ -135,6 +149,10 @@ pub fn break_lines(
 /// than bars. Times arrive as UTC stamps (row epoch seconds lifted); the
 /// scan runs only when the content moves (see [`SessionBreakCache`]).
 #[must_use]
+/// Session-break gridlines over row times, served from `cache`: the row-time
+/// read twin of [`break_lines`] for paint paths holding display rows rather
+/// than bars. Times arrive as UTC stamps (row epoch seconds lifted); the
+/// scan runs only when the content moves (see [`SessionBreakCache`]).
 pub fn break_lines_times(
     cache: &mut SessionBreakCache,
     viewport: &Viewport,
@@ -183,6 +201,10 @@ const TIME_MAJOR_LADDER: [(u64, i64); 4] = [
 /// (see [`TIME_MAJOR_LADDER`]). A bar longer than a day grids monthly. A zero
 /// `bar_seconds` reads as the finest row rather than dividing by zero.
 #[must_use]
+/// The major time-grid unit (seconds) for a chart whose bars span
+/// `bar_seconds`: the next sensible boundary above the bar's own magnitude
+/// (see [`TIME_MAJOR_LADDER`]). A bar longer than a day grids monthly. A zero
+/// `bar_seconds` reads as the finest row rather than dividing by zero.
 pub fn time_major_unit(bar_seconds: u64) -> i64 {
     TIME_MAJOR_LADDER
         .iter()
@@ -197,6 +219,12 @@ pub fn time_major_unit(bar_seconds: u64) -> i64 {
 /// is the one label rule the chart grid and the pane divider share, so a
 /// boundary line and its label always read at the same granularity.
 #[must_use]
+/// Format a time-axis boundary label at the detail of the largest unit that
+/// has passed since the previous boundary: clock time (`HH:MM`) for an
+/// hourly or four-hourly grid, date and clock time (`MM/DD HH:MM`) for a
+/// daily grid, and just the date (`MM/DD`) for weekly or monthly grids. This
+/// is the one label rule the chart grid and the pane divider share, so a
+/// boundary line and its label always read at the same granularity.
 pub fn fmt_boundary_time(epoch: i64, unit_seconds: i64) -> String {
     match chrono::DateTime::from_timestamp(epoch, 0) {
         Some(moment) if unit_seconds < DAY_SECONDS => moment.format("%H:%M").to_string(),
@@ -215,6 +243,14 @@ pub fn fmt_boundary_time(epoch: i64, unit_seconds: i64) -> String {
 /// coarser label by date. A zero duration sits below a day and reads clock
 /// time, matching the grid unit's one-second floor.
 #[must_use]
+/// Whether time-axis labels for `bar_seconds` bars read as clock time
+/// (`%H:%M`) rather than calendar dates (`%m-%d`).
+/// 
+/// The granularity follows the chart timeframe, never the window span: any
+/// sub-daily timeframe labels down to hour and minute (a month of
+/// fifteen-minute bars still reads as clock time), while daily bars and
+/// coarser label by date. A zero duration sits below a day and reads clock
+/// time, matching the grid unit's one-second floor.
 pub fn labels_show_clock_time(bar_seconds: u64) -> bool {
     bar_seconds < DAY_SECONDS as u64
 }
@@ -231,6 +267,12 @@ pub const PAN_UNIT_MIN_BARS: u64 = 150;
 /// a month, and a daily chart by a year. A zero `bar_seconds` refuses to the
 /// one-second floor rather than dividing by zero.
 #[must_use]
+/// The rewind/forward step unit (seconds) for a chart whose bars span
+/// `bar_seconds`: the narrowest of day, week, month, and year that covers at
+/// least [`PAN_UNIT_MIN_BARS`] bars, else the coarsest of those. A 1M or 5M
+/// chart therefore steps by a day, a 15M or 1H chart by a week, a 4H chart by
+/// a month, and a daily chart by a year. A zero `bar_seconds` refuses to the
+/// one-second floor rather than dividing by zero.
 pub fn pan_unit_seconds(bar_seconds: u64) -> i64 {
     let floor = bar_seconds.saturating_mul(PAN_UNIT_MIN_BARS).max(1);
     for unit in [DAY_SECONDS, WEEK_SECONDS, MONTH_SECONDS, YEAR_SECONDS] {
@@ -252,6 +294,16 @@ pub fn pan_unit_seconds(bar_seconds: u64) -> i64 {
 /// shared [`Viewport`] mapping, so gridlines and bars can never drift apart.
 /// Fewer than two rows, or rows that never cross a boundary, yield no lines.
 #[must_use]
+/// Vertical time-gridlines at the major time unit for a chart of
+/// `bar_seconds` bars.
+/// 
+/// The unit is the next sensible boundary above the chart's own magnitude
+/// (see [`time_major_unit`]): a `5M` or `1M` chart grids hourly, a `15M` or
+/// `1H` chart every four hours, so a boundary line is never finer than a
+/// major unit and a short window is never crowded.
+/// A line sits on the first bar of each new unit and takes its x from the
+/// shared [`Viewport`] mapping, so gridlines and bars can never drift apart.
+/// Fewer than two rows, or rows that never cross a boundary, yield no lines.
 pub fn time_grid_lines(viewport: &Viewport, rows: &[ChartRow], bar_seconds: u64) -> Vec<BreakLine> {
     if rows.len() < 2 {
         return Vec::new();

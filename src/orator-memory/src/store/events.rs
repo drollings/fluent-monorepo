@@ -20,6 +20,7 @@ pub const REPLAY_PAGE: usize = 5_000;
 
 /// One stored (or live-only) event row.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One stored (or live-only) event row.
 pub struct StoredEvent {
     /// Cursor. Negative means live-only ephemeral.
     pub seq: i64,

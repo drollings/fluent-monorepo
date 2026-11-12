@@ -37,6 +37,10 @@ use fluent_types::openai_wire::RouterRequest;
 /// (`ladders`, `context_cache`) and future concerns thread through one
 /// struct instead of a growing signature.
 #[derive(Clone)]
+/// The request-context dependency bundle handed to every HTTP handler.
+/// Collapses the former 12-`Option` parameter list so escalation
+/// (`ladders`, `context_cache`) and future concerns thread through one
+/// struct instead of a growing signature.
 pub struct ServerDeps {
     pub pipelines: Arc<HashMap<String, Arc<PipelineOrchestrator>>>,
     pub routes: Arc<HashMap<String, RouteRef>>,
@@ -1089,6 +1093,10 @@ async fn handle_request_inner(
 // (`route_instance_resource`).
 // Review-parse endpoint surface lives in `super::review`
 // (`handle_review_parse_post`, `handle_review_parse_get`).
+/// `/instances/` path routing lives in `super::instances_api`
+/// (`route_instance_resource`).
+/// Review-parse endpoint surface lives in `super::review`
+/// (`handle_review_parse_post`, `handle_review_parse_get`).
 pub(crate) fn is_local_request(req: &hyper::Request<hyper::body::Incoming>) -> bool {
     req.headers()
         .get(hyper::header::HOST)

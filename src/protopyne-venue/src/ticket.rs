@@ -39,6 +39,9 @@ pub const TICKET_CONFIRMED_KIND: &str = "manual_ticket.confirmed";
 /// ticket ID is the intent's client ID, so tickets and automated orders
 /// share one identifier discipline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One exact human-executed ticket: the intent plus its issue stamp. The
+/// ticket ID is the intent's client ID, so tickets and automated orders
+/// share one identifier discipline.
 pub struct ManualTicket {
     /// What the human was asked to place.
     pub intent: OrderIntent,
@@ -91,6 +94,7 @@ impl ManualTicket {
 
 /// The human's fill report for one ticket: contracts filled at one price.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// The human's fill report for one ticket: contracts filled at one price.
 pub struct ConfirmedFill {
     /// Contracts the human reports filled.
     pub quantity: u32,
@@ -100,6 +104,7 @@ pub struct ConfirmedFill {
 
 /// How a confirmation (or import) disagreed with the ticket book.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a confirmation (or import) disagreed with the ticket book.
 pub enum DriftKind {
     /// Filled contracts differ from the ticket quantity.
     QuantityMismatch,
@@ -112,6 +117,7 @@ pub enum DriftKind {
 
 /// One flagged disagreement between tickets, fills, and the import.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One flagged disagreement between tickets, fills, and the import.
 pub struct TicketDrift {
     /// Ticket (or underlying, for import drift) that disagrees.
     pub ticket_id: String,
@@ -124,6 +130,8 @@ pub struct TicketDrift {
 /// One read-only position line from the human-executed account. Lines are
 /// data, never authority: the ticket book never moves on import.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One read-only position line from the human-executed account. Lines are
+/// data, never authority: the ticket book never moves on import.
 pub struct ImportedPosition {
     /// Underlying the position tracks.
     pub underlying: String,
@@ -143,6 +151,9 @@ pub trait TicketRead: Send + Sync {
 /// import snapshot. In-memory only; durability comes from journaling
 /// issue/confirm rows and rebuilding via [`replay`](Self::replay).
 #[derive(Debug, Default)]
+/// Unconfirmed tickets, confirmed fills, drift flags, and the last good
+/// import snapshot. In-memory only; durability comes from journaling
+/// issue/confirm rows and rebuilding via [`replay`](Self::replay).
 pub struct TicketTracker {
     open: BTreeMap<String, ManualTicket>,
     confirmed: Vec<(String, i64)>,

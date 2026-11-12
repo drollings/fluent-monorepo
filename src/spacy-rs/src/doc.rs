@@ -30,6 +30,8 @@ use fluent_types::InterlinguaId;
 /// (`structs.pxd:53`): 1 = sentence start, -1 = not a start, 0 = unset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(i8)]
+/// Sentence-boundary tri-state, matching `TokenC.sent_start`
+/// (`structs.pxd:53`): 1 = sentence start, -1 = not a start, 0 = unset.
 pub enum SentStart {
     NotStart = -1,
     #[default]
@@ -50,6 +52,8 @@ impl From<i8> for SentStart {
 /// A word-token record — field-for-field against `TokenC`
 /// (`spacy/structs.pxd:36-57`).
 #[derive(Debug, Clone)]
+/// A word-token record — field-for-field against `TokenC`
+/// (`spacy/structs.pxd:36-57`).
 pub struct TokenRecord {
     /// Pointer to the shared word-type.
     pub lexeme: Arc<Lexeme>,
@@ -147,6 +151,8 @@ impl Default for TokenRecord {
 /// The shared mutable canvas: a vocabulary reference plus a contiguous token
 /// array.
 #[derive(Debug, Clone)]
+/// The shared mutable canvas: a vocabulary reference plus a contiguous token
+/// array.
 pub struct Doc {
     vocab: Arc<Vocab>,
     tokens: Vec<TokenRecord>,
@@ -753,6 +759,13 @@ pub fn set_children_from_heads(tokens: &mut [TokenRecord]) -> Result<(), SpacyEr
 /// fall back to the sentence start with empty roles.
 #[must_use]
 #[inline]
+/// Whether a token's dep label equals `label`.
+/// 
+/// The single canonical spelling shared by the frame, routing-signal, and
+/// triple extractors (primitives roadmap M1): `common_core::label_match`
+/// bound to spaCy's `hash_utf8` wire hash. The `MISSING_DEP` sentinel
+/// (`dep == 0`) matches no label — root/role searches over unattached docs
+/// fall back to the sentence start with empty roles.
 pub fn dep_is(token: &TokenRecord, label: &str) -> bool {
     common_core::label_match::label_eq(token.dep, label, crate::hash::hash_utf8)
 }
@@ -762,6 +775,9 @@ pub fn dep_is(token: &TokenRecord, label: &str) -> bool {
 /// Canonical shared spelling (M1); an empty table matches nothing.
 #[must_use]
 #[inline]
+/// Whether a token's dep label is one of `labels`.
+/// 
+/// Canonical shared spelling (M1); an empty table matches nothing.
 pub fn dep_in(token: &TokenRecord, labels: &[&str]) -> bool {
     common_core::label_match::label_in(token.dep, labels, crate::hash::hash_utf8)
 }
@@ -780,6 +796,11 @@ const ROOT_DEP: &str = "root";
 /// the three extractors historically produced inline (single `[(0, len)]`
 /// fallback, never empty windows).
 #[must_use]
+/// Sentence spans of an attached doc from the `sent_start` marks: each
+/// `[start, end)` window in order, empty windows dropped. An empty doc, a
+/// doc with no marks, or marks not starting at 0 all yield the same shapes
+/// the three extractors historically produced inline (single `[(0, len)]`
+/// fallback, never empty windows).
 pub fn sentence_spans(doc: &Doc) -> Vec<(usize, usize)> {
     let len = doc.len();
     let mut starts: Vec<usize> = (0..len)
@@ -800,6 +821,9 @@ pub fn sentence_spans(doc: &Doc) -> Vec<(usize, usize)> {
 /// `start` when no token carries the label (unattached docs, `dep == 0`
 /// everywhere — the M1.1 sentinel contract).
 #[must_use]
+/// The sentence root: the first `root`-dep token in `[start, end)`, or
+/// `start` when no token carries the label (unattached docs, `dep == 0`
+/// everywhere — the M1.1 sentinel contract).
 pub fn sentence_root(doc: &Doc, start: usize, end: usize) -> usize {
     (start..end)
         .find(|&i| dep_is(doc.token(i), ROOT_DEP))
@@ -813,6 +837,12 @@ pub fn sentence_root(doc: &Doc, start: usize, end: usize) -> usize {
 /// identical; triple `scored_lemma` deliberately keeps its own `""`
 /// fallback (pinned in `tests/triple.rs`) and does NOT compose this.
 #[must_use]
+/// The lemma string for token `i`: through the shared store, falling back
+/// to the lowercase surface form when the lemma was never interned
+/// (`lemma == 0` on tokens that bypassed `attach`). The canonical home of
+/// the frame `lemma_of` and the routing closure, which were verbatim
+/// identical; triple `scored_lemma` deliberately keeps its own `""`
+/// fallback (pinned in `tests/triple.rs`) and does NOT compose this.
 pub fn lemma_of(doc: &Doc, i: usize) -> String {
     doc.vocab()
         .strings()
@@ -912,6 +942,20 @@ fn set_lr_kids_and_edges(tokens: &mut [TokenRecord], loop_count: usize) -> bool 
 /// partition+root+candidate walk itself lives here, so a label-set change
 /// touches one place.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One sentence's argument skeleton: its span, its root, and the
+/// span-ordered candidate indices per core role.
+/// 
+/// The single traversal shared by the routing-signal, frame, and triple
+/// extractors: partition via [`sentence_spans`], root via
+/// [`sentence_root`], role candidates via the canonical [`crate::labels`]
+/// sets through [`dep_in`]. Selection policy stays per caller — routing
+/// takes the last candidate per slot (its historical overwrite chain),
+/// triple takes the first candidate that is a child of the root (its
+/// narrower candidate set) — and role *interpretation* stays per caller
+/// (routing's modifier/qualifier/argument collections, frame's per-token
+/// [`RoleType`](crate::frame::RoleType) classification). The
+/// partition+root+candidate walk itself lives here, so a label-set change
+/// touches one place.
 pub struct SentenceRoles {
     /// Sentence window `[start, end)` from [`sentence_spans`].
     pub span: (usize, usize),
@@ -928,6 +972,8 @@ pub struct SentenceRoles {
 /// The argument skeleton of every sentence in `doc`, in order. Empty docs
 /// yield no entries (matching the extractors' early returns).
 #[must_use]
+/// The argument skeleton of every sentence in `doc`, in order. Empty docs
+/// yield no entries (matching the extractors' early returns).
 pub fn sentence_roles(doc: &Doc) -> Vec<SentenceRoles> {
     sentence_spans(doc)
         .into_iter()

@@ -14,6 +14,8 @@ use crate::decision::Decision;
 /// A `CanaryCase`: full prompt text, option labels, and the expected
 /// per-label masses in label order with an absolute tolerance.
 #[derive(Debug, Clone, PartialEq)]
+/// A `CanaryCase`: full prompt text, option labels, and the expected
+/// per-label masses in label order with an absolute tolerance.
 pub struct CanaryCase {
     pub id: &'static str,
     pub prompt: String,
@@ -33,6 +35,16 @@ pub struct CanaryCase {
 /// assert!(suite.iter().all(|c| c.options.len() >= 2));
 /// ```
 #[must_use]
+/// The fixed two-case suite. Prompts force single tokens the logprobs path
+/// discriminates; expectations are tight majorities, not model output.
+/// 
+/// ```rust
+/// use fluent_llm::decision::canary_suite;
+/// 
+/// let suite = canary_suite();
+/// assert_eq!(suite.len(), 2);
+/// assert!(suite.iter().all(|c| c.options.len() >= 2));
+/// ```
 pub fn canary_suite() -> Vec<CanaryCase> {
     vec![
         CanaryCase {
@@ -54,6 +66,7 @@ pub fn canary_suite() -> Vec<CanaryCase> {
 
 /// Typed drift condition (`CanaryDrift`): the weights moved (or never measured).
 #[derive(Debug, Clone, PartialEq)]
+/// Typed drift condition (`CanaryDrift`): the weights moved (or never measured).
 pub struct CanaryDrift {
     pub case_id: String,
     pub detail: String,
@@ -133,6 +146,27 @@ pub fn verify_canary(decision: &Decision, case: &CanaryCase) -> Result<(), Canar
 /// assert_ne!(canary_signature(&[mk(0.97)]), canary_signature(&[mk(0.60)]));
 /// ```
 #[must_use]
+/// Fingerprint a verified canary set: blake3 over framed (label, mass to
+/// two decimals) pairs. Same response bytes fingerprint identically;
+/// weight changes move masses and the fingerprint follows.
+/// 
+/// ```rust
+/// use fluent_llm::decision::{canary_signature, Decision};
+/// 
+/// let mk = |mass: f64| {
+/// Decision::from_distribution(
+/// "A",
+/// vec![("A".to_string(), mass), ("B".to_string(), 1.0 - mass)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("decision")
+/// };
+/// assert_eq!(canary_signature(&[mk(0.97)]), canary_signature(&[mk(0.97)]));
+/// assert_ne!(canary_signature(&[mk(0.97)]), canary_signature(&[mk(0.60)]));
+/// ```
 pub fn canary_signature(decisions: &[Decision]) -> String {
     let mut bytes = Vec::new();
     for decision in decisions {

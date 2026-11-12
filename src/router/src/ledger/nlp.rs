@@ -49,6 +49,10 @@ fn interlingua_ids_json(signals: &[RoutingSignal]) -> serde_json::Value {
 /// lemma arrays ride inside each signal's transcript) plus the interlingua
 /// frame (ids + confidence + review status, §14.1).
 #[must_use]
+/// Build the parse `ContentNode` for a request: role `"parse"`, LOD0 = the
+/// request text, metadata = the per-sentence [`RoutingSignal`]s (the dep/POS/
+/// lemma arrays ride inside each signal's transcript) plus the interlingua
+/// frame (ids + confidence + review status, §14.1).
 pub fn parse_node(
     session_id: &str,
     request_id: &str,
@@ -65,6 +69,12 @@ pub fn parse_node(
 /// with per-token fidelity rather than a flat overall (L3). Additive — old
 /// parse nodes without the field behave exactly as before.
 #[must_use]
+/// [`parse_node`] plus the C1 confidence summary and an eager review status.
+/// 
+/// `token_confidence` (optional, serde-default) is the per-token confidence
+/// vector the review endpoint reads back so a later review rebuilds the parse
+/// with per-token fidelity rather than a flat overall (L3). Additive — old
+/// parse nodes without the field behave exactly as before.
 pub fn parse_node_with_confidence(
     session_id: &str,
     request_id: &str,
@@ -183,6 +193,7 @@ pub fn populate_interlingua_index(
 
 /// Whether a node is a parse node (read-path helper).
 #[must_use]
+/// Whether a node is a parse node (read-path helper).
 pub fn is_parse_node(node: &ContentNode) -> bool {
     node.metadata
         .as_ref()
@@ -203,6 +214,13 @@ pub const PARSE_REVIEW_KIND: &str = "parse_review";
 /// its origin (`session_id`/`request_id`) so it is indexed under the session
 /// it belongs to, never the empty bucket (L4).
 #[must_use]
+/// Build the `parse_review` ledger node persisted on a review **miss** (an LLM
+/// correction actually applied), in the same transaction as the
+/// `CorrectionIndex` write (§12.6/§12.7). The metadata carries the pattern key
+/// and the prompt/corrections so the chart extractor can fold it into a
+/// `ChartAuditStep` (`parse_review_step`, charts/extract.rs). The node carries
+/// its origin (`session_id`/`request_id`) so it is indexed under the session
+/// it belongs to, never the empty bucket (L4).
 pub fn review_node(
     node_id: NodeId,
     session_id: &str,
@@ -237,6 +255,7 @@ pub fn review_node(
 
 /// Whether a node is a parse-review node (read-path helper).
 #[must_use]
+/// Whether a node is a parse-review node (read-path helper).
 pub fn is_parse_review_node(node: &ContentNode) -> bool {
     node.metadata
         .as_ref()

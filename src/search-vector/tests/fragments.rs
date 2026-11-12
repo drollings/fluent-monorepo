@@ -50,6 +50,77 @@ fn lemma(fragment_id: &str, lemma: &str, confidence: f64) -> FragmentLemma {
     }
 }
 
+fn frag_with_doc(id: &str, symbol: &str, text: &str, doc: &str) -> FragmentRecord {
+    let mut record = frag(id, None, symbol, text);
+    record.doc = Some(doc.to_string());
+    record
+}
+
+#[test]
+fn fts_finds_comment_only_terms_in_doc() {
+    // Comment-only terms live in `doc`, not in the body: the query must
+    // still find the row after the `doc` column joins the FTS index.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    db.upsert_fragments(
+        &file_a(),
+        &[frag_with_doc(
+            "entity-doc",
+            "Widget",
+            "pub struct Widget {}",
+            "Adds one to the total",
+        )],
+        &[],
+    )
+    .expect("upsert");
+    let filter = FragmentFilter::default();
+    let hits = db
+        .search_fts("total", 10, &filter)
+        .expect("search");
+    assert!(
+        hits.iter().any(|h| h.id == "entity-doc"),
+        "comment-only term must find the row"
+    );
+    // Body and symbol queries are unchanged.
+    let hits = db
+        .search_fts("Widget", 10, &filter)
+        .expect("search");
+    assert!(hits.iter().any(|h| h.id == "entity-doc"));
+}
+
+#[test]
+fn fts_doc_terms_do_not_leak_across_fragments() {
+    // A term present only in one fragment's `doc` must not match siblings.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    db.upsert_fragments(
+        &file_a(),
+        &[
+            frag_with_doc("entity-doc", "Widget", "pub struct Widget {}", "ZebraStripe note"),
+            frag("entity-plain", None, "Gadget", "pub struct Gadget {}"),
+        ],
+        &[],
+    )
+    .expect("upsert");
+    let hits = db
+        .search_fts("ZebraStripe", 10, &FragmentFilter::default())
+        .expect("search");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, "entity-doc");
+}
+
+#[test]
+fn fts_cjk_content_match_survives_doc_column() {
+    // The CJK bigram route is unchanged by the `doc` column.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    let mut f = frag_with_doc("entity-cjk", "Segment", "日本語の検索テスト", "Chinese comment");
+    f.cjk_text = "日本 本語 語の の検 検索 索テ テス スト".to_string();
+    db.upsert_fragments(&file_a(), &[f], &[]).expect("upsert");
+    let hits = db
+        .search_fts("日本語", 10, &FragmentFilter::default())
+        .expect("search");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, "entity-cjk");
+}
+
 fn seed_alpha(db: &GuidanceDb) {
     let fragments = vec![
         frag(
@@ -308,9 +379,10 @@ fn vector_search_orders_by_similarity_and_skips_dim_mismatch() {
 
 #[test]
 fn match_expression_quotes_specials_and_splits_axes() {
-    // ASCII tokens hit the text/symbol columns; CJK becomes bigram ORs.
+    // ASCII tokens hit the text/symbol/doc columns; CJK becomes bigram ORs.
     let expr = build_fts_match("find AlphaSymbol").expect("expr");
     assert!(expr.contains("alphasymbol"), "got {expr}");
+    assert!(expr.contains("doc"), "got {expr}");
     let expr = build_fts_match("日本語").expect("expr");
     assert!(expr.contains("cjk_text"), "got {expr}");
     assert!(expr.contains("日本"), "got {expr}");
@@ -450,4 +522,150 @@ fn fragment_freshness_reports_embedded_flag() {
             .expect("row")
             .embedded
     );
+}
+
+#[test]
+fn embedding_status_round_trips_per_file() {
+    use super::super::db::embedding_status::EmbeddingStatusRecord;
+    let db = GuidanceDb::open_in_memory().expect("db");
+    seed_alpha(&db);
+    let rows = vec![
+        EmbeddingStatusRecord {
+            fragment_id: "entity-a".to_string(),
+            input_hash: "aaa".to_string(),
+            embedder: "model-x:4".to_string(),
+            status: "ready".to_string(),
+            updated_at: 1,
+        },
+        EmbeddingStatusRecord {
+            fragment_id: "entity-a#1".to_string(),
+            input_hash: "bbb".to_string(),
+            embedder: "model-x:4".to_string(),
+            status: "failed".to_string(),
+            updated_at: 1,
+        },
+    ];
+    assert_eq!(db.replace_embedding_status(&rows).expect("replace"), 2);
+    let stored = db.embedding_status_for_file("file-a").expect("read");
+    assert_eq!(stored.len(), 2);
+    let failed: Vec<_> = stored.iter().filter(|row| row.status == "failed").collect();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].fragment_id, "entity-a#1");
+    assert_eq!(failed[0].embedder, "model-x:4");
+    assert!(db
+        .files_needing_embed_backfill("model-x:4")
+        .expect("backfill")
+        .is_empty(), "same embedder never backfills");
+    let uuid = file_b();
+    let mut other = frag("entity-b", None, "Beta", "x");
+    other.file_id = "file-b".to_string();
+    db.upsert_fragments(&uuid, &[other], &[]).expect("upsert");
+    db.replace_embedding_status(&[EmbeddingStatusRecord {
+        fragment_id: "entity-b".to_string(),
+        input_hash: "ccc".to_string(),
+        embedder: "model-y:4".to_string(),
+        status: "ready".to_string(),
+        updated_at: 1,
+    }])
+    .expect("replace");
+    assert_eq!(
+        db.files_needing_embed_backfill("model-x:4").expect("backfill"),
+        vec!["file-b".to_string()],
+        "rotated embedders backfill even when ready"
+    );
+}
+
+fn file_b() -> FileRecord {
+    FileRecord {
+        id: "file-b".to_string(),
+        ..file_a()
+    }
+}
+
+#[test]
+fn fragment_counts_cover_embedded_and_plain_rows() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    assert_eq!(db.fragment_count().expect("count"), 0);
+    let mut with_vec = frag("vec-row", None, "VecRow", "vector row");
+    with_vec.embedding = Some(vec![0.5, -0.5]);
+    db.upsert_fragments(&file_a(), &[frag("plain-row", None, "Plain", "plain"), with_vec], &[])
+        .expect("upsert");
+    assert_eq!(db.fragment_count().expect("count"), 2);
+    assert_eq!(db.embedded_fragment_count().expect("embedded"), 1);
+}
+
+#[test]
+fn old_lemma_table_migrates_to_dictionary_on_open() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("mig.db");
+    let db = GuidanceDb::open(&path).expect("open");
+    db.upsert_fragments(&file_a(), &[frag("entity-a", None, "Alpha", "alpha body")], &[]).expect("upsert");
+    db.store
+        .with_conn(|conn| {
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS fragment_lemmas;
+                 DROP TABLE IF EXISTS lemma_terms;
+                 CREATE TABLE fragment_lemmas (
+                     fragment_id TEXT NOT NULL,
+                     lemma TEXT NOT NULL,
+                     confidence REAL NOT NULL DEFAULT 1.0,
+                     PRIMARY KEY (fragment_id, lemma)
+                 ) WITHOUT ROWID;
+                 CREATE INDEX idx_lemmas_lemma ON fragment_lemmas(lemma);
+                 INSERT INTO fragment_lemmas(fragment_id, lemma, confidence)
+                 VALUES ('entity-a', 'alpha', 1.0), ('entity-a', 'body', 0.5);",
+            )
+            .expect("downgrade");
+            Ok(())
+        })
+        .expect("with_conn");
+    drop(db);
+    let db = GuidanceDb::open(&path).expect("reopen");
+    let ids = db
+        .fragments_for_lemmas(&["alpha".to_string()], 10)
+        .expect("lookup");
+    assert_eq!(ids, vec!["entity-a".to_string()]);
+    let terms: Vec<String> = db
+        .store
+        .query_rows("SELECT lemma FROM lemma_terms ORDER BY lemma", &[], |row| {
+            row.get(0)
+        })
+        .expect("terms");
+    assert_eq!(terms, vec!["alpha".to_string(), "body".to_string()]);
+    let distinct: i64 = db
+        .store
+        .query_row(
+            "SELECT COUNT(DISTINCT lemma_id) FROM fragment_lemmas",
+            &[],
+            |row| row.get(0),
+        )
+        .expect("distinct")
+        .unwrap_or(0);
+    assert_eq!(distinct, 2);
+}
+
+#[test]
+fn bulk_freshness_matches_single_probes() {
+    // One scan must agree with per-file probes on size, mtime, and the
+    // embedded flag — including unknown files, which stay absent.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    seed_alpha(&db);
+    let mut with_vec = frag("entity-vec", None, "VecRow", "vector row");
+    with_vec.embedding = Some(vec![0.5, -0.5]);
+    db.upsert_fragments(&file_a(), &[with_vec], &[])
+        .expect("upsert");
+    let map = db.all_fragment_freshness().expect("bulk");
+    for file in db.list_files().expect("files") {
+        let key = |fresh: &super::super::db::FragmentFreshness| {
+            (fresh.size_bytes, fresh.last_modified_time, fresh.embedded)
+        };
+        let single = db
+            .fragment_freshness(&file.id)
+            .expect("single")
+            .map(|f| key(&f));
+        let bulk = map.get(&file.id).map(key);
+        assert_eq!(single, bulk, "bulk must match single probe for {}", file.id);
+    }
+    assert!(map.get("file-a").expect("row").embedded);
+    assert!(map.get("never-ingested").is_none());
 }

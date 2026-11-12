@@ -866,6 +866,12 @@ pub fn warn_on_unknown_param_keys(cfg: &RouterConfig) {
 /// counterpart is [`warn_on_unknown_model_bindings`]; the two run together
 /// in [`RouterConfig::apply_defaults`].
 #[allow(clippy::implicit_hasher)]
+/// Warn loudly over model-side per-role overrides naming roles with no
+/// `roles` entry: an override for an undeclared role can never compose into
+/// a dispatch, so it is always a config bug (a renamed role, a typo).
+/// Fail-open — the override is kept, boot continues. The role-side
+/// counterpart is [`warn_on_unknown_model_bindings`]; the two run together
+/// in [`RouterConfig::apply_defaults`].
 pub fn warn_on_unknown_role_overrides(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,
@@ -897,6 +903,10 @@ pub fn warn_on_unknown_role_overrides(
 /// so it is always a config bug (a renamed model key, a typo). Fail-open —
 /// the binding is ignored, boot continues.
 #[allow(clippy::implicit_hasher)]
+/// Warn loudly over role-side model bindings naming models with no `models`
+/// entry: a binding for an undeclared model can never contribute to a pool,
+/// so it is always a config bug (a renamed model key, a typo). Fail-open —
+/// the binding is ignored, boot continues.
 pub fn warn_on_unknown_model_bindings(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,

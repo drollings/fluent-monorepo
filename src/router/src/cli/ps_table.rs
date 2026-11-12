@@ -45,6 +45,8 @@ use crate::config::{InstanceProfile, RouterConfig};
 /// model's single `unloaded` row.
 #[derive(Debug, Clone, Builder)]
 #[builder(start_fn = new)]
+/// One `ps` table row: a weights row, an instance row, a `TOTAL` row, or a
+/// model's single `unloaded` row.
 pub struct PsRow {
     /// Display model name — set on the group's first row only (` (onnx)`
     /// suffixed for onnx rows), empty on the rows below it.
@@ -69,6 +71,8 @@ pub struct PsRow {
 /// The idle-sleep policy for one instance, resolved from the envelope row's
 /// own fields when present, else the configured profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The idle-sleep policy for one instance, resolved from the envelope row's
+/// own fields when present, else the configured profile.
 enum SleepPolicy {
     /// Pinned / `no_sleep` / a zero window: never sleeps.
     Forever,
@@ -80,6 +84,7 @@ enum SleepPolicy {
 
 /// Fleet totals folded under the table.
 #[derive(Debug, Clone, Default)]
+/// Fleet totals folded under the table.
 pub struct PsTotals {
     /// Resident bytes fleet-wide (weights + contexts).
     pub resident_bytes: u64,

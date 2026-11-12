@@ -35,6 +35,8 @@ pub trait ContentNodeStore: Send + Sync {
 /// Derive a display label from `content`: its first sentence, UTF-8-truncated
 /// to 64 bytes (ellipsis past the cut); the role when content is empty.
 #[must_use]
+/// Derive a display label from `content`: its first sentence, UTF-8-truncated
+/// to 64 bytes (ellipsis past the cut); the role when content is empty.
 pub fn derive_label(role: &str, content: &str) -> String {
     let sentence = common_core::string::first_sentence(content);
     let snippet = if sentence.is_empty() {
@@ -84,6 +86,9 @@ pub fn ensure_lod_eager(node: &mut ContentNode) {
 /// insert and cached-or-absent lazy reads. Never production (mirrors
 /// `InMemoryConceptStore`'s role beside `ConceptStore`).
 #[derive(Debug, Default)]
+/// Hermetic test double: `HashMap`-backed nodes with verbatim eager fill on
+/// insert and cached-or-absent lazy reads. Never production (mirrors
+/// `InMemoryConceptStore`'s role beside `ConceptStore`).
 pub struct InMemoryContentNodeStore {
     nodes: RwLock<HashMap<NodeId, ContentNode>>,
     next_id: AtomicI64,

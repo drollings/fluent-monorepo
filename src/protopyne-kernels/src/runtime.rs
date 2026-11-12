@@ -30,6 +30,8 @@ pub(crate) fn default_chart_period() -> String {
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Configuration for one Pine runtime: chart scope plus caps and warmup as
+/// `Component` state.
 pub struct PineRuntimeConfig {
     /// Chart symbol backing `syminfo.tickerid` for the run.
     #[field(desc = "Chart symbol backing syminfo.tickerid", max_len = 32)]

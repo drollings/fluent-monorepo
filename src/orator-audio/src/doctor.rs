@@ -10,6 +10,7 @@ use crate::error::AudioError;
 
 /// One diagnosis run.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One diagnosis run.
 pub struct DoctorReport {
     /// Capturing devices visible right now (possibly empty).
     pub devices: Vec<String>,
@@ -23,6 +24,7 @@ pub struct DoctorReport {
 
 /// Probe the machine. Never fails: absence is reported, not raised.
 #[must_use]
+/// Probe the machine. Never fails: absence is reported, not raised.
 pub fn doctor_report() -> DoctorReport {
     let devices: Vec<String> = list_input_devices()
         .into_iter()

@@ -72,6 +72,9 @@ pub const CORPORATE_KIND: &str = "corporate";
 /// The session mints exactly one per journal file and installs it in the
 /// batch/scope capability set; handlers borrow it from their `WorkContext`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Capability token binding journal access to one supervised session.
+/// The session mints exactly one per journal file and installs it in the
+/// batch/scope capability set; handlers borrow it from their `WorkContext`.
 pub struct VenueStorage {
     journal_path: PathBuf,
 }
@@ -93,6 +96,7 @@ impl fluent_wvr::Capability for VenueStorage {
 
 /// One journaled lifecycle event (one log row).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One journaled lifecycle event (one log row).
 pub struct JournalEvent {
     /// Monotonic sequence number.
     pub seq: i64,
@@ -111,6 +115,7 @@ pub struct JournalEvent {
 
 /// State rebuilt by replaying the journal.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// State rebuilt by replaying the journal.
 pub struct ReplayedState {
     /// Intents by client ID, in append order.
     pub intents: Vec<OrderIntent>,

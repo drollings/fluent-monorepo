@@ -363,7 +363,7 @@ async fn fuse_search_output_is_byte_stable() {
     .expect("fuse route");
     assert_eq!(
         rendered,
-        "## Prose\n\n*Source: a.rs:0*\n\nthe alpha needle sleeps here\n\n\n---\n\n"
+        "## Prose\n\n*Source: a.rs:0*\n\nthe alpha needle sleeps here\n\n\n---\n\n\n### Citations\n- unverified\n"
     );
 }
 
@@ -509,7 +509,7 @@ fn explain_rows_carry_hits_only() {
         hit("a::x", "/repo/a.rs", "a.rs", Some("x"), 0.05),
         hit("b::z", "/repo/b.rs", "b.rs", Some("z"), 0.03),
     ];
-    let rows = build_explain_rows(&hits);
+    let rows = build_explain_rows(&hits, &[]);
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].name, "x");
     assert_eq!(rows[0].source, "a.rs");
@@ -542,6 +542,7 @@ fn explain_table_section_ignores_expansion() {
         name: "x".to_string(),
         source: "a.rs".to_string(),
         score: 0.05,
+        cite: "a.rs:1-1 @ b3:abc".to_string(),
     }];
     let without = render_explain_table("q", &rows, &[]);
     let rendered = render_explain_table(
@@ -552,8 +553,8 @@ fn explain_table_section_ignores_expansion() {
     assert!(rendered.starts_with(&without));
     assert!(rendered.contains("### Context\n"));
     assert!(rendered.starts_with("## Explain: q\n\n"));
-    assert!(rendered.contains("| Name | Source | Score |"));
-    assert!(rendered.contains("| x | a.rs | 0.05 |"));
+    assert!(rendered.contains("| Name | Source | Score | Cite |"));
+    assert!(rendered.contains("| x | a.rs | 0.05 | a.rs:1-1 @ b3:abc |"));
     // Not-found compat: the empty state never changes across the port.
     assert_eq!(
         render_explain_table("q", &[], &[]),
@@ -567,7 +568,7 @@ fn explain_rows_fall_back_to_basename_for_file_hits() {
     // path as entity id: the Name column shows the basename, never the
     // absolute path.
     let hits = vec![hit("/repo/a.rs", "/repo/a.rs", "a.rs", None, 0.04)];
-    let rows = build_explain_rows(&hits);
+    let rows = build_explain_rows(&hits, &[]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].name, "a.rs");
     assert_eq!(rows[0].source, "a.rs");
@@ -648,4 +649,128 @@ fn context_lines_name_ambiguity_and_silence_certainty() {
     // Certain lines render exactly as before (byte-identical).
     let certain = build_context_lines(&[context_edge("/repo/b.rs", "/repo/a.rs")], 10, "/repo");
     assert!(!certain[0].contains('('), "{certain:?}");
+}
+
+#[test]
+fn cited_rows_carry_verified_cites() {
+    // Every row names its cited range with a hash over live bytes;
+    // unreadable files degrade to `unverified`, never a bare path.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("a.rs");
+    std::fs::write(&file, "fn a() {}\nfn b() {}\n").expect("write");
+    let abs = file.to_string_lossy().into_owned();
+    let hits = vec![crate::search::hit_for_test(&abs, "a.rs", 1, 2)];
+    let cites = crate::search::cite_hits(&hits, dir.path().to_str().unwrap());
+    assert_eq!(cites.len(), 1);
+    let expected = common_core::hash::blake3_hex("fn a() {}\nfn b() {}\n".as_bytes());
+    assert_eq!(
+        cites[0],
+        format!("a.rs:1-2 @ b3:{expected}"),
+        "{}",
+        cites[0]
+    );
+    let rows = crate::search::build_explain_rows(&hits, &cites);
+    assert_eq!(rows[0].cite, cites[0]);
+    let rendered = crate::search::render_explain_table("q", &rows, &[]);
+    assert!(rendered.contains("| Cite |"), "{rendered}");
+    assert!(rendered.contains(&expected), "{rendered}");
+    // Missing file: unverified, never invented.
+    let missing = vec![crate::search::hit_for_test("/nope.rs", "nope.rs", 1, 1)];
+    let cites = crate::search::cite_hits(&missing, dir.path().to_str().unwrap());
+    assert_eq!(cites, vec!["unverified".to_string()]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn item_chunk_citations_verify_item_ranges() {
+    // Item chunks committed through the unified writer cite item ranges,
+    // hash-verified against live bytes — never whole-file spans.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().to_str().unwrap().to_string();
+    let text = "/// Adds one.\npub fn alpha() -> i32 {\n    1\n}\n";
+    let abs = dir.path().join("a.rs").to_string_lossy().into_owned();
+    std::fs::write(&abs, text).expect("write");
+    let db_path = dir.path().join("cite.db");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open db");
+    let file = search_vector::db::FileRecord {
+        id: abs.clone(),
+        absolute_path: abs.clone(),
+        relative_path: "a.rs".to_string(),
+        root_path: workspace.clone(),
+        size_bytes: text.len() as u64,
+        last_modified_time: 100,
+        kind: Some("code".to_string()),
+        format: "rust".to_string(),
+        content_hash: None,
+        index_status: Some("indexed".to_string()),
+        fail_count: 0,
+        last_error: None,
+    };
+    let fragment = guidance_core::extractor::PreparedFragment {
+        id: "frag-a".to_string(),
+        content_text: "pub fn alpha() -> i32 {\n    1\n}".to_string(),
+        embedding_text: None,
+        range: guidance_core::extractor::FragmentRange {
+            start_line: 2,
+            end_line: 4,
+            start_offset: 15,
+            end_offset: text.len(),
+        },
+        group: None,
+        metadata: Some(guidance_core::extractor::FragmentMetadata::Code {
+            symbol_type: guidance_core::search_types::CodeSymbolType::Function,
+            symbol_name: Some("alpha".to_string()),
+            scope: None,
+            node_type: "function_item".to_string(),
+            signature: Some("pub fn alpha() -> i32".to_string()),
+            doc: Some("Adds one.".to_string()),
+            modifiers: Vec::new(),
+        }),
+        calls: Vec::new(),
+    };
+    let block = guidance_core::ast_parser::CommentBlock {
+        node_key: "alpha".to_string(),
+        node_kind: "function_item".to_string(),
+        name: "alpha".to_string(),
+        scope: String::new(),
+        start_byte: 0,
+        end_byte: 14,
+        start_line: 1,
+        end_line: 1,
+        text: "Adds one.".to_string(),
+        comment_hash: common_core::hash::blake3_hex("Adds one.".as_bytes()),
+    };
+    guidance_core::query::writer::FragmentWriter::write_items(
+        &db,
+        &file,
+        guidance_core::search_types::FileKind::Code,
+        std::slice::from_ref(&fragment),
+        std::slice::from_ref(&block),
+        &[],
+        None,
+        guidance_core::query::writer::VectorPolicy::Optional,
+    )
+    .expect("commit");
+    drop(db);
+    let rendered = run_search(
+        "adds",
+        &workspace,
+        db_path.to_str().unwrap(),
+        Some(10),
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[],
+        &[],
+        &rg_opts(),
+    )
+    .expect("fuse route");
+    let expected = common_core::hash::blake3_hex("pub fn alpha() -> i32 {\n    1\n}\n".as_bytes());
+    assert!(
+        rendered.contains(&format!("a.rs:2-4 @ b3:{expected}")),
+        "item range must cite with a live-byte hash: {rendered}"
+    );
 }

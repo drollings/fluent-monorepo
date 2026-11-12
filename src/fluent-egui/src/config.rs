@@ -105,6 +105,7 @@ fn default_outline_variant() -> String {
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// One pane's layout entry: visibility plus its share of chart height.
 pub struct PaneConfig {
     /// Pane key (for example "price", "volume", "oscillator").
     #[field(desc = "Pane key", max_len = 32)]
@@ -175,6 +176,11 @@ impl_component!(PaneConfig);
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Named theme: style keys resolved to `#RRGGBB` colors at paint time.
+/// 
+/// Slots are named for their role (`bull`, `bear`, `fast`, `slow`), never
+/// for a kernel — the paint edge resolves a series' style key here instead
+/// of carrying color literals in compute.
 pub struct ThemeConfig {
     /// Theme key selected by the chart config.
     #[field(desc = "Theme key", max_len = 32)]

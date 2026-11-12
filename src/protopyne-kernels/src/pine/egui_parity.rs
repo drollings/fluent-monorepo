@@ -19,6 +19,7 @@ use crate::compat::ParityEvidence;
 
 /// Standing of one overlap construct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Standing of one overlap construct.
 pub enum ParityVerdict {
     /// Identical observable behavior, pinned by a checked-in reference vector
     /// (or an external export that [`ParityEvidence`] names).
@@ -37,6 +38,8 @@ pub enum ParityVerdict {
 /// One matrix row: a construct, both-side citations, its standing, and —
 /// for refusals — the probe script plus the exact refusal string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One matrix row: a construct, both-side citations, its standing, and —
+/// for refusals — the probe script plus the exact refusal string.
 pub struct EguiParityRow {
     /// Construct name (`ta.sma`, `if/else`, `division (/)`, ...).
     pub construct: &'static str,
@@ -2158,6 +2161,7 @@ pub const EGUI_PARITY: &[EguiParityRow] = &[
 
 /// Look up one matrix row by construct name.
 #[must_use]
+/// Look up one matrix row by construct name.
 pub fn parity_for(construct: &str) -> Option<&'static EguiParityRow> {
     EGUI_PARITY.iter().find(|row| row.construct == construct)
 }

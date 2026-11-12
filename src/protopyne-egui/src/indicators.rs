@@ -72,6 +72,11 @@ const INTEGRATION_LITE_NODES: [&str; 4] = [
 /// catalog renders its own All tab and Favorites checkbox, so
 /// [`entry_category`](Self::entry_category) maps them to `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// One catalog tab: the two selector tabs plus the three entry categories.
+/// 
+/// `All` and `Favorites` are selectors, not entry categories — the generic
+/// catalog renders its own All tab and Favorites checkbox, so
+/// [`entry_category`](Self::entry_category) maps them to `None`.
 pub enum IndicatorCategory {
     /// Every entry, regardless of category.
     All,
@@ -122,6 +127,7 @@ impl IndicatorCategory {
 
 /// One evaluated series a plugin produces, bound to a pane-plan node.
 #[derive(Debug, Clone, PartialEq)]
+/// One evaluated series a plugin produces, bound to a pane-plan node.
 pub struct IndicatorSeries {
     /// Pane-plan node this series computes (cache-key scope).
     pub node: String,
@@ -176,6 +182,11 @@ impl IndicatorSeries {
 /// `Ok`; a Pine `Err` carries the projection refusal the pane renders as an
 /// "unsupported" chip instead of silent absence.
 #[derive(Debug, Clone, PartialEq)]
+/// One plugin evaluation: the series produced, in plan-node order, plus any
+/// projected non-series visuals (Pine drawings, markers, levels) for the
+/// pane to paint beside the series. Native plugins always carry an empty
+/// `Ok`; a Pine `Err` carries the projection refusal the pane renders as an
+/// "unsupported" chip instead of silent absence.
 pub struct IndicatorEvaluation {
     /// Series produced by the evaluation.
     pub series: Vec<IndicatorSeries>,
@@ -650,6 +661,10 @@ fn default_kernel_style() -> String {
 /// own choice afterwards — this only seeds new slots, so existing slots
 /// never move.
 #[must_use]
+/// Default line style key for a kernel: the oscillator kind key where the
+/// kernel is a bounded oscillator, else the role default. Slots keep their
+/// own choice afterwards — this only seeds new slots, so existing slots
+/// never move.
 pub fn default_style_for_kernel(kernel: &str) -> &'static str {
     panel_kind_for_kernel(kernel).unwrap_or("fast")
 }
@@ -679,6 +694,9 @@ fn default_smooth_period() -> i64 {
 /// that old preferences migrate through.
 #[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
+/// One kernel plugin's configuration: which kernel, its declared parameters,
+/// its paint style, and its input source. `length` remains a legacy alias
+/// that old preferences migrate through.
 pub struct KernelIndicatorConfig {
     /// Kernel id resolved against the builtin registry.
     #[builder(default = default_kernel())]
@@ -1453,6 +1471,8 @@ impl_component!(KernelIndicatorConfig);
 /// Every registered kernel id, sorted: the kernel picker. Empty only when
 /// the registry itself fails to build (which also refuses instantiation).
 #[must_use]
+/// Every registered kernel id, sorted: the kernel picker. Empty only when
+/// the registry itself fails to build (which also refuses instantiation).
 pub fn kernel_ids() -> Vec<String> {
     shared_registry()
         .map(protopyne_kernels::IndicatorRegistry::ids)
@@ -1462,6 +1482,8 @@ pub fn kernel_ids() -> Vec<String> {
 /// Display title for a kernel id: the kernel's own spec name, falling back
 /// to the id when the registry does not hold it.
 #[must_use]
+/// Display title for a kernel id: the kernel's own spec name, falling back
+/// to the id when the registry does not hold it.
 pub fn kernel_title(kernel: &str) -> String {
     shared_registry()
         .ok()
@@ -1480,6 +1502,12 @@ pub fn kernel_title(kernel: &str) -> String {
 /// symmetric normalized pane is structurally meaningless, and the pane
 /// derivation must agree with the gate.
 #[must_use]
+/// Whether every declared output leg of a kernel maps into the shared
+/// oscillator catalog: the single predicate behind the merge gate, the
+/// normalize default, and shared-pane derivation. Unknown kernels and
+/// partially mapped families refuse — merging half-raw content into a
+/// symmetric normalized pane is structurally meaningless, and the pane
+/// derivation must agree with the gate.
 pub fn kernel_normalizes(kernel: &str) -> bool {
     let Ok(registry) = shared_registry() else {
         return false;
@@ -1499,6 +1527,10 @@ pub fn kernel_normalizes(kernel: &str) -> bool {
 /// sub-pane. Cache keys and plan edges carry no attachment, so routing moves
 /// paint only.
 #[must_use]
+/// Pane a kernel plugin paints in: length-taking smoothings are one-arm
+/// overlays through the shared kernel path; every other kernel stays in the
+/// sub-pane. Cache keys and plan edges carry no attachment, so routing moves
+/// paint only.
 pub fn kernel_attachment(kernel: &str) -> SlotAttachment {
     if SmoothingFamily::parse(kernel).is_some_and(SmoothingFamily::takes_length) {
         SlotAttachment::MainOverlay

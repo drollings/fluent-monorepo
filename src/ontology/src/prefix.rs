@@ -21,6 +21,9 @@ pub const YAGO_IRI_BASE: &str = "http://yago-knowledge.org/resource/";
 /// carrying the original prefix text for genuinely open key sets (TTL
 /// `@prefix` declarations, operator vocabularies).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Closed prefix set: the two well-known namespaces plus an open fallback
+/// carrying the original prefix text for genuinely open key sets (TTL
+/// `@prefix` declarations, operator vocabularies).
 pub enum CuriePrefix {
     /// The `yago:` namespace.
     Yago,
@@ -78,6 +81,12 @@ impl FromStr for CuriePrefix {
 /// through the closed set (`yago`/`schema`, case-insensitive); anything else
 /// becomes the open fallback carrying the lowercased prefix text.
 #[must_use]
+/// Split a CURIE at the first `:` into its prefix and remainder without
+/// allocating the remainder.
+/// 
+/// Returns `None` when the input contains no `:`. The prefix half is mapped
+/// through the closed set (`yago`/`schema`, case-insensitive); anything else
+/// becomes the open fallback carrying the lowercased prefix text.
 pub fn split_prefix(curie: &str) -> Option<(CuriePrefix, &str)> {
     let (raw_prefix, rest) = curie.split_once(':')?;
     let lowered = raw_prefix.to_lowercase();

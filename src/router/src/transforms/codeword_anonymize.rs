@@ -22,6 +22,19 @@ use fluent_types::openai_wire::RouterRequest;
 /// placeholders (reversible session scope vs one-way request scrub — do not
 /// merge; each is locked by its own goldens).
 #[derive(Debug)]
+/// Session-scoped, reversible codeword anonymizer (MOA_ROUTER_SPEC §4).
+/// 
+/// Uses the filter engine's `RegexMatch` results to perform consistent
+/// substitution: every occurrence of the same identifier gets the same
+/// codeword within a session.
+/// 
+/// M6: this type owns NO pattern table by design — matches arrive via
+/// request metadata from `DeterministicPreFilter`, whose builtin engine is
+/// single-sourced from `fluent_llm::pii_patterns` (see
+/// `stages::deterministic::builtin_filter_engine`). The `CODEWORD_<TYPE>_N`
+/// vocabulary itself is intentionally separate from `anonymize`'s `[TYPE]`
+/// placeholders (reversible session scope vs one-way request scrub — do not
+/// merge; each is locked by its own goldens).
 pub struct CodewordAnonymizer {
     mapping: Mutex<HashMap<String, String>>,
     counters: Mutex<HashMap<String, usize>>,
@@ -31,6 +44,7 @@ pub struct CodewordAnonymizer {
 
 /// Serializable form of a regex match for metadata round-tripping.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Serializable form of a regex match for metadata round-tripping.
 struct MatchEntry {
     pattern_name: String,
     matched_text: String,

@@ -8,6 +8,7 @@ use crate::stages::common::{coerce_float, coerce_string, coerce_u8};
 
 /// The three-axis verdict a classifier node's LLM call must return.
 #[derive(Debug, Clone, serde::Deserialize)]
+/// The three-axis verdict a classifier node's LLM call must return.
 pub struct TreeClassifierVerdict {
     /// The child key to route to. `None`/empty → the classifier's fallback
     /// child (or a rejection when there is none).

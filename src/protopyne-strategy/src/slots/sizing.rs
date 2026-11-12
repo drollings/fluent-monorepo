@@ -51,6 +51,7 @@ fn count(params: &serde_json::Value, key: &str, id: &'static str) -> Result<u32,
 }
 
 #[allow(clippy::needless_pass_by_value)] // owned from map_err; the message is all that survives
+/// owned from map_err; the message is all that survives
 fn translate(id: &'static str, error: StrategyError) -> SlotError {
     SlotError::invalid(id, error.to_string())
 }
@@ -149,12 +150,14 @@ fn fractional_kelly_factory(params: &serde_json::Value) -> Result<Arc<dyn Sizing
 
 /// The sizer catalog.
 #[must_use]
+/// The sizer catalog.
 pub fn sizers() -> &'static SlotRegistry<Arc<dyn Sizing>> {
     sizing_registry()
 }
 
 /// The catalog ids, in schema order.
 #[must_use]
+/// The catalog ids, in schema order.
 pub fn sizing_ids() -> Vec<&'static str> {
     sizers().ids()
 }

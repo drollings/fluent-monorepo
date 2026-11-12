@@ -12,6 +12,18 @@
 /// reports present (Metal is integral); other platforms report absent
 /// (out of scope, fail closed toward CPU).
 #[must_use]
+/// GPU device presence: one probe for every backend's opt-in offload.
+/// 
+/// The `gpu` leaves stay `false` unless the operator opts in. When set,
+/// each backend checks this probe before attempting offload: no device
+/// means a named error, never a silent CPU fallback. Presence is a
+/// necessary condition, not a guarantee — the backend's own stack can
+/// still fail loudly at load, which is the actionable outcome.
+/// Whether a GPU device node is visible to this process.
+/// 
+/// Linux checks the NVIDIA nodes and the DRM render nodes; macOS always
+/// reports present (Metal is integral); other platforms report absent
+/// (out of scope, fail closed toward CPU).
 pub fn device_present() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -54,6 +66,12 @@ fn has_render_node() -> bool {
 /// the CUDA execution provider without NVIDIA hardware can never
 /// succeed, and failing actionably beats a doomed probe.
 #[must_use]
+/// Whether an NVIDIA device node is visible to this process.
+/// 
+/// `device_present` also fires on AMD render nodes (ROCm); several
+/// backends only speak CUDA, so they need the narrower gate: requesting
+/// the CUDA execution provider without NVIDIA hardware can never
+/// succeed, and failing actionably beats a doomed probe.
 pub fn nvidia_present() -> bool {
     #[cfg(target_os = "macos")]
     {

@@ -11,6 +11,7 @@ use crate::timeframe::Timeframe;
 
 /// Extra bars fetched ahead of the user range for a given warmup.
 #[must_use]
+/// Extra bars fetched ahead of the user range for a given warmup.
 pub fn warmup_headroom(warmup: usize) -> usize {
     warmup.saturating_sub(1)
 }
@@ -18,6 +19,8 @@ pub fn warmup_headroom(warmup: usize) -> usize {
 /// Fetch parameters widened by the warmup headroom alongside the untouched
 /// originals, mirroring the historical-service contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Fetch parameters widened by the warmup headroom alongside the untouched
+/// originals, mirroring the historical-service contract.
 pub struct AdjustedBounds {
     /// Start to actually fetch (backed off by headroom bars), if bounded.
     pub fetch_start_ms: Option<i64>,
@@ -37,6 +40,13 @@ pub struct AdjustedBounds {
 /// instead of overflowing: identical to plain arithmetic for every
 /// representable fetch, fail-closed instead of panicking past it.
 #[must_use]
+/// Widen fetch bounds by the warmup headroom.
+/// 
+/// A provided start moves earlier by `headroom * timeframe`; a provided
+/// limit grows by `headroom`. `warmup` of 0 or 1 adds no headroom. The start
+/// is clamped at zero rather than wrapping, and extreme warmups saturate
+/// instead of overflowing: identical to plain arithmetic for every
+/// representable fetch, fail-closed instead of panicking past it.
 pub fn adjust_fetch_bounds(
     start_ms: Option<i64>,
     limit: Option<usize>,
@@ -62,6 +72,13 @@ pub fn adjust_fetch_bounds(
 /// stay in the output where they remain visible instead of being silently
 /// laundered.
 #[must_use]
+/// Trim a full-length kernel output back to the user-requested window.
+/// 
+/// Drops exactly the warmup headroom from the head, then keeps the trailing
+/// `original_limit` values when the window is longer. Trimming is positional:
+/// when the warmup was too small (or zero), leading `None`s from the kernel
+/// stay in the output where they remain visible instead of being silently
+/// laundered.
 pub fn trim_indicator_output<T: Clone>(
     values: &[T],
     warmup: usize,

@@ -15,6 +15,7 @@ use fluent_types::{ConceptMetadata, InterlinguaId};
 
 /// Store readiness — `Loading` until batched WAL completes, `Ready` thereafter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Store readiness — `Loading` until batched WAL completes, `Ready` thereafter.
 pub enum ConceptStoreState {
     #[default]
     Ready,
@@ -23,6 +24,7 @@ pub enum ConceptStoreState {
 
 /// Errors surfaced by a [`ConceptStore`].
 #[derive(Debug, thiserror::Error)]
+/// Errors surfaced by a [`ConceptStore`].
 pub enum ConceptStoreError {
     #[error("concept not found: {0}")]
     NotFound(String),

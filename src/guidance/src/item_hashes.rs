@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 /// Per-item hashes over normalized text.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Per-item hashes over normalized text.
 pub struct ItemHashes {
     /// Normalized signature (generics, bounds, visibility, attributes).
     pub sig: String,
@@ -132,6 +133,8 @@ fn leaf_tokens(text: &str) -> Vec<&str> {
 /// Normalize one text for hashing: comment-aware token stream for Rust,
 /// whitespace collapsing for every other language.
 #[must_use]
+/// Normalize one text for hashing: comment-aware token stream for Rust,
+/// whitespace collapsing for every other language.
 pub fn normalize_code_text(language: &str, text: &str) -> String {
     if language == "rust" {
         leaf_tokens(&strip_rust_comments(text)).join("\0")
@@ -149,6 +152,9 @@ fn hash_text(text: &str) -> String {
 /// a body-only edit keeps `sig` stable and a doc-only edit keeps both
 /// `sig` and `body` stable. `item` binds the three together.
 #[must_use]
+/// Split hashes for one item: signature, body, and doc hashed apart so
+/// a body-only edit keeps `sig` stable and a doc-only edit keeps both
+/// `sig` and `body` stable. `item` binds the three together.
 pub fn item_hashes_for(
     language: &str,
     signature: &str,
@@ -169,13 +175,19 @@ pub fn item_hashes_for(
     }
 }
 
-/// Language-neutral signature normalization: whitespace collapsing
-/// only. Comment awareness is per-language (`normalize_code_text`);
-/// built signature strings are single-line, so this is the stable
-/// comparator for cross-language merge decisions.
+/// Language-neutral signature normalization: all whitespace removed.
+/// Comment awareness is per-language (`normalize_code_text`);
+/// built signature strings are single-line, so token concatenation is
+/// the stable comparator for cross-language merge decisions and
+/// stored interface hashes (`fn  f( x:u8 )` and `fn f(x: u8)` agree).
 #[must_use]
+/// Language-neutral signature normalization: all whitespace removed.
+/// Comment awareness is per-language (`normalize_code_text`);
+/// built signature strings are single-line, so token concatenation is
+/// the stable comparator for cross-language merge decisions and
+/// stored interface hashes (`fn  f( x:u8 )` and `fn f(x: u8)` agree).
 pub fn normalize_signature_text(signature: &str) -> String {
-    signature.split_whitespace().collect::<Vec<_>>().join(" ")
+    signature.split_whitespace().collect()
 }
 
 /// Whether two signatures name the same interface under the
@@ -188,6 +200,8 @@ pub fn interface_stable(language: &str, old_sig: &str, new_sig: &str) -> bool {
 /// Per-item work key: the item plus its dependencies' sig hashes plus
 /// the consumed input components. Unchanged keys reuse stored receipts.
 #[must_use]
+/// Per-item work key: the item plus its dependencies' sig hashes plus
+/// the consumed input components. Unchanged keys reuse stored receipts.
 pub fn work_key(
     item_hash: &str,
     dep_sig_hashes: &[&str],
@@ -195,8 +209,7 @@ pub fn work_key(
 ) -> String {
     let mut sorted_deps: Vec<&str> = dep_sig_hashes.to_vec();
     sorted_deps.sort_unstable();
-    let mut framed =
-        format!("item\0{item_hash}\0deps\0{}\0comp\0", sorted_deps.join(","));
+    let mut framed = format!("item\0{item_hash}\0deps\0{}\0comp\0", sorted_deps.join(","));
     for (name, hash) in components {
         framed.push_str(name);
         framed.push('\0');
@@ -210,6 +223,9 @@ pub fn work_key(
 /// the recomputed key, fail closed on missing evidence. Task value,
 /// never producer confidence.
 #[must_use]
+/// Whether a stored work key still covers this item: exact match on
+/// the recomputed key, fail closed on missing evidence. Task value,
+/// never producer confidence.
 pub fn work_key_matches(
     item_hash: &str,
     dep_sig_hashes: &[&str],

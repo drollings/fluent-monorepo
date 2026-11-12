@@ -79,9 +79,12 @@ fn fast_tier_passes_on_fixtures() {
         first.len()
     );
     assert_eq!(first.len(), second.len());
+    // Outcome measures (real behavior over goldens, not
+    // perfect-by-construction pins) read in range, never exactly 1.0.
+    let measured_in_range = ["decision.triage_precision", "decision.triage_recall"];
     for metric in &first {
         if metric.higher_is_better {
-            if metric.name.contains(".mrr.") {
+            if metric.name.contains(".mrr.") || measured_in_range.contains(&metric.name.as_str()) {
                 assert!((0.0..=1.0).contains(&metric.value), "{}", metric.name);
             } else {
                 assert!(

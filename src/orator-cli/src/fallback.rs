@@ -75,6 +75,13 @@ fn unavailable_markers() -> [&'static str; 8] {
 /// from the chain classifier's wording legs (merging them would change
 /// behavior — see `shared_corpus_pins_classifier_disagreements`).
 #[must_use]
+/// Whether a daemon refusal means "nothing serving" (fall through to
+/// local inference) rather than busy/transient/usage (stay terminal).
+/// Shared scan home: `common_core::string` (one lowered haystack over
+/// the marker table — the folded-scan shape wanted here, already
+/// present under that name); the table itself stays here and separate
+/// from the chain classifier's wording legs (merging them would change
+/// behavior — see `shared_corpus_pins_classifier_disagreements`).
 pub fn voice_unavailable(detail: &str) -> bool {
     common_core::string::LoweredHaystack::new(detail).contains_any(&unavailable_markers())
 }
@@ -147,6 +154,9 @@ pub fn decode_whisper_samples(
 /// composed `language` override wins, else the global STT leaf.
 /// Pure (no weights, no I/O) so the override is unit-testable.
 #[must_use]
+/// Recognition language for `tag` serving the ASR role: the
+/// composed `language` override wins, else the global STT leaf.
+/// Pure (no weights, no I/O) so the override is unit-testable.
 pub fn resolve_asr_language(config: &orator::OratorConfig, tag: &str) -> String {
     orator::compose_role_params(&config.models, &config.roles, "asr", tag)
         .get("language")
@@ -158,6 +168,9 @@ pub fn resolve_asr_language(config: &orator::OratorConfig, tag: &str) -> String 
 /// override wins, else the global TTS leaf. Pure (no weights, no
 /// I/O) so the override is unit-testable.
 #[must_use]
+/// Voice for `tag` serving the TTS role: the composed `voice`
+/// override wins, else the global TTS leaf. Pure (no weights, no
+/// I/O) so the override is unit-testable.
 pub fn resolve_tts_voice(config: &orator::OratorConfig, tag: &str) -> String {
     orator::compose_role_params(&config.models, &config.roles, "tts", tag)
         .get("voice")
@@ -277,6 +290,9 @@ pub fn transcribe_dial(
 /// server or local inference. `Shared` is the direct role-head leg:
 /// the ASR head decoded on the shared endpoint with no daemon hop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which leg served a daemon-first transcribe dial: the shared voice
+/// server or local inference. `Shared` is the direct role-head leg:
+/// the ASR head decoded on the shared endpoint with no daemon hop.
 pub enum DialLeg {
     /// The daemon's voice server decoded (the configured `s2s`
     /// model over the audio-server protocol).
@@ -360,6 +376,7 @@ fn shared_head_transcribe(
 
 /// Local ASR backend selected by the role walk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Local ASR backend selected by the role walk.
 pub enum LocalBackend {
     /// whisper.cpp GGUF (`ggml-<tag>.bin` from the managed directory).
     Whisper,
@@ -382,6 +399,8 @@ impl LocalBackend {
 /// One servable local model: weights path, serving tag, and which
 /// backend decodes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One servable local model: weights path, serving tag, and which
+/// backend decodes it.
 pub struct LocalAsr {
     /// Resolved weights file.
     pub path: std::path::PathBuf,
@@ -419,6 +438,12 @@ pub fn resolve_moonshine_model(
 /// when nothing was bypassed (no role guidance, or the head serves
 /// as listed). Pure so the decision pins without stderr capture.
 #[must_use]
+/// Notice when local ASR serves past an unservable role side: the
+/// heads were consulted and skipped, so the legacy leaf closes the
+/// turn on words the roles did not pick. Same swap message as the
+/// historical head-over-leaf notice when the tags differ; `None`
+/// when nothing was bypassed (no role guidance, or the head serves
+/// as listed). Pure so the decision pins without stderr capture.
 pub fn local_asr_serve_note(
     found_tag: &str,
     leaf: &str,

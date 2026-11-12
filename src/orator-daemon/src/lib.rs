@@ -51,18 +51,21 @@ pub fn request_shutdown() {
 
 /// Whether a `StopDaemon` call has been served.
 #[must_use]
+/// Whether a `StopDaemon` call has been served.
 pub fn shutdown_requested() -> bool {
     SHUTDOWN_REQUESTED.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 /// Reset the shutdown signal. Test-only seam.
 #[cfg(test)]
+/// Reset the shutdown signal. Test-only seam.
 pub fn clear_shutdown_for_tests() {
     SHUTDOWN_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// Dispatch failures. Unknown methods are rejected, never defaulted.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Dispatch failures. Unknown methods are rejected, never defaulted.
 pub enum DispatchError {
     /// The method is not part of the wire contract.
     #[error("unknown method: {0}")]
@@ -145,6 +148,7 @@ impl Default for RootScope {
 
 /// Loopback failures.
 #[derive(Error, Debug)]
+/// Loopback failures.
 pub enum LoopbackError {
     /// The archive tap failed.
     #[error("loopback archive failed: {0}")]

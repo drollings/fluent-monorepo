@@ -35,6 +35,11 @@ pub trait Describable {
 ///
 /// `purity` is [`None`] for audit-only stages (`{name, depends, provides}`).
 #[must_use]
+/// Canonical [`Describable::describe`] document from `name`/`depends`/`provides`.
+/// Replaces hand-written literals; differs from pre-migration
+/// `{type, description}` by design.
+/// 
+/// `purity` is [`None`] for audit-only stages (`{name, depends, provides}`).
 pub fn describe_work_unit(
     name: &str,
     depends: &[ArcIntern<str>],
@@ -159,6 +164,7 @@ pub struct FieldSchema {
 /// Compatibility surface (scaffold).
 #[doc(hidden)]
 #[allow(dead_code)]
+/// Compatibility surface (scaffold).
 pub trait SchemaProvider {
     fn schema(&self) -> Vec<FieldSchema>;
 }

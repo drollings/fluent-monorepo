@@ -28,6 +28,22 @@ use crate::config::{strip_declaration_params, ModelEntry};
 ///
 /// `as_wire` is the single `format!("{base}:{q}")` site.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Router-local newtype for the `<base>` / `<base>:<qualifier>` model-id grammar.
+/// The wire form is still a
+/// single `model` string (OpenAI compat), but in-memory code uses the typed form
+/// so bare vs qualified dispatch is checked at the call site rather than by
+/// stringly-typed `format!("{base}:{q}")` / `split_once(':')` (Pattern 7,
+/// `fluent-wvr/SKILL.md:1107`). Kept router-local per the import-boundary rule:
+/// only the router speaks this grammar.
+/// 
+/// Ownership: `fluent_types::model_key::split_model_key` is the single
+/// `split_once(':')` site; `QualifiedModelId::parse` delegates to it.
+/// Zero-alloc callers use `split_model_key`; typed callers use
+/// `QualifiedModelId::parse`/`as_wire`.
+/// Never duplicate the `split_once` literal elsewhere. Model-id parsing is
+/// neither confidence nor task-value — no threshold.
+/// 
+/// `as_wire` is the single `format!("{base}:{q}")` site.
 pub struct QualifiedModelId {
     pub base: String,
     pub qualifier: Option<String>,

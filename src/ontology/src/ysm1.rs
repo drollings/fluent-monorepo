@@ -45,6 +45,8 @@ pub const YSM1_HEADER_LEN: usize = 44;
 /// The pinned taxonomy identity stamped by the writer and required by the
 /// reader: the first four blake3 bytes of the pinned `YAGO_VERSION` string.
 #[must_use]
+/// The pinned taxonomy identity stamped by the writer and required by the
+/// reader: the first four blake3 bytes of the pinned `YAGO_VERSION` string.
 pub fn taxonomy_version() -> u32 {
     let digest = common_core::hash::blake3_hash(YAGO_VERSION.as_bytes());
     u32::from_le_bytes(digest[0..4].try_into().unwrap())
@@ -52,6 +54,7 @@ pub fn taxonomy_version() -> u32 {
 
 /// A decoded YSM1 payload: the sorted class table plus hierarchy edges.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A decoded YSM1 payload: the sorted class table plus hierarchy edges.
 pub struct Ysm1File {
     /// `(curie, id)` records in curie-sorted order.
     pub classes: Vec<(String, InterlinguaId)>,
@@ -63,6 +66,9 @@ pub struct Ysm1File {
 /// `turtle::subclass_edges` path — the same derivation `YagoView` uses, so
 /// the binary and the TTL leg agree by construction.
 #[must_use]
+/// Encode a TTL document to YSM1 bytes through the existing
+/// `turtle::subclass_edges` path — the same derivation `YagoView` uses, so
+/// the binary and the TTL leg agree by construction.
 pub fn encode_ttl(ttl: &str) -> Vec<u8> {
     let (_, edges) = crate::turtle::subclass_edges(ttl);
     let mut ids: HashMap<String, InterlinguaId> = HashMap::new();

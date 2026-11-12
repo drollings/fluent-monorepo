@@ -49,6 +49,7 @@ use protopyne_view::{ArmResponse, GatewayError, TerminalGateway, WorstCase};
 
 /// One editable leaf, lifted from the descriptor's nested schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One editable leaf, lifted from the descriptor's nested schema.
 pub struct GrantFormField {
     /// Descriptor tier name; also the envelope key for this tier.
     pub tier: String,
@@ -77,6 +78,8 @@ impl GrantFormField {
 /// What a submit can refuse, with local validation kept distinct from the
 /// core's answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What a submit can refuse, with local validation kept distinct from the
+/// core's answer.
 pub enum GrantFormError {
     /// No tier drafted: nothing was sent.
     Empty,
@@ -130,6 +133,7 @@ impl std::error::Error for GrantFormError {}
 
 /// One descriptor tier, in schema order: its hint plus its leaves.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One descriptor tier, in schema order: its hint plus its leaves.
 struct GrantTier {
     name: String,
     description: String,
@@ -147,6 +151,9 @@ pub const DEFAULT_TIER_READ_INTERVAL_FRAMES: u64 = 30;
 /// live tier texts for display, the preview covering the drafts, and the
 /// last outcome for the painter to echo.
 #[derive(Debug, Clone)]
+/// The form: descriptor-derived tiers and leaves, per-leaf draft text, the
+/// live tier texts for display, the preview covering the drafts, and the
+/// last outcome for the painter to echo.
 pub struct GrantFormState {
     tiers: Vec<GrantTier>,
     fields: Vec<GrantFormField>,
@@ -671,6 +678,10 @@ impl GrantFormState {
 /// The action carries only the id; applying it invokes exactly one gateway
 /// verb, so a rendered click can never fan out into a second write.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One operator grant action: re-attest the live grant.
+/// 
+/// The action carries only the id; applying it invokes exactly one gateway
+/// verb, so a rendered click can never fan out into a second write.
 pub enum GrantAction {
     /// Re-attest the live grant for another cadence.
     Attest {

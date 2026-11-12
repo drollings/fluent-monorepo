@@ -47,6 +47,19 @@ pub fn sha256_hex(data: &[u8]) -> String {
 /// );
 /// ```
 #[must_use]
+/// sha256 hex of a string's bytes (file-id domain: ids hash path strings,
+/// not file contents).
+/// 
+/// # Examples
+/// 
+/// ```
+/// use common_core::hash::sha256_str;
+/// 
+/// assert_eq!(
+/// sha256_str("hello"),
+/// "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+/// );
+/// ```
 pub fn sha256_str(data: &str) -> String {
     sha256_hex(data.as_bytes())
 }
@@ -67,6 +80,21 @@ pub fn sha256_str(data: &str) -> String {
 /// assert!(hash.is_some());
 /// ```
 #[must_use]
+/// sha256 hex of a file's bytes; `None` when the file cannot be read
+/// (fail-open: callers treat unreadable files as changed, never as
+/// current). Streams through the shared [`hash_file`] engine, so the
+/// digest is byte-identical to [`sha256_hex`] over the full contents.
+/// See also [`sha256_digest`] for the raw-byte (non-hex) form.
+/// 
+/// # Examples
+/// 
+/// ```no_run
+/// use std::path::Path;
+/// use common_core::hash::sha256_file;
+/// 
+/// let hash = sha256_file(Path::new("Cargo.toml"));
+/// assert!(hash.is_some());
+/// ```
 pub fn sha256_file(path: &Path) -> Option<String> {
     hash_file(path, HashAlgorithm::Sha256).ok()
 }
@@ -107,6 +135,11 @@ pub fn fnv1a64(input: &[u8]) -> u64 {
 /// fingerprint has always used) — a cache key that follows every edit,
 /// never a refusal.
 #[must_use]
+/// Fingerprint of a JSON-serializable value: `serde_json::to_vec` bytes
+/// hashed once through [`fnv1a64`]. An encode failure hashes the empty
+/// encoding (the `unwrap_or_default` fail-soft the terminal config
+/// fingerprint has always used) — a cache key that follows every edit,
+/// never a refusal.
 pub fn fingerprint_json<T: serde::Serialize>(value: &T) -> u64 {
     fnv1a64(&serde_json::to_vec(value).unwrap_or_default())
 }
@@ -114,6 +147,8 @@ pub fn fingerprint_json<T: serde::Serialize>(value: &T) -> u64 {
 /// Canonical JSON for a serializable value: `serde_json::to_string` with a
 /// loud in-payload refusal on serialization failure (never an empty object).
 #[must_use]
+/// Canonical JSON for a serializable value: `serde_json::to_string` with a
+/// loud in-payload refusal on serialization failure (never an empty object).
 pub fn canonical_json<T: serde::Serialize>(value: &T) -> String {
     serde_json::to_string(value).unwrap_or_else(|e| {
         format!(
@@ -134,6 +169,16 @@ pub fn canonical_json<T: serde::Serialize>(value: &T) -> String {
 /// framing. Fixed-width word streams without names (content hashes) keep
 /// their own layout and only share [`fnv1a64`], never this builder.
 #[must_use]
+/// Fingerprint of sorted length-framed `(name, payload)` pairs: names sort
+/// ascending, each frame is `u64 little-endian name length + name bytes +
+/// raw payload bytes`, hashed once through [`fnv1a64`]. This is the exact
+/// outer-loop byte layout the parameter fingerprint and the pane cache key
+/// already share — both delegate here, so the bytes on the wire never
+/// change. Payloads must be self-delimiting (fixed-width words or
+/// internally length-prefixed values): the frame carries no payload
+/// length, so a payload that is not self-delimiting would fork the
+/// framing. Fixed-width word streams without names (content hashes) keep
+/// their own layout and only share [`fnv1a64`], never this builder.
 pub fn fingerprint_framed(pairs: &[(&str, &[u8])]) -> u64 {
     let mut ordered: Vec<(&str, &[u8])> = pairs.to_vec();
     ordered.sort_by(|left, right| left.0.cmp(right.0));
@@ -227,6 +272,7 @@ pub fn hash_file(path: &Path, algorithm: HashAlgorithm) -> std::io::Result<Strin
 
 /// Outcome of a size-then-SHA-256 file verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Outcome of a size-then-SHA-256 file verification.
 pub enum FileVerification {
     /// Both the pinned size (when supplied) and the digest agree.
     Match,

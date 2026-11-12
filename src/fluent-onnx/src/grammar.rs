@@ -51,6 +51,8 @@ pub trait TokenVocab: Send + Sync {
 /// A `tokenizers`-vocab-backed [`TokenVocab`]. Lives behind the `onnx`
 /// feature; hermetic tests use a fixed in-memory map.
 #[cfg(feature = "onnx")]
+/// A `tokenizers`-vocab-backed [`TokenVocab`]. Lives behind the `onnx`
+/// feature; hermetic tests use a fixed in-memory map.
 pub struct HuggingFaceVocab {
     inner: tokenizers::Tokenizer,
 }
@@ -88,6 +90,7 @@ pub trait Grammar: Send {
 
 /// The JSON type a field's value must satisfy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The JSON type a field's value must satisfy.
 pub enum JsonType {
     /// A JSON string (`"..."`).
     String,
@@ -103,6 +106,7 @@ pub enum JsonType {
 
 /// A declared field of a [`JsonSchema`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A declared field of a [`JsonSchema`].
 pub struct JsonField {
     /// The field name (the JSON string key, without quotes).
     pub name: String,
@@ -134,6 +138,7 @@ impl JsonField {
 
 /// The structural contract a [`JsonObjectGrammar`] enforces.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The structural contract a [`JsonObjectGrammar`] enforces.
 pub struct JsonSchema {
     /// The declared fields, in declaration order (keys may appear in any
     /// order, but only these names, each at most once).
@@ -214,6 +219,10 @@ impl JsonSchema {
 /// state carries the `seen` key set so it survives commas (no duplicate keys,
 /// required-field check at close).
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// The automaton's structural cursor. `Clone` so the grammar can `peek` a
+/// transition without mutating its live state. Every "inside the object"
+/// state carries the `seen` key set so it survives commas (no duplicate keys,
+/// required-field check at close).
 enum MachineState {
     /// Before the opening `{`.
     Start,
@@ -269,6 +278,9 @@ fn is_byte_marker(c: char) -> bool {
 /// vocab dependency — [`JsonObjectGrammar`] supplies the vocab and the
 /// `Grammar` trait surface.
 #[derive(Debug, Clone)]
+/// The pure JSON-object automaton. Works over token *strings* and has no
+/// vocab dependency — [`JsonObjectGrammar`] supplies the vocab and the
+/// `Grammar` trait surface.
 struct JsonObjectMachine {
     state: MachineState,
     schema: JsonSchema,

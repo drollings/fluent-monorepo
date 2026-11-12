@@ -6,9 +6,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::maintenance::{
-    is_breaker_trip, run_first_run, LoopGuard, MaintenanceQueue,
-};
+use crate::maintenance::{is_breaker_trip, run_first_run, LoopGuard, MaintenanceQueue};
 use crate::offload::{ApplyReport, ApplyVerdict};
 use crate::policy::MaintenancePolicy;
 use crate::query::context_pack::{
@@ -16,7 +14,10 @@ use crate::query::context_pack::{
 };
 
 fn item(text: &str, source: &str) -> ContextItem {
-    ContextItem { text: text.to_string(), source: source.to_string() }
+    ContextItem {
+        text: text.to_string(),
+        source: source.to_string(),
+    }
 }
 
 #[test]
@@ -95,7 +96,10 @@ fn cosmetic_only_diffs_keep_hashes_stable() {
     assert_eq!(base.sig, moved.sig, "body-only edit keeps sig stable");
     let documented = item_hashes_for("rust", sig, body, Some("Adds one."));
     assert_eq!(base.sig, documented.sig, "doc-only edit keeps sig stable");
-    assert_eq!(base.body, documented.body, "doc-only edit keeps body stable");
+    assert_eq!(
+        base.body, documented.body,
+        "doc-only edit keeps body stable"
+    );
 }
 
 #[test]
@@ -112,7 +116,9 @@ fn macro_and_cfg_blind_spots_travel_with_answers() {
     );
     let plain = crate::fidelity::blind_spot_gaps("where is foo defined?");
     assert!(
-        !plain.iter().any(|gap| gap.contains("macro") || gap.contains("cfg")),
+        !plain
+            .iter()
+            .any(|gap| gap.contains("macro") || gap.contains("cfg")),
         "plain answers carry no macro or cfg gap: {plain:?}"
     );
 }
@@ -130,26 +136,31 @@ fn first_run_records_baseline_and_converges_in_small_entries() {
     let guard = LoopGuard::acquire().expect("loop");
     let verified = Arc::new(Mutex::new(Vec::<String>::new()));
     let seen = Arc::clone(&verified);
-    let act: crate::maintenance::ActFn = Arc::new(Mutex::new(
-        move |id: &str, _tier| {
-            seen.lock().expect("seen").push(id.to_string());
-            crate::maintenance::ActOutcome::Verified(ApplyReport {
-                file: id.to_string(),
-                tool: "test",
-                changed: false,
-                verdict: ApplyVerdict::Kept,
-                attempts_used: 1,
-                gate_output: String::new(),
-                before_hash: "a".to_string(),
-                after_hash: "a".to_string(),
-            })
-        },
-    ));
+    let act: crate::maintenance::ActFn = Arc::new(Mutex::new(move |id: &str, _tier| {
+        seen.lock().expect("seen").push(id.to_string());
+        crate::maintenance::ActOutcome::Verified(ApplyReport {
+            file: id.to_string(),
+            tool: "test",
+            changed: false,
+            verdict: ApplyVerdict::Kept,
+            attempts_used: 1,
+            gate_output: String::new(),
+            before_hash: "a".to_string(),
+            after_hash: "a".to_string(),
+        })
+    }));
     let baseline = dir.path().join("ledger.json");
-    let report = run_first_run(&guard, &mut queue, &policy, 10, &abort, &act, &baseline)
-        .expect("first run");
-    assert!(report.stopped.is_none(), "seeded queue converges: {report:?}");
-    assert_eq!(report.verified.len(), 3, "one entry per item, never one diff");
+    let report =
+        run_first_run(&guard, &mut queue, &policy, 10, &abort, &act, &baseline).expect("first run");
+    assert!(
+        report.stopped.is_none(),
+        "seeded queue converges: {report:?}"
+    );
+    assert_eq!(
+        report.verified.len(),
+        3,
+        "one entry per item, never one diff"
+    );
     assert!(baseline.exists(), "baseline recorded before converging");
     assert!(!is_breaker_trip("max passes reached"));
     assert!(report.passes <= 10, "capped waves bound the run");

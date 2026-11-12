@@ -14,6 +14,11 @@ use crate::math::{div_or_none, linreg_slope, strict_window, variance_pop};
 /// there is nothing to rank. Window means are demeaned per window for
 /// numerical stability; the reference moment form agrees to Expr-parity eps.
 #[must_use]
+/// Rolling least-squares slope of `high` on `low` over `n` bars, then its
+/// `m`-bar z-score (population denominator): the RSRS timing score.
+/// Constant windows (zero slope variance) and short histories read `None` —
+/// there is nothing to rank. Window means are demeaned per window for
+/// numerical stability; the reference moment form agrees to Expr-parity eps.
 pub fn rsrs(highs: &[f64], lows: &[f64], n: usize, m: usize) -> Vec<Option<f64>> {
     let len = highs.len().min(lows.len());
     let slopes: Vec<Option<f64>> = (0..len).map(|i| rolling_slope(highs, lows, i, n)).collect();
@@ -53,6 +58,7 @@ pub fn rsrs(highs: &[f64], lows: &[f64], n: usize, m: usize) -> Vec<Option<f64>>
 
 /// Least-squares slope of `y` on `x` over the `n`-bar window ending at `end`.
 #[must_use]
+/// Least-squares slope of `y` on `x` over the `n`-bar window ending at `end`.
 pub fn rolling_slope(highs: &[f64], lows: &[f64], end: usize, n: usize) -> Option<f64> {
     let high = strict_window(highs, end, n)?;
     let low = strict_window(lows, end, n)?;
@@ -70,6 +76,16 @@ pub fn rolling_slope(highs: &[f64], lows: &[f64], end: usize, n: usize) -> Optio
 /// the tail for the last all-finite `m`-window, and runs the single
 /// z-score with the exact same operations — bit-identical output.
 #[must_use]
+/// The last defined RSRS score: identical to
+/// `rsrs(highs, lows, n, m).into_iter().flatten().next_back()`, without
+/// building the whole series.
+/// 
+/// The full vector exists for the offline research surface; the report
+/// path only reads the last score, so materializing 10k slopes and 9.4k
+/// z-windows to keep one value is pure waste (profiled at over a third
+/// of the equity run). This computes the slope vector once, scans from
+/// the tail for the last all-finite `m`-window, and runs the single
+/// z-score with the exact same operations — bit-identical output.
 pub fn rsrs_last(highs: &[f64], lows: &[f64], n: usize, m: usize) -> Option<f64> {
     if m == 0 {
         return None;

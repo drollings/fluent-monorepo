@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 /// interprets it today; the type lives here so the `sidecar` section and its
 /// future consumers share one spelling.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Residency-eviction policy vocabulary. Only the sidecar residency loop
+/// interprets it today; the type lives here so the `sidecar` section and its
+/// future consumers share one spelling.
 pub enum EvictionPolicy {
     #[default]
     Lru,
@@ -23,6 +26,14 @@ pub enum EvictionPolicy {
 /// allocates or frees KV + compute buffers - the shared weights stay loaded in
 /// `llama-server`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Sidecar instance-management policy.
+/// 
+/// The sidecar task is the external VRAM-policy owner the fork's docs
+/// describe: it boot-reconciles configured instance profiles against
+/// `GET /instances`, polls `/memory`, and evicts least-recently-used unpinned
+/// instances when free device VRAM drops below the watermark. It only ever
+/// allocates or frees KV + compute buffers - the shared weights stay loaded in
+/// `llama-server`.
 pub struct SidecarConfig {
     /// How often the residency loop polls `/memory`, in seconds.
     #[serde(default = "default_sidecar_poll_interval_s")]

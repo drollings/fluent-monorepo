@@ -49,7 +49,7 @@ fn seed_matrix(db: &GuidanceDb, nlp: &spacy_rs::pipeline::NlpPipeline) {
         (
             "lemma",
             "src/run.ts",
-            "the service runs every morning\n",
+            "// the service runs every morning\nexport const anchor = 1;\n",
             "typescript",
             Some(nlp),
         ),

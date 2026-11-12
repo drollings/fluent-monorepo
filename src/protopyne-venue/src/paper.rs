@@ -31,6 +31,8 @@ use crate::venue::{DryRunOutcome, LegExecution, LegQuoteSource, Venue};
 /// Injected failure, consumed FIFO. Tests script venue behavior without any
 /// network: every fault is explicit, ordered, and drained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Injected failure, consumed FIFO. Tests script venue behavior without any
+/// network: every fault is explicit, ordered, and drained.
 pub enum Fault {
     /// Connection drops before any verdict; nothing is recorded.
     DropConnection,
@@ -50,6 +52,12 @@ pub enum Fault {
 /// session-scoped index: OCC symbols and client IDs stay strings (they are
 /// identifiers, not a hot lookup path).
 #[derive(Debug, Default)]
+/// Venue-side books: orders by client ID plus net positions by indexed
+/// symbol key. Spread legs additionally track per-contract positions by OCC
+/// symbol and the executed legs behind each spread fill, both keyed for
+/// query and reconciliation. Only the single-underlying net book uses the
+/// session-scoped index: OCC symbols and client IDs stay strings (they are
+/// identifiers, not a hot lookup path).
 struct Book {
     orders: HashMap<String, OrderRecord>,
     positions: HashMap<SymKey, Position>,
@@ -63,6 +71,7 @@ struct Book {
 /// Configuration for one paper venue.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(start_fn = new)]
+/// Configuration for one paper venue.
 pub struct PaperConfig {
     /// Commission schedule.
     #[builder(default = FeeSchedule::new().per_contract(Money::new(Decimal::new(65, 2))).build())]

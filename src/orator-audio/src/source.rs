@@ -14,6 +14,7 @@ use thiserror::Error;
 
 /// Capture source kinds.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Capture source kinds.
 pub enum SourceKind {
     /// Microphone through the bring-up backend.
     Mic,
@@ -27,6 +28,7 @@ pub enum SourceKind {
 
 /// Hot-plug events from the backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Hot-plug events from the backend.
 pub enum HotPlug {
     /// A node appeared.
     NodeAdded(String),
@@ -36,6 +38,7 @@ pub enum HotPlug {
 
 /// Driver failures.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Driver failures.
 pub enum DriverError {
     /// No device for this source right now (hot-plug will heal it).
     #[error("no device for {0}")]
@@ -47,6 +50,7 @@ pub enum DriverError {
 
 /// Name the device for `source`, if one is visible now.
 #[must_use]
+/// Name the device for `source`, if one is visible now.
 pub fn probe_device(source: &SourceKind) -> Option<String> {
     match source {
         SourceKind::Mic | SourceKind::SystemMonitor => crate::backend::list_input_devices()
@@ -61,12 +65,16 @@ pub fn probe_device(source: &SourceKind) -> Option<String> {
 /// native binding is linked; today it reports the actionable absence
 /// (the binding is a named later step, never a silent fallback).
 #[must_use]
+/// PipeWire per-app source probe. Returns the monitor name when the
+/// native binding is linked; today it reports the actionable absence
+/// (the binding is a named later step, never a silent fallback).
 pub fn pipewire_source() -> Option<String> {
     None
 }
 
 /// Why PipeWire capture is not live yet (for `doctor` output).
 #[must_use]
+/// Why PipeWire capture is not live yet (for `doctor` output).
 pub const fn pipewire_note() -> &'static str {
     "PipeWire per-app capture: native binding not linked; cpal bring-up serves capture"
 }
@@ -92,6 +100,7 @@ where
 
 /// Backoff ceiling for driver retries (matches the capped helper).
 #[must_use]
+/// Backoff ceiling for driver retries (matches the capped helper).
 pub const fn driver_backoff_cap_ms() -> u32 {
     5_000
 }

@@ -36,6 +36,7 @@ impl CfgMatrix {
 
 /// One matrix cell's verdict for a package.
 #[derive(Debug, Clone)]
+/// One matrix cell's verdict for a package.
 pub struct CellReport {
     /// Cell name.
     pub cell: String,
@@ -49,6 +50,9 @@ pub struct CellReport {
 /// verified clean in. In-memory record for the run report; the seal
 /// command consumes it, and sidecar persistence lands with it.
 #[derive(Debug, Clone, Default)]
+/// Per-file verification across the matrix: which cells each dirty file
+/// verified clean in. In-memory record for the run report; the seal
+/// command consumes it, and sidecar persistence lands with it.
 pub struct MatrixReport {
     /// Cell reports in run order.
     pub cells: Vec<CellReport>,
@@ -77,12 +81,20 @@ pub fn run_clippy_matrix(
         dirty_files.dedup();
         let dirty_resolved: std::collections::HashSet<String> = dirty_files
             .iter()
-            .map(|name| resolve_reported(package, name).to_string_lossy().into_owned())
+            .map(|name| {
+                resolve_reported(package, name)
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect();
         let clean = dirty_files.is_empty();
         for file in files {
             if !dirty_resolved.contains(file) {
-                report.verified.entry(file.clone()).or_default().push(cell.clone());
+                report
+                    .verified
+                    .entry(file.clone())
+                    .or_default()
+                    .push(cell.clone());
             }
         }
         report.cells.push(CellReport {
@@ -97,12 +109,13 @@ pub fn run_clippy_matrix(
 /// Cell-aware clippy runner: one invocation per package per matrix
 /// cell. Production builds one [`crate::clippy::ClippyCtx`] per cell
 /// with the cell's feature args; tests inject a stub.
-pub type MatrixRunner =
-    Arc<dyn Fn(&Path, &str) -> std::io::Result<ClippyReport> + Send + Sync>;
+pub type MatrixRunner = Arc<dyn Fn(&Path, &str) -> std::io::Result<ClippyReport> + Send + Sync>;
 
 /// Build the live matrix runner over one target dir and shaping: each
 /// cell runs with its feature args under the same shaping.
 #[must_use]
+/// Build the live matrix runner over one target dir and shaping: each
+/// cell runs with its feature args under the same shaping.
 pub fn live_matrix_runner(
     target_dir: Option<PathBuf>,
     shaping: crate::clippy::BuildShaping,
@@ -119,6 +132,7 @@ pub fn live_matrix_runner(
 
 /// Kind of fidelity finding: never clean, always owned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Kind of fidelity finding: never clean, always owned.
 pub enum FidelityKind {
     /// Item behind a cfg no exercised cell covers.
     UnverifiedCfg,
@@ -128,6 +142,7 @@ pub enum FidelityKind {
 
 /// One fidelity finding with its file.
 #[derive(Debug, Clone)]
+/// One fidelity finding with its file.
 pub struct FidelityFinding {
     /// File path, as passed in.
     pub path: String,
@@ -141,6 +156,9 @@ pub struct FidelityFinding {
 /// Clean files stay silent; anything else is a finding with an owner,
 /// never a silent clean.
 #[must_use]
+/// Scan files for cfg-gated items (Rust only) and package-less sources.
+/// Clean files stay silent; anything else is a finding with an owner,
+/// never a silent clean.
 pub fn scan_fidelity(files: &[(String, String)]) -> Vec<FidelityFinding> {
     let mut parser = crate::ast_parser::AstParser::new();
     let mut findings = Vec::new();
@@ -170,6 +188,9 @@ pub fn scan_fidelity(files: &[(String, String)]) -> Vec<FidelityFinding> {
 /// questions. `Yes` does not exist: the index can only report what it
 /// covered, never a deletion proof.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Deletion verdict: conservative answers to destructive-adjacent
+/// questions. `Yes` does not exist: the index can only report what it
+/// covered, never a deletion proof.
 pub enum DeleteVerdict {
     /// Referenced: not deletable.
     No,
@@ -186,6 +207,9 @@ pub enum DeleteVerdict {
 /// compiler's `dead_code` verdict (`dead_code_clean`); anything public
 /// or macro-adjacent is at best unknown. Never yes.
 #[must_use]
+/// Whether an item is safe to delete. Private items defer to the
+/// compiler's `dead_code` verdict (`dead_code_clean`); anything public
+/// or macro-adjacent is at best unknown. Never yes.
 pub fn safe_to_delete(is_private: bool, usages: &[String], dead_code_clean: bool) -> DeleteVerdict {
     if !usages.is_empty() {
         return DeleteVerdict::No;
@@ -202,6 +226,10 @@ pub fn safe_to_delete(is_private: bool, usages: &[String], dead_code_clean: bool
 /// syntactic tier, and cfg-disabled code. Query-text heuristics route;
 /// producer-axis signals that order gaps, never verdicts.
 #[must_use]
+/// Published blind spots attached to answers that touch them: macro
+/// expansion output, `build.rs` output, dynamic dispatch at the
+/// syntactic tier, and cfg-disabled code. Query-text heuristics route;
+/// producer-axis signals that order gaps, never verdicts.
 pub fn blind_spot_gaps(query: &str) -> Vec<String> {
     let lowered = query.to_lowercase();
     let mut gaps = Vec::new();

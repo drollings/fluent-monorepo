@@ -25,6 +25,7 @@ use thiserror::Error;
 
 /// Why a slot id or its parameters were refused.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+/// Why a slot id or its parameters were refused.
 pub enum SlotError {
     /// No slot is registered under the requested id.
     #[error("unknown slot id: {0}")]

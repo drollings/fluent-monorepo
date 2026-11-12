@@ -43,6 +43,7 @@ const SECTIONS: [&str; 6] = ["indicator", "entry", "exit", "risk", "session", "d
 
 /// One editable leaf, lifted from the schema's nested sections.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One editable leaf, lifted from the schema's nested sections.
 pub struct BacktestFormField {
     /// Schema section; also the document key for this leaf's subtree.
     pub section: String,
@@ -59,6 +60,8 @@ pub struct BacktestFormField {
 /// What a submit can refuse, with local validation kept distinct from the
 /// core's answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What a submit can refuse, with local validation kept distinct from the
+/// core's answer.
 pub enum BacktestFormError {
     /// Nothing drafted and no run params set: nothing was sent.
     Empty,
@@ -90,6 +93,7 @@ impl std::error::Error for BacktestFormError {}
 
 /// One run action from the results panel.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One run action from the results panel.
 pub enum BacktestAction {
     /// Assemble the envelope and run it; the stored view replaces the model.
     Run,
@@ -137,6 +141,9 @@ impl BacktestAction {
 /// document seeded from the schema defaults, run params as text, and the
 /// last outcome for the painter to echo.
 #[derive(Debug, Clone)]
+/// The form: section-derived leaves, per-leaf draft text, the working spec
+/// document seeded from the schema defaults, run params as text, and the
+/// last outcome for the painter to echo.
 pub struct BacktestFormState {
     fields: Vec<BacktestFormField>,
     document: serde_json::Value,
@@ -445,6 +452,9 @@ impl BacktestFormState {
 /// name, list rows by index. The form paints only resolving paths, so every
 /// rendered editor submits.
 #[must_use]
+/// Whether a dotted leaf path resolves in the working document: sections by
+/// name, list rows by index. The form paints only resolving paths, so every
+/// rendered editor submits.
 pub fn field_resolves(document: &serde_json::Value, path: &str) -> bool {
     let mut parts: Vec<&str> = path.split('.').collect();
     let Some(_leaf) = parts.pop() else {
@@ -530,6 +540,9 @@ fn set_dotted(
 /// the reason the read refused. Reads happen on click only; the painter
 /// never re-reads.
 #[derive(Debug, Clone)]
+/// One cached backtest read: the stored run id plus its projected view, or
+/// the reason the read refused. Reads happen on click only; the painter
+/// never re-reads.
 pub struct BacktestModel {
     run_id: String,
     view: Option<BacktestRunView>,

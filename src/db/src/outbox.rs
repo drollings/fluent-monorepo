@@ -33,6 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_claim ON outbox(claimed_at_ms, id);";
 
 /// One claimed outbox row.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One claimed outbox row.
 pub struct OutboxEntry {
     /// Row id (FIFO order; pass back to `ack`).
     pub id: i64,

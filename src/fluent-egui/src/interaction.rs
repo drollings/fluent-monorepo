@@ -79,6 +79,8 @@ pub const ANCHOR_DRIFT_EPS_PX: f32 = 1e-3;
 /// One translated pointer gesture. The windowing shell builds these from raw
 /// input; every field is headless (pixels, scale factors, no `egui` types).
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One translated pointer gesture. The windowing shell builds these from raw
+/// input; every field is headless (pixels, scale factors, no `egui` types).
 pub enum PointerInput {
     /// Vertical drag in pixels (positive pulls content down): pans the price
     /// window with grab semantics and seeds kinetic velocity.
@@ -150,6 +152,16 @@ pub enum PointerInput {
 /// [`with_horizontal_bounds`](Self::with_horizontal_bounds) so panning and
 /// time-axis coasting stay inside the data envelope.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Pure interaction state: elastic data bounds plus kinetic velocity.
+/// 
+/// Construct with the data extent the window may roam (plus its elastic
+/// margin); advance a viewport with [`step`](Self::step). The window itself
+/// stays caller-held, so replay only needs the event script. The machine
+/// tracks two independent coasts: the vertical price window and the
+/// horizontal time axis (`x_offset_px`). Horizontal elastic bounds are
+/// optional; configure them with
+/// [`with_horizontal_bounds`](Self::with_horizontal_bounds) so panning and
+/// time-axis coasting stay inside the data envelope.
 pub struct InteractionState {
     /// Soft lower data bound (window may stretch below, into the margin).
     soft_min: f64,
@@ -579,6 +591,11 @@ fn zoom_around(min: f64, max: f64, anchor: f64, factor: f64) -> (f64, f64) {
 /// [`InteractionState`] (an oscillator pane, say) uses this so both paths feel
 /// identical.
 #[must_use]
+/// The multiplicative factor a wheel gesture of `delta_px` applies to a price
+/// window: scroll up (positive) zooms in, matching the time-axis wheel. The
+/// one definition of "how far a notch zooms" — a pane that zooms outside
+/// [`InteractionState`] (an oscillator pane, say) uses this so both paths feel
+/// identical.
 pub fn wheel_zoom_factor(delta_px: f32) -> f64 {
     WHEEL_ZOOM_BASE.powf(-f64::from(delta_px) / WHEEL_STEP_PX)
 }
@@ -587,6 +604,9 @@ pub fn wheel_zoom_factor(delta_px: f32) -> f64 {
 /// fixed. Refuses (`None`) on a non-finite factor or an anchor outside the
 /// range, so a caller never receives an inverted window.
 #[must_use]
+/// Rescale `range` by `factor` around `anchor`, keeping the price at `anchor`
+/// fixed. Refuses (`None`) on a non-finite factor or an anchor outside the
+/// range, so a caller never receives an inverted window.
 pub fn zoom_range_around(range: PriceRange, anchor: f64, factor: f64) -> Option<PriceRange> {
     if !factor.is_finite() || factor <= 0.0 || !anchor.is_finite() {
         return None;
@@ -606,6 +626,15 @@ pub fn zoom_range_around(range: PriceRange, anchor: f64, factor: f64) -> Option<
 /// of translating — an up notch and a down notch behave symmetrically.
 /// Refuses a non-finite anchor/fraction or a non-positive, non-finite span.
 #[must_use]
+/// Rebuild a window of `span` with the price `anchor` sitting at fraction
+/// `frac` of it (`0` is the window's lower edge, `1` its upper edge).
+/// 
+/// A cursor-anchored zoom keeps the anchor price at a fixed pixel, so its
+/// fraction is invariant under [`zoom_range_around`]. When the span must be
+/// clamped (a pane's design band, or the elastic wall) this rebuilds the
+/// window around that same fraction, so a clamped zoom stays anchored instead
+/// of translating — an up notch and a down notch behave symmetrically.
+/// Refuses a non-finite anchor/fraction or a non-positive, non-finite span.
 pub fn anchor_window(anchor: f64, frac: f64, span: f64) -> Option<PriceRange> {
     if !anchor.is_finite() || !frac.is_finite() || !span.is_finite() || span <= 0.0 {
         return None;

@@ -57,6 +57,10 @@ fn closed_funcword_pos(flags: LexemeFlags) -> Option<Upos> {
 /// Covers both receiver spellings in the file (`word` and `texts[i]`) and
 /// both polarities (guard and upgrade gate).
 #[inline]
+/// Whether the word begins with a lowercase letter — the single shared
+/// spelling of the finite-verb guard ("a finite verb is never capitalized".
+/// Covers both receiver spellings in the file (`word` and `texts[i]`) and
+/// both polarities (guard and upgrade gate).
 fn starts_lowercase(word: &str) -> bool {
     word.chars().next().is_some_and(char::is_lowercase)
 }
@@ -67,6 +71,11 @@ fn starts_lowercase(word: &str) -> bool {
 /// weights). Taking `&ArcEagerState` covers both receiver spellings in the
 /// file (`self` in the candidate arms, `state` in the oracle).
 #[inline]
+/// Whether a `cop` dependent is already attached to `b` — the single shared
+/// spelling of the copula-frame guard (the `copular_subject_frame` helper,
+/// the two `there`-expletive candidate arms, and the three oracle cop/attr
+/// weights). Taking `&ArcEagerState` covers both receiver spellings in the
+/// file (`self` in the candidate arms, `state` in the oracle).
 fn copula_is_attached(state: &ArcEagerState, b: usize, cop: u64) -> bool {
     state.left_children[b]
         .iter()
@@ -1590,6 +1599,10 @@ fn refine_pos_contracted_be(
 /// common nouns); Title-Case proper nouns (Google, Paris, Tuesday) fall
 /// through to `NOUN` — the documented false-negative class.
 #[must_use]
+/// Derive UPOS from lexeme flags + the closed function-word map. PROPN fires
+/// on `is_upper()` **only** (never `is_title()`, which matches sentence-initial
+/// common nouns); Title-Case proper nouns (Google, Paris, Tuesday) fall
+/// through to `NOUN` — the documented false-negative class.
 pub fn infer_pos(flags: LexemeFlags) -> Upos {
     if flags.is_punct() {
         return Upos::Punct;
@@ -1646,6 +1659,10 @@ pub fn infer_pos(flags: LexemeFlags) -> Upos {
 
 /// A parser action: a move plus (for LEFT/RIGHT) the dependency label hash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// The transition system
+/// ─────────────────────────────────────────────────────────────────────────
+/// A parser action: a move plus (for LEFT/RIGHT) the dependency label hash.
 pub struct ArcEagerAction {
     pub move_type: ArcEagerMove,
     pub label: u64,
@@ -1653,6 +1670,7 @@ pub struct ArcEagerAction {
 
 /// The five ArcEager moves (`arc_eager.pyx`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The five ArcEager moves (`arc_eager.pyx`).
 pub enum ArcEagerMove {
     /// Push the buffer head onto the stack.
     Shift,
@@ -1668,6 +1686,7 @@ pub enum ArcEagerMove {
 
 /// The parser state (F8): **absolute** head indices internally, `-1` unset.
 #[derive(Debug, Clone)]
+/// The parser state (F8): **absolute** head indices internally, `-1` unset.
 pub struct ArcEagerState {
     pub stack: Vec<usize>,
     pub buffer: VecDeque<usize>,
@@ -2685,6 +2704,13 @@ impl ArcEagerState {
 /// winner and reports how much it beat the runner-up by (margin 0 on ties —
 /// the load-bearing input to [`ParseConfidence`]).
 #[derive(Debug, Clone, Copy, Default)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// The heuristic oracle
+/// ─────────────────────────────────────────────────────────────────────────
+/// The deterministic heuristic oracle. Scores each candidate action for the
+/// current `(stack_top, buffer head)` POS pair; `best_with_margin` picks the
+/// winner and reports how much it beat the runner-up by (margin 0 on ties —
+/// the load-bearing input to [`ParseConfidence`]).
 pub struct DeterministicOracle;
 
 impl DeterministicOracle {
@@ -3096,6 +3122,12 @@ impl DeterministicOracle {
 /// `StringStore` at construction so reverse lookup (hash → string) works for
 /// the output records.
 #[derive(Debug, Clone)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// The dependency label hash set
+/// ─────────────────────────────────────────────────────────────────────────
+/// The dep-label hashes the parser emits. Interned into the vocab's
+/// `StringStore` at construction so reverse lookup (hash → string) works for
+/// the output records.
 pub struct DepLabels {
     pub root: u64,
     pub nsubj: u64,
@@ -3187,6 +3219,18 @@ impl DepLabels {
 /// margin tells you *that* the oracle was uncertain, not *why*. Sufficient
 /// for routing (F7).
 #[derive(Debug, Clone, PartialEq, Default)]
+/// ─────────────────────────────────────────────────────────────────────────
+/// ParseConfidence
+/// ─────────────────────────────────────────────────────────────────────────
+/// Margin-aware parse confidence. `overall = max(0, mean(token_scores) -
+/// 0.05 * oracle_tie_count)`; ROOT detection uses the `root` dep label (F8),
+/// never `heads[i] == 0`; `role_coverage` is the fraction of `{nsubj, dobj}`
+/// argument slots filled.
+/// 
+/// Honest about what it measures: oracle tie-count, role coverage, and
+/// PROPN-not-in-registry. It does **not** reveal *which* actions were tied —
+/// margin tells you *that* the oracle was uncertain, not *why*. Sufficient
+/// for routing (F7).
 pub struct ParseConfidence {
     pub overall: f64,
     pub token_scores: Vec<f64>,

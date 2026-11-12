@@ -12,6 +12,7 @@ use serde_json::Value;
 
 /// Errors produced by [`parse_json_response`].
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+/// Errors produced by [`parse_json_response`].
 pub enum JsonParseError {
     /// The text contained no parseable JSON value at all.
     #[error("no JSON value found in LLM output")]
@@ -310,6 +311,13 @@ where
 /// the caller keeps its prior order and validates names against its own
 /// candidate set (a hallucinated name is the caller's to drop).
 #[must_use]
+/// Parse an LLM reranker response into an ordered list of candidate names.
+/// 
+/// Pure string-in/list-out over the shared [`parse_typed`] codec (fences
+/// stripped, bare array or `{"ranking": [...]}` object, first balanced
+/// value). Non-string entries are dropped. `None` means "not parseable" —
+/// the caller keeps its prior order and validates names against its own
+/// candidate set (a hallucinated name is the caller's to drop).
 pub fn parse_rerank_output(raw: &str) -> Option<Vec<String>> {
     let value = parse_typed::<Value>(raw, &Value::Null, |_| {}).ok()?;
     let names: Option<Vec<&str>> = match &value {

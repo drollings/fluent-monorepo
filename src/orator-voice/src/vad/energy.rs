@@ -8,6 +8,7 @@ use orator::Frame;
 
 /// Per-frame detector output.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Per-frame detector output.
 pub struct VadOutput {
     /// Speech verdict after hysteresis.
     pub speech: bool,
@@ -22,6 +23,12 @@ pub struct VadOutput {
 /// mark for `hangover_frames`. The zero-crossing ceiling rejects tonal and
 /// narrowband noise that is loud but not speech-like.
 #[derive(Debug, Clone)]
+/// Energy + zero-crossing detector.
+/// 
+/// Speech starts when the RMS probability crosses the high mark for
+/// `attack_frames` consecutive frames, and ends when it stays below the low
+/// mark for `hangover_frames`. The zero-crossing ceiling rejects tonal and
+/// narrowband noise that is loud but not speech-like.
 pub struct EnergyVad {
     /// RMS floor for speech, linear amplitude.
     pub floor: f32,

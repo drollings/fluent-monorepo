@@ -335,6 +335,10 @@ impl Default for ComponentRegistry {
 /// Canning cannot fail in practice; a serialization failure still reports
 /// loudly in the message instead of succeeding with a null payload.
 #[must_use]
+/// Build a test double over `base`: `execute` returns the canned `output`
+/// while `name`/`depends`/`provides` still describe the doubled kernel.
+/// Canning cannot fail in practice; a serialization failure still reports
+/// loudly in the message instead of succeeding with a null payload.
 pub fn indicator_double(base: Arc<dyn Component>, output: &IndicatorResult) -> ComponentAdapter {
     let name = base.name().to_owned();
     let (payload, message) = match serde_json::to_value(output) {
@@ -354,6 +358,10 @@ pub fn indicator_double(base: Arc<dyn Component>, output: &IndicatorResult) -> C
 /// (config-driven assembly, late-bound kernels). The executor runs the bound
 /// batch; the config map records the indicator id for inspection.
 #[must_use]
+/// A runtime-assembled handle running a bound kernel evaluation: the
+/// [`DynamicComponent`] seam for indicators constructed after startup
+/// (config-driven assembly, late-bound kernels). The executor runs the bound
+/// batch; the config map records the indicator id for inspection.
 pub fn dynamic_indicator(
     indicator: Arc<dyn Indicator>,
     params: ParamSet,

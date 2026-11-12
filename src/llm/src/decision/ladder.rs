@@ -17,6 +17,7 @@ use crate::decision::{Decision, DecisionBreaker, DecisionCache, DecisionError};
 
 /// Ordered ladder rungs (owned; no clones or counters needed by callers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Ordered ladder rungs (owned; no clones or counters needed by callers).
 enum Rung {
     Rule,
     Cache,
@@ -204,6 +205,27 @@ fluent_wvr::impl_component!(FixedDecisionUnit);
 /// assert_eq!(back.label, "RULE");
 /// ```
 #[must_use]
+/// Pure `rule → cache` prefix as a `ComponentCascade` for sync callers.
+/// 
+/// ```rust
+/// use fluent_llm::decision::{prefix_cascade, Decision};
+/// use fluent_wvr::{WorkContext, WorkOutput};
+/// 
+/// let rule = Decision::from_distribution(
+/// "RULE",
+/// vec![("RULE".to_string(), 1.0)],
+/// "m".to_string(),
+/// 1,
+/// 0,
+/// false,
+/// )
+/// .expect("rule");
+/// let out = prefix_cascade(Some(rule), None)
+/// .execute_first_ok(&WorkContext::default())
+/// .expect("prefix");
+/// let back: Decision = out.data_as().expect("typed");
+/// assert_eq!(back.label, "RULE");
+/// ```
 pub fn prefix_cascade(rule: Option<Decision>, cached: Option<Decision>) -> ComponentCascade {
     let rule_unit: Arc<dyn Component> = Arc::new(FixedDecisionUnit {
         name: "decision.prefix.rule",

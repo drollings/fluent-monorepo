@@ -37,6 +37,8 @@ use crate::topology::{cache_key_for, standard_replay};
 /// Why a scrub refused. Every refusal names what was wrong, and none of
 /// them leaves a half-applied cursor behind.
 #[derive(Debug, Clone, PartialEq)]
+/// Why a scrub refused. Every refusal names what was wrong, and none of
+/// them leaves a half-applied cursor behind.
 pub enum ScrubRefusal {
     /// No window has been read from the gateway yet, so there is nothing to
     /// scrub over.
@@ -105,6 +107,7 @@ impl std::error::Error for ScrubRefusal {}
 
 /// What one accepted scrub did.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What one accepted scrub did.
 pub enum ScrubOutcome {
     /// The cursor did not move, so no pane was rewound: republishing the
     /// same series backdates every revision instead of bumping one.

@@ -19,6 +19,8 @@ pub use protopyne_types::MarkBasis;
 /// The report's assumption line naming the run's mark basis. Absence is named
 /// explicitly so no consumer reads an unmarked book as a zero mark.
 #[must_use]
+/// The report's assumption line naming the run's mark basis. Absence is named
+/// explicitly so no consumer reads an unmarked book as a zero mark.
 pub fn mark_basis_note(basis: MarkBasis) -> String {
     match basis {
         MarkBasis::ChainMid => {
@@ -41,6 +43,13 @@ pub fn mark_basis_note(basis: MarkBasis) -> String {
 /// to the size and delegates, so callers holding a book's legs never scale
 /// them by hand.
 #[must_use]
+/// The per-unit mark of a *position*: `legs` describing one package, held
+/// `package_units` times over.
+/// 
+/// [`mark_per_unit`] divides the position's value by its package count, so
+/// the legs must describe the whole position; this scales one package's legs
+/// to the size and delegates, so callers holding a book's legs never scale
+/// them by hand.
 pub fn mark_position(
     legs: &[LegExecution],
     package_units: u32,
@@ -64,6 +73,9 @@ pub fn mark_position(
 /// against, plus the instant and the run's chain a legged book needs (its
 /// legs have no share price to ride the tape on).
 #[derive(Debug, Clone, Copy)]
+/// One point-in-time mark for a fold: the tape price a legless book marks
+/// against, plus the instant and the run's chain a legged book needs (its
+/// legs have no share price to ride the tape on).
 pub struct MarkPoint<'a> {
     /// When the mark applies.
     pub at: DateTime<Utc>,
@@ -95,6 +107,13 @@ impl MarkPoint<'_> {
 /// for every leg; any miss falls back to the package's own executed prices; an
 /// empty leg set or zero units has no mark at all.
 #[must_use]
+/// The per-package-unit mark for `legs` at `at`, and its basis.
+/// 
+/// `legs` are one package's executed legs (`quantity` is already scaled by its
+/// ratio); `package_units` is the package count the position books. A
+/// [`MarkBasis::ChainMid`] mark needs a non-crossed quote at-or-before `at`
+/// for every leg; any miss falls back to the package's own executed prices; an
+/// empty leg set or zero units has no mark at all.
 pub fn mark_per_unit(
     legs: &[LegExecution],
     package_units: u32,

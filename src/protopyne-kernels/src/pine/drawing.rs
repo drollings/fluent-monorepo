@@ -23,6 +23,9 @@ use std::collections::HashMap;
 /// mutate properties in place; getters read them back; `.delete` drops the
 /// entry (later reads refuse instead of resurrecting it).
 #[derive(Debug, Clone)]
+/// One live drawing object: its namespace plus current properties. Setters
+/// mutate properties in place; getters read them back; `.delete` drops the
+/// entry (later reads refuse instead of resurrecting it).
 struct DrawingObject {
     kind: DrawingKind,
     props: HashMap<String, Option<PineValue>>,
@@ -30,6 +33,7 @@ struct DrawingObject {
 
 /// Every drawing store that lives exactly as long as one run.
 #[derive(Debug, Default)]
+/// Every drawing store that lives exactly as long as one run.
 pub(crate) struct DrawingState {
     /// Per-run object number, unique across all four namespaces.
     next_id: u64,

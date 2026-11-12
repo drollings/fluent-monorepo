@@ -21,6 +21,9 @@ pub const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 /// crate context a file copy cannot provide, so it is not offered here —
 /// only tools that run hermetically on one file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Mechanical tools runnable on a staged file copy. `clippy --fix` needs
+/// crate context a file copy cannot provide, so it is not offered here —
+/// only tools that run hermetically on one file.
 pub enum ApplyTool {
     /// `rustfmt <file>`: formatting only, standalone-capable.
     Rustfmt,
@@ -39,6 +42,7 @@ impl ApplyTool {
 /// What happened to the source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// What happened to the source file.
 pub enum ApplyVerdict {
     /// Gate green: the write-back stands.
     Kept,
@@ -62,6 +66,7 @@ impl ApplyVerdict {
 
 /// Reviewable outcome of one file: file, tool, rewrite hashes, gate output.
 #[derive(Debug, Clone)]
+/// Reviewable outcome of one file: file, tool, rewrite hashes, gate output.
 pub struct ApplyReport {
     /// Source file, as passed in.
     pub file: String,
@@ -83,6 +88,7 @@ pub struct ApplyReport {
 
 /// Applier failure. A red gate is not an error — it is `Reverted`.
 #[derive(Debug, Error)]
+/// Applier failure. A red gate is not an error — it is `Reverted`.
 pub enum OffloadError {
     /// Filesystem failure.
     #[error("IO error: {0}")]
@@ -108,6 +114,8 @@ common_core::impl_from_io_error!(OffloadError);
 /// Whether `after` differs from `before` in whitespace only: the
 /// mechanical-class check for formatting rewrites. Token changes fail.
 #[must_use]
+/// Whether `after` differs from `before` in whitespace only: the
+/// mechanical-class check for formatting rewrites. Token changes fail.
 pub fn is_whitespace_only(before: &str, after: &str) -> bool {
     if before == after {
         return true;
@@ -127,6 +135,12 @@ pub fn is_whitespace_only(before: &str, after: &str) -> bool {
 /// purpose: a bare `test` stem (e.g. `test.zig` fixtures) is production
 /// code until it says otherwise.
 #[must_use]
+/// Whether `path` is a test target the engine must never touch: a
+/// `tests`, `testing`, or `e2e` directory, or a `test_`/`_test`/`_tests`
+/// file stem. Guards by shape, never by content — test code is neither
+/// indexed, nor described, nor drafted. Stems stay conservative on
+/// purpose: a bare `test` stem (e.g. `test.zig` fixtures) is production
+/// code until it says otherwise.
 pub fn is_test_path(path: &Path) -> bool {
     if path.components().any(|component| {
         matches!(
@@ -266,7 +280,13 @@ pub fn apply_verified(
         return Err(OffloadError::EmptyCommand);
     }
     let original = common_core::io::read_to_string_err(source)?;
-    apply_verified_expected(source, tool, verify_command, max_attempts, original.as_bytes())
+    apply_verified_expected(
+        source,
+        tool,
+        verify_command,
+        max_attempts,
+        original.as_bytes(),
+    )
 }
 
 /// Same as [`apply_verified`], but the loop's earlier read pins the
@@ -450,6 +470,7 @@ pub const GATE_EXCERPT_LIMIT: usize = 2000;
 
 /// One reviewed file: what lint ran, what it rewrote, how the gate voted.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One reviewed file: what lint ran, what it rewrote, how the gate voted.
 pub struct ReviewEntry {
     /// Source file.
     pub file: String,
@@ -469,6 +490,7 @@ pub struct ReviewEntry {
 
 /// Reviewable summary of applied changes: one entry per file.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+/// Reviewable summary of applied changes: one entry per file.
 pub struct ReviewSummary {
     /// Per-file entries, in report order.
     pub entries: Vec<ReviewEntry>,
@@ -524,9 +546,25 @@ impl ReviewSummary {
     }
 }
 
+/// One decided attempt: the rejection that stopped the item. Full
+/// per-attempt history arrives with journal revert records; until then
+/// the packet names the deciding attempt only, never invented ones.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One decided attempt: the rejection that stopped the item. Full
+/// per-attempt history arrives with journal revert records; until then
+/// the packet names the deciding attempt only, never invented ones.
+pub struct AttemptRecord {
+    /// 1-based attempt number that decided the escalation.
+    pub attempt: u32,
+    /// Gate or verdict that rejected it.
+    pub rejected_by: String,
+}
+
 /// Escalation packet: everything needed to resume without re-running —
 /// inputs, attempts, gate excerpt, hashes, and the next step.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Escalation packet: everything needed to resume without re-running —
+/// inputs, attempts, gate excerpt, hashes, and the next step.
 pub struct EscalationPacket {
     /// Why a human or orchestrator must look.
     pub reason: String,
@@ -546,6 +584,27 @@ pub struct EscalationPacket {
     pub after_hash: String,
     /// What to do next.
     pub resume: String,
+    /// VISION work-item state at handoff (`escalated` from these constructors).
+    #[serde(default)]
+    pub state: String,
+    /// Blocked items waiting on this one (known by the queue driver).
+    #[serde(default)]
+    pub remaining: Vec<String>,
+    /// Named owner, if claimed (claim flow fills this, not staging).
+    #[serde(default)]
+    pub owner: String,
+    /// One sentence of what must be supplied to unblock.
+    #[serde(default)]
+    pub needed: String,
+    /// Rerunnable command that re-checks the file.
+    #[serde(default)]
+    pub repro: String,
+    /// Labelled hint for the next attempt (model-filled, never a verdict).
+    #[serde(default)]
+    pub hint: String,
+    /// Deciding-attempt records (the final rejection today).
+    #[serde(default)]
+    pub attempts: Vec<AttemptRecord>,
 }
 
 impl EscalationPacket {
@@ -564,7 +623,18 @@ impl EscalationPacket {
             after_hash: report.after_hash.clone(),
             resume: "fix the cause named above, then re-run the narrow gate for this file"
                 .to_string(),
+            state: "escalated".to_string(),
+            remaining: Vec::new(),
+            owner: String::new(),
+            needed: String::new(),
+            repro: String::new(),
+            hint: String::new(),
+            attempts: vec![AttemptRecord {
+                attempt: report.attempts_used,
+                rejected_by: reason.to_string(),
+            }],
         }
+        .normalize()
     }
 
     /// Packet for a policy refusal: nothing was staged, no bytes changed.
@@ -580,20 +650,57 @@ impl EscalationPacket {
             before_hash: String::new(),
             after_hash: String::new(),
             resume: "manual review required; no bytes were changed".to_string(),
+            state: "escalated".to_string(),
+            remaining: Vec::new(),
+            owner: String::new(),
+            needed: String::new(),
+            repro: String::new(),
+            hint: String::new(),
+            attempts: Vec::new(),
         }
+        .normalize()
+    }
+
+    /// Backfill for packets loaded from pre-enrichment journals: fills
+    /// only empty actionable sentences from fields old journals carry.
+    /// Reads never mutate (loads stay raw); callers normalize explicitly.
+    #[must_use]
+    pub fn normalize(mut self) -> Self {
+        if self.state.is_empty() {
+            self.state = "escalated".to_string();
+        }
+        if self.needed.is_empty() {
+            self.needed = if self.attempts_used == 0 {
+                format!(
+                    "human judgment or policy approval for {} on {}",
+                    self.class, self.file
+                )
+            } else {
+                format!(
+                    "a revised fix for {} that passes the failing gate",
+                    self.file
+                )
+            };
+        }
+        if self.repro.is_empty() && self.attempts_used > 0 && !self.file.is_empty() {
+            self.repro = format!("guidance verify {}", self.file);
+        }
+        self
     }
 
     /// Compact human-readable rendering.
     #[must_use]
     pub fn render(&self) -> String {
         format!(
-            "offload escalation: {}\n  file: {}\n  tool: {} class: {}\n  attempts: {}\n  gate: {}\n  resume: {}\n",
+            "offload escalation: {}\n  file: {}\n  tool: {} class: {}\n  attempts: {}\n  gate: {}\n  needed: {}\n  repro: {}\n  resume: {}\n",
             self.reason,
             self.file,
             self.tool,
             self.class,
             self.attempts_used,
             first_line(&self.gate_excerpt),
+            self.needed,
+            self.repro,
             self.resume,
         )
     }
@@ -642,6 +749,9 @@ pub const TRIAGE_VERSION: u64 = 1;
 /// explicit abstain label. Caches stay cold until a calibration entry
 /// authorizes the point.
 #[must_use]
+/// Triage Choice over the mechanical classes: the allowlist plus the
+/// explicit abstain label. Caches stay cold until a calibration entry
+/// authorizes the point.
 pub fn triage_spec() -> QuestionSpec {
     QuestionSpec::new()
         .id(TRIAGE_POINT.to_string())
@@ -665,6 +775,11 @@ pub fn triage_spec() -> QuestionSpec {
 /// shared `decide_verdict` algebra — no second threshold logic — and the
 /// output is a ranking signal only: the narrow gate certifies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Where a finding routes. Only allowlist classes auto-apply, and only
+/// at Act confidence with the producing tool agreeing; everything else
+/// is `Manual` (propose textually, never apply). The verdict is the
+/// shared `decide_verdict` algebra — no second threshold logic — and the
+/// output is a ranking signal only: the narrow gate certifies.
 pub enum TriageClass {
     /// `rustfmt` finding at Act: formatting applies.
     Formatting,
@@ -678,6 +793,9 @@ pub enum TriageClass {
 /// the class (a test failure labeled `clippy-fix` is still `Manual`);
 /// the label must be allowlisted; the verdict must be `Act`.
 #[must_use]
+/// Route one finding. The tool that produced the finding must agree with
+/// the class (a test failure labeled `clippy-fix` is still `Manual`);
+/// the label must be allowlisted; the verdict must be `Act`.
 pub fn classify_finding(
     tool: &str,
     decision: Option<&Decision>,

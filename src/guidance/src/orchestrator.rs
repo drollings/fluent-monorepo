@@ -19,10 +19,17 @@ use crate::query::context_pack::{build_task_pack, ContextPack, PackInput, PackMa
 
 /// Fix classes the contract accepts. Closed: anything else refuses
 /// before touching the queue.
-pub const KNOWN_KINDS: &[&str] = &["rustfmt", "clippy-fix", "index", "commentary-refresh", "plan-item"];
+pub const KNOWN_KINDS: &[&str] = &[
+    "rustfmt",
+    "clippy-fix",
+    "index",
+    "commentary-refresh",
+    "plan-item",
+];
 
 /// One validated work post with its acceptance gate.
 #[derive(Debug, Clone)]
+/// One validated work post with its acceptance gate.
 pub struct PostWork {
     /// Stable id (also the graph key).
     pub id: String,
@@ -36,6 +43,7 @@ pub struct PostWork {
 
 /// Contract refusal: validation failed, nothing was mutated.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Contract refusal: validation failed, nothing was mutated.
 pub enum ContractError {
     /// Empty stable id.
     #[error("empty work id")]
@@ -98,6 +106,7 @@ pub fn post_work(queue: &mut MaintenanceQueue, req: &PostWork) -> Result<(), Con
 
 /// Lifecycle of one escalation in the ledger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Lifecycle of one escalation in the ledger.
 pub enum EscalationLife {
     /// Filed, awaiting an owner.
     Open,
@@ -109,6 +118,7 @@ pub enum EscalationLife {
 
 /// One ledger entry: who owns it and where it stands.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One ledger entry: who owns it and where it stands.
 pub struct EscalationEntry {
     /// Escalation id.
     pub id: String,
@@ -121,6 +131,8 @@ pub struct EscalationEntry {
 /// Claim/resolve ledger. Transitions validate; bad ones refuse without
 /// mutating the entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Claim/resolve ledger. Transitions validate; bad ones refuse without
+/// mutating the entry.
 pub struct EscalationLedger {
     /// Entries by escalation id, sorted.
     pub entries: BTreeMap<String, EscalationEntry>,
@@ -134,7 +146,11 @@ impl EscalationLedger {
         }
         self.entries.insert(
             id.to_string(),
-            EscalationEntry { id: id.to_string(), owner: None, state: EscalationLife::Open },
+            EscalationEntry {
+                id: id.to_string(),
+                owner: None,
+                state: EscalationLife::Open,
+            },
         );
         Ok(())
     }
@@ -162,8 +178,7 @@ impl EscalationLedger {
                 Err(ContractError::BadTransition(format!("resolve {id}")))
             }
             Some(entry)
-                if entry.state == EscalationLife::Open
-                    || entry.owner.as_deref() == Some(owner) =>
+                if entry.state == EscalationLife::Open || entry.owner.as_deref() == Some(owner) =>
             {
                 entry.state = EscalationLife::Resolved;
                 entry.owner = Some(owner.to_string());
@@ -184,6 +199,9 @@ pub fn import_plan(id: &str, items: Vec<PlanItem>) -> Result<WorkPlan, ContractE
 /// `since` (a group index cursor), rendered as `file:class:entries`.
 /// Pure read over the journal dir; never writes.
 #[must_use]
+/// Tail the ledger: the last `count` journal groups at or after
+/// `since` (a group index cursor), rendered as `file:class:entries`.
+/// Pure read over the journal dir; never writes.
 pub fn tail_ledger(journal_dir: &Path, since: usize, count: usize) -> Vec<String> {
     review_journal(journal_dir)
         .into_iter()
@@ -196,6 +214,8 @@ pub fn tail_ledger(journal_dir: &Path, since: usize, count: usize) -> Vec<String
 /// Request a context pack through the single pack builder. No second
 /// pack path; the bytes match `build_task_pack` exactly.
 #[must_use]
+/// Request a context pack through the single pack builder. No second
+/// pack path; the bytes match `build_task_pack` exactly.
 pub fn request_pack(input: &PackInput) -> (ContextPack, PackManifest) {
     build_task_pack(input)
 }

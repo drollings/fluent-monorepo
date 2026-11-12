@@ -21,6 +21,11 @@ use internment::ArcIntern;
 /// names via a [`CapabilityRegistry`] (bit indices are per-registry; indices
 /// that map to no name are skipped with a `tracing::warn!`).
 #[derive(Debug, Clone)]
+/// A [`Target`] adapted to the `WorkUnit`/`Component` interface.
+/// 
+/// `depends` / `provides` are the `Target`'s bitsets resolved to capability
+/// names via a [`CapabilityRegistry`] (bit indices are per-registry; indices
+/// that map to no name are skipped with a `tracing::warn!`).
 pub struct TargetWorkUnit {
     pub name: ArcIntern<str>,
     pub depends: Vec<ArcIntern<str>>,

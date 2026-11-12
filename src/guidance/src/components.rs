@@ -41,6 +41,9 @@ pub const COMP_EMBEDDER: &str = "embedder";
 /// value is already a hex hash of that input; `None` means the caller
 /// did not consume it, so it never appears in the receipt.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Optional input fingerprints beyond the policy sections. Each `Some`
+/// value is already a hex hash of that input; `None` means the caller
+/// did not consume it, so it never appears in the receipt.
 pub struct ComponentInputs {
     /// Toolchain fingerprint.
     pub toolchain: Option<String>,
@@ -63,6 +66,8 @@ pub struct ComponentInputs {
 /// Named input components and their hex hashes. Absent keys were not
 /// consumed and never invalidate on change.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Named input components and their hex hashes. Absent keys were not
+/// consumed and never invalidate on change.
 pub struct ComponentVector {
     /// Component name to hex hash.
     pub components: BTreeMap<String, String>,
@@ -145,6 +150,9 @@ impl ComponentVector {
 /// source bytes it read. Bundled so later inputs extend the struct
 /// instead of widening another call signature.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// One save receipt: the components this derivation consumed plus the
+/// source bytes it read. Bundled so later inputs extend the struct
+/// instead of widening another call signature.
 pub struct SidecarReceipt {
     /// Consumed input components.
     pub components: ComponentVector,
@@ -165,6 +173,7 @@ impl SidecarReceipt {
 
 /// Verdict of the sweep for one sidecar file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Verdict of the sweep for one sidecar file.
 pub enum SweepDecision {
     /// All recorded components match; nothing to do.
     Current,
@@ -176,6 +185,7 @@ pub enum SweepDecision {
 
 /// Outcome of the sweep for one sidecar file.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Outcome of the sweep for one sidecar file.
 pub struct SweepOutcome {
     /// Sidecar path, as walked.
     pub path: PathBuf,
@@ -188,6 +198,10 @@ pub struct SweepOutcome {
 /// the sidecar timestamp, never the source. Sources resolve against
 /// `source_dir` by stripping one `.json` suffix off the sidecar path.
 #[must_use]
+/// Backdate every sidecar under `sidecar_dir` whose recorded components
+/// disagree with `current`, reading first lines only. Invalidation moves
+/// the sidecar timestamp, never the source. Sources resolve against
+/// `source_dir` by stripping one `.json` suffix off the sidecar path.
 pub fn sweep_sidecars(
     sidecar_dir: &Path,
     source_dir: &Path,
@@ -227,9 +241,10 @@ fn sweep_one(
     let Some(header) = SidecarHeader::parse_line(&line) else {
         return SweepDecision::Unknown;
     };
-    let stale = header.components.iter().any(|(name, hash)| {
-        current.components.get(name).is_none_or(|want| want != hash)
-    });
+    let stale = header
+        .components
+        .iter()
+        .any(|(name, hash)| current.components.get(name).is_none_or(|want| want != hash));
     if !stale {
         return SweepDecision::Current;
     }
@@ -250,6 +265,10 @@ fn sweep_one(
 /// the stored derivation is still right. Unrecorded inputs never
 /// invalidate, and unknown names fail closed toward reprocessing.
 #[must_use]
+/// Whether a recorded receipt stays valid under the current vector
+/// for exactly the inputs it consumed. Task value: same inputs mean
+/// the stored derivation is still right. Unrecorded inputs never
+/// invalidate, and unknown names fail closed toward reprocessing.
 pub fn receipt_reusable(
     recorded: &BTreeMap<String, String>,
     current: &BTreeMap<String, String>,

@@ -33,6 +33,8 @@ use crate::reconcile::ReconcileHandle;
 /// Which of the three gate axes refused. A refusal names exactly the axis
 /// that fired first; an allowed verdict names none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which of the three gate axes refused. A refusal names exactly the axis
+/// that fired first; an allowed verdict names none.
 pub enum GateAxis {
     /// The action is structurally ill-defined: no whole quantity, or legs
     /// that fail their own defined-risk validation.
@@ -162,6 +164,9 @@ pub struct PipelineRequest<'p, 'l> {
 /// gates; the per-decision inputs arrive on each [`evaluate`](Self::evaluate)
 /// call.
 #[derive(Debug, Clone)]
+/// The composed gate order. Holds the session-scoped producer-confidence
+/// gates; the per-decision inputs arrive on each [`evaluate`](Self::evaluate)
+/// call.
 pub struct DecisionPipeline {
     trading: StateHandle,
     reconcile: Option<ReconcileHandle>,

@@ -28,6 +28,8 @@ pub const WEEK_FOLD_ORIGIN_MS: i64 = -259_200_000;
 /// Closed-bar timeframe. Covers the fixed-ms intraday-to-weekly grid the
 /// prototype ingests and evaluates, seconds included.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Closed-bar timeframe. Covers the fixed-ms intraday-to-weekly grid the
+/// prototype ingests and evaluates, seconds included.
 pub enum Timeframe {
     /// 5-second bars.
     S5,

@@ -24,6 +24,7 @@ pub const MAX_BODY: usize = 8 * 1024 * 1024;
 
 /// Failures decoding one frame.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Failures decoding one frame.
 pub enum FrameError {
     /// Fewer than 5 header bytes available.
     #[error("frame too short for header")]
@@ -48,6 +49,7 @@ pub enum FrameError {
 
 /// One framed message: its family plus the opaque body.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One framed message: its family plus the opaque body.
 pub struct SocketFrame {
     /// Message family from the single registry.
     pub kind: MessageType,
@@ -138,6 +140,10 @@ impl SocketFrame {
 /// `None` when neither `XDG_RUNTIME_DIR` nor `HOME` is set — the caller
 /// refuses to start rather than falling back to a shared directory.
 #[must_use]
+/// Runtime socket path: `$XDG_RUNTIME_DIR/orator/<SOCKET_NAME>`,
+/// falling back to the home share when the variable is absent. Returns
+/// `None` when neither `XDG_RUNTIME_DIR` nor `HOME` is set — the caller
+/// refuses to start rather than falling back to a shared directory.
 pub fn socket_path() -> Option<std::path::PathBuf> {
     let base = match std::env::var("XDG_RUNTIME_DIR") {
         Ok(dir) if !dir.is_empty() => Some(std::path::PathBuf::from(dir)),
@@ -155,6 +161,9 @@ pub fn socket_path() -> Option<std::path::PathBuf> {
 /// daemon's own. The accept path feeds both uids from the platform
 /// credential read; this pure gate keeps the policy unit-pinned.
 #[must_use]
+/// Peer-credential gate: a peer is served only when its uid equals the
+/// daemon's own. The accept path feeds both uids from the platform
+/// credential read; this pure gate keeps the policy unit-pinned.
 pub const fn check_peer_uid(own_uid: u32, peer_uid: u32) -> bool {
     own_uid == peer_uid
 }

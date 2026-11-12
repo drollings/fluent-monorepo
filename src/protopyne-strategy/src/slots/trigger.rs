@@ -22,6 +22,8 @@ use crate::tape::Tape;
 /// Which thesis a trigger belongs to. The counter-trend arm is admitted
 /// through its own filter set; the trend arm borrows the full one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// Which thesis a trigger belongs to. The counter-trend arm is admitted
+/// through its own filter set; the trend arm borrows the full one.
 pub enum TriggerFamily {
     /// Continuation: momentum, ribbon flip, oscillator cross, exhaustion
     /// reversal.
@@ -32,6 +34,7 @@ pub enum TriggerFamily {
 
 /// What one trigger concluded at the tape's cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// What one trigger concluded at the tape's cursor.
 pub struct TriggerVerdict {
     /// The trigger armed a long entry.
     pub long: bool,
@@ -82,6 +85,7 @@ pub trait Trigger: Send + Sync {
 
 /// Which leg a series trigger reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which leg a series trigger reads.
 pub enum Series {
     /// Fast oscillator.
     Fast,
@@ -137,6 +141,8 @@ fn crossed_series(fast: &[Option<f64>], slow: &[Option<f64>], index: usize) -> O
 /// The adaptive threshold the reference uses for the momentum arm: 100 while
 /// the two oscillators agree in sign, else the slow magnitude floored at 50.
 #[must_use]
+/// The adaptive threshold the reference uses for the momentum arm: 100 while
+/// the two oscillators agree in sign, else the slow magnitude floored at 50.
 pub fn adaptive_threshold(fast: f64, slow: f64) -> f64 {
     if (fast >= 0.0) == (slow >= 0.0) {
         100.0
@@ -147,6 +153,7 @@ pub fn adaptive_threshold(fast: f64, slow: f64) -> f64 {
 
 /// A level crossing on one series.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A level crossing on one series.
 pub struct CrossLevel {
     /// Level the long side crosses upward.
     pub long_level: f64,
@@ -188,6 +195,7 @@ impl Trigger for CrossLevel {
 
 /// A crossing between two series.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A crossing between two series.
 pub struct CrossSeries {
     /// Series the long side crosses above.
     pub fast: Series,
@@ -219,6 +227,7 @@ impl Trigger for CrossSeries {
 
 /// An extreme-band re-entry: the fast leg crosses back through `±band`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// An extreme-band re-entry: the fast leg crosses back through `±band`.
 pub struct BandExtreme {
     /// Band half-width.
     pub band: f64,
@@ -246,6 +255,9 @@ impl Trigger for BandExtreme {
 /// crosses its level while the fast leg sits beyond its own within the
 /// lookback window.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// The counter-trend exhaustion that needs both oscillators: the slow leg
+/// crosses its level while the fast leg sits beyond its own within the
+/// lookback window.
 pub struct DualExhaustion {
     /// Slow-leg level.
     pub slow_level: f64,
@@ -286,6 +298,7 @@ impl Trigger for DualExhaustion {
 
 /// A closure-backed trigger for a research composition.
 #[derive(Clone)]
+/// A closure-backed trigger for a research composition.
 pub struct TriggerFn {
     id: &'static str,
     eval: Arc<dyn Fn(&Tape<'_>) -> TriggerVerdict + Send + Sync>,
@@ -424,12 +437,14 @@ fn dual_exhaustion_factory(params: &serde_json::Value) -> Result<Arc<dyn Trigger
 
 /// The trigger catalog.
 #[must_use]
+/// The trigger catalog.
 pub fn triggers() -> &'static SlotRegistry<Arc<dyn Trigger>> {
     trigger_registry()
 }
 
 /// The catalog ids, in schema order.
 #[must_use]
+/// The catalog ids, in schema order.
 pub fn trigger_ids() -> Vec<&'static str> {
     triggers().ids()
 }

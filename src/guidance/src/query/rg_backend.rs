@@ -17,6 +17,7 @@ use thiserror::Error;
 
 /// One literal match.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One literal match.
 pub struct RgHit {
     /// Workspace-relative path as printed by rg.
     pub path: String,
@@ -36,6 +37,9 @@ pub struct RgHit {
 /// Modification times are ms epoch; files whose mtime cannot be read are
 /// kept (best-effort — the filter excludes only proven-outside files).
 #[derive(Debug, Clone, Default)]
+/// Full L0 search options (P5): context capture plus mtime post-filter.
+/// Modification times are ms epoch; files whose mtime cannot be read are
+/// kept (best-effort — the filter excludes only proven-outside files).
 pub struct RgOptions {
     /// `-B` lines of leading context.
     pub context_before: usize,
@@ -49,6 +53,7 @@ pub struct RgOptions {
 
 /// Managed-rg failure.
 #[derive(Debug, Error)]
+/// Managed-rg failure.
 pub enum RgError {
     /// No `FsCapability` in scope (fail-closed).
     #[error("rg search denied: no FsCapability in scope")]

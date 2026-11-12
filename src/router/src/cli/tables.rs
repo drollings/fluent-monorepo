@@ -19,6 +19,13 @@ use ratatui::Terminal;
 /// Short rows are padded with empty cells; over-long rows are clipped to the
 /// header count so one ragged row cannot shift the grid.
 #[allow(clippy::cast_possible_truncation)]
+/// Render aligned plain-text columns over `width` terminal columns.
+/// `min_widths` fixes every column except `flex`, which absorbs the remaining
+/// width (ratatui clips cells that still overflow on narrow terminals, so
+/// every emitted line fits `width`); `right[i]` right-aligns column `i`.
+/// Columns are separated by a single space — no borders, no title row.
+/// Short rows are padded with empty cells; over-long rows are clipped to the
+/// header count so one ragged row cannot shift the grid.
 pub fn render_text_table(
     headers: &[&str],
     rows: &[Vec<String>],

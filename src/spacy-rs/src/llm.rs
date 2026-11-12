@@ -38,6 +38,9 @@ use crate::validate::{AnnotationError, AnnotationValidator};
 /// stay strings here (the wire type); the validator resolves them against the
 /// closed vocabularies (check 2) and `apply` parses them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One token's annotation, mirroring the §10.1 JSON contract. `pos`/`dep`
+/// stay strings here (the wire type); the validator resolves them against the
+/// closed vocabularies (check 2) and `apply` parses them.
 pub struct AnnotationRecord {
     /// The surface form as tokenized by the deterministic tokenizer.
     pub text: String,
@@ -199,6 +202,7 @@ impl LlmRefinePrompt {
 
 /// An ordered set of token annotations, one per token of a doc.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// An ordered set of token annotations, one per token of a doc.
 pub struct AnnotationSet(pub Vec<AnnotationRecord>);
 
 impl AnnotationSet {
@@ -243,6 +247,9 @@ impl AnnotationSet {
 /// the typed channel so downstream routing can see how trustworthy a parse is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Which rung of the annotation ladder produced a parse. The
+/// wire `AnnotationSet` is provenance-blind; this rides alongside it through
+/// the typed channel so downstream routing can see how trustworthy a parse is.
 pub enum AnnotationSource {
     /// The LLM rung (full UD deps).
     Llm,
@@ -306,6 +313,9 @@ impl AnnotationSource {
 /// (low-confidence parses keep flowing forward; confidence
 /// gates downstream *routing*, never rung fallthrough).
 #[derive(Debug, Clone)]
+/// The ladder handoff: an [`AnnotationSet`] plus provenance and confidence
+/// (low-confidence parses keep flowing forward; confidence
+/// gates downstream *routing*, never rung fallthrough).
 pub struct AnnotationResult {
     pub records: AnnotationSet,
     pub source: AnnotationSource,

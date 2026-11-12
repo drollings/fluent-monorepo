@@ -41,6 +41,7 @@ const PLOT_STYLE_KEYS: [&str; 10] = [
 
 /// One linked Pine script, ready to evaluate over chart bars.
 #[derive(Debug)]
+/// One linked Pine script, ready to evaluate over chart bars.
 pub struct PineIndicatorPlugin {
     /// Catalog id (`pine:<stem>`).
     id: String,
@@ -154,6 +155,10 @@ fn stem_of(id: &str) -> &str {
 /// `indicators/` subdirectory, searched upward. `None` means no Pine
 /// catalog — the terminal simply offers no Pine scripts.
 #[must_use]
+/// Locate the Pine indicator tree for a history path: the first ancestor
+/// (the path itself when it is a directory, else its parent) containing an
+/// `indicators/` subdirectory, searched upward. `None` means no Pine
+/// catalog — the terminal simply offers no Pine scripts.
 pub fn pine_data_root(history: &std::path::Path) -> Option<std::path::PathBuf> {
     let mut dir = if history.is_dir() {
         history.to_path_buf()
@@ -172,6 +177,8 @@ pub fn pine_data_root(history: &std::path::Path) -> Option<std::path::PathBuf> {
 /// Stem behind an indicator file path (`indicators/_Foo.pine` serves
 /// `_Foo`, the catalog stem — the underscore is kept, unlike libraries).
 #[must_use]
+/// Stem behind an indicator file path (`indicators/_Foo.pine` serves
+/// `_Foo`, the catalog stem — the underscore is kept, unlike libraries).
 pub(crate) fn pine_stem_of(relpath: &str) -> &str {
     let file = relpath.rsplit('/').next().unwrap_or(relpath);
     file.strip_suffix(".pine").unwrap_or(file)
@@ -191,6 +198,11 @@ fn library_stem(relpath: &str) -> &str {
 /// unparseable means the Pine default, overlay off. Legacy `study(...)`
 /// headers read the same way.
 #[must_use]
+/// Whether the script's `indicator(...)` header requests the main chart.
+/// A named `overlay = true/false` wins; else a positional third `true`/`false`
+/// literal wins (the reference scripts use both spellings); absent or
+/// unparseable means the Pine default, overlay off. Legacy `study(...)`
+/// headers read the same way.
 pub fn pine_overlay_of(text: &str) -> bool {
     let header = text
         .find("indicator(")

@@ -14,6 +14,10 @@ use std::fmt;
 /// Ordering is numeric, so a slice of these is always sorted when its stamps
 /// are. The type is `Copy` and costs nothing at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+/// A UTC instant measured in milliseconds since the Unix epoch.
+/// 
+/// Ordering is numeric, so a slice of these is always sorted when its stamps
+/// are. The type is `Copy` and costs nothing at runtime.
 pub struct EpochMs(i64);
 
 impl EpochMs {

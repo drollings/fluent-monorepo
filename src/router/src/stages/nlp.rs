@@ -52,6 +52,30 @@ use crate::stages::common::extract_user_message;
 /// wired consumer) — it is the async seam with twin-agreement tests, waiting
 /// on an async-ladder wiring that does not exist today.
 #[allow(dead_code)]
+/// The single `ChatBackend` → spacy-rs annotation-fetch adapter (+ sync
+/// twin): prompts with the canonical [`spacy_rs::AnnotationRecord::prompt`]
+/// contract and returns the raw §10.1 JSON array (or an error the ladders
+/// swallow in favor of the rule rung). Both twins share the prompt contract
+/// below, so async and sync callers always send identical requests.
+/// 
+/// The async twin bridges the sync backend seam through `spawn_blocking`
+/// (the `ChatBackend` trait is sync-only by design — spacy-rs owns no
+/// runtime); the blocking pool is the correct sync→async direction, never
+/// `block_on` inside a task.
+/// 
+/// The call goes through the extras seam carrying the `AnnotationSet` JSON
+/// schema as `response_format.schema` (ROADMAP M2.4), so a
+/// grammar-constrained backend (the onnx LLM) cannot emit a structurally
+/// invalid annotation array — `parse_json` cannot structurally fail. A backend
+/// without the extras seam (HTTP, stubs) ignores the extras unchanged, leaving
+/// the post-hoc validator as the backstop.
+/// 
+/// spacy-rs seams are untouched: this only *constructs* its closure types,
+/// adding no dependency in either direction.
+/// 
+/// The async twin has no production caller yet (the sync ladder is the only
+/// wired consumer) — it is the async seam with twin-agreement tests, waiting
+/// on an async-ladder wiring that does not exist today.
 pub(crate) fn chat_backend_to_fetch(
     backend: Arc<dyn fluent_llm::client::ChatBackend>,
 ) -> spacy_rs::pipeline::LlmFetch {
@@ -332,6 +356,11 @@ impl NlpStage {
 /// rule rungs report 1.0 (no oracle to doubt). When `refine_reason` is
 /// supplied (M5.1), it is carried verbatim for observability.
 #[allow(dead_code)]
+/// The C1 confidence summary from a ladder handoff: the producing rung (the
+/// serde-serialized [`spacy_rs::AnnotationSource`]), the margin-aware parse
+/// confidence (ArcEager/encoder), and the role coverage / tie count. LLM and
+/// rule rungs report 1.0 (no oracle to doubt). When `refine_reason` is
+/// supplied (M5.1), it is carried verbatim for observability.
 pub(crate) fn confidence_summary(
     annotation: &spacy_rs::AnnotationResult,
 ) -> crate::pipeline_types::NlpConfidenceSummary {
@@ -432,12 +461,17 @@ static GLOBAL_REFINE_METRICS: std::sync::LazyLock<std::sync::Arc<spacy_rs::Refin
 /// `refine_on_*` thresholds can be tuned from observed production rates
 /// without a code change.  Call from an admin/metrics handler.
 #[must_use]
+/// Per-reason trigger-rate histogram for the refine decision (M5.4): the
+/// current snapshot of the router-owned `RefineMetrics`, exposed so
+/// `refine_on_*` thresholds can be tuned from observed production rates
+/// without a code change.  Call from an admin/metrics handler.
 pub fn refine_metrics_snapshot() -> spacy_rs::RefineMetricsSnapshot {
     GLOBAL_REFINE_METRICS.snapshot()
 }
 
 /// Reset the global refine metrics (test-only).
 #[cfg(test)]
+/// Reset the global refine metrics (test-only).
 pub fn reset_refine_metrics() {
     GLOBAL_REFINE_METRICS.reset();
 }

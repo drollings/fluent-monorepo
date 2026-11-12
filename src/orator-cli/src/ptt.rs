@@ -12,6 +12,7 @@ use fluent_wvr::{
 
 /// Mic latch selector for one chat session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Mic latch selector for one chat session.
 pub enum PttMode {
     /// VAD-gated capture: hot spans commit on endpoint.
     #[default]
@@ -71,6 +72,9 @@ pub fn parse_ptt_mode(raw: &str) -> Result<PttMode, String> {
 /// anything else falls back to `off` so the loop can name the bad
 /// value instead of refusing the session.
 #[must_use]
+/// Session start from the `chat.ptt` leaf: valid spellings map,
+/// anything else falls back to `off` so the loop can name the bad
+/// value instead of refusing the session.
 pub fn initial_ptt_mode(config: &orator::OratorConfig) -> PttMode {
     parse_ptt_mode(config.chat.ptt.trim()).unwrap_or_default()
 }
@@ -79,6 +83,9 @@ pub fn initial_ptt_mode(config: &orator::OratorConfig) -> PttMode {
 /// schema, field access, and validation all derive from one
 /// definition (the `chat.ptt` leaf round-trips through it).
 #[derive(Debug, Clone, PartialEq, Eq, FieldAccess, Describable)]
+/// Runtime-editable PTT handle: the fluent-wvr single source whose
+/// schema, field access, and validation all derive from one
+/// definition (the `chat.ptt` leaf round-trips through it).
 pub struct PttSetting {
     /// Active state spelling (`off`|`on`).
     #[field(desc = "Chat push-to-talk (off|on)", max_len = 16)]

@@ -35,6 +35,10 @@ pub const EMPTY_MORPH: &str = "_";
 /// analysis with [`Morphology::add`]; resolve a key with
 /// [`Morphology::get`] / [`Morphology::to_dict`] / [`Morphology::get_by_field`].
 #[derive(Debug, Clone)]
+/// The morphology table: a typed view over the shared `StringStore` whose
+/// content-addressed keys are the hashes of normalized UFEATS strings. Add an
+/// analysis with [`Morphology::add`]; resolve a key with
+/// [`Morphology::get`] / [`Morphology::to_dict`] / [`Morphology::get_by_field`].
 pub struct Morphology {
     strings: Arc<StringStore>,
 }
@@ -187,6 +191,7 @@ pub type ArcMorphology = Arc<Morphology>;
 
 /// The hash of the canonical empty morph (`"_"`).
 #[must_use]
+/// The hash of the canonical empty morph (`"_"`).
 pub fn empty_morph_hash() -> u64 {
     hash_utf8(EMPTY_MORPH)
 }

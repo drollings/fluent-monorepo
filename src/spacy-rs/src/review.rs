@@ -19,6 +19,7 @@ use fluent_types::{ConceptMetadata, InterlinguaId};
 /// The correction field a reviewer can override on a token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// The correction field a reviewer can override on a token.
 pub enum CorrectionField {
     Dep,
     Head,
@@ -32,6 +33,10 @@ pub enum CorrectionField {
 /// refine contract (which omits it) parses
 /// into the same type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One token-level correction. `old_value` is reviewer context only — the
+/// amend step never reads it — and defaults to empty so the span-scoped
+/// refine contract (which omits it) parses
+/// into the same type.
 pub struct Correction {
     pub token_index: usize,
     pub field: CorrectionField,
@@ -43,6 +48,8 @@ pub struct Correction {
 /// An entity link produced by a review: a token span resolved to a YaGO
 /// concept.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// An entity link produced by a review: a token span resolved to a YaGO
+/// concept.
 pub struct LinkedEntity {
     pub token_start: usize,
     pub token_end: usize,
@@ -56,6 +63,10 @@ pub struct LinkedEntity {
 /// contract carries `corrections` + `note` only, so every field is defaulted
 /// on deserialize.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// The outcome of a review pass over one parse. Also the wire shape of the
+/// span-scoped refine reply: the refine
+/// contract carries `corrections` + `note` only, so every field is defaulted
+/// on deserialize.
 pub struct ParseReview {
     /// The corrections actually applied (empty = the parse was accepted).
     #[serde(default)]
@@ -83,6 +94,8 @@ impl ParseReview {
 /// `HumanReviewed` the human-overridden variant (stored verbatim for audit).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+/// The review lifecycle of a parse node. `Reviewed` marks a successful review;
+/// `HumanReviewed` the human-overridden variant (stored verbatim for audit).
 pub enum ReviewStatus {
     /// Not yet reviewed; `auto_confidence` is the parser's own score.
     Unreviewed { auto_confidence: f64 },
@@ -128,6 +141,9 @@ pub trait CorrectionIndex: Send + Sync {
 /// classes/labels/IRIs and asks the reviewer to resolve entity types to
 /// concept ids. **Pure** — unit-testable without a model.
 #[must_use]
+/// The taxonomy-grounded review prompt (§12.4): lists the candidate YaGO
+/// classes/labels/IRIs and asks the reviewer to resolve entity types to
+/// concept ids. **Pure** — unit-testable without a model.
 pub fn review_prompt(
     text: &str,
     parse: &AnnotationResult,
@@ -240,6 +256,9 @@ pub fn apply_edits(records: &mut [AnnotationRecord], edits: &[Correction]) -> us
 /// [`AnnotationResult`] with provenance [`AnnotationSource::HumanReview`]
 /// when any correction was applied (§12.3 step c).
 #[must_use]
+/// Apply a set of corrections to a parse, producing a corrected
+/// [`AnnotationResult`] with provenance [`AnnotationSource::HumanReview`]
+/// when any correction was applied (§12.3 step c).
 pub fn apply_corrections(parse: &AnnotationResult, corrections: &[Correction]) -> AnnotationResult {
     let mut records = parse.records().records().to_vec();
     apply_edits(&mut records, corrections);

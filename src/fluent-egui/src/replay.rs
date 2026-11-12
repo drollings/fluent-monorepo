@@ -29,6 +29,9 @@ use crate::plan::{PaneCache, PanePlan};
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Toolbar-facing replay cursor: which bar is on screen, over how many, at
+/// which named mark. Renders from [`Describable`] schema; `execute`
+/// validates through the shared bridge and reports the cursor.
 pub struct ReplayState {
     /// Bar index on screen (0-based, at most `total_bars`).
     #[field(desc = "Bar index on screen", min = 0)]

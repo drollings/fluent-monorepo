@@ -29,6 +29,15 @@ pub const PAGERANK_ALPHA: f64 = 0.85;
 /// scoped to candidate centrality. It is a small numeric routine, not a
 /// general graph-analytics subsystem.
 #[must_use]
+/// Minimal PageRank via a fixed-iteration power loop over an undirected graph.
+/// 
+/// Deterministic in `f64` (no parallel reduction — the same graph always yields
+/// the same ranks) and normalized so the top node scores `1.0`. Dangling nodes
+/// (empty adjacency) redistribute their mass evenly through the teleport.
+/// 
+/// This is the minimal form of the "graph analytics — PageRank" backlog item,
+/// scoped to candidate centrality. It is a small numeric routine, not a
+/// general graph-analytics subsystem.
 pub fn pagerank(graph: &NodeGraph, iterations: usize, alpha: f64) -> BTreeMap<i64, f64> {
     let n = graph.len().max(1);
     let mut ranks: BTreeMap<i64, f64> = graph.keys().map(|&k| (k, 1.0 / n as f64)).collect();

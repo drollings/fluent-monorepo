@@ -39,6 +39,7 @@ use crate::wheel::{Pos2, Rect};
 
 /// Image fetch failure: transients retry, permanents surface immediately.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Image fetch failure: transients retry, permanents surface immediately.
 pub enum ImageError {
     /// May succeed on retry (5xx, timeouts, pool backpressure).
     #[error("transient image fetch failure: {0}")]
@@ -146,6 +147,9 @@ pub async fn net_fetch(
 /// the shell paints this until delivery. Degenerate sizes collapse to the
 /// origin instead of inverting the rect.
 #[must_use]
+/// Placeholder rect for an image of `width_px` by `height_px` at `origin`:
+/// the shell paints this until delivery. Degenerate sizes collapse to the
+/// origin instead of inverting the rect.
 pub fn placeholder_rect(origin: (f32, f32), width_px: f32, height_px: f32) -> Rect {
     let width = if width_px.is_finite() && width_px > 0.0 {
         width_px

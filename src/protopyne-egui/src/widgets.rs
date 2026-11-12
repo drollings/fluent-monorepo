@@ -43,6 +43,12 @@ pub const CHART_LONG_PRESS_SECS: f64 = 0.5;
 /// per second — never base bars, so the selected speed feels the same on
 /// every timeframe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Replay transport speed in candles at the selected timeframe, chosen from
+/// the top-bar speed menu (the same switch-menu shape as the display-mode
+/// pulldown). Rates name chart candles — one 5M candle per second at Normal
+/// on a 5M chart replays five 1M candles per second, appearing as one candle
+/// per second — never base bars, so the selected speed feels the same on
+/// every timeframe.
 pub enum ReplaySpeed {
     /// One candle every five seconds.
     Crawl,
@@ -145,6 +151,11 @@ pub const PULLDOWN_CHEVRON: &str = "▾";
     Describable,
 )]
 #[builder(start_fn = new)]
+/// Ephemeral top-bar menu drafts: the Beginning and Jump-To-Time text fields
+/// inside the data-range menu. A `Component` so the menu edits through the
+/// same `FieldAccess` contract as every other control-plane surface, and the
+/// two drafts round-trip through `get_field`/`set_field` without a second
+/// spelling.
 pub struct TopBarMenuState {
     /// Beginning draft (`YYYY-MM-DD`): the custom window start applied on Go.
     #[field(desc = "Beginning date draft (YYYY-MM-DD)", max_len = 16)]
@@ -187,6 +198,9 @@ impl_component!(TopBarMenuState);
 /// picker navigates months without a schema field per cursor; the picked day
 /// still lands in [`TopBarMenuState::beginning_text`], the one text truth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The month a Beginning calendar is showing. Owned by the workspace so the
+/// picker navigates months without a schema field per cursor; the picked day
+/// still lands in [`TopBarMenuState::beginning_text`], the one text truth.
 pub struct CalendarState {
     /// Displayed year.
     pub year: i32,
@@ -328,6 +342,8 @@ pub fn paint_calendar(
 /// What the top bar raised this frame: a selection, a picker opener, a
 /// refresh request, a view fit/scroll, or the replay transport toggle.
 #[derive(Debug, Clone, PartialEq)]
+/// What the top bar raised this frame: a selection, a picker opener, a
+/// refresh request, a view fit/scroll, or the replay transport toggle.
 pub enum TopBarAction {
     /// The dock toggle (far left of the bar) flipped the left drawer.
     ToggleDock,
@@ -373,6 +389,8 @@ pub const TOP_BAR_FONT_SIZE: f32 = 15.0;
 /// The one top-bar label treatment: bold at [`TOP_BAR_FONT_SIZE`], so every
 /// button, menu button, and chip shares one type style.
 #[must_use]
+/// The one top-bar label treatment: bold at [`TOP_BAR_FONT_SIZE`], so every
+/// button, menu button, and chip shares one type style.
 pub fn bar_text(label: &str) -> egui::RichText {
     egui::RichText::new(label).strong().size(TOP_BAR_FONT_SIZE)
 }
@@ -422,6 +440,27 @@ fn bar_menu_button(
 /// dialog state, so a preset or calendar day can never blank the pane
 /// mid-gesture.
 #[allow(clippy::too_many_arguments)]
+/// Paint the terminal Material top bar; returns the one action this frame
+/// raised, if any.
+/// 
+/// Left to right: dock toggle, ticker, save layout, the timeframe selector,
+/// display-mode pulldown, refresh button, and the label-free pan cluster
+/// (rewind-to-beginning, rewind, play/pause, replay-speed menu, forward,
+/// forward-to-last), jump-to-time, bookmarks, indicator selector. Tapping
+/// play toggles the backtest transport; the speed menu beside it picks the
+/// replay pace from the six documented rates, like the Candles pulldown.
+/// Every control draws at [`TOP_BAR_BUTTON_HEIGHT`] with the shared bold
+/// [`bar_text`] style, so the app bar reads as one material row.
+/// An untouched frame raises nothing.
+/// 
+/// The picker buttons (ticker, bookmarks, indicators, jump) record their
+/// button rects into the anchor outs on click: the workspace paints the
+/// corresponding titlebar-less popup anchored below the button, like the
+/// Candles pulldown, so no picker needs its own window chrome.
+/// 
+/// Range picking lives in the dock drawer, not here: the bar carries no
+/// dialog state, so a preset or calendar day can never blank the pane
+/// mid-gesture.
 pub fn paint_top_bar(
     ui: &mut egui::Ui,
     symbol: &str,
@@ -705,6 +744,7 @@ pub const RANGE_PRESET_BUTTON_WIDTH: f32 = 40.0;
 
 /// What the range dialog's action row raised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What the range dialog's action row raised.
 pub enum RangeChoice {
     /// Apply the drafted range or Beginning.
     Apply,
@@ -714,6 +754,7 @@ pub enum RangeChoice {
 
 /// Short top-bar label for one wired chart type.
 #[must_use]
+/// Short top-bar label for one wired chart type.
 pub fn chart_type_symbol(kind: ChartType) -> &'static str {
     match kind {
         ChartType::Candles | ChartType::Heikin => "┿",
@@ -724,6 +765,7 @@ pub fn chart_type_symbol(kind: ChartType) -> &'static str {
 
 /// Short top-bar label for one wired chart type.
 #[must_use]
+/// Short top-bar label for one wired chart type.
 pub fn chart_type_label(kind: ChartType) -> &'static str {
     match kind {
         ChartType::Candles => "Candles",
@@ -736,6 +778,8 @@ pub fn chart_type_label(kind: ChartType) -> &'static str {
 /// One multi-timeframe table row: plain display data filled upstream (no
 /// kernel calls at the paint edge).
 #[derive(Debug, Clone, PartialEq)]
+/// One multi-timeframe table row: plain display data filled upstream (no
+/// kernel calls at the paint edge).
 pub struct MtfRow {
     /// Timeframe key (for example "M15").
     pub timeframe: String,
@@ -748,12 +792,15 @@ pub struct MtfRow {
 /// Table shape as `(columns, rows)`; three columns (timeframe, bias,
 /// strength), one row per entry.
 #[must_use]
+/// Table shape as `(columns, rows)`; three columns (timeframe, bias,
+/// strength), one row per entry.
 pub fn mtf_table_shape(rows: &[MtfRow]) -> (usize, usize) {
     (3, rows.len())
 }
 
 /// Toolbar labels in preset order, straight from the canonical presets.
 #[must_use]
+/// Toolbar labels in preset order, straight from the canonical presets.
 pub fn toolbar_labels() -> Vec<&'static str> {
     DateRange::default_presets()
         .iter()
@@ -763,6 +810,7 @@ pub fn toolbar_labels() -> Vec<&'static str> {
 
 /// Timeframe key labels in toolbar order, straight from [`TimeframeKey`].
 #[must_use]
+/// Timeframe key labels in toolbar order, straight from [`TimeframeKey`].
 pub fn timeframe_labels() -> Vec<&'static str> {
     TimeframeKey::all().iter().map(|key| key.label()).collect()
 }

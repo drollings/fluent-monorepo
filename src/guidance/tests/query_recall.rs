@@ -501,3 +501,425 @@ fn independent_routes_fuse_into_one_ranked_list() {
     let output = run_recall(&plan, &storage, None, None).expect("recall");
     assert_eq!(output.hits.len(), 1);
 }
+
+fn summary_file(id: &str, relative: &str) -> search_vector::db::FileRecord {
+    search_vector::db::FileRecord {
+        id: id.to_string(),
+        absolute_path: format!("/repo/{relative}"),
+        relative_path: relative.to_string(),
+        root_path: "/repo".to_string(),
+        size_bytes: 64,
+        last_modified_time: 100,
+        kind: Some("code".to_string()),
+        format: "rust".to_string(),
+        content_hash: None,
+        index_status: Some("indexed".to_string()),
+        fail_count: 0,
+        last_error: None,
+    }
+}
+
+fn summary_fragment(
+    id: &str,
+    name: &str,
+    doc: &str,
+    text: &str,
+    start_line: usize,
+) -> crate::extractor::PreparedFragment {
+    use crate::extractor::{FragmentMetadata, FragmentRange, PreparedFragment};
+    PreparedFragment {
+        id: id.to_string(),
+        content_text: text.to_string(),
+        embedding_text: None,
+        range: FragmentRange {
+            start_line,
+            end_line: start_line + 2,
+            start_offset: 0,
+            end_offset: text.len(),
+        },
+        group: None,
+        metadata: Some(FragmentMetadata::Code {
+            symbol_type: crate::search_types::CodeSymbolType::Function,
+            symbol_name: Some(name.to_string()),
+            scope: None,
+            node_type: "function_item".to_string(),
+            signature: Some(format!("fn {name}()")),
+            doc: Some(doc.to_string()),
+            modifiers: Vec::new(),
+        }),
+        calls: Vec::new(),
+    }
+}
+
+fn summary_block(node_key: &str, text: &str) -> crate::ast_parser::CommentBlock {
+    crate::ast_parser::CommentBlock {
+        node_key: node_key.to_string(),
+        node_kind: "function_item".to_string(),
+        name: node_key.to_string(),
+        scope: String::new(),
+        start_byte: 0,
+        end_byte: text.len(),
+        start_line: 1,
+        end_line: 1,
+        text: text.to_string(),
+        comment_hash: common_core::hash::blake3_hex(text.as_bytes()),
+    }
+}
+
+fn seed_summary_index() -> search_vector::db::GuidanceDb {
+    use crate::query::writer::{FragmentWriter, VectorPolicy};
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let fragments = vec![
+        summary_fragment("fa", "alpha", "Adds one", "fn alpha() {}", 1),
+        summary_fragment("fb", "beta", "Removes two", "fn beta() {}", 4),
+        crate::extractor::code::module_fragment_for(
+            "f",
+            &[summary_block("$file", "Crate helpers overview")],
+        )
+        .expect("module fragment"),
+    ];
+    let blocks = [
+        summary_block("alpha", "Adds one"),
+        summary_block("beta", "Removes two"),
+        summary_block("$file", "Crate helpers overview"),
+    ];
+    FragmentWriter::write_items(
+        &db,
+        &summary_file("f", "lib.rs"),
+        crate::search_types::FileKind::Code,
+        &fragments,
+        &blocks,
+        &([] as [Vec<f32>; 0]),
+        None,
+        VectorPolicy::Optional,
+    )
+    .expect("commit");
+    let fx = summary_fragment("fx", "oldfn", "Old words", "fn oldfn() {}", 1);
+    FragmentWriter::write_items(
+        &db,
+        &summary_file("s", "stale.rs"),
+        crate::search_types::FileKind::Code,
+        &[fx],
+        &[summary_block("oldfn", "Old words")],
+        &[],
+        None,
+        VectorPolicy::Optional,
+    )
+    .expect("commit");
+    let fu = summary_fragment("fu", "helper_fn", "", "fn helper_fn() {}", 1);
+    FragmentWriter::write_items(
+        &db,
+        &summary_file("u", "util.rs"),
+        crate::search_types::FileKind::Code,
+        &[fu],
+        &[],
+        &([] as [Vec<f32>; 0]),
+        None,
+        VectorPolicy::Optional,
+    )
+    .expect("commit");
+    let fq = summary_fragment("fq", "quick", "Qx", "fn quick() {}", 1);
+    FragmentWriter::write_items(
+        &db,
+        &summary_file("t", "tiny.rs"),
+        crate::search_types::FileKind::Code,
+        &[fq],
+        &[summary_block("quick", "Qx")],
+        &([] as [Vec<f32>; 0]),
+        None,
+        VectorPolicy::Optional,
+    )
+    .expect("commit");
+    db.replace_summaries(&[
+        search_vector::db::SummaryRecord {
+            fragment_id: "f#$file".to_string(),
+            comment_hash: "hash-file".to_string(),
+            model: "test-model".to_string(),
+            prompt_version: 1,
+            temperature: 0.0,
+            seed: 42,
+            summary: "Crate helpers overview.".to_string(),
+            status: "ready".to_string(),
+            generated_at: 1700000000000,
+            authorized: false,
+        },
+        search_vector::db::SummaryRecord {
+            fragment_id: "fa".to_string(),
+            comment_hash: "hash-a".to_string(),
+            model: "test-model".to_string(),
+            prompt_version: 1,
+            temperature: 0.0,
+            seed: 42,
+            summary: "Adds one to the total.".to_string(),
+            status: "ready".to_string(),
+            generated_at: 1700000000000,
+            authorized: false,
+        },
+        search_vector::db::SummaryRecord {
+            fragment_id: "fb".to_string(),
+            comment_hash: "hash-b".to_string(),
+            model: "test-model".to_string(),
+            prompt_version: 1,
+            temperature: 0.0,
+            seed: 42,
+            summary: "Removes two from the count.".to_string(),
+            status: "ready".to_string(),
+            generated_at: 1700000000000,
+            authorized: false,
+        },
+        search_vector::db::SummaryRecord {
+            fragment_id: "fx".to_string(),
+            comment_hash: "hash-old".to_string(),
+            model: "test-model".to_string(),
+            prompt_version: 1,
+            temperature: 0.0,
+            seed: 42,
+            summary: "Stale words here.".to_string(),
+            status: "failed".to_string(),
+            generated_at: 1700000000000,
+            authorized: false,
+        },
+    ])
+    .expect("summaries");
+    db
+}
+
+fn summary_plan(query: &str) -> SearchPlan {
+    SearchPlan {
+        routes: vec![SearchPlanRoute {
+            mode: SearchPlanRouteMode::Fts,
+            query: query.to_string(),
+        }],
+        limit: Some(5),
+        trace: true,
+        ..Default::default()
+    }
+}
+
+fn hit_ids(output: &crate::query::recall::RecallOutput) -> Vec<&str> {
+    output
+        .hits
+        .iter()
+        .map(|hit| hit.entity.id.as_str())
+        .collect()
+}
+
+#[test]
+fn summary_route_shadow_does_not_fuse() {
+    use crate::query::db_storage::GuidanceDbStorage;
+    use crate::query::recall::{run_recall_with_policy, RecallPolicy, SummaryMode};
+    let db = seed_summary_index();
+    let storage = GuidanceDbStorage::new(&db);
+    let plan = summary_plan("total");
+    let disabled = run_recall_with_policy(&plan, &storage, None, None, RecallPolicy::default())
+        .expect("recall");
+    let shadowed = run_recall_with_policy(
+        &plan,
+        &storage,
+        None,
+        None,
+        RecallPolicy {
+            summary: SummaryMode::Shadow,
+        },
+    )
+    .expect("recall");
+    assert_eq!(hit_ids(&disabled), hit_ids(&shadowed));
+    assert!(
+        !shadowed
+            .hits
+            .iter()
+            .flat_map(|hit| hit.trace.iter().flat_map(|trace| trace.recall.iter()))
+            .any(|entry| entry.path == RecallPath::Summary),
+        "shadow must not fuse summary evidence"
+    );
+}
+
+#[test]
+fn summary_route_act_adds_candidates() {
+    use crate::query::db_storage::GuidanceDbStorage;
+    use crate::query::recall::{run_recall_with_policy, RecallPolicy, SummaryMode};
+    let db = seed_summary_index();
+    let storage = GuidanceDbStorage::new(&db);
+    let output = run_recall_with_policy(
+        &summary_plan("total"),
+        &storage,
+        None,
+        None,
+        RecallPolicy {
+            summary: SummaryMode::Act,
+        },
+    )
+    .expect("recall");
+    assert_eq!(hit_ids(&output), vec!["fa"]);
+    let trace = output.hits[0].trace.as_ref().expect("trace");
+    assert!(
+        trace
+            .recall
+            .iter()
+            .any(|entry| entry.path == RecallPath::Summary && entry.found),
+        "{trace:?}"
+    );
+    assert_eq!(
+        output.hits[0].matched_by,
+        crate::search_types::SearchMatchedBy::Summary
+    );
+}
+
+#[test]
+fn summary_route_citations_stay_source_only() {
+    use crate::query::db_storage::GuidanceDbStorage;
+    use crate::query::recall::{run_recall_with_policy, RecallPolicy, SummaryMode};
+    let db = seed_summary_index();
+    let storage = GuidanceDbStorage::new(&db);
+    let output = run_recall_with_policy(
+        &summary_plan("total"),
+        &storage,
+        None,
+        None,
+        RecallPolicy {
+            summary: SummaryMode::Act,
+        },
+    )
+    .expect("recall");
+    let hit = output.hits.first().expect("hit");
+    for evidence in &hit.evidence {
+        assert!(
+            matches!(
+                evidence.range,
+                crate::search_types::FragmentSpan::Text { .. }
+            ),
+            "citations cite source ranges, never generated text: {evidence:?}"
+        );
+        if let crate::search_types::FragmentContent::Text { text } = &evidence.content {
+            assert!(
+                !text.contains("to the total"),
+                "generated summary text must not masquerade as source: {text:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn summary_route_fts_needs_no_model() {
+    use crate::query::db_storage::GuidanceDbStorage;
+    let db = seed_summary_index();
+    let storage = GuidanceDbStorage::new(&db);
+    let hits = storage
+        .search_summaries("total", 10, &crate::search_types::StorageFilter::default())
+        .expect("search");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].fragment.id, "fa");
+}
+
+#[test]
+fn summary_route_control_identifier_only_stays_deterministic() {
+    use crate::query::db_storage::GuidanceDbStorage;
+    use crate::query::recall::{run_recall_with_policy, RecallPolicy, SummaryMode};
+    let db = seed_summary_index();
+    let storage = GuidanceDbStorage::new(&db);
+    let plan = summary_plan("helper_fn");
+    let disabled = run_recall_with_policy(&plan, &storage, None, None, RecallPolicy::default())
+        .expect("recall");
+    let acted = run_recall_with_policy(
+        &plan,
+        &storage,
+        None,
+        None,
+        RecallPolicy {
+            summary: SummaryMode::Act,
+        },
+    )
+    .expect("recall");
+    assert_eq!(hit_ids(&disabled), hit_ids(&acted));
+    assert!(
+        !acted
+            .hits
+            .iter()
+            .flat_map(|hit| hit.trace.iter().flat_map(|trace| trace.recall.iter()))
+            .any(|entry| entry.path == RecallPath::Summary && entry.found),
+        "identifier-only queries must not fire the summary route"
+    );
+}
+
+#[test]
+fn summary_route_unavailable_rows_never_fire() {
+    use crate::query::db_storage::GuidanceDbStorage;
+    let db = seed_summary_index();
+    let storage = GuidanceDbStorage::new(&db);
+    let hits = storage
+        .search_summaries("stale", 10, &crate::search_types::StorageFilter::default())
+        .expect("search");
+    assert!(
+        hits.is_empty(),
+        "failed summaries must never fire: {hits:?}"
+    );
+}
+
+fn summary_corpus_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("corpora")
+        .join("summary_index_seed.json")
+}
+
+#[test]
+fn summary_route_corpus_loads() {
+    use crate::query::recall::load_summary_corpus;
+    let cases = load_summary_corpus(&summary_corpus_path()).expect("corpus loads");
+    assert!(!cases.is_empty(), "corpus is not empty");
+    assert!(
+        cases.iter().any(|case| case.control),
+        "corpus carries controls"
+    );
+    assert!(
+        cases
+            .iter()
+            .any(|case| !case.control && !case.expected.is_empty()),
+        "corpus carries expected targets"
+    );
+}
+
+#[test]
+fn summary_route_corpus_measures_zero_control_fires() {
+    use crate::query::db_storage::GuidanceDbStorage;
+    use crate::query::recall::{load_summary_corpus, measure_summary_recall};
+    let db = seed_summary_index();
+    let storage = GuidanceDbStorage::new(&db);
+    let cases = load_summary_corpus(&summary_corpus_path()).expect("corpus loads");
+    let report = measure_summary_recall(&storage, &cases, 10);
+    assert_eq!(
+        report.control_fires, 0,
+        "controls must never fire: {report:?}"
+    );
+    assert_eq!(report.fpr, 0.0, "{report:?}");
+    assert_eq!(report.precision, 1.0, "{report:?}");
+    assert_eq!(report.recall, 1.0, "{report:?}");
+    assert!(report.support > 0, "{report:?}");
+}
+
+#[test]
+fn summary_route_stale_hash_fails_freshness() {
+    use crate::summary::summary_is_fresh;
+    use fluent_types::{CommentSummary, OverlayStatus};
+    let fresh = CommentSummary {
+        text: "Adds one.".into(),
+        comment_hash: "hash-a".to_string(),
+        code_hash: String::new(),
+        model: "test-model".into(),
+        prompt_version: crate::summary::SUMMARY_PROMPT_VERSION,
+        temperature: 0.0,
+        seed: 42,
+        generated_at: 1700000000000,
+        status: OverlayStatus::Ready,
+        failure_kind: None,
+        failure_reason: None,
+    };
+    assert!(summary_is_fresh(&fresh, "hash-a", "", "test-model"));
+    assert!(!summary_is_fresh(&fresh, "hash-b", "", "test-model"));
+    assert!(!summary_is_fresh(&fresh, "hash-a", "", "other-model"));
+    assert!(!summary_is_fresh(
+        &fresh,
+        "hash-a",
+        "code-hash-a",
+        "test-model"
+    ));
+}

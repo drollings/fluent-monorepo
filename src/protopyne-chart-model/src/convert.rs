@@ -28,6 +28,10 @@ pub use protopyne_view::ChartBars;
 /// Returns `None` when the value is unrepresentable as a finite `f64`
 /// (overflow to infinity, `NaN`). Never panics.
 #[must_use]
+/// Convert one money/price leg to a chart float.
+/// 
+/// Returns `None` when the value is unrepresentable as a finite `f64`
+/// (overflow to infinity, `NaN`). Never panics.
 pub fn to_display_float(value: Decimal) -> Option<f64> {
     let flat = value.to_f64()?;
     if flat.is_finite() {
@@ -39,6 +43,7 @@ pub fn to_display_float(value: Decimal) -> Option<f64> {
 
 /// Convert one closed bar, or `None` when a leg has no finite chart float.
 #[must_use]
+/// Convert one closed bar, or `None` when a leg has no finite chart float.
 pub fn row_of(bar: &Bar) -> Option<ChartBar> {
     Some(ChartBar {
         time: bar.ts.timestamp(),
@@ -52,6 +57,7 @@ pub fn row_of(bar: &Bar) -> Option<ChartBar> {
 
 /// Convert a window, counting skips instead of failing the batch.
 #[must_use]
+/// Convert a window, counting skips instead of failing the batch.
 pub fn rows_of(bars: &[Bar]) -> ChartBars {
     let mut rows = Vec::with_capacity(bars.len());
     let mut dropped = 0_u64;

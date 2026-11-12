@@ -5,6 +5,7 @@ use thiserror::Error;
 
 /// Failures from capture, playout, and the archive tap.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Failures from capture, playout, and the archive tap.
 pub enum AudioError {
     /// No usable input or output device exists.
     #[error("no audio device: {0}")]

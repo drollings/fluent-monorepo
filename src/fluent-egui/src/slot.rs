@@ -37,6 +37,7 @@ use crate::style::IndicatorStyle;
 
 /// Where a slot's series paints: over the price pane or in its own sub-pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Where a slot's series paints: over the price pane or in its own sub-pane.
 pub enum SlotAttachment {
     /// Series paints over the main chart (moving averages, ribbons).
     MainOverlay,
@@ -49,6 +50,10 @@ pub enum SlotAttachment {
 /// Values are display `f64` rendered as text; holes render as a dash rather
 /// than a substituted number.
 #[derive(Debug, Clone, PartialEq)]
+/// One live readout on a slot card: a named display value.
+/// 
+/// Values are display `f64` rendered as text; holes render as a dash rather
+/// than a substituted number.
 pub struct ReadoutValue {
     /// Readout name shown before the value.
     pub label: String,
@@ -59,6 +64,8 @@ pub struct ReadoutValue {
 /// The three pointer zones one slot card owns: the eye toggle, the bolt
 /// settings opener, the close (unload) control, and the card body itself.
 #[derive(Debug, Clone, PartialEq)]
+/// The three pointer zones one slot card owns: the eye toggle, the bolt
+/// settings opener, the close (unload) control, and the card body itself.
 pub struct SlotControlRect {
     /// Owning slot id.
     pub slot_id: String,
@@ -75,6 +82,7 @@ pub struct SlotControlRect {
 
 /// What a pointer inside the overlay stack hit, naming its slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What a pointer inside the overlay stack hit, naming its slot.
 pub enum SlotControlHit {
     /// Inside the eye toggle zone.
     Eye(String),
@@ -90,6 +98,9 @@ pub enum SlotControlHit {
 /// come from the painter; the remaining variants are dispatched by the
 /// windowing shell from [`HotSlotStack::hit_test_controls`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What one frame of the overlay stack raised: toggles and settings opens
+/// come from the painter; the remaining variants are dispatched by the
+/// windowing shell from [`HotSlotStack::hit_test_controls`].
 pub enum HotSlotAction {
     /// The eye flipped a slot's visibility.
     ToggledVisibility(String),
@@ -234,6 +245,9 @@ const SETTINGS_SCROLL_MAX_PX: f32 = 280.0;
 /// floored at the touch minimum in both modes, so density shortens cards,
 /// never targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// How tightly the slot cards pack: the card height knob. Control zones stay
+/// floored at the touch minimum in both modes, so density shortens cards,
+/// never targets.
 pub enum StackDensity {
     /// Today's layout, byte for byte.
     #[default]
@@ -910,6 +924,8 @@ fn seed_fields(config: &dyn Component) -> HashMap<String, String> {
 /// A settings pane's staged edits: one buffer per component the slot owns,
 /// kept side by side so Cancel drops both and one commit writes both.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// A settings pane's staged edits: one buffer per component the slot owns,
+/// kept side by side so Cancel drops both and one commit writes both.
 struct PendingSettings {
     /// Fields staged for the slot's configuration.
     config: HashMap<String, String>,
@@ -974,6 +990,7 @@ impl FieldAccess for StagedFields<'_> {
 
 /// What the settings pane's action row raised this frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// What the settings pane's action row raised this frame.
 pub enum SettingsCommit {
     /// No action button was pressed.
     #[default]
@@ -989,6 +1006,8 @@ pub enum SettingsCommit {
 /// One settings-pane frame: the edits the pass staged, the action button
 /// the operator pressed, if any, and the frame rect the pane painted.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One settings-pane frame: the edits the pass staged, the action button
+/// the operator pressed, if any, and the frame rect the pane painted.
 pub struct SettingsOutcome {
     /// Field writes the editor accepted into the staged buffer.
     pub edits: FieldEdits,

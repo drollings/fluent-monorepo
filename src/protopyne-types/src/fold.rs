@@ -14,6 +14,20 @@
 /// a range-free fold takes no window, so edge treatment is the caller's
 /// stated choice, not an ambient default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The complete-bucket rule, one home.
+/// 
+/// A bucket is whole when its children tile the bucket grid contiguously:
+/// the first child opens the bucket, every child gap is the same span, and
+/// the children count out the full bucket span. Anything else — a short
+/// leading or trailing edge, a torn interior bucket, a lone child that cannot
+/// evidence a full bucket — is not whole. [`FoldEdges`] names the policy;
+/// [`BucketAccum`] carries the O(1) per-bucket completeness state behind it,
+/// so bucketing never allocates a per-bucket stamp vector on any policy.
+/// Decision code folds [`Bar`](crate::Bar) values through the store;
+/// display code folds display rows through the same rule in the terminal.
+/// How a fold treats bucket edges. The policy rides the fold call itself:
+/// a range-free fold takes no window, so edge treatment is the caller's
+/// stated choice, not an ambient default.
 pub enum FoldEdges {
     /// Every bucket holding at least one child emits, partial edges
     /// included. The legacy behavior; the default, so existing callers keep
@@ -36,6 +50,12 @@ pub enum FoldEdges {
 /// any uniform tiling of the bucket counts as complete, whatever the source
 /// spacing was.
 #[derive(Debug, Clone, Copy)]
+/// O(1) completeness state for one bucket under construction: the bucket
+/// start, the first and last child stamps, the child count, and the uniform
+/// child gap (or a diverged flag once two gaps disagree). The gap is read
+/// off the children, never assumed from a spacing the fold does not take:
+/// any uniform tiling of the bucket counts as complete, whatever the source
+/// spacing was.
 pub struct BucketAccum {
     start_ms: i64,
     count: u64,

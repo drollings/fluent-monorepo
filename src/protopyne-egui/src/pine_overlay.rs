@@ -26,6 +26,7 @@ const AREA_KEY: &str = "slow";
 
 /// One projected series as pane-local points, holes preserved.
 #[derive(Debug, Clone, PartialEq)]
+/// One projected series as pane-local points, holes preserved.
 pub struct SeriesGeom {
     /// One point per cursor-space bar (`None` holes stay holes — including
     /// the warmup holes the projection pads, so the series aligns
@@ -35,6 +36,7 @@ pub struct SeriesGeom {
 
 /// One placed label: pane-local anchor plus its text.
 #[derive(Debug, Clone, PartialEq)]
+/// One placed label: pane-local anchor plus its text.
 pub struct PlacedLabel {
     /// X pixel of the anchor bar.
     pub x: f32,
@@ -46,6 +48,7 @@ pub struct PlacedLabel {
 
 /// Pane-local overlay geometry: every pixel the overlay paints.
 #[derive(Debug, Clone, PartialEq, Default)]
+/// Pane-local overlay geometry: every pixel the overlay paints.
 pub struct OverlayGeoms {
     /// Projected series, in primitive order.
     pub series: Vec<SeriesGeom>,
@@ -62,6 +65,8 @@ pub struct OverlayGeoms {
 /// Map primitives onto pane-local pixels. Holes and unmappable prices stay
 /// unpainted — the overlay never invents a point.
 #[must_use]
+/// Map primitives onto pane-local pixels. Holes and unmappable prices stay
+/// unpainted — the overlay never invents a point.
 pub fn overlay_geoms(primitives: &[PlotPrimitive], viewport: &Viewport) -> OverlayGeoms {
     let mut geoms = OverlayGeoms::default();
     for primitive in primitives {
@@ -184,6 +189,13 @@ pub fn paint_unsupported_chip(ui: &mut egui::Ui, refusal: &ProjectionRefusal) {
 /// points ride the shared [`translate_points`], so the overlay never keeps a
 /// second coordinate translation.
 #[must_use]
+/// Shift pane-local overlay geometry into UI space by a pane origin.
+/// 
+/// Every primitive kind is pane-local ([`overlay_geoms`] maps against the
+/// pane's own viewport); the overlay emitter draws exactly these pixels, so
+/// the caller shifts the whole batch by its pane rect's origin first. Series
+/// points ride the shared [`translate_points`], so the overlay never keeps a
+/// second coordinate translation.
 pub fn translate_overlay(mut geoms: OverlayGeoms, origin: (f32, f32)) -> OverlayGeoms {
     for run in &mut geoms.series {
         run.points = translate_points(std::mem::take(&mut run.points), origin);

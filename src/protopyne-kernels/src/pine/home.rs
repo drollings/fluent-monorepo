@@ -36,6 +36,7 @@ pub(crate) trait HomeSlot {
 
 /// One home a value can be taken out of and put back into.
 #[derive(Debug, Clone)]
+/// One home a value can be taken out of and put back into.
 pub(crate) enum Home<S> {
     /// Directly addressable slot in the owning engine's storage.
     Slot(S),

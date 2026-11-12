@@ -88,6 +88,7 @@ pub fn extract_markdown_fragments(
 
 /// A markdown heading.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A markdown heading.
 pub struct Heading {
     /// Level 1–6.
     pub level: u32,
@@ -99,6 +100,7 @@ pub struct Heading {
 
 /// A headed section with its ancestor breadcrumb.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A headed section with its ancestor breadcrumb.
 pub struct Section {
     /// Section heading (`None` = preamble before the first heading).
     pub heading: Option<Heading>,
@@ -112,6 +114,7 @@ pub struct Section {
 
 /// Fence-aware heading scan (ATX `#` + setext `=`/`-`; port of `scanHeadings`).
 #[must_use]
+/// Fence-aware heading scan (ATX `#` + setext `=`/`-`; port of `scanHeadings`).
 pub fn scan_headings(lines: &[&str]) -> Vec<Heading> {
     let mut headings = Vec::new();
     let mut fence: Option<&str> = None;
@@ -195,6 +198,7 @@ fn parse_atx(line: &str) -> Option<(u32, String)> {
 
 /// Nest sections under ancestor headings (port of `buildSections`).
 #[must_use]
+/// Nest sections under ancestor headings (port of `buildSections`).
 pub fn build_sections(headings: &[Heading], lines: &[&str]) -> Vec<Section> {
     let mut sections = Vec::new();
     let first = &headings[0];
@@ -247,6 +251,7 @@ fn markdown_outline(metadata: &FragmentMetadata) -> String {
 
 /// A markdown window with its range.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A markdown window with its range.
 pub struct MarkdownWindow {
     /// Window text.
     pub text: String,
@@ -460,6 +465,7 @@ fn lines_to_range(
 
 /// Fence membership per line (port of `computeFenceLines`).
 #[must_use]
+/// Fence membership per line (port of `computeFenceLines`).
 pub fn compute_fence_lines(lines: &[&str]) -> Vec<bool> {
     let mut in_fence = vec![false; lines.len()];
     let mut fence: Option<&str> = None;

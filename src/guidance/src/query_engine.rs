@@ -7,10 +7,15 @@ use fluent_wvr::{Component, WorkContext, WorkUnit};
 use crate::ast_parser::AstParser;
 use fluent_concurrency::thread_resource::with_tlr;
 
-fluent_concurrency::thread_local_resource!(static FORMAT_PARSER: AstParser);use crate::query::formatter::{CompactFormatter, DebugFormatter, JsonFormatter, MarkdownFormatter};
+fluent_concurrency::thread_local_resource!(static FORMAT_PARSER: AstParser);
+use crate::query::decision_points::{
+    authorize_point_advisory_with, authorize_point_pinned_with, authorize_point_with,
+    SUMMARY_INDEX_POINT, SUMMARY_INDEX_VERSION,
+};
+use crate::query::formatter::{CompactFormatter, DebugFormatter, JsonFormatter, MarkdownFormatter};
 use crate::query::hybrid::{plan_from_query, stages_from_hits};
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
-use crate::query::recall::{run_recall, RecallStorage};
+use crate::query::recall::{run_recall_with_policy, RecallPolicy, RecallStorage};
 use crate::query::search_backend::{
     ConceptBackend, FilePathBackend, GeneralBackend, IdentifierBackend, KeywordBackend,
     RegisteredBackend, SearchBackend, SearchContext,
@@ -48,6 +53,10 @@ pub struct QueryEngine {
     pub no_llm: bool,
     backends: Vec<RegisteredBackend>,
     workspace_root: std::path::PathBuf,
+    /// Loaded calibration registry (empty by default: every point stays
+    /// shadow-only until `calibrate` authorizes it). Consulted through
+    /// `authorize`, never behind the query path.
+    calibration: fluent_llm::decision::CalibrationRegistry,
 }
 
 impl Default for QueryEngine {
@@ -64,6 +73,7 @@ impl QueryEngine {
             no_llm: false,
             backends: Self::default_backends(),
             workspace_root: std::path::PathBuf::from("."),
+            calibration: fluent_llm::decision::CalibrationRegistry::empty(),
         }
     }
 
@@ -74,6 +84,75 @@ impl QueryEngine {
             no_llm: false,
             backends: Self::default_backends(),
             workspace_root: std::path::PathBuf::from("."),
+            calibration: fluent_llm::decision::CalibrationRegistry::empty(),
+        }
+    }
+
+    /// Attach a loaded calibration registry (`state/calibration.json`):
+    /// the single home the loop consults, loaded once at construction.
+    /// Empty by default: every point stays shadow-only until the
+    /// `calibrate` command authorizes it.
+    #[must_use]
+    pub fn with_calibration(mut self, registry: fluent_llm::decision::CalibrationRegistry) -> Self {
+        self.calibration = registry;
+        self
+    }
+
+    /// Authorize a decision point against the loaded registry: fail-closed
+    /// to shadow-only if no passing entry exists. Engine-level companion
+    /// to the free `authorize_point` functions.
+    #[must_use]
+    pub fn authorize(
+        &self,
+        point: &str,
+        fingerprint: &str,
+        version: u64,
+    ) -> fluent_llm::decision::CalibrationStatus {
+        authorize_point_with(&self.calibration, point, fingerprint, version)
+    }
+
+    /// Advisory variant of `authorize`: ordering and priority only.
+    #[must_use]
+    pub fn authorize_advisory(
+        &self,
+        point: &str,
+        fingerprint: &str,
+        version: u64,
+    ) -> fluent_llm::decision::CalibrationStatus {
+        authorize_point_advisory_with(&self.calibration, point, fingerprint, version)
+    }
+
+    /// Dataset-pinned variant of `authorize`: the entry must record the
+    /// expected dataset hash or the point stays measuring.
+    #[must_use]
+    pub fn authorize_pinned(
+        &self,
+        point: &str,
+        fingerprint: &str,
+        version: u64,
+        dataset: &str,
+    ) -> fluent_llm::decision::CalibrationStatus {
+        authorize_point_pinned_with(&self.calibration, point, fingerprint, version, dataset)
+    }
+
+    /// Summary route mode for one model identity: `Act` only with a passing
+    /// `summary_index` calibration entry, `Shadow` otherwise. Fail-closed
+    /// promotion gate for the model-derived retrieval tier.
+    #[must_use]
+    pub fn summary_mode(&self, model: &str) -> crate::query::recall::SummaryMode {
+        use crate::query::decision_points::summary_index_fingerprint;
+        use crate::query::recall::SummaryMode;
+        if self
+            .authorize(
+                SUMMARY_INDEX_POINT,
+                &summary_index_fingerprint(model),
+                SUMMARY_INDEX_VERSION,
+            )
+            .is_calibrated()
+        {
+            SummaryMode::Act
+        } else {
+            SummaryMode::Shadow
         }
     }
 
@@ -245,7 +324,8 @@ impl QueryEngine {
         match self.explain(query, doc) {
             Ok(stages) => {
                 let root = self.workspace_root.clone();
-                let cited = crate::grounding::verify_stage_ranges(&stages, &root, |stage| {                    let (Some(name), Some(kind)) = (&stage.member_name, stage.member_type) else {
+                let cited = crate::grounding::verify_stage_ranges(&stages, &root, |stage| {
+                    let (Some(name), Some(kind)) = (&stage.member_name, stage.member_type) else {
                         return None;
                     };
                     doc.members
@@ -260,8 +340,11 @@ impl QueryEngine {
                             })
                         })
                 });
-                let mut envelope = AnswerEnvelope::from_verified_stages(&class, &route, stages, &cited);
-                envelope.gaps.extend(crate::fidelity::blind_spot_gaps(query));
+                let mut envelope =
+                    AnswerEnvelope::from_verified_stages(&class, &route, stages, &cited);
+                envelope
+                    .gaps
+                    .extend(crate::fidelity::blind_spot_gaps(query));
                 envelope
             }
             Err(_) => AnswerEnvelope::from_stages(&class, &route, Vec::new()),
@@ -305,6 +388,29 @@ impl QueryEngine {
         nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
         limit: usize,
     ) -> Result<Vec<Stage>, QueryEngineError> {
+        self.hybrid_explain_with_policy(
+            query,
+            storage,
+            embedder,
+            nlp,
+            limit,
+            RecallPolicy::default(),
+        )
+    }
+
+    /// Policy-aware hybrid explain: the summary route fuses only in
+    /// `Act`, which callers derive from [`Self::summary_mode`] (itself
+    /// gated on a passing calibration entry). Default callers stay
+    /// byte-identical through the disabled default.
+    pub fn hybrid_explain_with_policy(
+        &self,
+        query: &str,
+        storage: &dyn RecallStorage,
+        embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
+        nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+        limit: usize,
+        policy: RecallPolicy,
+    ) -> Result<Vec<Stage>, QueryEngineError> {
         let expanded_query = if let Some(ref aliases) = self.aliases {
             aliases
                 .expand_query(query)
@@ -317,7 +423,7 @@ impl QueryEngine {
         let mut fsm = strategy::FsmEngine::new();
         let intent = fsm.run(&expanded_query).intent;
         let plan = plan_from_query(&expanded_query, intent, limit);
-        let output = run_recall(&plan, storage, embedder, nlp)
+        let output = run_recall_with_policy(&plan, storage, embedder, nlp, policy)
             .map_err(|error| QueryEngineError::Db(error.to_string()))?;
         if output.hits.is_empty() {
             return Err(QueryEngineError::NoResults);

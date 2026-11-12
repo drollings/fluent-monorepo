@@ -14,6 +14,19 @@
 /// schema-version mismatches.
 #[cfg(feature = "sqlite")]
 #[derive(thiserror::Error, Debug)]
+/// The single database error taxonomy for the workspace.
+/// 
+/// Consumers' error enums wrap `DbError` via a single `#[from]` variant instead
+/// of hand-writing `From<rusqlite::Error>`. The `From<rusqlite::Error>` impl here
+/// centralizes the `is_unique_violation` → `DuplicateEntry` mapping and the
+/// `SQLITE_BUSY` → `Busy` mapping (generalizing coral's `db/mod.rs:36-45` and the
+/// memory-plugin inline check).
+/// Canonical database error.
+/// 
+/// Variants mirror the failure classes that the workspace's hand-rolled error
+/// enums each re-derived separately: raw sqlite failures, missing rows/keys,
+/// duplicate-key constraints, busy/timeout conditions, pool exhaustion, and
+/// schema-version mismatches.
 pub enum DbError {
     /// A raw `rusqlite` failure (wrapped in the shared `SqliteError` leaf).
     #[error("sqlite error: {0}")]

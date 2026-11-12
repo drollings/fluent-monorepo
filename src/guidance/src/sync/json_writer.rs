@@ -1,5 +1,26 @@
-use fluent_types::{GuidanceDoc, Member};
+use fluent_types::{CommentSummary, GuidanceDoc, Member};
 use serde_json::{json, Value};
+
+fn summary_to_json(summary: &CommentSummary) -> Value {
+    let mut obj = json!({
+        "text": summary.text.as_str(),
+        "comment_hash": summary.comment_hash.as_str(),
+        "code_hash": summary.code_hash.as_str(),
+        "model": summary.model.as_str(),
+        "prompt_version": summary.prompt_version,
+        "temperature": summary.temperature,
+        "seed": summary.seed,
+        "generated_at": summary.generated_at,
+        "status": summary.status,
+    });
+    if let Some(kind) = &summary.failure_kind {
+        obj["failure_kind"] = json!(kind.as_str());
+    }
+    if let Some(reason) = &summary.failure_reason {
+        obj["failure_reason"] = json!(reason.as_str());
+    }
+    obj
+}
 
 fn member_to_json(member: &Member) -> Value {
     let mut obj = json!({
@@ -149,6 +170,16 @@ pub fn doc_to_json(doc: &GuidanceDoc) -> Value {
             "confidence": ce.confidence,
             "evaluated_at_hash": ce.evaluated_at_hash.as_str(),
         });
+    }
+    if let Some(summary) = &doc.summary {
+        obj["summary"] = summary_to_json(summary);
+    }
+    if !doc.summaries.is_empty() {
+        let mut map = serde_json::Map::new();
+        for (key, summary) in &doc.summaries {
+            map.insert(key.clone(), summary_to_json(summary));
+        }
+        obj["summaries"] = Value::Object(map);
     }
 
     obj

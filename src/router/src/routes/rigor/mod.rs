@@ -57,6 +57,8 @@ use prompts::{
 /// Context passed to the rigor route's execute method. Carries the minimal
 /// information needed for the 3-pass blue/red/judge protocol.
 #[derive(Clone)]
+/// Context passed to the rigor route's execute method. Carries the minimal
+/// information needed for the 3-pass blue/red/judge protocol.
 pub struct RigorContext {
     pub user_message: String,
     pub session_id: String,

@@ -153,6 +153,9 @@ pub fn update<T: Chained>(
 /// are declared (see [`Chained::frame_passes`]); passes over intermediate
 /// series stay inline.
 #[must_use]
+/// `deps_with_params` for a [`Chained`] kernel: the passes that read the frame
+/// are declared (see [`Chained::frame_passes`]); passes over intermediate
+/// series stay inline.
 pub fn deps_with_params<T: Chained>(kernel: &T, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
     match kernel.shape(params) {
         Ok(shape) => (0..T::frame_passes(shape))

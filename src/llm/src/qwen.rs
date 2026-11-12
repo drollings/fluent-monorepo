@@ -25,6 +25,7 @@ const QWEN3_VL_MAX_IMAGE_COUNT: usize = 10;
 
 /// Construction options for Qwen providers.
 #[derive(Debug, Clone, Default)]
+/// Construction options for Qwen providers.
 pub struct QwenTextOptions {
     pub api_key: Option<String>,
     pub endpoint: Option<String>,
@@ -35,6 +36,7 @@ pub struct QwenTextOptions {
 
 /// Supported VL image formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Supported VL image formats.
 pub enum QwenImageFormat {
     Jpeg,
     Png,
@@ -57,6 +59,8 @@ impl QwenImageFormat {
 /// One embeddable unit for the VL model. Image formats validate at embed
 /// time (like the base input contract), not at construction.
 #[derive(Debug, Clone)]
+/// One embeddable unit for the VL model. Image formats validate at embed
+/// time (like the base input contract), not at construction.
 pub enum EmbedContent {
     Text(String),
     Image { data: Vec<u8>, format: String },
@@ -73,6 +77,7 @@ impl EmbedContent {
 
 /// Batch result (remote models never truncate: the server owns limits).
 #[derive(Debug)]
+/// Batch result (remote models never truncate: the server owns limits).
 pub struct QwenEmbedResult {
     pub vectors: Vec<Vec<f32>>,
     pub truncated: Vec<usize>,
@@ -171,6 +176,7 @@ fn validate_endpoint(endpoint: &str, spec: &QwenTextSpec) -> Result<(), Embeddin
 
 /// Shared HTTP core for Qwen text models.
 #[derive(Debug)]
+/// Shared HTTP core for Qwen text models.
 struct QwenTextCore {
     spec_model: &'static str,
     display_name: &'static str,
@@ -458,6 +464,7 @@ fn error_code(display_name: &str, reference: &str, suffix: &str) -> String {
 
 /// Qwen `text-embedding-v4` provider.
 #[derive(Debug)]
+/// Qwen `text-embedding-v4` provider.
 pub struct QwenTextEmbeddingV4 {
     core: QwenTextCore,
 }
@@ -499,6 +506,7 @@ impl QwenTextEmbeddingV4 {
 
 /// Qwen `qwen3.7-text-embedding` provider.
 #[derive(Debug)]
+/// Qwen `qwen3.7-text-embedding` provider.
 pub struct Qwen37TextEmbedding {
     core: QwenTextCore,
 }
@@ -535,6 +543,9 @@ impl Qwen37TextEmbedding {
 // VL model.
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// VL model.
+/// ---------------------------------------------------------------------------
 struct QwenVlSpec {
     reference: &'static str,
     model: &'static str,
@@ -574,6 +585,7 @@ impl TryFrom<&CatalogEntry> for QwenVlSpec {
 
 /// Qwen `qwen3-vl-embedding` provider (text + image inputs).
 #[derive(Debug)]
+/// Qwen `qwen3-vl-embedding` provider (text + image inputs).
 pub struct Qwen3VlEmbedding {
     reference: &'static str,
     model: &'static str,
@@ -856,6 +868,9 @@ fn base64_encode(bytes: &[u8]) -> String {
 // EmbeddingProvider impls (document purpose; remote models never truncate).
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// EmbeddingProvider impls (document purpose; remote models never truncate).
+/// ---------------------------------------------------------------------------
 fn qwen_batch(result: QwenEmbedResult, dimension: u32) -> (BatchEmbedding, Vec<usize>) {
     (
         BatchEmbedding {

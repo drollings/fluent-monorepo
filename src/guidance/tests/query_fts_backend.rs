@@ -91,3 +91,32 @@ fn fts_backend_declines_when_nothing_matches() {
         Err(crate::query_engine::QueryEngineError::NoResults)
     ));
 }
+
+#[test]
+fn fts_backend_finds_comment_only_terms() {
+    // A term present only in the comment finds the row through the FTS
+    // route; body terms keep working exactly as before.
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    ingest_text_file(
+        &db,
+        &file_info("file-a", "src/a.ts"),
+        "// Adds one to the total\nexport function AlphaBeta() { return 1; }\n",
+        None,
+        None,
+    )
+    .expect("ingest");
+    let storage = GuidanceDbStorage::new(&db);
+    let filter = LlmFilter::new(Some(Box::new(NoopLlmFilter)));
+    let backend = FtsBackend {
+        storage: &storage,
+        limit: 5,
+    };
+    let stages = backend
+        .search("total", &make_test_doc(), &test_context(&filter))
+        .expect("comment-only term must hit");
+    assert!(stages.iter().all(|stage| stage.source == "src/a.ts"));
+    let stages = backend
+        .search("AlphaBeta", &make_test_doc(), &test_context(&filter))
+        .expect("body term must still hit");
+    assert!(stages.iter().all(|stage| stage.source == "src/a.ts"));
+}

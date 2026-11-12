@@ -44,6 +44,8 @@ pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T
 /// What to fetch: one tape over one span, borrowed so the request itself
 /// stays `Copy`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What to fetch: one tape over one span, borrowed so the request itself
+/// stays `Copy`.
 pub struct FetchRequest<'a> {
     /// The tape to serve, at its stored spacing.
     pub key: TapeKey,
@@ -55,6 +57,9 @@ pub struct FetchRequest<'a> {
 /// page sizes, prefetch depths, or parallel cursors — just the still-unserved
 /// remainder, or nothing when the span is fully served.
 #[derive(Debug, Clone, PartialEq)]
+/// One page of history plus the cursor for the rest. Paging stops here: no
+/// page sizes, prefetch depths, or parallel cursors — just the still-unserved
+/// remainder, or nothing when the span is fully served.
 pub struct FetchPage {
     /// Committed bars for the leading part of the requested span, ascending.
     pub bars: Vec<Bar>,
@@ -69,6 +74,10 @@ pub struct FetchPage {
 /// world, and the repair loop treats them oppositely — and the row/header
 /// cases keep the ingest ladder's stop/skip meaning across the boundary.
 #[derive(Error, Debug)]
+/// Why a fetch could not serve. Terminal and retryable failures stay
+/// distinct — "no data exists" and "try again" are both facts about the
+/// world, and the repair loop treats them oppositely — and the row/header
+/// cases keep the ingest ladder's stop/skip meaning across the boundary.
 pub enum HistoryError {
     /// The provider has no data for this span: a listing date, a delisting,
     /// an unknown symbol, the unwired network stub. Terminal — backing off
@@ -154,6 +163,14 @@ pub const DEFAULT_PAGE_BARS: usize = 1_024;
 /// for live or large histories the wired producer replaces it, and the unit
 /// tests covering this provider are unchanged by that promotion.
 #[derive(Debug, Clone)]
+/// One CSV file for one tape, read eagerly and served from memory.
+/// 
+/// The file is read and parsed once, at construction — fixtures and one-off
+/// backfills do not change under a repair pass, so a snapshot is the honest
+/// shape, and serving from memory keeps `fetch` free of blocking I/O on any
+/// runtime. This provider is ingest for tests and one-off runs, not a store:
+/// for live or large histories the wired producer replaces it, and the unit
+/// tests covering this provider are unchanged by that promotion.
 pub struct FileHistory {
     path: PathBuf,
     key: TapeKey,
@@ -273,6 +290,13 @@ impl HistoryProvider for FileHistory {
 /// its default: the fetch itself is the honest signal, and it always says
 /// the producer is absent.
 #[derive(Debug, Clone, Copy, Default)]
+/// The unwired network reader: trait-shaped, data-free.
+/// 
+/// Every fetch reports [`HistoryError::Unavailable`] naming the missing
+/// producer, so a repair pass over this provider terminates instead of
+/// backing off on a connection that will never exist. Reachability stays at
+/// its default: the fetch itself is the honest signal, and it always says
+/// the producer is absent.
 pub struct NetworkStub;
 
 impl NetworkStub {

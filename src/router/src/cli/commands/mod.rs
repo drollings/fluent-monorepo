@@ -34,6 +34,7 @@ use crate::config::RouterConfig;
 /// Whether to show the model's modelfile and license/params/system/template.
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::struct_excessive_bools)]
+/// Whether to show the model's modelfile and license/params/system/template.
 pub struct ShowFlags {
     pub modelfile: bool,
     pub license: bool,
@@ -44,6 +45,7 @@ pub struct ShowFlags {
 
 /// Sampling overrides for `speedtest` (mirror `gguf_tool.py`).
 #[derive(Debug, Clone)]
+/// Sampling overrides for `speedtest` (mirror `gguf_tool.py`).
 pub struct SpeedtestArgs {
     pub model: String,
     pub tokens: u32,
@@ -55,6 +57,9 @@ pub struct SpeedtestArgs {
 /// aligned plain-text columns by default, Markdown pipe tables on
 /// `--markdown`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Table output format for the tabular admin screens (`ps`, `ls`):
+/// aligned plain-text columns by default, Markdown pipe tables on
+/// `--markdown`.
 pub enum TableFormat {
     /// Aligned plain-text columns sized to the terminal (the default).
     #[default]

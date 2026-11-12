@@ -79,6 +79,12 @@ pub const STYLE_FIELDS: [&str; 16] = [
 /// [`STYLE_FIELDS`]: an indicator paints data marks, so it may restyle the
 /// data it draws but never the surface it draws on.
 #[must_use]
+/// The theme style key one Style field overrides (`"color_fast"` → `"fast"`),
+/// or `None` for the width field and for names outside [`STYLE_FIELDS`].
+/// 
+/// Chrome keys (`background`, `grid`) are deliberately absent from
+/// [`STYLE_FIELDS`]: an indicator paints data marks, so it may restyle the
+/// data it draws but never the surface it draws on.
 pub fn style_key(field: &str) -> Option<&'static str> {
     STYLE_FIELDS
         .iter()
@@ -94,6 +100,12 @@ pub fn style_key(field: &str) -> Option<&'static str> {
 /// theme, so the default value is not "a look" but "no opinion": a fresh
 /// style paints exactly what the theme paints.
 #[derive(Debug, Clone, PartialEq)]
+/// One indicator's paint overrides: a stroke width and a color per
+/// overridable theme key.
+/// 
+/// Every field is optional in the sense that an unset override inherits the
+/// theme, so the default value is not "a look" but "no opinion": a fresh
+/// style paints exactly what the theme paints.
 pub struct IndicatorStyle {
     line_width: f64,
     colors: BTreeMap<String, String>,

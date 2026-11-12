@@ -77,6 +77,8 @@ pub struct SimpleBacktestRequest<'a> {
 /// The request builder: one setter per policy, `run` when complete. A
 /// missing policy refuses naming itself — no positional default fills in.
 #[derive(Default)]
+/// The request builder: one setter per policy, `run` when complete. A
+/// missing policy refuses naming itself — no positional default fills in.
 pub struct SimpleBacktestRequestBuilder<'a> {
     indicator: Option<&'a LiteIndicatorParams>,
     strategy: Option<&'a IntegrationLiteStrategyConfig>,
@@ -180,6 +182,15 @@ impl<'a> SimpleBacktestRequest<'a> {
 /// limits, session flatten) rides the runner-owned position manager beside
 /// it.
 #[allow(clippy::too_many_arguments)]
+/// Run the simple decision stack over closed bars.
+/// 
+/// The signal proposes, the equity policy sizes, and the order fills at the
+/// quoted touch (entries and market exits) or the resting stop/limit
+/// (touched exits) — pure arithmetic over the bar, with no gates and no
+/// venue round-trip between the signal and the fill. Management (stops, TP
+/// zones, breakeven, trailing, exhaustion, signal exits, cooldowns, daily
+/// limits, session flatten) rides the runner-owned position manager beside
+/// it.
 pub fn run_simple_backtest(
     indicator: &LiteIndicatorParams,
     strategy: &IntegrationLiteStrategyConfig,
@@ -749,6 +760,14 @@ pub fn run_simple_backtest(
 /// them. The report's fill assumptions state the absence — a fill here
 /// must never be read as a grant-covered one.
 #[allow(clippy::too_many_arguments)]
+/// A fill decision on a path with no gates to evaluate.
+/// 
+/// The wire shape is the shared [`BarDecision`] so runs, views, and the
+/// portfolio fold keep working unchanged; the gate verdicts read
+/// pass-through true with empty reasons and no lifecycle transitions
+/// because there is no risk engine, grant, or journal to have produced
+/// them. The report's fill assumptions state the absence — a fill here
+/// must never be read as a grant-covered one.
 fn fill_decision(
     direction: Direction,
     side: ProposalSide,
@@ -801,6 +820,13 @@ fn fill_decision(
 /// the entry leg's commission (accrued in `open_fees`) into the closing
 /// slice so cycle P&L matches the reference's both-legs commission.
 #[allow(clippy::too_many_arguments)]
+/// Fill one exit intent off the bar: no proposal, no gates, no journal, no
+/// venue. A resting price (`At`) fills at its own level — the intent only
+/// exists because the bar touched it — while a market intent fills at the
+/// touch. An unquotable bar carries the position to the next bar, which
+/// retries; resting orders persist, as in the reference. A full close folds
+/// the entry leg's commission (accrued in `open_fees`) into the closing
+/// slice so cycle P&L matches the reference's both-legs commission.
 fn fill_exit(
     intent: &ExitIntent,
     manager: &mut PositionManager,

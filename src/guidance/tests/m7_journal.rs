@@ -131,16 +131,69 @@ fn review_groups_by_file_and_fix_class() {
     append_journal(&journal, &entry);
     let groups = review_journal(&journal);
     assert_eq!(groups.len(), 2);
-    assert!(groups.iter().any(|g| g.fix_class == "rustfmt" && g.entries.len() == 1));
+    assert!(groups
+        .iter()
+        .any(|g| g.fix_class == "rustfmt" && g.entries.len() == 1));
 }
 
 #[test]
 fn undo_restores_or_refuses_with_conflict() {
     let dir = tempdir();
     let journal = dir.path().join("journal");
-    let entry = JournalEntry::new("a.rs", "i1", "recipe", "rustfmt", "old\n", "new\n", Vec::new());
+    let entry = JournalEntry::new(
+        "a.rs",
+        "i1",
+        "recipe",
+        "rustfmt",
+        "old\n",
+        "new\n",
+        Vec::new(),
+    );
     let id = append_journal(&journal, &entry);
     assert_eq!(undo_to_text(&journal, &id, "new\n").expect("undo"), "old\n");
-    assert!(undo_to_text(&journal, &id, "human\n").is_err(), "overlap refuses");
+    assert!(
+        undo_to_text(&journal, &id, "human\n").is_err(),
+        "overlap refuses"
+    );
     assert!(undo_to_text(&journal, "missing", "new\n").is_err());
+}
+
+#[test]
+fn reverted_drafts_leave_harvestable_records() {
+    use crate::journal::{append_revert, read_reverts};
+    let dir = tempdir();
+    let journal = dir.path().join("journal");
+    let wal = dir.path().join("wal");
+    let file = dir.path().join("a.rs");
+    std::fs::write(&file, "pub fn a() -> u32 {\n    1\n}\n").expect("write");
+    let draft = "pub fn a() -> u32 {\n    unsafe { 1 }\n}\n";
+    let diags = vec!["warning: mystery_lint does a thing".to_string()];
+    let mut ctx = apply_ctx();
+    ctx.before_diags = &diags;
+    let report = apply_journaled(&file, draft, &ctx, &journal, &wal, "item-9", "recipe");
+    assert!(!report.is_kept(), "unsafe addition must revert");
+    let reverts = read_reverts(&journal);
+    assert_eq!(reverts.len(), 1, "one revert record, not zero, not two");
+    let record = &reverts[0];
+    assert_eq!(record.file, file.to_string_lossy());
+    assert_eq!(
+        record.draft_hash,
+        common_core::hash::sha256_hex(draft.as_bytes())
+    );
+    assert!(
+        record.reason.contains("unsafe"),
+        "names the refusing gate: {}",
+        record.reason
+    );
+    assert_eq!(record.context_diagnostics, diags);
+    // Kept-edit journal stays clean of reverts, and reverts survive
+    // a reload for harvesting.
+    assert!(read_journal(&journal).is_empty());
+    let id = append_revert(&journal, &record.clone());
+    assert_eq!(id, record.id, "content-identical appends deduplicate");
+    assert_eq!(read_reverts(&journal).len(), 1);
+    let round_tripped = &read_reverts(&journal)[0];
+    assert_eq!(round_tripped, record);
+    assert_eq!(round_tripped.item, "item-9");
+    assert_eq!(round_tripped.actor, "recipe");
 }

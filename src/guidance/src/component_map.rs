@@ -269,6 +269,7 @@ const ENTRIES: &[Entry] = &[
 
 /// Narrowest gate for one workspace path.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Narrowest gate for one workspace path.
 pub struct ComponentGate {
     /// Owning Cargo package, empty when the path maps to nothing.
     pub package: String,
@@ -282,6 +283,8 @@ pub struct ComponentGate {
 /// Resolve `path` (workspace-relative, leading `./` tolerated) to its
 /// narrowest gate by longest boundary-matching prefix.
 #[must_use]
+/// Resolve `path` (workspace-relative, leading `./` tolerated) to its
+/// narrowest gate by longest boundary-matching prefix.
 pub fn component_gate_for_path(path: &str) -> ComponentGate {
     let normalized = path.trim().trim_start_matches("./").trim_end_matches('/');
     let mut best: Option<&Entry> = None;
@@ -316,6 +319,7 @@ pub fn component_gate_for_path(path: &str) -> ComponentGate {
 
 /// Distinct components in the table (unsorted; tests pin the set).
 #[must_use]
+/// Distinct components in the table (unsorted; tests pin the set).
 pub fn snapshot_components() -> Vec<String> {
     let mut components: Vec<String> = ENTRIES
         .iter()
@@ -330,6 +334,9 @@ pub fn snapshot_components() -> Vec<String> {
 /// Update that file with a reason when the matrix changes; the test
 /// failure names the file so the fix is mechanical.
 #[must_use]
+/// Components recorded in the checked-in snapshot file (sorted).
+/// Update that file with a reason when the matrix changes; the test
+/// failure names the file so the fix is mechanical.
 pub fn load_snapshot_components() -> Vec<String> {
     let path = format!("{}/component_snapshot.json", env!("CARGO_MANIFEST_DIR"));
     let text = std::fs::read_to_string(&path).expect("snapshot readable");

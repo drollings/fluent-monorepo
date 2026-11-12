@@ -13,6 +13,7 @@ use crate::oscillators::{normalize_series, OscillatorKind};
 
 /// One heavy series rebuild: normalize `values` into the shared band.
 #[derive(Debug, Clone)]
+/// One heavy series rebuild: normalize `values` into the shared band.
 pub struct RecomputeJob {
     /// Series under rebuild with holes preserved.
     pub values: Vec<Option<f64>>,

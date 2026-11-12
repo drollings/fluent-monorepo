@@ -58,6 +58,8 @@ pub const CALIBRATED_MIN_CONFIDENCE: f64 = 0.5;
 /// Replay configuration. Everything defaults off/closed: enabling is an
 /// explicit operator act, and thresholds arrive pre-set from calibration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Replay configuration. Everything defaults off/closed: enabling is an
+/// explicit operator act, and thresholds arrive pre-set from calibration.
 pub struct ReplayConfig {
     /// Master flag. `false` (default) disables record and replay entirely.
     #[serde(default)]
@@ -117,6 +119,8 @@ impl ReplayConfig {
 /// One recorded step of a solved run: the LOD0 prompt that was sent, the
 /// LOD0 response, and its data-flow edges by asset name.
 #[derive(Debug, Clone)]
+/// One recorded step of a solved run: the LOD0 prompt that was sent, the
+/// LOD0 response, and its data-flow edges by asset name.
 pub struct RecordedStep {
     pub step_id: String,
     pub prompt_lod0: String,
@@ -128,6 +132,7 @@ pub struct RecordedStep {
 
 /// Outcome of [`WorkflowReplay::record_workflow`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Outcome of [`WorkflowReplay::record_workflow`].
 pub enum RecordOutcome {
     Stored,
     /// The steps do not form a DAG (dependency cycle) — never stored.
@@ -139,6 +144,8 @@ pub enum RecordOutcome {
 /// One replayed step: LOD0 text plus its LOD0 content hash, so replay inputs
 /// reference full text by hash, never a summary.
 #[derive(Debug, Clone)]
+/// One replayed step: LOD0 text plus its LOD0 content hash, so replay inputs
+/// reference full text by hash, never a summary.
 pub struct ReplayedStep {
     pub step_id: String,
     pub prompt_lod0: String,
@@ -152,6 +159,7 @@ pub struct ReplayedStep {
 
 /// A replay decision: the stored decomposition, ready to materialize.
 #[derive(Debug, Clone)]
+/// A replay decision: the stored decomposition, ready to materialize.
 pub struct ReplayedWorkflow {
     pub audit_id: String,
     pub score: f64,
@@ -167,6 +175,8 @@ pub struct ReplayedWorkflow {
 /// Resolution of a query against the replay library: either a replay hit or
 /// the fresh-plan walk's outcome.
 #[derive(Debug)]
+/// Resolution of a query against the replay library: either a replay hit or
+/// the fresh-plan walk's outcome.
 pub enum Resolution<R> {
     Replayed(ReplayedWorkflow),
     Fresh(Option<R>),
@@ -752,6 +762,8 @@ fn join_step_lod0(step: &RecordedStep) -> String {
 /// Decoded step envelope; unknown shapes degrade to empty fields (a corrupt
 /// payload replays nothing rather than erroring the request path).
 #[derive(Default)]
+/// Decoded step envelope; unknown shapes degrade to empty fields (a corrupt
+/// payload replays nothing rather than erroring the request path).
 struct StepEnvelope {
     prompt: String,
     response: String,

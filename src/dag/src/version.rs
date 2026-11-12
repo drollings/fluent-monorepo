@@ -24,6 +24,8 @@ use crate::target::Target;
 /// A parsed dotted-numeric version (`11`, `1.2`, `1.2.3`). Trailing zeros are
 /// trimmed at parse time, so `1.2 == 1.2.0` under `Eq`/`Ord`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A parsed dotted-numeric version (`11`, `1.2`, `1.2.3`). Trailing zeros are
+/// trimmed at parse time, so `1.2 == 1.2.0` under `Eq`/`Ord`.
 pub struct Version {
     parts: Vec<u64>,
 }
@@ -58,6 +60,7 @@ impl fmt::Display for Version {
 
 /// A version constraint from an import seed.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A version constraint from an import seed.
 pub enum VersionReq {
     /// No constraint (`Any` never appears from seed parsing; it is the
     /// explicit "unconstrained" value for callers composing filters by hand).
@@ -136,6 +139,13 @@ pub fn split_import(seed: &str) -> (&str, Option<&str>) {
 /// versions that do exist; several exact-version holders refuse with an
 /// `AmbiguousDependency` carrying every candidate.
 #[allow(clippy::implicit_hasher)]
+/// Pick the single provider of `capability` satisfying `req`.
+/// 
+/// Providers with no entry in `versions` never match a constraint (running
+/// unversioned code against a pinned import would be a silent downgrade).
+/// Zero matches refuse with a `MissingDependency` naming the request and the
+/// versions that do exist; several exact-version holders refuse with an
+/// `AmbiguousDependency` carrying every candidate.
 pub fn select_provider<'t>(
     capability: &str,
     req: &VersionReq,
@@ -167,6 +177,8 @@ pub fn select_provider<'t>(
 /// `(found versions: a@9, b@10)` suffix for refusal messages, or `""` when
 /// no provider is versioned at all.
 #[allow(clippy::implicit_hasher)]
+/// `(found versions: a@9, b@10)` suffix for refusal messages, or `""` when
+/// no provider is versioned at all.
 fn available_versions(capability: &str, versions: &HashMap<String, Version>) -> String {
     if versions.is_empty() {
         return format!(" (no versioned provider of '{capability}' known)");

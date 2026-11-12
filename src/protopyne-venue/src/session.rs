@@ -46,6 +46,7 @@ use crate::venue::{AccountEvent, QuoteSource, Venue};
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
+/// Session tunables: risk caps plus the shutdown drain bound.
 pub struct SessionConfig {
     /// Risk caps the session boots against. Aggregate caps require an
     /// attached [`PortfolioFactsSource`], so a session that configures one
@@ -606,6 +607,9 @@ impl TradingSession {
 /// `execute` (sync, non-blocking, no hidden I/O) and its failure cancels
 /// dependent units through the batch graph.
 #[must_use]
+/// Wrap a synchronous check as a supervised bar unit: `check` runs inside
+/// `execute` (sync, non-blocking, no hidden I/O) and its failure cancels
+/// dependent units through the batch graph.
 pub fn check_unit(
     inner: Arc<dyn Component>,
     name: &str,

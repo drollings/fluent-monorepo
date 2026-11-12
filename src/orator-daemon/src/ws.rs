@@ -50,6 +50,9 @@ pub const WS_PATH: &str = "/ws";
 /// Built from [`DaemonConfig`](orator::DaemonConfig) in
 /// production; tests pass explicit values.
 #[derive(Debug, Clone, Copy)]
+/// WS liveness tuning: ping cadence, silence bound, lifetime cap.
+/// Built from [`DaemonConfig`](orator::DaemonConfig) in
+/// production; tests pass explicit values.
 pub struct WsTuning {
     /// Silence bound: reap connections with no inbound message longer.
     pub inactivity: Duration,
@@ -130,6 +133,9 @@ pub fn validate_ws_token(token: &str) -> Result<(), String> {
 /// Rejects early on length (tokens share the minimum), then xors every
 /// byte so a wrong token costs the same as a right one.
 #[must_use]
+/// Constant-time bearer comparison: length leaks, content does not.
+/// Rejects early on length (tokens share the minimum), then xors every
+/// byte so a wrong token costs the same as a right one.
 pub fn constant_time_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;

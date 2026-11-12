@@ -15,6 +15,8 @@ use orator::{Channel, MediaTime};
 /// One transcript word with its channel, timing, confidence, and an
 /// optional speaker label (filled by diarization later).
 #[derive(Debug, Clone, PartialEq)]
+/// One transcript word with its channel, timing, confidence, and an
+/// optional speaker label (filled by diarization later).
 pub struct WordRecord {
     /// Surface text.
     pub text: String,

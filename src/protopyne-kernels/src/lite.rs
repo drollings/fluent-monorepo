@@ -56,6 +56,7 @@ pub const MA_HEALTH_K: f64 = 1.2;
 
 /// One row of the frozen oscillator catalog.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One row of the frozen oscillator catalog.
 pub struct LegRow {
     /// Canonical lowercase id (settings/schema spelling).
     pub kind: &'static str,
@@ -156,6 +157,7 @@ pub const SIGNAL_LEG_KINDS: &[&str] = &["rsi", "cci", "cmo", "mfi", "stoch"];
 
 /// One catalog row by id.
 #[must_use]
+/// One catalog row by id.
 pub fn leg_row(kind: &str) -> Option<&'static LegRow> {
     LEG_CATALOG.iter().find(|row| row.kind == kind)
 }
@@ -163,6 +165,8 @@ pub fn leg_row(kind: &str) -> Option<&'static LegRow> {
 /// The frozen affine triple for `kind`, or `None` for an unlisted id or the
 /// refused `cdv` row.
 #[must_use]
+/// The frozen affine triple for `kind`, or `None` for an unlisted id or the
+/// refused `cdv` row.
 pub fn leg_constants(kind: &str) -> Option<(f64, f64, f64)> {
     let row = leg_row(kind)?;
     if row.refusal.is_some() {
@@ -173,12 +177,14 @@ pub fn leg_constants(kind: &str) -> Option<(f64, f64, f64)> {
 
 /// The kernel id behind `kind`, when the row has one.
 #[must_use]
+/// The kernel id behind `kind`, when the row has one.
 pub fn leg_kernel(kind: &str) -> Option<&'static str> {
     leg_row(kind).and_then(|row| row.kernel)
 }
 
 /// Why `kind` cannot be evaluated, when it cannot.
 #[must_use]
+/// Why `kind` cannot be evaluated, when it cannot.
 pub fn leg_refusal(kind: &str) -> Option<&'static str> {
     leg_row(kind).and_then(|row| row.refusal)
 }
@@ -199,6 +205,11 @@ pub fn leg_refusal(kind: &str) -> Option<&'static str> {
     Describable,
 )]
 #[builder(start_fn = new)]
+/// Indicator dials the market-leg batch reads: the same field names and
+/// defaults the strategy and terminal have always carried.
+/// 
+/// Strategy triggers and filters live in the strategy configuration; this
+/// type carries only the market legs.
 pub struct LiteParams {
     /// Fast-arm kernel id.
     pub fast_kernel: String,
@@ -375,6 +386,10 @@ impl LiteParams {
 /// renders the unsquashed reading and applies its own warmup mask); the
 /// decision path reads only [`shaped`](Self::shaped).
 #[derive(Debug, Clone)]
+/// One arm's raw and shaped readings: the kernel output before the frozen
+/// squash, and the squashed/gained band value. The display needs both (it
+/// renders the unsquashed reading and applies its own warmup mask); the
+/// decision path reads only [`shaped`](Self::shaped).
 pub struct ArmSeries {
     /// Kernel raw reading, holes preserved.
     pub raw: Vec<Option<f64>>,
@@ -385,6 +400,8 @@ pub struct ArmSeries {
 /// Squash one raw reading through the frozen affine shape: shift, scale,
 /// then the shared sigmoid — the same op order the display catalog pins.
 #[must_use]
+/// Squash one raw reading through the frozen affine shape: shift, scale,
+/// then the shared sigmoid — the same op order the display catalog pins.
 pub fn squash_raw(value: f64, offset: f64, slope: f64, scale: f64) -> f64 {
     fast_tanh((value + offset) * slope) * scale
 }
@@ -396,6 +413,12 @@ pub fn squash_raw(value: f64, offset: f64, slope: f64, scale: f64) -> f64 {
 /// `stdev` are the regime's squeeze surface — dropping any of the three
 /// silently changes a decision.
 #[derive(Debug, Clone)]
+/// Every evaluated leg over one closed tape, index-aligned with its bars.
+/// 
+/// The decision path indexes this once per run; the display maps it into its
+/// own pane shapes. `atr_risk` is the stop/trailing span, `atr_long` and
+/// `stdev` are the regime's squeeze surface — dropping any of the three
+/// silently changes a decision.
 pub struct LiteLegs {
     /// Bounded fast oscillator leg.
     pub fast: Vec<Option<f64>>,
@@ -435,6 +458,7 @@ pub struct LiteLegs {
 
 /// One index of [`LiteLegs`], borrowed: every series read at the same slot.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One index of [`LiteLegs`], borrowed: every series read at the same slot.
 pub struct LegAt<'a> {
     /// The index this view was taken at.
     pub index: usize,
@@ -552,6 +576,7 @@ pub fn lite_legs_from_frame(
 
 /// The context legs the batch and the chart pane both read.
 #[derive(Debug, Clone)]
+/// The context legs the batch and the chart pane both read.
 pub struct ContextLegs {
     /// Context ATR (14).
     pub atr: Vec<Option<f64>>,
@@ -769,6 +794,8 @@ fn batch_legs(
 /// Guarded volume conviction: the ratio of volume to its SMA, `0` wherever a
 /// partial or non-positive average would make the ratio unreadable.
 #[must_use]
+/// Guarded volume conviction: the ratio of volume to its SMA, `0` wherever a
+/// partial or non-positive average would make the ratio unreadable.
 pub fn volume_conviction(volumes: &[f64], vol_sma: &[Option<f64>]) -> Vec<f64> {
     volumes
         .iter()
@@ -790,6 +817,8 @@ pub fn volume_conviction(volumes: &[f64], vol_sma: &[Option<f64>]) -> Vec<f64> {
 /// The ribbon-health fold: ATR, the adaptive relay, the ribbon pair, and the
 /// per-bar gain. Raw (no outer display multiplier) by design.
 #[must_use]
+/// The ribbon-health fold: ATR, the adaptive relay, the ribbon pair, and the
+/// per-bar gain. Raw (no outer display multiplier) by design.
 pub fn ribbon_health(
     atr: &[Option<f64>],
     adaptive: &[Option<f64>],

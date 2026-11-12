@@ -23,6 +23,8 @@ const EPSILON: f64 = f64::EPSILON;
 /// Concrete `f64` legs for one run, converted once up front (same
 /// decimal-to-float reading as the kernel batch path).
 #[cfg_attr(test, allow(dead_code))]
+/// Concrete `f64` legs for one run, converted once up front (same
+/// decimal-to-float reading as the kernel batch path).
 pub(crate) struct Legs {
     open: Vec<f64>,
     high: Vec<f64>,
@@ -279,6 +281,8 @@ pub(crate) fn method_too_many_positionals() -> KernelError {
 /// Message form for compile-time (link-time) refusals that must fire only
 /// when reached at run time; see [`unknown_function_message`].
 #[must_use]
+/// Message form for compile-time (link-time) refusals that must fire only
+/// when reached at run time; see [`unknown_function_message`].
 pub(crate) fn method_too_many_positionals_message() -> String {
     "too many positional arguments".to_owned()
 }
@@ -291,6 +295,8 @@ pub(crate) fn method_unknown_argument(given: &str) -> KernelError {
 /// Message form for compile-time (link-time) refusals that must fire only
 /// when reached at run time; see [`unknown_function_message`].
 #[must_use]
+/// Message form for compile-time (link-time) refusals that must fire only
+/// when reached at run time; see [`unknown_function_message`].
 pub(crate) fn method_unknown_argument_message(given: &str) -> String {
     format!("unknown argument '{given}'")
 }
@@ -531,6 +537,9 @@ pub(crate) fn trailing_type(name: &str) -> &str {
 /// display tail the request returns plus the full confirmed prefix its kernels
 /// must compute over. Both are views, never copies.
 #[derive(Clone, Copy)]
+/// One confirmed `request.security` window over the registered dataset: the
+/// display tail the request returns plus the full confirmed prefix its kernels
+/// must compute over. Both are views, never copies.
 pub(crate) struct SecurityTail<'a> {
     dataset: &'a LtfDataset,
     skip: usize,
@@ -736,6 +745,10 @@ pub(crate) fn float_cast(value: Option<&PineValue>) -> Result<Option<PineValue>,
 /// the bytecode loop so both engines refuse identically; the loop is the
 /// only caller today, hence the gate (the single copy stays here).
 #[cfg(feature = "bytecode")]
+/// Bare `color(...)` cast: a single color passes through, absence stays
+/// absence; anything else refuses naming what color takes. Shared with
+/// the bytecode loop so both engines refuse identically; the loop is the
+/// only caller today, hence the gate (the single copy stays here).
 pub(crate) fn color_cast(value: Option<&PineValue>) -> Result<Option<PineValue>, KernelError> {
     match value {
         None => Ok(None),
@@ -990,6 +1003,8 @@ pub(crate) fn builtin_name(var: BuiltinVar) -> &'static str {
 /// Map one bytecode binary operator onto the shared evaluator's operator.
 /// Both engines use this table, so an operator can never mean two things.
 #[cfg(feature = "bytecode")]
+/// Map one bytecode binary operator onto the shared evaluator's operator.
+/// Both engines use this table, so an operator can never mean two things.
 pub(crate) fn binary_op_of(op: super::bytecode::BinOp) -> BinaryOp {
     match op {
         super::bytecode::BinOp::Add => BinaryOp::Add,
@@ -1014,6 +1029,11 @@ pub(crate) fn binary_op_of(op: super::bytecode::BinOp) -> BinaryOp {
 /// false and `na()` stays the only absence test); mixed kinds outside the
 /// reference table refuse instead of coercing.
 #[allow(clippy::too_many_lines)]
+/// Binary evaluation: `na` propagates through arithmetic; comparisons are
+/// two-valued (an absent side reads false, except `!=` which reads true —
+/// the reference never returns `na` from a comparison, so `x == na` is
+/// false and `na()` stays the only absence test); mixed kinds outside the
+/// reference table refuse instead of coercing.
 pub(crate) fn binary(
     op: BinaryOp,
     left: Option<&PineValue>,
@@ -1244,6 +1264,8 @@ pub(crate) fn unary(
 /// Visitor verdict at one AST node: descend into children, skip the
 /// subtree, or stop the whole walk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Visitor verdict at one AST node: descend into children, skip the
+/// subtree, or stop the whole walk.
 pub(crate) enum WalkVisit {
     /// Descend into child nodes with the same state.
     Recurse,
@@ -1488,4 +1510,3 @@ pub(crate) fn walk_args<V: PartitionVisit>(
     }
     WalkVisit::Recurse
 }
-

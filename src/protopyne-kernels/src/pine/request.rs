@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 /// Every injected request tape a run may serve.
 #[derive(Debug, Default)]
+/// Every injected request tape a run may serve.
 pub(crate) struct RequestState {
     /// `request.security` tapes.
     security: Vec<InjectedDataset>,

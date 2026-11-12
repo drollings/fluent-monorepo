@@ -18,6 +18,7 @@ use tokio::sync::Notify;
 
 /// Configuration for a credit flow pair.
 #[derive(Debug, Clone)]
+/// Configuration for a credit flow pair.
 pub struct CreditSpec {
     pub initial: usize,
     pub more_after: usize,

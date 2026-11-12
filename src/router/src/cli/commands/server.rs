@@ -528,6 +528,7 @@ pub(super) fn parse_prometheus_metrics(text: &str) -> HashMap<String, f64> {
 
 // ── shared HTTP helpers ─────────────────────────────────────────────────────
 
+/// ── shared HTTP helpers ─────────────────────────────────────────────────────
 async fn get_json(client: &Client, url: &str) -> Result<Value, CliError> {
     let resp = client
         .get(url)

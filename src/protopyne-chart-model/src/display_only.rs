@@ -28,6 +28,12 @@ use rust_decimal::Decimal;
 /// [`reveal`](Self::reveal). There is deliberately no `Deref`, `Borrow`,
 /// `AsRef`, `From`, or serde impl — any new exit must justify itself here.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Fenced display float: provenance for values that came from `Decimal`.
+/// 
+/// Construct at the display boundary with [`new`](Self::new); the value
+/// travels wrapped through display code and exits only via
+/// [`reveal`](Self::reveal). There is deliberately no `Deref`, `Borrow`,
+/// `AsRef`, `From`, or serde impl — any new exit must justify itself here.
 pub struct DisplayOnly<T>(T);
 
 impl<T> DisplayOnly<T> {
@@ -49,6 +55,7 @@ impl<T> DisplayOnly<T> {
 
 /// Refusal for display-to-decision crossings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// Refusal for display-to-decision crossings.
 pub enum DisplayOnlyError {
     /// A display float was asked to become a decision denomination.
     /// Always returned; the `Result` shape keeps the refusal explicit at

@@ -22,6 +22,7 @@ use crate::paint::{resolve_color, ACTION_PILL_PX, MODAL_CORNER_PX};
 
 /// What one dialog frame raised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// What one dialog frame raised.
 pub enum DialogCommit {
     /// No action button was pressed.
     #[default]
@@ -38,6 +39,9 @@ pub enum DialogCommit {
 /// caller's job — it owns the live targets — so the outcome only names the
 /// button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// One dialog frame: the action button pressed, if any. Committing is the
+/// caller's job — it owns the live targets — so the outcome only names the
+/// button.
 pub struct DialogOutcome {
     /// Action button pressed this frame, if any.
     pub commit: DialogCommit,

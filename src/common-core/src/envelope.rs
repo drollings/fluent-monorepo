@@ -17,6 +17,7 @@ pub const CUT_FADE_MS: u64 = 20;
 
 /// dB gain to linear amplitude.
 #[must_use]
+/// dB gain to linear amplitude.
 pub fn db_to_linear(db: f32) -> f32 {
     10f32.powf(db / 20.0)
 }
@@ -24,6 +25,8 @@ pub fn db_to_linear(db: f32) -> f32 {
 /// Playout gain `elapsed_ms` after detect: `1.0` ramping linearly to
 /// `floor` over `ramp_ms`, then holding.
 #[must_use]
+/// Playout gain `elapsed_ms` after detect: `1.0` ramping linearly to
+/// `floor` over `ramp_ms`, then holding.
 pub fn linear_ramp_gain(elapsed_ms: u64, ramp_ms: u64, floor: f32) -> f32 {
     if elapsed_ms >= ramp_ms {
         return floor;

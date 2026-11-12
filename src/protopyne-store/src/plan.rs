@@ -29,6 +29,9 @@ use crate::store::ReadRequest;
 /// description of this deployment; the enum is the seam a second tier
 /// would fill without an API break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Where one planned span is served from. A single tier is the honest
+/// description of this deployment; the enum is the seam a second tier
+/// would fill without an API break.
 pub enum SpanOrigin {
     /// Served from the committed tape.
     Stored,
@@ -37,6 +40,8 @@ pub enum SpanOrigin {
 /// One servable fragment of the requested window: the stored span to
 /// fetch, where it comes from, and whether its buckets are whole.
 #[derive(Debug, Clone, PartialEq)]
+/// One servable fragment of the requested window: the stored span to
+/// fetch, where it comes from, and whether its buckets are whole.
 pub struct SpanPlan {
     span: TimeRange,
     origin: SpanOrigin,
@@ -69,6 +74,8 @@ impl SpanPlan {
 /// A resolved read: the tape at its stored spacing, the requested spacing,
 /// the stored spans to fetch, and the coverage the resolution read.
 #[derive(Debug, Clone, PartialEq)]
+/// A resolved read: the tape at its stored spacing, the requested spacing,
+/// the stored spans to fetch, and the coverage the resolution read.
 pub struct ReadPlan {
     key: TapeKey,
     timeframe: Timeframe,
@@ -338,6 +345,13 @@ fn buckets_whole(covered: &Coverage, span: &TimeRange, want: Timeframe) -> bool 
 /// hole clipping need bounds, never a count; the audit path counts the
 /// bars it validates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One tape's bounds from its stamps alone: first stamp, last stamp.
+/// `None` is an empty tape — answered, not failed.
+/// 
+/// Deliberately no row count: counting would walk every stamp, which would
+/// put the read path back at O(tape) per read. The watermark anchor and
+/// hole clipping need bounds, never a count; the audit path counts the
+/// bars it validates.
 pub(crate) struct TapeExtent {
     /// First stored stamp.
     pub(crate) first_ms: i64,

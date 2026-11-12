@@ -15,6 +15,9 @@ use fluent_llm::HttpClass;
 /// extra `Duplicate` (409) and evict-trigger (507/503) distinctions the sidecar
 /// cares about.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Classification of a management-API failure, mirroring `HttpClass` with the
+/// extra `Duplicate` (409) and evict-trigger (507/503) distinctions the sidecar
+/// cares about.
 pub enum InstanceError {
     /// 429/503/504/507/other 5xx - transient; a 507/503 also signals an
     /// allocation/eviction trigger.
@@ -63,6 +66,10 @@ impl InstanceError {
 /// immediately ready) or deleted; there is no sleeping state. `model_bytes` is
 /// the shared weights, reported on the first loaded instance only.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// One instance as reported by `GET /instances` (the branch-spec envelope).
+/// `state` is always `"loaded"` - an instance is either allocated (and
+/// immediately ready) or deleted; there is no sleeping state. `model_bytes` is
+/// the shared weights, reported on the first loaded instance only.
 pub struct InstanceInfo {
     pub id: String,
     #[serde(default)]
@@ -108,6 +115,8 @@ const fn default_never_used() -> i64 {
 /// The summed memory `total` object of `GET /instances`. `model` counts a
 /// model's weights once regardless of how many of its instances are loaded.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// The summed memory `total` object of `GET /instances`. `model` counts a
+/// model's weights once regardless of how many of its instances are loaded.
 pub struct InstanceTotals {
     #[serde(default)]
     pub model: u64,
@@ -123,6 +132,9 @@ pub struct InstanceTotals {
 /// on-disk KV snapshots (even when no instance is loaded), and the summed
 /// memory. A cold pool returns `instances: []` and a zeroed `total`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// The full `GET /instances` envelope: the running instances, the pool's
+/// on-disk KV snapshots (even when no instance is loaded), and the summed
+/// memory. A cold pool returns `instances: []` and a zeroed `total`.
 pub struct InstanceList {
     #[serde(default)]
     pub instances: Vec<InstanceInfo>,
@@ -137,6 +149,10 @@ pub struct InstanceList {
 /// `instance` names the owning namespace (`None` for pre-scoping legacy flat
 /// files, which read back for migration).
 #[derive(Debug, Clone, Deserialize, Serialize)]
+/// One snapshot entry from `GET /instances` or `GET /instances/:name/snapshots`.
+/// Snapshots are per-instance on the fork (`<slot_save_path>/<model>/<instance>/`):
+/// `instance` names the owning namespace (`None` for pre-scoping legacy flat
+/// files, which read back for migration).
 pub struct SnapshotInfo {
     pub name: String,
     #[serde(default)]
@@ -156,6 +172,12 @@ pub struct SnapshotInfo {
 /// Mirrors the raw-reqwest pattern of `OpenAiChatBackend`: a plain
 /// `reqwest::Client` and explicit status classification via `HttpClass`.
 #[derive(Clone)]
+/// Typed management client against one spawned `llama-server`'s `/instances`
+/// API. Talks DIRECTLY to the pool's server - no router routing, so no `model`
+/// field is carried (each server owns exactly one model's weights).
+/// 
+/// Mirrors the raw-reqwest pattern of `OpenAiChatBackend`: a plain
+/// `reqwest::Client` and explicit status classification via `HttpClass`.
 pub struct InstanceClient {
     client: reqwest::Client,
     base_url: String,

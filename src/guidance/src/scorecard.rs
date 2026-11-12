@@ -9,18 +9,22 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::graph_index::{GraphIndex, HarvestInput};
 use crate::grounding::can_synthesize;
+use crate::index_pipeline::{index_workspace, IndexOptions, IndexProgress};
 use crate::model_lanes::{Lane, LaneConfig, LaneGate};
-use crate::query::decision_points::{evaluate_with_metrics, DecisionMetrics};
+use crate::query::decision_points::{evaluate_with_metrics, DecisionMetrics, LadderOutcome};
 use crate::query_engine::QueryEngine;
+use crate::selection::FileSelection;
 use crate::sync_engine::SyncEngine;
 
 /// How to reproduce a metric's failure with one narrow command.
 #[derive(Debug, Clone)]
+/// How to reproduce a metric's failure with one narrow command.
 pub struct Measured {
     /// Flat metric name (`nav.recall_at_3.tune`).
     pub name: String,
@@ -38,6 +42,11 @@ pub struct Measured {
 /// bars that hold even when tolerance would allow more. History makes
 /// hand edits detectable: replaying it must reproduce `metrics`.
 #[derive(Debug, Clone, Default)]
+/// Checked-in baseline: last approved values plus the ratchet policy.
+/// Tolerances absorb measurement noise (higher-better may read down to
+/// `base - tol`, lower-better up to `base + tol`); bounds are absolute
+/// bars that hold even when tolerance would allow more. History makes
+/// hand edits detectable: replaying it must reproduce `metrics`.
 pub struct Baseline {
     /// Flat metric name → last approved value.
     pub metrics: HashMap<String, f64>,
@@ -52,6 +61,7 @@ pub struct Baseline {
 
 /// One reasoned update: what changed, why, and the policy in force after.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+/// One reasoned update: what changed, why, and the policy in force after.
 pub struct HistoryEntry {
     /// UTC date (`YYYY-MM-DD`).
     pub date: String,
@@ -67,6 +77,7 @@ pub struct HistoryEntry {
 
 /// Ratchet status of one metric.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Ratchet status of one metric.
 pub enum MetricStatus {
     /// At or beyond baseline in the good direction.
     Pass,
@@ -78,6 +89,7 @@ pub enum MetricStatus {
 
 /// One scored metric line.
 #[derive(Debug, Clone)]
+/// One scored metric line.
 pub struct ScoredLine {
     /// Flat metric name.
     pub name: String,
@@ -95,6 +107,7 @@ pub struct ScoredLine {
 
 /// One of the three worst regressions.
 #[derive(Debug, Clone)]
+/// One of the three worst regressions.
 pub struct Regression {
     /// Flat metric name.
     pub name: String,
@@ -106,6 +119,7 @@ pub struct Regression {
 
 /// Scored tier: lines, worst regressions, process exit code.
 #[derive(Debug, Clone)]
+/// Scored tier: lines, worst regressions, process exit code.
 pub struct Scorecard {
     /// One line per metric (violations first).
     pub lines: Vec<ScoredLine>,
@@ -122,6 +136,12 @@ pub struct Scorecard {
 /// `value <= bound`. Missing values or policy never pass silently — they
 /// report `no-baseline`.
 #[must_use]
+/// Score measured values against the baseline. A metric passes when it is
+/// at least as good as its approved value within tolerance, and within its
+/// absolute bound: higher-better needs `value + tol >= base` and
+/// `value >= bound`; lower-better needs `value <= base + tol` and
+/// `value <= bound`. Missing values or policy never pass silently — they
+/// report `no-baseline`.
 pub fn score_metrics(measured: &[Measured], baseline: &Option<Baseline>) -> Scorecard {
     let mut lines: Vec<ScoredLine> = measured
         .iter()
@@ -205,6 +225,8 @@ pub fn score_metrics(measured: &[Measured], baseline: &Option<Baseline>) -> Scor
 /// At most 40 lines: header, metric lines (violations first), worst
 /// regressions with repro commands. Full detail lives in JSON/the log.
 #[must_use]
+/// At most 40 lines: header, metric lines (violations first), worst
+/// regressions with repro commands. Full detail lives in JSON/the log.
 pub fn render_human(card: &Scorecard) -> String {
     const MAX_METRIC_LINES: usize = 34;
     let pass = card
@@ -261,6 +283,7 @@ pub fn render_human(card: &Scorecard) -> String {
 
 /// Machine-readable scorecard for agents.
 #[must_use]
+/// Machine-readable scorecard for agents.
 pub fn render_json(card: &Scorecard) -> String {
     let metrics: Vec<serde_json::Value> = card
         .lines
@@ -303,6 +326,8 @@ pub fn render_json(card: &Scorecard) -> String {
 /// Load a checked-in baseline. New policy fields default empty so older
 /// files still load; missing or unparseable files are not violations.
 #[must_use]
+/// Load a checked-in baseline. New policy fields default empty so older
+/// files still load; missing or unparseable files are not violations.
 pub fn load_baseline(path: &Path) -> Option<Baseline> {
     let text = common_core::io::read_to_string_err(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -384,6 +409,10 @@ pub fn load_baseline(path: &Path) -> Option<Baseline> {
 /// every value went through the reasoned-update command. The latest entry
 /// must also carry the live policy, so hand-loosened tolerances fail too.
 #[must_use]
+/// Replay the history log onto an empty map. A hand edit to `metrics`
+/// without a matching history entry fails this check — the file proves
+/// every value went through the reasoned-update command. The latest entry
+/// must also carry the live policy, so hand-loosened tolerances fail too.
 pub fn baseline_replays(baseline: &Baseline) -> bool {
     let mut replayed: HashMap<String, f64> = HashMap::new();
     for entry in &baseline.history {
@@ -405,6 +434,7 @@ pub fn baseline_replays(baseline: &Baseline) -> bool {
 
 /// Why a baseline update was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Why a baseline update was refused.
 pub enum BaselineUpdateError {
     /// Updates require a recorded human reason.
     EmptyReason,
@@ -537,6 +567,8 @@ pub fn apply_baseline_update(
 /// Serialize a baseline for the checked-in file (reason, date, metrics,
 /// policy, and the tamper-evident history).
 #[must_use]
+/// Serialize a baseline for the checked-in file (reason, date, metrics,
+/// policy, and the tamper-evident history).
 pub fn baseline_to_value(baseline: &Baseline, reason: &str, date: &str) -> serde_json::Value {
     serde_json::json!({
         "reason": reason,
@@ -551,6 +583,7 @@ pub fn baseline_to_value(baseline: &Baseline, reason: &str, date: &str) -> serde
 
 /// Today's UTC date (`YYYY-MM-DD`) for history entries.
 #[must_use]
+/// Today's UTC date (`YYYY-MM-DD`) for history entries.
 pub fn today_utc() -> String {
     let days = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -629,8 +662,7 @@ struct NavQuery {
 
 fn load_nav_queries() -> Vec<NavQuery> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("corpora/nav_seed.json");
-    let text =
-        common_core::io::read_to_string_err(&path).expect("nav corpus reads");
+    let text = common_core::io::read_to_string_err(&path).expect("nav corpus reads");
     let value: serde_json::Value = serde_json::from_str(&text).expect("nav corpus parses");
     value["queries"]
         .as_array()
@@ -802,8 +834,7 @@ fn measure_graph() -> Vec<Measured> {
         .collect();
     let graph = GraphIndex::build(&inputs, std::slice::from_ref(&root_str)).expect("build");
     let truth: serde_json::Value = serde_json::from_str(
-        &common_core::io::read_to_string_err(&root.join("ground_truth.json"))
-            .expect("truth reads"),
+        &common_core::io::read_to_string_err(&root.join("ground_truth.json")).expect("truth reads"),
     )
     .expect("truth parses");
     let relative = |absolute: &str| {
@@ -1172,6 +1203,292 @@ async fn measure_lanes() -> Vec<Measured> {
     }]
 }
 
+/// Constant-vector embedder for the hermetic loop tier: offline by
+/// construction, so the converged-pass counter is never a network
+/// call. Local to this instrument (test-only stubs in other modules
+/// stay scoped to their own suites).
+#[derive(Clone, Copy)]
+/// Constant-vector embedder for the hermetic loop tier: offline by
+/// construction, so the converged-pass counter is never a network
+/// call. Local to this instrument (test-only stubs in other modules
+/// stay scoped to their own suites).
+struct ConstantEmbedding {
+    dims: u32,
+}
+
+impl fluent_llm::embeddings::EmbeddingProvider for ConstantEmbedding {
+    fn name(&self) -> &'static str {
+        "constant"
+    }
+    fn dimensions(&self) -> u32 {
+        self.dims
+    }
+    fn embed(&self, _text: &str) -> Result<Vec<f32>, fluent_llm::embeddings::EmbeddingError> {
+        Ok(vec![0.0; self.dims as usize])
+    }
+    fn embed_batch(
+        &self,
+        texts: &[&str],
+    ) -> Result<fluent_llm::embeddings::BatchEmbedding, fluent_llm::embeddings::EmbeddingError>
+    {
+        Ok(fluent_llm::embeddings::BatchEmbedding {
+            flat: vec![0.0; texts.len() * self.dims as usize],
+            count: texts.len(),
+            dims: self.dims as usize,
+        })
+    }
+}
+
+/// Loop tier: a converged second pass reprocesses zero clean files.
+/// Runs the real pipeline twice over two tiny files; the measure is
+/// the second run's counter, so any reprocessing regresses the ratchet.
+/// The passes run on a fresh OS thread: the wave driver builds its own
+/// runtime per wave, which cannot nest inside the tier's async driver.
+fn measure_loop_clean() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib m4_cutoff";
+    let second = std::thread::spawn(|| {
+        let dir = scratch_dir("loop");
+        for (name, body) in [
+            ("a.rs", "pub fn a() -> u64 {\n    1\n}\n"),
+            ("b.rs", "pub fn b() -> u64 {\n    2\n}\n"),
+        ] {
+            std::fs::write(dir.join(name), body).expect("fixture write");
+        }
+        let db = Arc::new(search_vector::db::GuidanceDb::open_in_memory().expect("memory db"));
+        let selection = FileSelection {
+            roots: vec![dir.clone()],
+            include_globs: Vec::new(),
+            exclude_globs: Vec::new(),
+            extra_skip_dirs: Vec::new(),
+            honor_gitignore: false,
+            max_bytes_override: None,
+        };
+        let options = IndexOptions {
+            max_embed_batch: 8,
+            wave_files: 64,
+            retry_max_attempts: 3,
+            retry_base_ms: 1,
+            rebuild: false,
+        };
+        let provider = ConstantEmbedding { dims: 4 };
+        let mut noop = |_: IndexProgress| {};
+        let cancel = AtomicBool::new(false);
+        index_workspace(
+            Arc::clone(&db),
+            provider,
+            &selection,
+            &options,
+            None,
+            &cancel,
+            &mut noop,
+        )
+        .expect("first pass indexes");
+        let second = index_workspace(
+            Arc::clone(&db),
+            provider,
+            &selection,
+            &options,
+            None,
+            &cancel,
+            &mut noop,
+        )
+        .expect("second pass converges");
+        let _ = std::fs::remove_dir_all(&dir);
+        second.reprocessed_clean
+    })
+    .join()
+    .expect("loop tier thread joins");
+    vec![Measured {
+        name: "loop.reprocessed_clean".to_string(),
+        value: second as f64,
+        repro: REPRO.to_string(),
+        higher_is_better: false,
+    }]
+}
+
+/// Avoidance tier: share of ladder decisions resolved without a model
+/// call on a deterministic-coverable script (rule win + cache hit, no
+/// model rung). Pins the accounting the run report derives its
+/// calls-avoided figure from: 1.0 by construction, so any regression in
+/// the routing math violates the ratchet.
+fn measure_avoidance() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib decision_metrics";
+    let metrics = DecisionMetrics::new();
+    metrics.record(LadderOutcome::Rule);
+    metrics.record(LadderOutcome::CacheHit);
+    let snapshot = metrics.snapshot();
+    let avoided = snapshot.rule_wins + snapshot.cache_hits;
+    let share = avoided as f64 / (avoided + snapshot.model_answers).max(1) as f64;
+    vec![Measured {
+        name: "decision.calls_avoided".to_string(),
+        value: share,
+        repro: REPRO.to_string(),
+        higher_is_better: true,
+    }]
+}
+
+/// Revert-rate tier: journaled edits vs reverted drafts over a
+/// synthetic journal. The loop's offload measure (share of findings
+/// resolved without escalation) starts here: every revert is a
+/// draft the gates refused.
+fn measure_journal_revert() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib m7_journal";
+    let dir = scratch_dir("revert");
+    for (name, before, after) in [
+        ("a.rs", "fn a() {}\n", "fn a() -> u32 {\n    1\n}\n"),
+        ("b.rs", "fn b() {}\n", "fn b() -> u32 {\n    2\n}\n"),
+        ("c.rs", "fn c() {}\n", "fn c() -> u32 {\n    3\n}\n"),
+    ] {
+        let entry = crate::journal::JournalEntry::new(
+            name,
+            "item",
+            "recipe",
+            "rustfmt",
+            before,
+            after,
+            Vec::new(),
+        );
+        crate::journal::append_journal(&dir, &entry);
+    }
+    let revert = crate::journal::RevertRecord::new(
+        "d.rs",
+        "item",
+        "recipe",
+        "clippy-fix",
+        "draft",
+        "gate red",
+        vec!["warning: mystery_lint".to_string()],
+    );
+    crate::journal::append_revert(&dir, &revert);
+    let kept = crate::journal::read_journal(&dir).len() as f64;
+    let reverted = crate::journal::read_reverts(&dir).len() as f64;
+    let _ = std::fs::remove_dir_all(&dir);
+    vec![Measured {
+        name: "journal.revert_rate".to_string(),
+        value: reverted / (kept + reverted).max(1.0),
+        repro: REPRO.to_string(),
+        higher_is_better: false,
+    }]
+}
+
+/// Triage-calibration tier: precision and recall of the shipped static
+/// classifier over the checked-in golden corpus. Real measurement of
+/// the decision point the loop consults — not a scripted boolean.
+fn measure_triage_calibration() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib calibration_goldens";
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("corpora/triage_calibration.json");
+    let Ok(gold) = crate::triage::load_gold_corpus(&path) else {
+        return Vec::new();
+    };
+    let cases: Vec<crate::triage::GoldCase> = gold
+        .cases
+        .iter()
+        .map(|case| crate::triage::GoldCase {
+            diagnostic: case.diagnostic.clone(),
+            expected: case.expected,
+        })
+        .collect();
+    let report = crate::triage::calibrate(&cases, |diagnostic| {
+        crate::triage::static_classify(diagnostic)
+            .unwrap_or(crate::triage::TriageVerdict::NeedsHuman)
+    });
+    vec![
+        Measured {
+            name: "decision.triage_precision".to_string(),
+            value: report.macro_precision,
+            repro: REPRO.to_string(),
+            higher_is_better: true,
+        },
+        Measured {
+            name: "decision.triage_recall".to_string(),
+            value: report.macro_recall,
+            repro: REPRO.to_string(),
+            higher_is_better: true,
+        },
+    ]
+}
+
+/// Fixpoint-pass tier: passes a synthetic three-item chain needs to
+/// converge through the real driver. Structural convergence
+/// evidence: every pass strictly reduces remaining work.
+fn measure_fixpoint_passes() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib work_queue";
+    let passes = std::thread::spawn(|| {
+        use std::sync::{Arc, Mutex};
+        let mut queue = crate::maintenance::MaintenanceQueue::new();
+        queue
+            .enqueue("c", "src", "rustfmt", &["b"])
+            .expect("enqueue c");
+        queue
+            .enqueue("b", "src", "rustfmt", &["a"])
+            .expect("enqueue b");
+        queue
+            .enqueue("a", "src", "rustfmt", &[])
+            .expect("enqueue a");
+        let act: crate::maintenance::ActFn =
+            Arc::new(Mutex::new(|id: &str, _tier: crate::maintenance::Tier| {
+                crate::maintenance::ActOutcome::Verified(crate::offload::ApplyReport {
+                    file: id.to_string(),
+                    tool: "rustfmt",
+                    changed: true,
+                    verdict: crate::offload::ApplyVerdict::Kept,
+                    attempts_used: 1,
+                    gate_output: "ok".to_string(),
+                    before_hash: "a".to_string(),
+                    after_hash: "b".to_string(),
+                })
+            }));
+        let abort = fluent_concurrency::stream::StreamAbort::new();
+        // The guard is process-wide: retry briefly when a loop test
+        // holds it, then measure the real driver, never a stub.
+        let mut guard = None;
+        for _ in 0..500 {
+            match crate::maintenance::LoopGuard::acquire() {
+                Ok(held) => {
+                    guard = Some(held);
+                    break;
+                }
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            }
+        }
+        let guard = guard?;
+        let policy = crate::policy::MaintenancePolicy::default();
+        let report =
+            crate::maintenance::run_to_fixpoint(&guard, &mut queue, &policy, 10, &abort, &act);
+        Some(report.passes as f64)
+    })
+    .join()
+    .expect("fixpoint tier thread joins");
+    let Some(passes) = passes else {
+        return Vec::new();
+    };
+    vec![Measured {
+        name: "loop.passes_to_fixpoint".to_string(),
+        value: passes,
+        repro: REPRO.to_string(),
+        higher_is_better: false,
+    }]
+}
+
+/// Breaker-signal tier: three consecutive non-certified passes trip a
+/// strict breaker with a named reason. The halt path is measured, not
+/// assumed.
+fn measure_breaker_trip() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib systemic_breaker";
+    let mut breaker =
+        crate::maintenance::LoopBreaker::new(crate::maintenance::BreakerConfig::strict());
+    breaker.observe(false);
+    breaker.observe(false);
+    let trip = breaker.observe(false);
+    vec![Measured {
+        name: "breaker.trip_signal".to_string(),
+        value: f64::from(trip.is_some()),
+        repro: REPRO.to_string(),
+        higher_is_better: true,
+    }]
+}
+
 /// Fast tier: every hermetic measurement, in-process, no model.
 pub async fn run_fast_tier() -> Vec<Measured> {
     let (_root, docs) = stage_fixture_docs();
@@ -1182,11 +1499,18 @@ pub async fn run_fast_tier() -> Vec<Measured> {
     measured.extend(measure_speed(&docs));
     measured.extend(measure_decision().await);
     measured.extend(measure_lanes().await);
+    measured.extend(measure_loop_clean());
+    measured.extend(measure_avoidance());
+    measured.extend(measure_journal_revert());
+    measured.extend(measure_triage_calibration());
+    measured.extend(measure_fixpoint_passes());
+    measured.extend(measure_breaker_trip());
     measured
 }
 
 /// Deep tier extra: per-query hit lines for drill-down.
 #[must_use]
+/// Deep tier extra: per-query hit lines for drill-down.
 pub fn run_deep_extra() -> Vec<Measured> {
     let (_root, docs) = stage_fixture_docs();
     let queries = load_nav_queries();

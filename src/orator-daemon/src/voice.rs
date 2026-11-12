@@ -29,6 +29,8 @@ pub const MAX_TRANSCRIBE_SAMPLES: usize = 1_920_000;
 /// Failures serving the voice endpoint. Every variant names the
 /// remedy for the CLI to carry.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Failures serving the voice endpoint. Every variant names the
+/// remedy for the CLI to carry.
 pub enum VoiceError {
     /// Voice serving is disabled in this context (tests, dry runs).
     #[error("voice server disabled here")]
@@ -153,6 +155,7 @@ impl VoiceState {
 
 /// Task-value outcome of one voice request, for the reap gate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Task-value outcome of one voice request, for the reap gate.
 enum RequestOutcome {
     /// A turn was served through the endpoint.
     Ok,

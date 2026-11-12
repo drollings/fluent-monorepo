@@ -13,6 +13,19 @@
 
 /// Precision/recall/FPR at a single operating point.
 #[derive(Debug, Clone, PartialEq)]
+/// Calibration harness for confidence vs task-value thresholds.
+/// 
+/// Pure, zero-domain: no I/O, no domain types. Composed everywhere thresholds
+/// are trusted for caching/persisting decisions. The gate is precision ≥0.90
+/// and FPR ≤0.05 on control groups (see ROADMAP_20260901_FIXES_4.md M1).
+/// 
+/// Scope: threshold sweeps over scored cases only. Must-fire/must-not-fire
+/// control gates (binary accept at a frozen expectation, no scores, no
+/// thresholds — e.g. the kernels control/treatment gate in
+/// `protopyne-kernels/src/calibration.rs`) do not report through this
+/// harness: mapping their rows onto scores and a fictitious threshold would
+/// change what a row means while adding a parameter no gate reads.
+/// Precision/recall/FPR at a single operating point.
 pub struct CalibrationReport {
     /// TP / (TP+FP) — 1.0 when no positive predictions (no false positives).
     pub precision: f64,

@@ -15,6 +15,7 @@ use crate::config::AuditLogConfig;
 
 /// Configuration for router logging output.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Configuration for router logging output.
 pub struct LoggingConfig {
     /// Directory for rotating log files.
     #[serde(default = "default_log_dir")]

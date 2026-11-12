@@ -37,6 +37,8 @@ use crate::pool::Limiter;
 /// Configuration for a [`CreditedFeedWorker`]. Defaults mirror
 /// `LedgerTierWorker`'s `TierConfig` (load-bearing — do not drift).
 #[derive(Debug, Clone)]
+/// Configuration for a [`CreditedFeedWorker`]. Defaults mirror
+/// `LedgerTierWorker`'s `TierConfig` (load-bearing — do not drift).
 pub struct FeedConfig {
     /// Capacity of the pending-item feed (`mpsc` bound). Default 1024.
     pub queue_capacity: usize,
@@ -70,6 +72,7 @@ impl Default for FeedConfig {
 
 /// Errors produced by a [`CreditedFeedWorker`].
 #[derive(Debug, thiserror::Error)]
+/// Errors produced by a [`CreditedFeedWorker`].
 pub enum FeedError {
     /// The feed is closed (drained) and no longer accepts items.
     #[error("feed closed")]

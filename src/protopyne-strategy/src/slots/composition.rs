@@ -15,6 +15,9 @@ use crate::slots::{FnFactory, SlotError, SlotRegistry};
 /// The bundled rehearsal signal: fixed long exposure. Constants sit inside
 /// `[0, 1]` by construction; a refusal is a bug, never a fallback.
 #[allow(clippy::needless_pass_by_value)] // a builder signature; the enum is Copy
+/// The bundled rehearsal signal: fixed long exposure. Constants sit inside
+/// `[0, 1]` by construction; a refusal is a bug, never a fallback.
+/// a builder signature; the enum is Copy
 pub fn rehearsal_strategy(
     structure: Option<StructureKind>,
 ) -> Result<Arc<Strategy>, StrategyError> {
@@ -55,6 +58,7 @@ fn composition_registry() -> &'static SlotRegistry<Arc<Strategy>> {
 }
 
 #[allow(clippy::needless_pass_by_value)] // owned from map_err; the message is all that survives
+/// owned from map_err; the message is all that survives
 fn translate(id: &'static str, error: StrategyError) -> SlotError {
     SlotError::invalid(id, error.to_string())
 }
@@ -83,12 +87,14 @@ fn momentum_factory(_: &serde_json::Value) -> Result<Arc<Strategy>, SlotError> {
 
 /// The composition catalog.
 #[must_use]
+/// The composition catalog.
 pub fn strategies() -> &'static SlotRegistry<Arc<Strategy>> {
     composition_registry()
 }
 
 /// The catalog ids, in schema order.
 #[must_use]
+/// The catalog ids, in schema order.
 pub fn strategy_ids() -> Vec<&'static str> {
     strategies().ids()
 }

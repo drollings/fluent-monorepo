@@ -13,6 +13,10 @@ use fluent_types::openai_wire::{RouterChoice, RouterMessageContent};
 /// waits on it (bounded) and records the content into the ledger + session
 /// step. `finalize` is idempotent in effect — the last writer wins.
 #[derive(Clone)]
+/// Best-effort stream finalization sink. The streaming backend's task
+/// writes the assembled answer here once the stream ends; the HTTP handler
+/// waits on it (bounded) and records the content into the ledger + session
+/// step. `finalize` is idempotent in effect — the last writer wins.
 pub struct StreamAnswer {
     content: Arc<Mutex<Option<String>>>,
     notify: Arc<tokio::sync::Notify>,

@@ -175,6 +175,17 @@ impl ModelEntry {
 /// the role side instead.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
+/// One model-side per-role override: the value type of
+/// `ModelEntry.role_params` (serde name `roles`), keyed by role name.
+/// Params-only by construction — the struct carries per-task tuning (a
+/// sparse sampling update, thinking policy, and a `max_ctx` cap) and no
+/// membership fields, so a model can be tuned for a task without joining
+/// (or redefining) the role's serving set.
+/// 
+/// Unknown fields are rejected: `models` belongs on the role side
+/// (`roles.<role>.models`), and silently dropping it here would look like a
+/// per-task tune while actually being ignored — fail loud with a pointer at
+/// the role side instead.
 pub struct ModelRoleOverride {
     /// Whether the named role's dispatches emit thinking blocks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -202,6 +213,11 @@ pub struct ModelRoleOverride {
 /// saves.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Snapshot save mode for a model or role entry (`snapshot: {mode}`).
+/// `Auto` (the default) preserves today's behavior: a resume-marked session
+/// context is KV-snapshotted before eviction drops it. `Manual` destroys
+/// without saving (and audits the skip) — the operator asked for no silent
+/// saves.
 pub enum SnapshotMode {
     /// Save-before-destroy on evict (today's behavior).
     #[default]
@@ -223,6 +239,10 @@ impl SnapshotMode {
 /// break. `None` (absent) inherits — the model entry wins, else the first
 /// serving role (sorted) that sets one, else `Auto`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// The `snapshot` block beside `weights` on model/role entries. Only `mode`
+/// today; the block shape leaves room for retention knobs without a schema
+/// break. `None` (absent) inherits — the model entry wins, else the first
+/// serving role (sorted) that sets one, else `Auto`.
 pub struct SnapshotConfig {
     /// Save mode; default `Auto` (today's behavior).
     #[serde(default)]
@@ -237,6 +257,12 @@ pub struct SnapshotConfig {
 /// (`num_ctx`/`parallel`/ `sleep_idle_seconds`) are stripped before dispatch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(clippy::struct_excessive_bools)]
+/// One config-declared instance profile. The map key on
+/// `roles.<role>.instances` provides the default instance name; `count > 1`
+/// expands into sibling instances named `<key>-0` .. `<key>-{count-1}`
+/// sharing the profile's group. Sampling `params` are merged into the request
+/// body for dispatches through these instances; declaration-only keys
+/// (`num_ctx`/`parallel`/ `sleep_idle_seconds`) are stripped before dispatch.
 pub struct InstanceProfile {
     /// Instance name; default = the map key (expanded `<name><i>` for count > 1).
     #[serde(default)]

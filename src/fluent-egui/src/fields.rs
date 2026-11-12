@@ -35,6 +35,7 @@ use fluent_wvr::FieldAccess;
 
 /// What a control-plane field's schema says it holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What a control-plane field's schema says it holds.
 pub enum FieldKind {
     /// Whole number, edited as a drag value.
     Integer,
@@ -84,6 +85,7 @@ pub const COLOR_FORMAT: &str = "color";
 
 /// One field lifted from a `Describable` schema.
 #[derive(Debug, Clone, PartialEq)]
+/// One field lifted from a `Describable` schema.
 pub struct SchemaField {
     /// Property name; also the `FieldAccess` key.
     pub name: String,
@@ -183,6 +185,11 @@ impl SchemaField {
 /// default `preserve_order` feature, which this workspace relies on for
 /// schema rendering).
 #[must_use]
+/// Every field in `schema`, in schema order. Properties are read from the
+/// document itself, so this is the only place that walks them. Order is the
+/// document's order (`serde_json` preserves map insertion order with its
+/// default `preserve_order` feature, which this workspace relies on for
+/// schema rendering).
 pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
     schema
         .get("properties")
@@ -301,6 +308,7 @@ fn usize_hint(hint: Option<&serde_json::Value>) -> Option<usize> {
 
 /// What one pass of the field editors did to the target.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// What one pass of the field editors did to the target.
 pub struct FieldEdits {
     /// Field names written this frame, in schema order.
     pub written: Vec<String>,
@@ -316,6 +324,12 @@ pub struct FieldEdits {
 /// lifted field lands in exactly one tab (see [`classify_schema_field`]),
 /// so the three tabs partition the schema without loss or overlap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One tab of an indicator settings pane: calculation inputs, paint styling,
+/// or the visibility toggles.
+/// 
+/// The split is a routing over field names, not a second schema: every
+/// lifted field lands in exactly one tab (see [`classify_schema_field`]),
+/// so the three tabs partition the schema without loss or overlap.
 pub enum SettingsTab {
     /// Calculation parameters: lengths, periods, smoothing, sources.
     Inputs,
@@ -354,6 +368,16 @@ impl SettingsTab {
 /// Inputs. Name matching is case-insensitive, because schemas arrive in
 /// both `snake_case` and display casing.
 #[must_use]
+/// Route one lifted field to its settings tab.
+/// 
+/// An explicit `x-tab` pin wins over everything: the schema names its tab
+/// and the router obeys. Otherwise precedence is fixed so the partition is
+/// total: a boolean visibility name (`show_*`, `visible`) wins over
+/// everything, then a paint-style name (color, alpha, transparency,
+/// brightness, width, threshold, style, theme), and everything else —
+/// calculation fields and the unclassified remainder — renders under
+/// Inputs. Name matching is case-insensitive, because schemas arrive in
+/// both `snake_case` and display casing.
 pub fn classify_schema_field(field: &SchemaField) -> SettingsTab {
     if let Some(tab) = field.explicit_tab {
         return tab;
@@ -386,6 +410,7 @@ pub fn classify_schema_field(field: &SchemaField) -> SettingsTab {
 
 /// The schema fields that render under `tab`, in schema order.
 #[must_use]
+/// The schema fields that render under `tab`, in schema order.
 pub fn fields_for_tab(fields: &[SchemaField], tab: SettingsTab) -> Vec<SchemaField> {
     fields
         .iter()
@@ -399,6 +424,10 @@ pub fn fields_for_tab(fields: &[SchemaField], tab: SettingsTab) -> Vec<SchemaFie
 /// order, so a schema that never names a group yields at most one entry
 /// and paints no headers at all.
 #[must_use]
+/// Section order for one tab's fields: the first-seen `x-group` of each
+/// field, `None` for ungrouped fields kept in place. Headers render in this
+/// order, so a schema that never names a group yields at most one entry
+/// and paints no headers at all.
 pub fn groups_in_order(fields: &[SchemaField]) -> Vec<Option<String>> {
     let mut order = Vec::new();
     for field in fields {
@@ -411,6 +440,7 @@ pub fn groups_in_order(fields: &[SchemaField]) -> Vec<Option<String>> {
 
 /// The fields of one section, in schema order.
 #[must_use]
+/// The fields of one section, in schema order.
 pub fn fields_for_group(fields: &[SchemaField], group: &Option<String>) -> Vec<SchemaField> {
     fields
         .iter()
@@ -425,6 +455,11 @@ pub fn fields_for_group(fields: &[SchemaField], group: &Option<String>) -> Vec<S
 /// across an unmarked field, so an inline row is exactly the consecutive
 /// run the schema spelled.
 #[must_use]
+/// Shared-row runs for one tab's fields: consecutive fields carrying the
+/// same `x-inline` marker render on one row, in schema order. A field with
+/// no marker is its own run and keeps its own row. A marker never reaches
+/// across an unmarked field, so an inline row is exactly the consecutive
+/// run the schema spelled.
 pub fn inline_runs(fields: &[SchemaField]) -> Vec<Vec<SchemaField>> {
     let mut runs: Vec<Vec<SchemaField>> = Vec::new();
     for field in fields {
@@ -455,6 +490,16 @@ pub fn inline_runs(fields: &[SchemaField]) -> Vec<Vec<SchemaField>> {
 /// is nothing to project by, and offering every color would let the
 /// operator set overrides that apply to no painted line.
 #[must_use]
+/// Project a style-component schema down to the keys one slot paints.
+/// 
+/// The style component's whole schema is the same override block for every
+/// indicator; a settings pane that renders all of it shows every slot the
+/// same editors. Filtering to the stroke width plus the `color_<key>`
+/// overrides for the keys the slot's own series carry makes the tab show
+/// that indicator's display values instead. An empty key set projects to
+/// nothing: with nothing evaluated (or an evaluation with no series) there
+/// is nothing to project by, and offering every color would let the
+/// operator set overrides that apply to no painted line.
 pub fn project_style_fields(
     style_fields: &[SchemaField],
     painted_keys: &[&str],
@@ -488,6 +533,19 @@ pub fn project_style_fields(
 /// concatenation never shows one field twice and every field routes to
 /// exactly one staged buffer.
 #[must_use]
+/// The fields one settings tab renders for a slot that owns both a
+/// configuration and a style component.
+/// 
+/// Inputs and Visibility read the configuration alone. Style reads the
+/// configuration's own paint knobs *and* the style component's whole schema,
+/// in that order: a paint knob lives in the style component when it is a
+/// per-indicator override (colors, stroke width) and in the configuration
+/// when it steers computation (alpha, thresholds, style keys), so the tab is
+/// every paint knob wherever it was declared rather than a choice of one
+/// schema. The two key sets are disjoint — the style component owns
+/// `color_*` and `line_width` and nothing else declares those — so the
+/// concatenation never shows one field twice and every field routes to
+/// exactly one staged buffer.
 pub fn tab_fields(
     tab: SettingsTab,
     config_fields: &[SchemaField],
@@ -802,6 +860,9 @@ fn drag_speed(field: &SchemaField, fallback: f64) -> f64 {
 /// read through the field's own contract. A field whose value cannot be
 /// read is skipped rather than staged as a substitute.
 #[must_use]
+/// Seed a staged draft from a live target: one string per declared field,
+/// read through the field's own contract. A field whose value cannot be
+/// read is skipped rather than staged as a substitute.
 pub fn seed_staged<T: FieldAccess + ?Sized>(target: &T) -> HashMap<String, String> {
     target
         .field_names()
@@ -819,6 +880,9 @@ pub fn seed_staged<T: FieldAccess + ?Sized>(target: &T) -> HashMap<String, Strin
 /// accepted field applies, every refused field reports with its name, and
 /// one refusal never stops the rest of the pass.
 #[must_use]
+/// Commit a staged draft through the live target's own contract: every
+/// accepted field applies, every refused field reports with its name, and
+/// one refusal never stops the rest of the pass.
 pub fn commit_staged<T: FieldAccess + ?Sized, S: std::hash::BuildHasher>(
     target: &mut T,
     staged: &HashMap<String, String, S>,
@@ -990,6 +1054,7 @@ fn paint_switch(row: &mut egui::Ui, value: &mut bool) -> egui::Response {
 
 /// A select's options lowered once for filter matching, one entry per option.
 #[must_use]
+/// A select's options lowered once for filter matching, one entry per option.
 fn lowered_option_corpus(options: &[String]) -> Vec<String> {
     options.iter().map(|option| option.to_lowercase()).collect()
 }
@@ -999,6 +1064,10 @@ fn lowered_option_corpus(options: &[String]) -> Vec<String> {
 /// nothing keeps the whole list too — the filter never strands the operator
 /// on an empty menu.
 #[must_use]
+/// Indices of the options a filter query keeps: every row the lowered query
+/// appears in. An empty query keeps the whole list, and a query matching
+/// nothing keeps the whole list too — the filter never strands the operator
+/// on an empty menu.
 fn matching_option_indices(corpus: &[String], query: &str) -> Vec<usize> {
     let all: Vec<usize> = (0..corpus.len()).collect();
     let query = query.trim().to_lowercase();

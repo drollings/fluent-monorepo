@@ -44,6 +44,8 @@ pub(crate) fn module_key(module: &str) -> Option<ModuleKey> {
 /// One evaluated bar: cursor plus the merged variable namespace
 /// (regular variables overlaid with persistent `var`/`varip` bindings).
 #[derive(Debug, Clone)]
+/// One evaluated bar: cursor plus the merged variable namespace
+/// (regular variables overlaid with persistent `var`/`varip` bindings).
 pub struct BarSnapshot {
     /// Data cursor of the evaluated bar.
     pub bar: usize,
@@ -53,6 +55,7 @@ pub struct BarSnapshot {
 
 /// Outcome of one engine run: evaluated-bar count plus per-bar snapshots.
 #[derive(Debug, Clone)]
+/// Outcome of one engine run: evaluated-bar count plus per-bar snapshots.
 pub struct RunOutcome {
     /// Bars evaluated (warmup-skipped bars excluded).
     pub evaluated: usize,
@@ -84,6 +87,11 @@ pub struct RunOutcome {
 /// venue — the native backtester replays the same tape through real fills
 /// and the parity harness compares the two decision streams.
 #[derive(Debug, Clone, PartialEq)]
+/// One recorded `strategy.*` broker call: the harness observation of what
+/// the strategy asked its broker to do on one closed bar. Quantities,
+/// prices, and comments ride along verbatim; nothing here ever reaches a
+/// venue — the native backtester replays the same tape through real fills
+/// and the parity harness compares the two decision streams.
 pub struct StrategyCall {
     /// Bar index that committed the call.
     pub bar: usize,
@@ -114,6 +122,8 @@ pub struct StrategyCall {
 /// One captured `plot()` series: title and display flag plus one value per
 /// evaluated bar (`None` entries are Pine `na`).
 #[derive(Debug, Clone)]
+/// One captured `plot()` series: title and display flag plus one value per
+/// evaluated bar (`None` entries are Pine `na`).
 pub struct PlotCapture {
     /// Call-site key (textual arguments), distinguishing same-titled plots.
     pub(crate) site: String,
@@ -160,6 +170,10 @@ impl RunOutcome {
 /// the call but capture like `plot`'s color/linewidth: evaluated, then
 /// dropped — the marker positions are the proof-relevant data.
 #[derive(Debug, Clone)]
+/// One captured `plotshape()` marker: title plus one value per evaluated
+/// bar (`None` entries are Pine `na`). Style/location/text arguments ride
+/// the call but capture like `plot`'s color/linewidth: evaluated, then
+/// dropped — the marker positions are the proof-relevant data.
 pub struct PlotShapeCapture {
     /// Call-site key (textual arguments), distinguishing same-titled shapes.
     pub(crate) site: String,
@@ -173,6 +187,9 @@ pub struct PlotShapeCapture {
 /// (`None` entries are Pine `na`). Levels are usually constant, but the
 /// per-bar recording matches every other capture.
 #[derive(Debug, Clone)]
+/// One captured `hline()` level: title plus one value per evaluated bar
+/// (`None` entries are Pine `na`). Levels are usually constant, but the
+/// per-bar recording matches every other capture.
 pub struct HlineCapture {
     /// Call-site key (textual arguments), distinguishing same-titled lines.
     pub(crate) site: String,
@@ -185,6 +202,8 @@ pub struct HlineCapture {
 /// One captured `plotcandle()` series: four legs plus the last-seen display
 /// handles, one entry per evaluated bar (`None` entries are Pine `na`).
 #[derive(Debug, Clone)]
+/// One captured `plotcandle()` series: four legs plus the last-seen display
+/// handles, one entry per evaluated bar (`None` entries are Pine `na`).
 pub struct PlotCandleCapture {
     /// Call-site key (textual arguments), distinguishing same-titled candles.
     pub(crate) site: String,
@@ -211,6 +230,8 @@ pub struct PlotCandleCapture {
 /// One captured `barcolor()` series: the conditional color per evaluated bar
 /// (`None` entries are Pine `na`, never a default color).
 #[derive(Debug, Clone)]
+/// One captured `barcolor()` series: the conditional color per evaluated bar
+/// (`None` entries are Pine `na`, never a default color).
 pub struct BarColorCapture {
     /// Call-site key (textual arguments), distinguishing same-titled paints.
     pub(crate) site: String,
@@ -224,6 +245,9 @@ pub struct BarColorCapture {
 /// per-bar region between their values (an array pair, or `na` when both
 /// legs are absent).
 #[derive(Debug, Clone)]
+/// One captured `fill()` pairing: the two plot sites it shades plus the
+/// per-bar region between their values (an array pair, or `na` when both
+/// legs are absent).
 pub struct FillCapture {
     /// Call-site key (textual arguments), distinguishing same-titled fills.
     pub(crate) site: String,
@@ -245,6 +269,7 @@ pub struct FillCapture {
 
 /// Which lifecycle transition a drawing event records.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Which lifecycle transition a drawing event records.
 pub enum DrawingEventKind {
     /// `.new` minted an object.
     Created,
@@ -257,6 +282,8 @@ pub enum DrawingEventKind {
 /// One recorded drawing lifecycle row: which bar, which transition, which
 /// object, with the call arguments as data. Rendering never happens.
 #[derive(Debug, Clone)]
+/// One recorded drawing lifecycle row: which bar, which transition, which
+/// object, with the call arguments as data. Rendering never happens.
 pub struct DrawingEvent {
     /// Evaluated-bar index at record time.
     pub bar: usize,
@@ -279,6 +306,8 @@ pub struct DrawingEvent {
 /// One recorded drawing argument: optional name plus the evaluated value
 /// (`None` inside is Pine `na`).
 #[derive(Debug, Clone)]
+/// One recorded drawing argument: optional name plus the evaluated value
+/// (`None` inside is Pine `na`).
 pub struct DrawingArg {
     /// Argument name (`None` for positional arguments).
     pub name: Option<String>,
@@ -291,6 +320,10 @@ pub struct DrawingArg {
 /// dependency-first order; declarations share one run namespace while user
 /// functions stay namespaced by their owning module key.
 #[derive(Debug, Clone)]
+/// One linked module: a parsed program plus the importer-local alias table
+/// (`ALIAS` to owning module key) from the import graph. Modules execute in
+/// dependency-first order; declarations share one run namespace while user
+/// functions stay namespaced by their owning module key.
 pub struct LinkedModule {
     /// Owning module key (graph identity, e.g. `publisher/name`).
     pub key: String,
@@ -318,6 +351,11 @@ impl LinkedModule {
 /// floats). The harness registers exactly the window a pull may observe;
 /// `calc_bars_count` tail-takes from it.
 #[derive(Debug, Clone)]
+/// One injected lower-timeframe dataset served to
+/// `request.security_lower_tf` headlessly: six parallel columns over the
+/// same rows (timestamps in epoch milliseconds, prices and volumes as
+/// floats). The harness registers exactly the window a pull may observe;
+/// `calc_bars_count` tail-takes from it.
 pub struct LtfDataset {
     /// Row bucket-open timestamps.
     pub times: Vec<EpochMs>,
@@ -391,6 +429,9 @@ impl LtfDataset {
 /// Shared by the lower-timeframe pull registry and the `request.security`
 /// registry; both are harness configuration, never run state.
 #[derive(Debug, Clone)]
+/// One registered dataset: the exact `(symbol, timeframe)` pair it answers.
+/// Shared by the lower-timeframe pull registry and the `request.security`
+/// registry; both are harness configuration, never run state.
 pub struct InjectedDataset {
     pub(crate) symbol: String,
     pub(crate) timeframe: String,
@@ -408,6 +449,12 @@ pub struct InjectedDataset {
 /// so no production run can silently switch or retire at run time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg(feature = "bytecode")]
+/// Execution selection for one engine: the compiled loop or the tree-walk
+/// oracle. The default is the compiled loop, so every driver runs one
+/// execution path unless it explicitly opts into the oracle for proof.
+/// The tree-walk variant exists only where the interpreter does (test
+/// and `oracle` builds): production code cannot name another engine,
+/// so no production run can silently switch or retire at run time.
 pub enum BytecodeMode {
     /// The compiled slot VM: compile once per distinct program (memoized
     /// by content hash, so repeated runs skip the pipeline); linked
@@ -930,4 +977,3 @@ impl PineEngine {
         FetchCounters::default()
     }
 }
-

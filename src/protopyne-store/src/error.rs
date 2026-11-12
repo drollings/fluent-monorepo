@@ -19,6 +19,7 @@ use crate::range::TimeRange;
 
 /// Failures from reading, writing, and planning against the tape.
 #[derive(Error, Debug)]
+/// Failures from reading, writing, and planning against the tape.
 pub enum StoreError {
     /// The underlying file system refused the operation.
     #[error("store I/O failure: {0}")]
@@ -125,6 +126,10 @@ common_core::impl_from_io_error!(StoreError);
 /// Every variant is a **task-value** refusal: the request cannot be answered
 /// correctly, so it is not answered. None is a confidence reading.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Why a requested read could not be resolved into a plan.
+/// 
+/// Every variant is a **task-value** refusal: the request cannot be answered
+/// correctly, so it is not answered. None is a confidence reading.
 pub enum PlanError {
     /// The request named no symbol.
     #[error("symbol must be nonempty")]
@@ -167,6 +172,7 @@ pub enum PlanError {
 
 /// Why two readings of one instant could not be reconciled.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Why two readings of one instant could not be reconciled.
 pub enum SnapshotError {
     /// The merged reading violates a structural invariant the shared bar
     /// validator already owns. The reason is that validator's text, carried

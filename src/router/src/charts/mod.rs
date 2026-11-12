@@ -53,6 +53,9 @@ pub const CHART_EXTRACTED_NAME_MAX_CHARS: usize = 64;
 /// Errors produced by chart parsing, validation, binding, rendering, and
 /// selection. All chart error surfaces funnel through this enum.
 #[derive(Debug, thiserror::Error)]
+/// ── Errors ───────────────────────────────────────────────────────────────
+/// Errors produced by chart parsing, validation, binding, rendering, and
+/// selection. All chart error surfaces funnel through this enum.
 pub enum ChartError {
     #[error("chart parse error in {path}: {source}")]
     Parse {
@@ -91,6 +94,10 @@ pub enum ChartError {
 /// error. Today the only warning kind is a capability dependency that no
 /// chart target provides (satisfiable only by bound entities at runtime).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A non-fatal validation notice. Chart `validate()` returns these alongside
+/// a valid chart — callers decide whether to log, warn, or promote to an
+/// error. Today the only warning kind is a capability dependency that no
+/// chart target provides (satisfiable only by bound entities at runtime).
 pub struct ChartValidationWarning {
     /// The capability asset that only a bound entity can satisfy.
     pub dep: String,
@@ -102,6 +109,8 @@ pub struct ChartValidationWarning {
 
 /// A stored, reusable DAG chart.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// ── Chart content types ──────────────────────────────────────────────────
+/// A stored, reusable DAG chart.
 pub struct ChartDef {
     /// Unique key; also the provides asset of the chart.
     pub name: String,
@@ -285,6 +294,8 @@ fn validate_rubric(rubric: &ChartRubric, owner: &str) -> Result<(), ChartError> 
 /// A single node in the chart DAG. Executing it renders `template` and makes
 /// one LLM call whose structured output provides `provides`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A single node in the chart DAG. Executing it renders `template` and makes
+/// one LLM call whose structured output provides `provides`.
 pub struct ChartTarget {
     /// Unique target name within the chart; also the target's stage id and
     /// self-provided asset (the DependencySession convention).
@@ -312,6 +323,12 @@ pub struct ChartTarget {
 /// LLM judge only when `judge_model` is set.  An absent rubric accepts any
 /// successfully-executed output.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+/// An acceptance rubric for a chart target's (or chart's) output.
+/// 
+/// Before a target's output is promoted to `provides`, the rubric gate
+/// runs: a cheap deterministic field-presence rule first, and an optional
+/// LLM judge only when `judge_model` is set.  An absent rubric accepts any
+/// successfully-executed output.
 pub struct ChartRubric {
     /// Dotted field paths that must be present and non-null in the output.
     #[serde(default)]
@@ -334,6 +351,7 @@ fn default_rubric_min_score() -> f64 {
 /// A structured dependency of a chart target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+/// A structured dependency of a chart target.
 pub enum DepSpec {
     /// Exact asset name — satisfied by a bound entity or another target's
     /// provides.
@@ -365,6 +383,9 @@ impl DepSpec {
 /// substring `pattern`, numeric `min`/`max`, typed paths into a
 /// `serde_json::Value`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// A deterministic JSON-Schema subset. Field semantics mirror `FieldSchema`:
+/// substring `pattern`, numeric `min`/`max`, typed paths into a
+/// `serde_json::Value`.
 pub struct EntityPredicate {
     #[serde(default)]
     pub fields: Vec<FieldRule>,
@@ -375,6 +396,7 @@ pub struct EntityPredicate {
 
 /// A single typed rule on a dotted path into an entity's `value`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A single typed rule on a dotted path into an entity's `value`.
 pub struct FieldRule {
     /// Dotted path, e.g. "user.id"; "." = root.
     pub path: String,
@@ -395,6 +417,7 @@ pub struct FieldRule {
 /// The JSON value type a `FieldRule` constrains.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+/// The JSON value type a `FieldRule` constrains.
 pub enum FieldType {
     String,
     Number,
@@ -408,6 +431,9 @@ pub enum FieldType {
 /// `ChartDef`-shaped value is a plain `serde_json::to_string_pretty` call —
 /// kept here to document the round-trip contract rather than hide it.
 #[doc(hidden)]
+/// Convenience for tests and seed data: build a chart JSON string from a
+/// `ChartDef`-shaped value is a plain `serde_json::to_string_pretty` call —
+/// kept here to document the round-trip contract rather than hide it.
 pub fn chart_to_json(chart: &ChartDef) -> Result<String, ChartError> {
     serde_json::to_string_pretty(chart).map_err(|e| ChartError::Parse {
         source: e,

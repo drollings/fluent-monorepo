@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 /// Source file kinds (closed set from types.ts).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Source file kinds (closed set from types.ts).
 pub enum FileKind {
     /// Plain text / markdown.
     Text,
@@ -88,6 +89,8 @@ impl FileKind {
 /// Tree-sitter format for a lowercase extension (adapter authority —
 /// D1: `h` parses as C here while ingest tags C++).
 #[must_use]
+/// Tree-sitter format for a lowercase extension (adapter authority —
+/// D1: `h` parses as C here while ingest tags C++).
 pub fn code_format_for_extension(ext: &str) -> Option<&'static str> {
     match ext {
         "rs" => Some("rust"),
@@ -107,6 +110,8 @@ pub fn code_format_for_extension(ext: &str) -> Option<&'static str> {
 /// Ingest `(kind, format)` for a lowercase extension (selection
 /// authority — D1: `h` tags C++ here; D2: `mts`/`cts` fall to text).
 #[must_use]
+/// Ingest `(kind, format)` for a lowercase extension (selection
+/// authority — D1: `h` tags C++ here; D2: `mts`/`cts` fall to text).
 pub fn kind_format_for_extension(ext: &str) -> Option<(FileKind, &'static str)> {
     if let Some(format) = code_kind_format(ext) {
         return Some((FileKind::Code, format));
@@ -125,6 +130,7 @@ pub fn kind_format_for_extension(ext: &str) -> Option<(FileKind, &'static str)> 
 
 /// Ingest code formats by extension (selection authority).
 #[must_use]
+/// Ingest code formats by extension (selection authority).
 pub fn code_kind_format(ext: &str) -> Option<&'static str> {
     match ext {
         "c" => Some("c"),
@@ -156,6 +162,7 @@ pub fn code_kind_format(ext: &str) -> Option<&'static str> {
 
 /// Ingest data formats by extension.
 #[must_use]
+/// Ingest data formats by extension.
 pub fn data_kind_format(ext: &str) -> Option<&'static str> {
     match ext {
         "csv" => Some("csv"),
@@ -168,6 +175,7 @@ pub fn data_kind_format(ext: &str) -> Option<&'static str> {
 
 /// Ingest text formats by extension.
 #[must_use]
+/// Ingest text formats by extension.
 pub fn text_kind_format(ext: &str) -> Option<&'static str> {
     match ext {
         "md" | "mdx" => Some("markdown"),
@@ -181,6 +189,7 @@ pub fn text_kind_format(ext: &str) -> Option<&'static str> {
 
 /// Ingest image formats by extension.
 #[must_use]
+/// Ingest image formats by extension.
 pub fn image_kind_format(ext: &str) -> Option<&'static str> {
     match ext {
         "gif" => Some("gif"),
@@ -193,6 +202,7 @@ pub fn image_kind_format(ext: &str) -> Option<&'static str> {
 
 /// Ingest kind for extensionless well-known file names.
 #[must_use]
+/// Ingest kind for extensionless well-known file names.
 pub fn named_file_kind(name: &str) -> Option<(FileKind, &'static str)> {
     match name {
         "Dockerfile" => Some((FileKind::Code, "dockerfile")),
@@ -203,6 +213,7 @@ pub fn named_file_kind(name: &str) -> Option<(FileKind, &'static str)> {
 
 /// Extensions whose files are never classified (archives, binaries, media).
 #[must_use]
+/// Extensions whose files are never classified (archives, binaries, media).
 pub fn is_binary_extension(ext: &str) -> bool {
     matches!(
         ext,

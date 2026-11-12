@@ -43,6 +43,10 @@ use crate::error::ServerError;
 /// absent — the gate stays exactly where it was.
 #[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
+/// Where historical chains come from and which credentials the fetch path
+/// may read. Loaded from JSON with defaults for every field, so
+/// older config files (which name no chain feed) keep loading with chains
+/// absent — the gate stays exactly where it was.
 pub struct ChainFeedConfig {
     /// Chain history file path (CSV, one row per contract per bar). `None`
     /// means no chain data: every multi-leg proposal keeps refusing with the
@@ -403,6 +407,7 @@ impl LegQuoteSource for HistoricalChainSource {
 
 /// Shareable handle form: sessions install one `Arc` on their venue.
 #[must_use]
+/// Shareable handle form: sessions install one `Arc` on their venue.
 pub fn shared_chain_source(quotes: Vec<ChainQuote>) -> Arc<HistoricalChainSource> {
     Arc::new(HistoricalChainSource::new(quotes))
 }
@@ -445,6 +450,10 @@ pub fn read_fetch_token(credentials_path: &str) -> Result<String, ServerError> {
 /// as four columns (empty when absent); the reader treats all-empty as
 /// absent, so the shape round-trips losslessly.
 #[must_use]
+/// Render quotes as exactly the CSV shape [`parse_chain_csv`] reads, so
+/// fetch output and hand-written fixtures are interchangeable. Greeks ride
+/// as four columns (empty when absent); the reader treats all-empty as
+/// absent, so the shape round-trips losslessly.
 pub fn chain_quotes_to_csv(quotes: &[ChainQuote]) -> String {
     let mut csv =
         "ts,underlying,expiry,strike,kind,bid,ask,bid_size,ask_size,open_interest,iv,delta,gamma,theta,vega\n"

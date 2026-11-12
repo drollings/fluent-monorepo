@@ -25,6 +25,8 @@ use crate::tape::Tape;
 /// The manager's configuration: the strategy dials, rendered through the
 /// same schema and field contract the strategy already exposes.
 #[derive(Debug, Clone, PartialEq)]
+/// The manager's configuration: the strategy dials, rendered through the
+/// same schema and field contract the strategy already exposes.
 pub struct PositionSpec {
     /// The strategy dials the manager reads.
     pub strategy: IntegrationLiteStrategyConfig,
@@ -59,6 +61,8 @@ impl Describable for PositionSpec {
 /// One open position and its management state.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::struct_excessive_bools)] // independent latches, not a state machine
+/// One open position and its management state.
+/// independent latches, not a state machine
 pub struct OpenPosition {
     /// Long or short.
     pub long: bool,
@@ -539,6 +543,8 @@ impl PositionManager {
 /// Entry stop distance from the configured construction, clamped into the
 /// ATR band.
 #[must_use]
+/// Entry stop distance from the configured construction, clamped into the
+/// ATR band.
 pub fn entry_stop_distance(
     strategy: &IntegrationLiteStrategyConfig,
     atr: f64,
@@ -584,6 +590,7 @@ pub fn entry_stop_distance(
 /// Test-visible money conversion for hand-checked stop prices.
 #[doc(hidden)]
 #[must_use]
+/// Test-visible money conversion for hand-checked stop prices.
 pub fn money_for_test(value: f64) -> Money {
     money(value)
 }

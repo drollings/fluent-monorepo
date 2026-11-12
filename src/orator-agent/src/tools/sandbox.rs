@@ -32,6 +32,7 @@ pub const DEFAULT_DIR_CACHE_TTL: std::time::Duration = std::time::Duration::from
 
 /// Path-guard failures.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Path-guard failures.
 pub enum WithinError {
     /// The path escapes the allowed root.
     #[error("path escapes the allowed root: {0}")]
@@ -46,6 +47,7 @@ pub enum WithinError {
 
 /// One durable audit row: a `kind` plus flat JSON detail.
 #[derive(Debug, Clone, PartialEq)]
+/// One durable audit row: a `kind` plus flat JSON detail.
 pub struct ToolAudit {
     /// Record kind (`tool_call`).
     pub kind: &'static str,
@@ -55,6 +57,7 @@ pub struct ToolAudit {
 
 /// Guarded executor configuration.
 #[derive(Debug, Clone)]
+/// Guarded executor configuration.
 pub struct GuardedConfig {
     /// Working-directory jail. Tools never run outside it.
     pub root: PathBuf,
@@ -73,6 +76,9 @@ pub struct GuardedConfig {
 /// sentinel (empty relative path, rejected by `new`) when no home
 /// resolves — never `/tmp`, never the current directory.
 #[must_use]
+/// Private jail root: `~/.local/share/orator/sandbox`. Fail-closed
+/// sentinel (empty relative path, rejected by `new`) when no home
+/// resolves — never `/tmp`, never the current directory.
 pub fn default_sandbox_root() -> PathBuf {
     orator::paths::home_dir()
         .map(|home| home.join(".local/share/orator/sandbox"))
@@ -93,6 +99,7 @@ impl Default for GuardedConfig {
 
 /// One sandboxed command run.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One sandboxed command run.
 pub struct ExecResult {
     /// Combined stdout (stderr appended when non-empty).
     pub output: String,
@@ -503,6 +510,8 @@ fn resolve_symlink_chain(
 /// Timeout-kill binary: absolute path when present, `PATH` lookup
 /// otherwise. The group kill below never depends on shell resolution.
 #[must_use]
+/// Timeout-kill binary: absolute path when present, `PATH` lookup
+/// otherwise. The group kill below never depends on shell resolution.
 pub fn kill_program() -> String {
     for candidate in ["/bin/kill", "/usr/bin/kill"] {
         if std::path::Path::new(candidate).is_file() {
@@ -515,6 +524,8 @@ pub fn kill_program() -> String {
 /// Shell-quote `argv` for the `ulimit` prefix: single quotes with
 /// embedded quotes escaped. Never interpolated — always quoted.
 #[must_use]
+/// Shell-quote `argv` for the `ulimit` prefix: single quotes with
+/// embedded quotes escaped. Never interpolated — always quoted.
 pub fn shell_escape(argv: &[String]) -> String {
     argv.iter()
         .map(|arg| format!("'{}'", arg.replace('\'', "'\\''")))

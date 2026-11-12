@@ -23,6 +23,8 @@ use search_vector::GuidanceDb;
 /// Recall route selection. At most one non-default mode flag may be set
 /// (one-probe discipline: combined mode flags are rejected, never merged).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Recall route selection. At most one non-default mode flag may be set
+/// (one-probe discipline: combined mode flags are rejected, never merged).
 pub enum SearchMode {
     /// RRF fusion across FTS + vector + lemma routes.
     #[default]
@@ -70,6 +72,7 @@ pub fn parse_symbol_type(value: &str) -> Result<CodeSymbolType, String> {
 
 /// Build the recall plan for a fused or single-route search. Pure.
 #[must_use]
+/// Build the recall plan for a fused or single-route search. Pure.
 pub fn build_search_plan(
     query: &str,
     mode: SearchMode,
@@ -139,12 +142,14 @@ pub const CLI_DEFAULT_LIMIT: usize = 10;
 
 /// Clamp a requested limit into `[1, MAX_LIMIT]`.
 #[must_use]
+/// Clamp a requested limit into `[1, MAX_LIMIT]`.
 pub fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
 /// L0 display options: context capture and mtime post-filter.
 #[derive(Debug, Clone, Default)]
+/// L0 display options: context capture and mtime post-filter.
 pub struct RgDisplayOptions {
     /// `-B` lines of leading context.
     pub before: usize,
@@ -161,6 +166,10 @@ pub struct RgDisplayOptions {
 /// `rg_truncated` when early-kill cut it at the limit). Context lines
 /// follow indented.
 #[must_use]
+/// Render standalone L0 hits in the shared `path:line:col` shape, headed by
+/// the coverage vocabulary (`rg_exhaustive` when the sweep completed,
+/// `rg_truncated` when early-kill cut it at the limit). Context lines
+/// follow indented.
 pub fn render_rg_hits(hits: &[RgHit], limit: usize) -> String {
     let coverage = if hits.len() < limit {
         crate::mcp::Coverage::RgExhaustive
@@ -198,6 +207,11 @@ pub fn render_rg_hits(hits: &[RgHit], limit: usize) -> String {
 /// millisecond-scale; an explicit `--limit` keeps the bounded contract),
 /// [`CLI_DEFAULT_LIMIT`] for recall modes.
 #[allow(clippy::too_many_arguments)]
+/// Run the `search` command: recall shell (fused/single-route) or L0 rg.
+/// Thin exit-wrapper over [`run_search`]. An absent limit (`None`) means
+/// the mode default: exhaustive for L0 (zg parity — the full sweep is
+/// millisecond-scale; an explicit `--limit` keeps the bounded contract),
+/// [`CLI_DEFAULT_LIMIT`] for recall modes.
 pub fn cmd_search(
     query: &str,
     workspace: &str,
@@ -241,6 +255,8 @@ pub fn cmd_search(
 /// Execute a search and return the rendered output (testable; no process exit
 /// except on conflicting mode flags, which is a CLI contract violation).
 #[allow(clippy::too_many_arguments)]
+/// Execute a search and return the rendered output (testable; no process exit
+/// except on conflicting mode flags, which is a CLI contract violation).
 pub fn run_search(
     query: &str,
     workspace: &str,
@@ -329,7 +345,16 @@ pub fn run_search(
                 } else {
                     OutputFormat::Markdown
                 };
-                Ok(QueryEngine::format_stages(&stages, format))
+                let mut out = QueryEngine::format_stages(&stages, format);
+                // Hash-verified citations over live bytes, rank order:
+                // recall excerpts never travel without their receipts.
+                out.push_str("\n### Citations\n");
+                for cite in cite_hits(&hits, workspace) {
+                    out.push_str("- ");
+                    out.push_str(&cite);
+                    out.push('\n');
+                }
+                Ok(out)
             }
             Err(error) => Err(error),
         };
@@ -394,22 +419,30 @@ fn recall_on_index(
             "index not found at {db_path} (run `guidance index` first)"
         ));
     }
+    let open_phase = crate::profile::Phase::new("recall.db_open");
     let db = match GuidanceDb::open(&db_file) {
         Ok(db) => db,
         Err(error) => return Err(format!("cannot open index at {db_path}: {error}")),
     };
+    drop(open_phase);
     // L3 embedder: resolved from the workspace project config
     // (`models.embed`, provider table, dims). Construction is offline;
     // absence degrades through the existing embedder-absent paths.
+    let cfg_phase = crate::profile::Phase::new("recall.config");
     let cfg =
         guidance_core::config::load_config(std::path::Path::new(workspace)).unwrap_or_default();
     let embedder = crate::embed::embedder_from_config(&cfg);
+    drop(cfg_phase);
     let storage = GuidanceDbStorage::new(&db);
     // Rule-lemmatizer pipeline (no model): the L2 route collapses
     // inflections at zero embedding cost; `None` degrades to L1-only.
     // Built lazily on lemma need — recall always needs it here.
+    let nlp_phase = crate::profile::Phase::new("recall.nlp_build");
     let nlp = LazyNlp::new();
-    match run_recall(plan, &storage, embedder.as_deref(), nlp.get()) {
+    let nlp_ref = nlp.get();
+    drop(nlp_phase);
+    let _recall_phase = crate::profile::Phase::new("recall.run");
+    match run_recall(plan, &storage, embedder.as_deref(), nlp_ref) {
         Ok(output) => Ok(output.hits),
         Err(error) => Err(format!("search failed: {error}")),
     }
@@ -464,6 +497,8 @@ pub fn context_lines_for_hits(
 /// Top-N distinct fused files (hit order) seeding the closure.
 /// Pure; the cap is [`CLOSURE_ANCHOR_FILES`](guidance_core::graph_index::CLOSURE_ANCHOR_FILES).
 #[must_use]
+/// Top-N distinct fused files (hit order) seeding the closure.
+/// Pure; the cap is [`CLOSURE_ANCHOR_FILES`](guidance_core::graph_index::CLOSURE_ANCHOR_FILES).
 pub fn anchor_files(hits: &[SearchHit], count: usize) -> Vec<String> {
     let mut anchors = Vec::new();
     for hit in hits {
@@ -478,13 +513,167 @@ pub fn anchor_files(hits: &[SearchHit], count: usize) -> Vec<String> {
     anchors
 }
 
+/// Hash-verified citation for one fused hit: the cited range hashed
+/// over live bytes (`rel:Lstart-Lend @ b3:hash`), or `unverified` when
+/// the range cannot be read (never an invented hash). Whole-file
+/// fragments cite the whole file. Pure I/O over the hit's own path.
+#[must_use]
+/// Hash-verified citation for one fused hit: the cited range hashed
+/// over live bytes (`rel:Lstart-Lend @ b3:hash`), or `unverified` when
+/// the range cannot be read (never an invented hash). Whole-file
+/// fragments cite the whole file. Pure I/O over the hit's own path.
+pub fn cite_hit(hit: &SearchHit, workspace: &str) -> String {
+    let range = hit
+        .evidence
+        .iter()
+        .find_map(|evidence| match evidence.range {
+            guidance_core::search_types::FragmentSpan::Text {
+                start_line,
+                end_line,
+                ..
+            } => Some((start_line as usize, end_line as usize)),
+            guidance_core::search_types::FragmentSpan::File => Some((1, usize::MAX)),
+            _ => None,
+        });
+    let Some((start, end)) = range else {
+        return "unverified".to_string();
+    };
+    let Ok(bytes) = std::fs::read(&hit.file.absolute_path) else {
+        return "unverified".to_string();
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() || start == 0 || start > lines.len() {
+        return "unverified".to_string();
+    }
+    let end = end.min(lines.len());
+    let cited = lines[start - 1..end].join("\n") + "\n";
+    let hash = common_core::hash::blake3_hex(cited.as_bytes());
+    let shown = PathBuf::from(&hit.file.absolute_path)
+        .strip_prefix(workspace)
+        .map(|rel| rel.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| hit.file.absolute_path.clone());
+    format!("{shown}:{}-{end} @ b3:{hash}", start.min(end))
+}
+
+/// Citations for a hit list, rank order. Length always matches `hits`.
+#[must_use]
+/// Citations for a hit list, rank order. Length always matches `hits`.
+pub fn cite_hits(hits: &[SearchHit], workspace: &str) -> Vec<String> {
+    hits.iter().map(|hit| cite_hit(hit, workspace)).collect()
+}
+
+/// Absolute paths behind a hit list whose sidecar is missing or not
+/// newer than the source: the mirror has not caught up, so rows from
+/// these files are stale. The sidecar mapping is per source root.
+#[must_use]
+/// Absolute paths behind a hit list whose sidecar is missing or not
+/// newer than the source: the mirror has not caught up, so rows from
+/// these files are stale. The sidecar mapping is per source root.
+pub fn stale_hit_sources(
+    hits: &[SearchHit],
+    guidance_dir: &str,
+    src_dirs: &[PathBuf],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for hit in hits {
+        let abs = PathBuf::from(&hit.file.absolute_path);
+        let stale = src_dirs
+            .iter()
+            .find(|root| {
+                abs.strip_prefix(root).is_ok() || root.as_path() == std::path::Path::new(".")
+            })
+            .map(|root| {
+                let rel = abs.strip_prefix(root).unwrap_or(&abs);
+                PathBuf::from(guidance_dir)
+                    .join("src")
+                    .join(format!("{}.json", rel.display()))
+            })
+            .is_none_or(|sidecar| {
+                let side_mtime = common_core::io::mtime(&sidecar);
+                let source_mtime = common_core::io::mtime(&abs);
+                match (side_mtime, source_mtime) {
+                    (Some(side), Some(source)) => side <= source,
+                    _ => true,
+                }
+            });
+        if stale && !out.contains(&hit.file.absolute_path) {
+            out.push(hit.file.absolute_path.clone());
+        }
+    }
+    out
+}
+
+/// Test-only hit over a real file with one text evidence range.
+#[cfg(test)]
+#[must_use]
+/// Test-only hit over a real file with one text evidence range.
+pub fn hit_for_test(abs: &str, rel: &str, start_line: u32, end_line: u32) -> SearchHit {
+    use guidance_core::search_types::{
+        Entity, FileInfo, FragmentContent, FragmentSpan, RecallPath, SearchHitEvidence,
+        SearchMatchedBy,
+    };
+    SearchHit {
+        entity: Entity {
+            id: abs.to_string(),
+            file_id: abs.to_string(),
+            range: FragmentSpan::File,
+            content: FragmentContent::Text {
+                text: String::new(),
+            },
+            metadata: None,
+        },
+        file: FileInfo {
+            id: abs.to_string(),
+            absolute_path: abs.to_string(),
+            relative_path: rel.to_string(),
+            root_path: String::new(),
+            size_bytes: 0,
+            last_modified_time: 0,
+            content_hash: None,
+            kind: None,
+            format: "rust".to_string(),
+            index_status: None,
+        },
+        evidence: vec![SearchHitEvidence {
+            range: FragmentSpan::Text {
+                start_line,
+                end_line,
+                start_offset: 0,
+                end_offset: 0,
+            },
+            content: FragmentContent::Text {
+                text: String::new(),
+            },
+            metadata: None,
+            is_entity: true,
+            path: RecallPath::Fts,
+            route_id: None,
+            query: None,
+            rank: None,
+            score: None,
+            forced: None,
+        }],
+        rank: 1,
+        score: guidance_core::search_types::RrfScore::new(0.05),
+        matched_by: SearchMatchedBy::Fts,
+        trace: None,
+    }
+}
+
 /// Build explain rows: one per fused hit, rank order. The table carries
 /// hits only — expansion never perturbs it (additive default); context
-/// renders separately below. Pure.
+/// renders separately below. Cites pair by index (short lists fill
+/// `unverified`, never shift rows). Pure.
 #[must_use]
-pub fn build_explain_rows(hits: &[SearchHit]) -> Vec<ExplainRow> {
+/// Build explain rows: one per fused hit, rank order. The table carries
+/// hits only — expansion never perturbs it (additive default); context
+/// renders separately below. Cites pair by index (short lists fill
+/// `unverified`, never shift rows). Pure.
+pub fn build_explain_rows(hits: &[SearchHit], cites: &[String]) -> Vec<ExplainRow> {
     hits.iter()
-        .map(|hit| {
+        .enumerate()
+        .map(|(index, hit)| {
             // File-level fragments carry no symbol metadata, so the
             // shared title rule falls back to the entity id (the
             // absolute path). Render those as basenames — CLI-only
@@ -501,6 +690,10 @@ pub fn build_explain_rows(hits: &[SearchHit]) -> Vec<ExplainRow> {
                 // Lossy by design (see `ExplainRow`): the ordinal leaves
                 // the ranking pipeline here and becomes display text.
                 score: hit.score.value(),
+                cite: cites
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| "unverified".to_string()),
             }
         })
         .collect()
@@ -518,6 +711,10 @@ type ContextGroup<'a> = (
 /// "c"`) so provenance stays complete without doubling lines. Sorted
 /// edge order, capped at `cap` lines. Pure.
 #[must_use]
+/// Build ranked context lines from depth-1 expansion edges: one line
+/// per (file, anchor, direction), families merged (`import "s", call
+/// "c"`) so provenance stays complete without doubling lines. Sorted
+/// edge order, capped at `cap` lines. Pure.
 pub fn build_context_lines(edges: &[ContextEdge], cap: usize, workspace: &str) -> Vec<String> {
     // Group by (file, anchor, direction), merging families in sort order.
     let mut groups: Vec<ContextGroup<'_>> = Vec::new();
@@ -576,37 +773,43 @@ fn basename_of(path: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
-/// One rendered explain row: member/symbol title, file path, score.
-/// Score is the fused RRF ordinal (positions, not a magnitude — see
-/// `RrfScore`) for recall rows, `0.0` for graph-closure rows (graph
-/// signal, not a recall score — see M5). Table rendering rounds to two
-/// decimals, which is lossy by design: never feed back into ranking.
+/// One rendered explain row: member/symbol title, file path, score,
+/// hash-verified citation over live bytes.
 #[derive(Debug, Clone, PartialEq)]
+/// One rendered explain row: member/symbol title, file path, score,
+/// hash-verified citation over live bytes.
 pub struct ExplainRow {
     /// Symbol/member title (entity id fallback).
     pub name: String,
     /// Workspace-relative file path (absolute fallback).
     pub source: String,
-    /// Row score (lossy display value — see above).
+    /// Row score: the fused RRF ordinal (positions, not a magnitude).
+    /// Table rendering rounds to two decimals, lossy by design: never
+    /// feed back into ranking.
     pub score: f64,
+    /// Verified cite (`rel:Lstart-Lend @ b3:hash`) or `unverified`.
+    pub cite: String,
 }
 
 /// Render explain output: stable header + hits table, then the additive
 /// context section (present only when non-empty). The table section is
 /// byte-identical with and without expansion — pinned by test. Pure.
 #[must_use]
+/// Render explain output: stable header + hits table, then the additive
+/// context section (present only when non-empty). The table section is
+/// byte-identical with and without expansion — pinned by test. Pure.
 pub fn render_explain_table(query: &str, rows: &[ExplainRow], context: &[String]) -> String {
     let mut out = format!("## Explain: {query}\n\n");
     if rows.is_empty() {
         out.push_str("No results found.\n");
         return out;
     }
-    out.push_str("| Name | Source | Score |\n");
-    out.push_str("|------|--------|-------|\n");
+    out.push_str("| Name | Source | Score | Cite |\n");
+    out.push_str("|------|--------|-------|------|\n");
     for row in rows {
         out.push_str(&format!(
-            "| {} | {} | {:.2} |\n",
-            row.name, row.source, row.score
+            "| {} | {} | {:.2} | {} |\n",
+            row.name, row.source, row.score, row.cite
         ));
     }
     if !context.is_empty() {

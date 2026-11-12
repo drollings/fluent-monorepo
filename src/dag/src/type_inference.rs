@@ -29,6 +29,10 @@ use crate::hierarchy::HierarchyIndex;
 /// Construct via [`TypeInference::build`], then query with
 /// [`TypeInference::is_subclass_of`]. Once built the struct is read-only.
 #[derive(Debug)]
+/// A precomputed subclass-closure index over an ontology's inheritance graph.
+/// 
+/// Construct via [`TypeInference::build`], then query with
+/// [`TypeInference::is_subclass_of`]. Once built the struct is read-only.
 pub struct TypeInference {
     index: HierarchyIndex<i64>,
     class_count: usize,

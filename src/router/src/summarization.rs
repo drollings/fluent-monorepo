@@ -17,6 +17,7 @@ use crate::stages::common::{extract_user_message, get_metadata_string};
 
 /// A scored agent/frontier response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A scored agent/frontier response.
 pub struct ScoredResult {
     #[serde(default)]
     pub content: String,
@@ -155,6 +156,15 @@ impl_component!(ResultScorer);
 /// `Clone` so lock owners can snapshot the handle and drop the guard before
 /// the model call (M15) — every field is `Arc`/primitive/`Vec`.
 #[derive(Clone)]
+/// Condenses a full agent/frontier response into a compact summary.
+/// 
+/// Input from `WorkContext` metadata:
+/// - `"content"` — the text to summarize
+/// 
+/// Output: `{"summary": "..."}` in `WorkOutput.data`
+/// 
+/// `Clone` so lock owners can snapshot the handle and drop the guard before
+/// the model call (M15) — every field is `Arc`/primitive/`Vec`.
 pub struct Summarizer {
     name: ArcIntern<str>,
     client: Arc<dyn ChatBackend>,

@@ -44,12 +44,17 @@ use crate::views::{
 /// the read path decides its outcome before consulting it, and nothing about
 /// serving depends on the latch's state.
 #[derive(Debug, Default)]
+/// The fallback latch: edge-triggered, so a sustained fallback warns once and
+/// a recovery logs once instead of one line per read. Observation-axis only —
+/// the read path decides its outcome before consulting it, and nothing about
+/// serving depends on the latch's state.
 pub struct FallbackLatch {
     in_fallback: bool,
 }
 
 /// What a latch observation crossed, if anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What a latch observation crossed, if anything.
 pub enum LatchEvent {
     /// This observation entered fallback (a served read followed by a miss).
     EnteredFallback,
@@ -300,6 +305,8 @@ fn replay_state_view_of(session_id: &str, driver: &ReplayDriver) -> ReplayStateV
 /// Read gateway over live server state (`AppState` is not `Debug`, so the
 /// gateway isn't either — it prints as its views, never its locks).
 #[derive(Clone)]
+/// Read gateway over live server state (`AppState` is not `Debug`, so the
+/// gateway isn't either — it prints as its views, never its locks).
 pub struct ServerGateway {
     state: Shared,
 }

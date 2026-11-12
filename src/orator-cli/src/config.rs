@@ -11,6 +11,8 @@ use orator::{LlmEndpointConfig, OratorConfig};
 /// Resolve a backend flag against the configured default: a non-empty
 /// flag wins, otherwise the file value applies.
 #[must_use]
+/// Resolve a backend flag against the configured default: a non-empty
+/// flag wins, otherwise the file value applies.
 pub fn resolve_backend(flag: &str, configured: &str) -> String {
     if flag.is_empty() {
         configured.to_string()
@@ -22,6 +24,8 @@ pub fn resolve_backend(flag: &str, configured: &str) -> String {
 /// Resolve the LLM base URL and model: `LLM_BASE_URL`/`LLM_MODEL` win
 /// when set, otherwise the `llm` section applies.
 #[must_use]
+/// Resolve the LLM base URL and model: `LLM_BASE_URL`/`LLM_MODEL` win
+/// when set, otherwise the `llm` section applies.
 pub fn resolve_llm_base(llm: &LlmEndpointConfig) -> (String, String) {
     let explicit = std::env::var("LLM_BASE_URL").unwrap_or_default();
     let base = if explicit.is_empty() {
@@ -36,6 +40,8 @@ pub fn resolve_llm_base(llm: &LlmEndpointConfig) -> (String, String) {
 /// Resolve the audio-server base URL: `LLM_BASE_URL` wins when set,
 /// otherwise the `llm` section applies.
 #[must_use]
+/// Resolve the audio-server base URL: `LLM_BASE_URL` wins when set,
+/// otherwise the `llm` section applies.
 pub fn audio_base_url(llm: &LlmEndpointConfig) -> String {
     let endpoint = std::env::var("LLM_BASE_URL").unwrap_or_else(|_| llm.endpoint.clone());
     if std::env::var("LLM_BASE_URL").is_ok() {
@@ -47,6 +53,8 @@ pub fn audio_base_url(llm: &LlmEndpointConfig) -> String {
 /// Resolve the audio-server base URL: `LLM_BASE_URL` wins when set,
 /// otherwise the `s2s` section applies (default port 8080).
 #[must_use]
+/// Resolve the audio-server base URL: `LLM_BASE_URL` wins when set,
+/// otherwise the `s2s` section applies (default port 8080).
 pub fn s2s_base_url(s2s: &orator::S2sConfig) -> String {
     if let Ok(explicit) = std::env::var("LLM_BASE_URL") {
         return explicit;
@@ -79,6 +87,13 @@ fn base_url_of(endpoint: &str) -> String {
 /// rebuild it from `OratorConfig::field_names` (the root handle lists
 /// `models`/`roles` as skipped, so its order differs).
 #[must_use]
+/// Every settable dotted key, in section order. The top-level
+/// `gguf_dir`, the default-model tag `default`, and the whole-table
+/// `models`/`roles` keys (JSON values) come first.
+/// NOTE: this order feeds the `allowed keys` refusal strings and is
+/// pinned by `config_keys_pins_the_advertised_surface` — do NOT
+/// rebuild it from `OratorConfig::field_names` (the root handle lists
+/// `models`/`roles` as skipped, so its order differs).
 pub fn config_keys() -> Vec<String> {
     let mut keys = vec![
         "gguf_dir".to_string(),
@@ -111,6 +126,8 @@ fn allowed_keys() -> String {
 /// Extra server argv for the GPU opt-in: full layer offload when set,
 /// no flag at all otherwise (defaults reproduce today's argv exactly).
 #[must_use]
+/// Extra server argv for the GPU opt-in: full layer offload when set,
+/// no flag at all otherwise (defaults reproduce today's argv exactly).
 pub fn gpu_llm_args(gpu: bool) -> Vec<String> {
     if gpu {
         vec![

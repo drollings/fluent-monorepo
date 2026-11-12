@@ -33,6 +33,9 @@ pub type PlausibilityFetch = Arc<dyn Fn(&[PlausibilityTriple]) -> Option<f64> + 
 /// sentence root, `subject` is an `nsubj` dependent of that root, `object` is a
 /// `dobj` dependent. Either argument may be `None` (intransitive etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One deterministic triple from a single sentence: the predicate is the
+/// sentence root, `subject` is an `nsubj` dependent of that root, `object` is a
+/// `dobj` dependent. Either argument may be `None` (intransitive etc.).
 pub struct Triple {
     /// Token index of the subject, when an `nsubj` child exists.
     pub subject: Option<usize>,
@@ -51,6 +54,12 @@ pub struct Triple {
 /// One triple per sentence — the predicate is always the root, arguments are the
 /// first matching child per role (matching `routing.rs` single-slot extraction).
 #[must_use]
+/// Dep labels naming the subject/object roles — the canonical sets from
+/// `labels.rs` (same closed vocabulary as the router's `routing.rs` and the
+/// frame extractor).
+/// Extract triples deterministically from an **attached** doc (deps/heads set).
+/// One triple per sentence — the predicate is always the root, arguments are the
+/// first matching child per role (matching `routing.rs` single-slot extraction).
 pub fn extract_triples(doc: &Doc) -> Vec<Triple> {
     if doc.is_empty() {
         return Vec::new();
@@ -88,6 +97,10 @@ pub fn extract_triples(doc: &Doc) -> Vec<Triple> {
 /// id (via `resolver`) with its surface lemma. Pure over `Doc` + resolver;
 /// the store is never consulted here (registration is boot-only).
 #[must_use]
+/// Build the knowledge-half scoring input for `triples`: one
+/// [`PlausibilityTriple`] per triple, pairing each role's content-addressed
+/// id (via `resolver`) with its surface lemma. Pure over `Doc` + resolver;
+/// the store is never consulted here (registration is boot-only).
 pub fn build_plausibility_inputs(
     doc: &Doc,
     triples: &[Triple],
@@ -120,6 +133,9 @@ fn scored_lemma(doc: &Doc, idx: usize, resolver: &InterlinguaResolver) -> Scored
 /// adapter over [`build_plausibility_inputs`]. Returns `None` when there are
 /// no triples or no fetch is wired (fail-closed, the pre-M3 behavior).
 #[must_use]
+/// Score `triples` through an injected knowledge-half fetch: the text-half
+/// adapter over [`build_plausibility_inputs`]. Returns `None` when there are
+/// no triples or no fetch is wired (fail-closed, the pre-M3 behavior).
 pub fn semantic_plausibility_via_fetch(
     doc: &Doc,
     triples: &[Triple],

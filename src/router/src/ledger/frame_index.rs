@@ -36,6 +36,7 @@ const SENSE_ROLE: &str = "sense";
 
 /// A request to resolve one ambiguous frame (one slot of the wave batch).
 #[derive(Debug, Clone)]
+/// A request to resolve one ambiguous frame (one slot of the wave batch).
 pub struct FrameResolutionRequest {
     pub predicate_lemma_id: InterlinguaId,
     pub ambiguity_kind: AmbiguityKind,
@@ -47,6 +48,7 @@ pub struct FrameResolutionRequest {
 
 /// One frame-resolution job: the open ambiguities pending in a single tick.
 #[derive(Debug, Clone, Default)]
+/// One frame-resolution job: the open ambiguities pending in a single tick.
 pub struct FrameResolutionJob {
     pub requests: Vec<FrameResolutionRequest>,
 }
@@ -62,6 +64,7 @@ pub type FrameResolutionFetch =
 
 /// Errors surfaced by enqueue (the worker's processing is best-effort).
 #[derive(Debug, Error)]
+/// Errors surfaced by enqueue (the worker's processing is best-effort).
 pub enum FrameResolutionError {
     #[error("frame resolution queue closed: {0}")]
     Closed(String),
@@ -75,6 +78,11 @@ pub enum FrameResolutionError {
 /// jobs before any reuse read, fetch, or promotion write — gate-off is
 /// observationally identical to no worker.
 #[derive(Debug, Clone)]
+/// Runtime gate for the frame-resolution worker (the coordinator-gate shape:
+/// an `Arc<AtomicBool>` shared by clone, open at boot, closable at runtime
+/// without a restart or touching the attached worker). A closed gate drops
+/// jobs before any reuse read, fetch, or promotion write — gate-off is
+/// observationally identical to no worker.
 pub struct FrameResolutionGate {
     open: Arc<AtomicBool>,
 }

@@ -67,6 +67,7 @@ const INDEX_ROLES: &[&str] = &[
 
 /// The normalized `[0,1]` salience components for one candidate node.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// The normalized `[0,1]` salience components for one candidate node.
 pub struct SalienceSignal {
     pub frame_frequency: f64,
     pub interlingua_centrality: f64,
@@ -92,6 +93,12 @@ impl Default for SalienceSignal {
 /// here is policy — the [`WEIGHTS`] vector and the ledger-named signal shape
 /// — not movable math.
 #[derive(Debug, Clone, Copy)]
+/// The weighted salience scorer — a pure function of a [`SalienceSignal`].
+/// 
+/// M7.2 disposition: stays router-local. The accumulation already delegates
+/// to `common_core::score::weighted_dot` (the shared kernel); what remains
+/// here is policy — the [`WEIGHTS`] vector and the ledger-named signal shape
+/// — not movable math.
 pub struct SalienceScorer {
     weights: [f64; 4],
 }
@@ -401,6 +408,7 @@ fn add_undirected(graph: &mut NodeGraph, a: i64, b: i64) {
 
 /// One candidate after the ranking pass.
 #[derive(Debug, Clone, PartialEq)]
+/// One candidate after the ranking pass.
 pub struct RankedCandidate {
     pub node_id: NodeId,
     /// The deterministic salience score (the prefilter).
@@ -432,6 +440,28 @@ pub struct RankedCandidate {
 /// accumulation (`common_core::score::weighted_dot`), wire decode
 /// (`fluent_llm::parse_typed`).
 #[must_use]
+/// Prefilter candidates by deterministic salience to a top-K shortlist, then
+/// let the local model rank **only** that shortlist in one grammar-constrained
+/// call. The model never sees the full candidate set.
+/// 
+/// - `source` supplies the salience signals (the ledger provider in
+/// production; a fixture in tests).
+/// - `backend` is the onnx `ChatBackend`; `None` → salience-only ordering
+/// (no model call).
+/// - `label_of` supplies a bounded, human-readable snippet per candidate for
+/// the ranking prompt (the store's LOD5 label), so the model scores a short,
+/// bounded description — never full context.
+/// 
+/// A failed / unparseable / hallucinating ranking call degrades to the
+/// salience order (never an error, never an empty result, never an unbounded
+/// prompt).
+/// 
+/// M7.4 disposition: stays router-local — the "deterministic shortlist (K=8)
+/// → single grammar-constrained call" shape is routing policy (shortlist
+/// size, prompt, extras schema, fail-open), not a generic primitive. The
+/// pure pieces are shared: centrality (`search_vector::salience::pagerank`),
+/// accumulation (`common_core::score::weighted_dot`), wire decode
+/// (`fluent_llm::parse_typed`).
 pub fn rank_candidates(
     query: &str,
     candidates: &[NodeId],

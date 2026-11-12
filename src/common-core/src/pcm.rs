@@ -21,6 +21,7 @@ use base64::prelude::*;
 
 /// Integer wire scale for 16-bit PCM samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Integer wire scale for 16-bit PCM samples.
 pub enum Scale16 {
     /// Divide/multiply by 32767 (`i16::MAX`): `1.0` ⇄ `32767` exactly.
     Symmetric32767,
@@ -30,6 +31,7 @@ pub enum Scale16 {
 
 /// Rounding applied when quantizing `f32` to `i16`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Rounding applied when quantizing `f32` to `i16`.
 pub enum Rounding {
     /// `f32::round` (half away from zero) before the cast.
     Nearest,
@@ -39,6 +41,7 @@ pub enum Rounding {
 
 /// Divisor for a wire scale.
 #[must_use]
+/// Divisor for a wire scale.
 pub fn scale_divisor(scale: Scale16) -> f32 {
     match scale {
         Scale16::Symmetric32767 => 32767.0,
@@ -51,6 +54,10 @@ pub fn scale_divisor(scale: Scale16) -> f32 {
 /// NaN clamps to itself and the float-to-int cast saturates it to
 /// zero (silence) under either rounding mode.
 #[must_use]
+/// Quantize one sample: clamp to `[-1.0, 1.0]`, scale, round, cast.
+/// 
+/// NaN clamps to itself and the float-to-int cast saturates it to
+/// zero (silence) under either rounding mode.
 pub fn f32_to_i16_sample(sample: f32, scale: Scale16, rounding: Rounding) -> i16 {
     let scaled = sample.clamp(-1.0, 1.0) * scale_divisor(scale);
     match rounding {
@@ -61,12 +68,14 @@ pub fn f32_to_i16_sample(sample: f32, scale: Scale16, rounding: Rounding) -> i16
 
 /// Dequantize one sample under a wire scale.
 #[must_use]
+/// Dequantize one sample under a wire scale.
 pub fn i16_to_f32_sample(sample: i16, scale: Scale16) -> f32 {
     f32::from(sample) / scale_divisor(scale)
 }
 
 /// Encode samples as little-endian `i16` bytes, one sample per pair.
 #[must_use]
+/// Encode samples as little-endian `i16` bytes, one sample per pair.
 pub fn encode_i16_le(samples: &[f32], scale: Scale16, rounding: Rounding) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 2);
     for sample in samples {
@@ -79,6 +88,9 @@ pub fn encode_i16_le(samples: &[f32], scale: Scale16, rounding: Rounding) -> Vec
 ///
 /// A trailing partial sample is dropped, never fabricated.
 #[must_use]
+/// Decode little-endian `i16` bytes to samples.
+/// 
+/// A trailing partial sample is dropped, never fabricated.
 pub fn decode_i16_le(bytes: &[u8], scale: Scale16) -> Vec<f32> {
     bytes
         .chunks_exact(2)
@@ -88,6 +100,7 @@ pub fn decode_i16_le(bytes: &[u8], scale: Scale16) -> Vec<f32> {
 
 /// Encode samples as little-endian `f32` bytes, one sample per quad.
 #[must_use]
+/// Encode samples as little-endian `f32` bytes, one sample per quad.
 pub fn encode_f32_le(samples: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 4);
     for sample in samples {
@@ -100,6 +113,9 @@ pub fn encode_f32_le(samples: &[f32]) -> Vec<u8> {
 ///
 /// A trailing partial sample is dropped, never fabricated.
 #[must_use]
+/// Decode little-endian `f32` bytes to samples.
+/// 
+/// A trailing partial sample is dropped, never fabricated.
 pub fn decode_f32_le(bytes: &[u8]) -> Vec<f32> {
     bytes
         .chunks_exact(4)
@@ -109,6 +125,7 @@ pub fn decode_f32_le(bytes: &[u8]) -> Vec<f32> {
 
 /// Standard-base64 encode bytes for a message part.
 #[must_use]
+/// Standard-base64 encode bytes for a message part.
 pub fn encode_base64(bytes: &[u8]) -> String {
     BASE64_STANDARD.encode(bytes)
 }
@@ -132,6 +149,13 @@ pub const WAV_HEADER_LEN: usize = 44;
 /// each wrapper keeps its pinned convention; no second RIFF header
 /// exists anywhere.
 #[must_use]
+/// Assemble a mono PCM16 WAV frame: 44-byte header plus payload.
+/// 
+/// Builds the payload through [`encode_i16_le`], allocates exactly
+/// `WAV_HEADER_LEN + payload.len()`, then appends [`wav_frame_header`]
+/// followed by the payload. Scale and rounding stay caller-chosen so
+/// each wrapper keeps its pinned convention; no second RIFF header
+/// exists anywhere.
 pub fn encode_wav_mono_pcm16(
     samples: &[f32],
     sample_rate: u32,
@@ -190,6 +214,13 @@ pub fn extend_mono_from_interleaved<T>(
 /// Do not widen to `f64`, reorder, or Kahan-sum: callers pin bit
 /// patterns through this function.
 #[must_use]
+/// Root mean square amplitude of one frame.
+/// 
+/// Empty input reads as digital silence (`0.0`). Otherwise the exact
+/// `f32` accumulation order is the contract: sum of squares in input
+/// order as `f32`, divided by the length as `f32`, then `sqrt()`.
+/// Do not widen to `f64`, reorder, or Kahan-sum: callers pin bit
+/// patterns through this function.
 pub fn root_mean_square_f32(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
@@ -203,6 +234,10 @@ pub fn root_mean_square_f32(samples: &[f32]) -> f32 {
 /// `orator_s2s_wav_header_golden`: PCM format, one channel, byte rate
 /// `sample_rate * 2`, block align 2, 16 bits per sample.
 #[must_use]
+/// Build the 44-byte RIFF header for mono 16-bit PCM at `sample_rate`
+/// carrying `data_bytes` of sample payload. Byte layout pinned by
+/// `orator_s2s_wav_header_golden`: PCM format, one channel, byte rate
+/// `sample_rate * 2`, block align 2, 16 bits per sample.
 pub fn wav_frame_header(sample_rate: u32, data_bytes: u32) -> [u8; WAV_HEADER_LEN] {
     let mut header = [0u8; WAV_HEADER_LEN];
     header[0..4].copy_from_slice(b"RIFF");

@@ -103,6 +103,11 @@ pub fn create_embedding_model(
 /// Stored model identity for one index. Keys and devices are deliberately
 /// absent: they never invalidate vectors.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// ---------------------------------------------------------------------------
+/// Index compatibility: rebuild iff model identity or endpoint changed.
+/// ---------------------------------------------------------------------------
+/// Stored model identity for one index. Keys and devices are deliberately
+/// absent: they never invalidate vectors.
 pub struct EmbeddingIdentity {
     pub provider: String,
     pub model: String,
@@ -113,6 +118,7 @@ pub struct EmbeddingIdentity {
 
 /// Which half of the identity moved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which half of the identity moved.
 pub enum RebuildField {
     Model,
     Endpoint,
@@ -120,6 +126,7 @@ pub enum RebuildField {
 
 /// A required index rebuild, carrying both sides and the operator hint.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A required index rebuild, carrying both sides and the operator hint.
 pub struct RebuildMismatch {
     pub field: RebuildField,
     pub existing: String,

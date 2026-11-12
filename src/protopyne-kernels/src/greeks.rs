@@ -92,6 +92,10 @@ fn norm_cdf_pos(x: f64) -> f64 {
 /// volatility; rho per 1.0 of rate has no [`Greeks`](protopyne_types::Greeks)
 /// field and is dropped at the conversion.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Black-Scholes sensitivities. Units match
+/// [`Greeks`](protopyne_types::Greeks): theta per day, vega per point of
+/// volatility; rho per 1.0 of rate has no [`Greeks`](protopyne_types::Greeks)
+/// field and is dropped at the conversion.
 pub struct BsGreeks {
     /// Change in value per $1 move in the underlying.
     pub delta: f64,
@@ -122,6 +126,9 @@ impl From<BsGreeks> for protopyne_types::Greeks {
 /// non-positive time, non-finite inputs) propagates as `NaN` — callers that
 /// need a refusal validate first ([`implied_vol`] does).
 #[must_use]
+/// European option value. Garbage in (non-positive spot/strike/volatility,
+/// non-positive time, non-finite inputs) propagates as `NaN` — callers that
+/// need a refusal validate first ([`implied_vol`] does).
 pub fn bs_price(kind: OptionKind, spot: f64, strike: f64, years: f64, rate: f64, vol: f64) -> f64 {
     let sqrt_t = years.sqrt();
     let d1 = ((spot / strike).ln() + (rate + 0.5 * vol * vol) * years) / (vol * sqrt_t);
@@ -136,6 +143,8 @@ pub fn bs_price(kind: OptionKind, spot: f64, strike: f64, years: f64, rate: f64,
 /// European option sensitivities. Same domain as [`bs_price`]: garbage
 /// propagates as `NaN`.
 #[must_use]
+/// European option sensitivities. Same domain as [`bs_price`]: garbage
+/// propagates as `NaN`.
 pub fn bs_greeks(
     kind: OptionKind,
     spot: f64,

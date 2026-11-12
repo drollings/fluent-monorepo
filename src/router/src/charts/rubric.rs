@@ -24,6 +24,7 @@ use super::{ChartError, ChartRubric};
 
 /// Result of running a rubric gate on a target's output.
 #[derive(Debug, Clone)]
+/// Result of running a rubric gate on a target's output.
 pub struct RubricVerdict {
     pub accepted: bool,
     /// Human-readable explanation (deterministic-miss message or judge reason).

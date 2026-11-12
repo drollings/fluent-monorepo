@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use fluent_types::{CapabilityEval, GuidanceDoc, Member, MemberType, Meta, Param, Skill};
+use fluent_types::{
+    CapabilityEval, CommentSummary, GuidanceDoc, Member, MemberType, Meta, OverlayStatus, Param,
+    Skill,
+};
 use smol_str::SmolStr;
 use thiserror::Error;
 
@@ -96,12 +99,14 @@ fn parse_member(v: &serde_json::Value) -> Option<Member> {
             .get("match_hash")
             .and_then(|v| v.as_str())
             .map(SmolStr::from),
-        span_start: obj.get("span").and_then(|v| v.as_array()).and_then(|pair| {
-            pair.first().and_then(serde_json::Value::as_u64)
-        }),
-        span_end: obj.get("span").and_then(|v| v.as_array()).and_then(|pair| {
-            pair.get(1).and_then(serde_json::Value::as_u64)
-        }),
+        span_start: obj
+            .get("span")
+            .and_then(|v| v.as_array())
+            .and_then(|pair| pair.first().and_then(serde_json::Value::as_u64)),
+        span_end: obj
+            .get("span")
+            .and_then(|v| v.as_array())
+            .and_then(|pair| pair.get(1).and_then(serde_json::Value::as_u64)),
         item_hash: obj
             .get("item_hash")
             .and_then(|v| v.as_str())
@@ -219,6 +224,69 @@ fn load_guidance_from_value(v: &serde_json::Value) -> Option<GuidanceDoc> {
         members,
         equivalents: parse_str_vec("equivalents"),
         capability_eval,
+        summary: root.get("summary").and_then(parse_summary),
+        summaries: root
+            .get("summaries")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(key, value)| {
+                        parse_summary(value).map(|summary| (key.clone(), summary))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
+}
+
+/// Parse one generated summary record; entries without text are absent.
+fn parse_summary(v: &serde_json::Value) -> Option<CommentSummary> {
+    let obj = v.as_object()?;
+    Some(CommentSummary {
+        text: obj.get("text")?.as_str()?.into(),
+        comment_hash: obj
+            .get("comment_hash")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        code_hash: obj
+            .get("code_hash")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        model: obj
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .into(),
+        prompt_version: obj
+            .get("prompt_version")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0),
+        temperature: obj
+            .get("temperature")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0),
+        seed: obj
+            .get("seed")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0),
+        generated_at: obj
+            .get("generated_at")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0),
+        status: obj
+            .get("status")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or(OverlayStatus::Absent),
+        failure_kind: obj
+            .get("failure_kind")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        failure_reason: obj
+            .get("failure_reason")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
     })
 }
 
@@ -312,6 +380,16 @@ pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
     if new.capability_eval.is_none() {
         new.capability_eval.clone_from(&existing.capability_eval);
     }
+    // Summaries merge by node key: entries the fresh pass did not
+    // regenerate survive; human prose above is never touched by them.
+    if new.summary.is_none() {
+        new.summary.clone_from(&existing.summary);
+    }
+    for (key, summary) in &existing.summaries {
+        new.summaries
+            .entry(key.clone())
+            .or_insert_with(|| summary.clone());
+    }
     // Merge members by match_hash, falling back to a stable interface
     // for hashless members (same path merge_member takes on its own).
     for new_member in &mut new.members {
@@ -367,6 +445,7 @@ pub fn save_guidance(
         src: doc_to_save.meta.source.to_string(),
         body: common_core::hash::sha256_hex(body.as_bytes()),
         src_hash: receipt.source_hash.clone(),
+        stuck: false,
         components: receipt.components.components.clone(),
     };
     let full = format!("{}\n{body}", header.render());
@@ -375,6 +454,41 @@ pub fn save_guidance(
     }
     common_core::io::write_atomic(path, full.as_bytes())?;
     Ok(())
+}
+
+/// Persist regenerated summaries into an existing sidecar: human prose and
+/// unmentioned summary entries survive, and the stored header receipt and
+/// source hash round-trip instead of a fabricated receipt.
+pub fn save_guidance_summaries(
+    path: &Path,
+    summary: Option<CommentSummary>,
+    summaries: &std::collections::BTreeMap<String, CommentSummary>,
+) -> Result<(), JsonError> {
+    let header = common_core::io::read_to_string_err(path)
+        .ok()
+        .and_then(|text| text.split_once('\n').map(|(first, _)| first.to_string()))
+        .and_then(|first| fluent_types::sidecar::SidecarHeader::parse_line(&first));
+    let mut doc = if path.exists() {
+        load_guidance(path)?.unwrap_or_default()
+    } else {
+        GuidanceDoc::default()
+    };
+    if summary.is_some() {
+        doc.summary = summary;
+    }
+    for (key, value) in summaries {
+        doc.summaries.insert(key.clone(), value.clone());
+    }
+    let receipt = match header {
+        Some(parsed) => SidecarReceipt::new(
+            crate::components::ComponentVector {
+                components: parsed.components,
+            },
+            parsed.src_hash,
+        ),
+        None => SidecarReceipt::default(),
+    };
+    save_guidance(path, &doc, &receipt)
 }
 
 #[cfg(test)]
@@ -597,3 +711,7 @@ mod identical_write_tests {
         assert_eq!(before, after, "identical content must not rewrite the file");
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/summary_sidecar.rs"]
+mod summary_sidecar_tests;

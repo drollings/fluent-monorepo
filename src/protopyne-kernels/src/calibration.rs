@@ -42,6 +42,11 @@ use polars::prelude::{
 /// Calibration parameterization per kernel id: canonical lengths with the
 /// slowest settings given headroom inside the control frames.
 #[must_use]
+/// ---------------------------------------------------------------------------
+/// Canonical calibration parameters (single home)
+/// ---------------------------------------------------------------------------
+/// Calibration parameterization per kernel id: canonical lengths with the
+/// slowest settings given headroom inside the control frames.
 pub fn canonical_params(id: &str) -> ParamSet {
     let len14 = || ParamSet::new().with_int("length", 14);
     match id {
@@ -154,6 +159,10 @@ fn seeded_legs(n_flat: usize, n_trend: usize) -> OwnedOhlcv {
 
 /// Must-NOT-fire control inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ---------------------------------------------------------------------------
+/// Controls
+/// ---------------------------------------------------------------------------
+/// Must-NOT-fire control inputs.
 pub enum Control {
     /// Constant market: no kernel may false-signal or leak.
     Flat,
@@ -192,6 +201,7 @@ impl Control {
 
 /// One broken universal invariant.
 #[derive(Debug, Clone, PartialEq)]
+/// One broken universal invariant.
 pub struct ControlViolation {
     /// Kernel id.
     pub id: String,
@@ -206,6 +216,10 @@ pub struct ControlViolation {
 /// `Some(NaN)`/`Some(±inf)` anywhere, and leading warmup positions stay
 /// `None` on the primary leg.
 #[must_use]
+/// Run every registry kernel over one control input; empty means quiet.
+/// Checks, per kernel: batch succeeds, output lengths equal input length, no
+/// `Some(NaN)`/`Some(±inf)` anywhere, and leading warmup positions stay
+/// `None` on the primary leg.
 pub fn run_control(control: Control) -> Vec<ControlViolation> {
     let legs = control.legs();
     let n = legs.close.len();
@@ -299,6 +313,9 @@ pub fn run_control(control: Control) -> Vec<ControlViolation> {
 /// nulls may degrade defined outputs to `None`, never fabricate. Empty means
 /// the alignment contract holds for every kernel, primary and secondaries.
 #[must_use]
+/// Positions where null injection resurrected a warming `None` into a value:
+/// nulls may degrade defined outputs to `None`, never fabricate. Empty means
+/// the alignment contract holds for every kernel, primary and secondaries.
 pub fn null_alignment_diffs() -> Vec<ControlViolation> {
     let clean = seeded_legs(0, 30);
     let mut nulled = seeded_legs(0, 30);
@@ -346,6 +363,10 @@ pub fn null_alignment_diffs() -> Vec<ControlViolation> {
 
 /// One dashboard row: task-value accept plus control false-fire count.
 #[derive(Debug, Clone, PartialEq)]
+/// ---------------------------------------------------------------------------
+/// Expr-parity dashboard
+/// ---------------------------------------------------------------------------
+/// One dashboard row: task-value accept plus control false-fire count.
 pub struct ParityRow {
     /// Registry id.
     pub id: String,
@@ -362,6 +383,8 @@ pub struct ParityRow {
 /// Global Expr-parity dashboard: per-id accept rate plus control false-fire rate.
 /// Green is 1.0 accept with 0.0 false-fire.
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Global Expr-parity dashboard: per-id accept rate plus control false-fire rate.
+/// Green is 1.0 accept with 0.0 false-fire.
 pub struct ParityDashboard {
     /// One row per registry kernel, in registry order.
     pub rows: Vec<ParityRow>,
@@ -489,6 +512,9 @@ impl ParityDashboard {
 // Reference expressions (transcribed from the per-kernel Expr-parity suites)
 // ---------------------------------------------------------------------------
 
+/// ---------------------------------------------------------------------------
+/// Reference expressions (transcribed from the per-kernel Expr-parity suites)
+/// ---------------------------------------------------------------------------
 fn strict(n: usize) -> RollingOptionsFixedWindow {
     RollingOptionsFixedWindow {
         window_size: n,

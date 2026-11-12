@@ -28,6 +28,7 @@ use serde_json::Value;
 
 /// A cache entry storing an LLM response with a timestamp for TTL checks.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A cache entry storing an LLM response with a timestamp for TTL checks.
 pub struct CachedResponse {
     /// Unix epoch seconds when this entry was stored.
     pub stored_at_secs: u64,

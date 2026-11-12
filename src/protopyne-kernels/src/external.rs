@@ -18,6 +18,8 @@ use sha2::{Digest, Sha256};
 /// One exported observation in the document: our value is supplied by the
 /// caller at check time, never stored beside the reference.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+/// One exported observation in the document: our value is supplied by the
+/// caller at check time, never stored beside the reference.
 pub struct ExternalRowDoc {
     /// Bar index in the export.
     pub bar: usize,
@@ -27,6 +29,7 @@ pub struct ExternalRowDoc {
 
 /// One external export document, as committed under `tests/data/external/`.
 #[derive(Debug, Clone, PartialEq)]
+/// One external export document, as committed under `tests/data/external/`.
 pub struct ExternalDocument {
     /// Where the numbers came from (platform name).
     pub source: String,
@@ -58,6 +61,8 @@ struct RawDocument {
 /// Why an external document or comparison was refused. Every refusal names
 /// the field or the bar, never a bare verdict.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+/// Why an external document or comparison was refused. Every refusal names
+/// the field or the bar, never a bare verdict.
 pub enum ExternalError {
     /// The document is not JSON, or names a provenance field it cannot
     /// supply; the detail carries serde's own words, which name the field.
@@ -69,6 +74,9 @@ pub enum ExternalError {
 /// the loader and the artifact authors compute — a second spelling would
 /// let the two disagree about what "the script hash" means.
 #[must_use]
+/// SHA-256 of `script`, lowercase hex. The one home for the binding both
+/// the loader and the artifact authors compute — a second spelling would
+/// let the two disagree about what "the script hash" means.
 pub fn script_sha256_hex(script: &[u8]) -> String {
     use std::fmt::Write as _;
     let digest = Sha256::digest(script);

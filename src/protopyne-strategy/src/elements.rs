@@ -56,6 +56,35 @@ use crate::view::{MarketData, MarketView};
 /// estimates (edge per unit, gross odds per unit), `None` until a signal
 /// measures them. No shipping signal fills them today; absence sizes zero.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// What a signal concluded on closed bars: a direction, a confidence in that
+/// direction, the task-value readings a policy may threshold, and the observed
+/// edge/odds pair a research sizer prices.
+/// 
+/// **The two axes are distinct and are never substituted for one another.**
+/// 
+/// - [`SignalOutput::conviction`] is **producer confidence**: the signal's own
+/// doubt about the reading it just produced. It may silence the producer
+/// (disarm entries, withhold a reading); it must never deny a trade on merit.
+/// Read it through [`SignalOutput::confidence`], which returns the typed
+/// [`Confidence`] value.
+/// - [`SignalOutput::activity_score`] and [`SignalOutput::volatility`] are
+/// **task-value** readings: the opportunity and the regime a sizing policy
+/// needs in order to judge the *outcome*. Read them through
+/// [`SignalOutput::merit`].
+/// 
+/// A confident producer can be wrong for the task, and a hesitant one can be
+/// right, so a policy that gates a trade must say that it is applying a
+/// task-value threshold to a confidence reading — it must not pretend the two
+/// are the same number.
+/// 
+/// `volatility` is `Option` on purpose — absence is not a zero: a policy that
+/// needs σ and does not get one sizes **zero**, and the composed strategy
+/// refuses the zero quantity with a reason
+/// ([`EconRefusal::ZeroQuantity`](crate::economics::EconRefusal::ZeroQuantity)).
+/// 
+/// `edge` and `odds` are the same doctrine for a Kelly-style sizer: observed
+/// estimates (edge per unit, gross odds per unit), `None` until a signal
+/// measures them. No shipping signal fills them today; absence sizes zero.
 pub struct SignalOutput {
     /// Direction of exposure.
     pub direction: Direction,
@@ -119,6 +148,7 @@ impl SignalOutput {
 
 /// Per-run configuration a signal binds into one instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Per-run configuration a signal binds into one instance.
 pub struct SignalConfig {
     /// Spacing of the bars the instance will be fed.
     pub timeframe: Timeframe,
@@ -162,6 +192,8 @@ pub trait Signal: Send + Sync {
 /// Placeholder signal returning fixed scores. Useful for rehearsal and for
 /// tests that target risk/grant behavior rather than indicator logic.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Placeholder signal returning fixed scores. Useful for rehearsal and for
+/// tests that target risk/grant behavior rather than indicator logic.
 pub struct FixedSignal {
     direction: Direction,
     conviction: f64,
@@ -261,6 +293,7 @@ impl SignalInstance for FixedSignal {
 
 /// Where a proposal's price, loss, and committed notional come from.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Where a proposal's price, loss, and committed notional come from.
 pub enum EconomicsPolicy {
     /// The caller's configured values stand (the default; pinned legacy).
     #[default]
@@ -280,6 +313,7 @@ impl EconomicsPolicy {
 /// Terms a caller supplies to structure selection.
 #[derive(Debug, Clone, Copy, bon::Builder)]
 #[builder(start_fn = new)]
+/// Terms a caller supplies to structure selection.
 pub struct StructureRequest {
     /// Requested structure shape.
     pub structure: StructureKind,
@@ -311,6 +345,9 @@ pub struct StructureRequest {
 /// instrument's own DTE when the selector is chain-aware. An explicit
 /// selector returns the kind and the requested DTE.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What selection concluded: the kind, plus legs, economics, and the
+/// instrument's own DTE when the selector is chain-aware. An explicit
+/// selector returns the kind and the requested DTE.
 pub struct StructureSelection {
     /// Structure to propose.
     pub kind: StructureKind,
@@ -355,6 +392,7 @@ impl StructureSelection {
 
 /// Why structure selection refused.
 #[derive(Debug, Error)]
+/// Why structure selection refused.
 pub enum StructureRefusal {
     /// Leg selection lacked adequate data for the request.
     #[error("{0}")]
@@ -416,6 +454,7 @@ pub trait StructureSelector: Send + Sync {
 
 /// Structure selector that always returns one explicit structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Structure selector that always returns one explicit structure.
 pub struct ExplicitStructure {
     /// The structure every proposal uses.
     pub structure: StructureKind,
@@ -565,6 +604,14 @@ impl StructureSelector for LegSelector {
 /// no rule invents a calendar or a leg it was not given. Every existing
 /// producer leaves both `None`, so existing rules behave exactly as before.
 #[derive(Debug, Clone, PartialEq)]
+/// One open position as the loss and monitor elements see it: identity,
+/// direction, size, and entry economics. A strategy-side view over the
+/// venue's book — venue position types never cross into strategy code.
+/// 
+/// `legs` and `events` are `Option` on purpose — `None` means *unknown*, and
+/// a rule that needs them **refuses to act**: absence is not a trigger, and
+/// no rule invents a calendar or a leg it was not given. Every existing
+/// producer leaves both `None`, so existing rules behave exactly as before.
 pub struct PositionView<'a> {
     /// Instrument the position holds.
     pub underlying: String,
@@ -590,6 +637,8 @@ pub struct PositionView<'a> {
 /// One leg of an open position, as a rule sees it: which side, when it
 /// expires, at what strike, and which listed contract (OCC symbol).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One leg of an open position, as a rule sees it: which side, when it
+/// expires, at what strike, and which listed contract (OCC symbol).
 pub struct LegView {
     /// Long or short this contract.
     pub side: LegSide,
@@ -605,6 +654,9 @@ pub struct LegView {
 /// whether the venue flags an assignment window. Both are authoritative
 /// inputs — the guard trusts them and never invents them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Calendar facts about an open position: the next ex-dividend date and
+/// whether the venue flags an assignment window. Both are authoritative
+/// inputs — the guard trusts them and never invents them.
 pub struct PositionEvents {
     /// Next ex-dividend date of the underlying, when known. `None` means the
     /// calendar is silent on ex-div — the ex-div arm holds, never a default.
@@ -619,6 +671,10 @@ pub struct PositionEvents {
 /// absence is never a zero, and a rule that needs a price must refuse
 /// rather than act on one.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// What a position is marked at: the basis that produced the mark and the
+/// per-unit mark itself. `mark` is `None` exactly when the basis is absent —
+/// absence is never a zero, and a rule that needs a price must refuse
+/// rather than act on one.
 pub struct MarkContext {
     /// Where the mark came from.
     pub basis: MarkBasis,
@@ -636,6 +692,15 @@ pub struct MarkContext {
 /// prices it, so its buying-power bound lives in the sizing policy, which
 /// reads the same facts.
 #[derive(Debug, Clone, Copy, Default)]
+/// Quantity containment the composed strategy enforces after the sizing
+/// policy returns: the policy asks, these bounds decide. Every bound present
+/// only ever reduces; absent bounds leave the policy's size standing (the
+/// pinned rehearsal legacy). The runner threads the risk engine's per-trade
+/// contract cap and the observed facts; the per-unit price converts buying
+/// power to contracts where the caller priced one (the config-supplied
+/// limit) — a chain-derived package has no per-unit price until selection
+/// prices it, so its buying-power bound lives in the sizing policy, which
+/// reads the same facts.
 pub struct SizingCaps<'a> {
     /// Risk engine's per-trade contract cap. Binds every arm.
     pub risk: Option<&'a RiskLimits>,
@@ -669,6 +734,10 @@ impl SizingCaps<'_> {
 /// liquidation. The unit is always per-unit — a policy that needs a total
 /// multiplies by the quantity it returns, never by a number it was handed.
 #[derive(Debug, Clone, Copy)]
+/// What a sizing policy sees: the priced unit, the observed facts, and
+/// the marked equity when the caller prices against equity rather than net
+/// liquidation. The unit is always per-unit — a policy that needs a total
+/// multiplies by the quantity it returns, never by a number it was handed.
 pub struct SizingCtx<'a> {
     /// The priced unit the policy sizes.
     pub unit: &'a UnitEconomics,
@@ -712,6 +781,7 @@ fn bundle_is_arithmetical(facts: &PortfolioFacts) -> bool {
 
 /// Fixed-count sizing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Fixed-count sizing.
 pub struct FixedContracts {
     /// Contracts on every proposal.
     pub contracts: u32,
@@ -738,6 +808,12 @@ impl Sizing for FixedContracts {
 /// net liq sizes zero — downstream refuses a zero quantity with a reason,
 /// so no gate can mistake it for a trade.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Fixed fraction of net liquidation risked at a configured per-unit max
+/// loss: `floor(fraction * net_liq / per_unit_max_loss)` contracts. The
+/// fraction and the per-unit loss are configured (the strategy's own
+/// packaging); net liquidation is observed, never configured. An unobserved
+/// net liq sizes zero — downstream refuses a zero quantity with a reason,
+/// so no gate can mistake it for a trade.
 pub struct PercentNetLiq {
     /// Fraction of net liquidation risked, in `(0, 1]`.
     pub fraction: f64,
@@ -834,6 +910,26 @@ impl Sizing for PercentNetLiq {
 /// at or below `target_vol` is what makes a calm regime hold `base` rather than
 /// clamp somewhere below it.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Volatility-scaled sizing: `min(base, round(base * target_vol / max(σ,
+/// vol_floor)))`.
+/// 
+/// **Reduce-only by construction.** The `min(base, …)` is the whole point: a
+/// naive inverse-vol sizer *increases* size when volatility collapses, which is
+/// the opposite of prudent. Here a collapsing σ can only ever return `base`, and
+/// [`SizingCaps::contain`] remains the second, independent bound (the risk cap
+/// and buying power bind after the policy, never before).
+/// 
+/// σ is the realised per-bar volatility of simple returns the signal measured
+/// ([`SignalOutput::volatility`]): absence is **not** a zero — a missing or
+/// non-finite σ sizes zero, and the composed strategy refuses that zero quantity
+/// with a reason
+/// ([`EconRefusal::ZeroQuantity`](crate::economics::EconRefusal::ZeroQuantity)).
+/// 
+/// `target_vol` and `vol_floor` are per-bar σ in the same unit as the signal's
+/// measurement (unitless fractions, e.g. `0.004` = 0.4% per bar at the decision
+/// timeframe). `vol_floor` is the σ below which size stops responding; keeping it
+/// at or below `target_vol` is what makes a calm regime hold `base` rather than
+/// clamp somewhere below it.
 pub struct VolatilityScaled {
     /// Contracts at the target volatility (and the hard upper bound).
     pub base: u32,
@@ -972,6 +1068,26 @@ impl Sizing for VolatilityScaled {
 /// never before).
 #[cfg(feature = "research")]
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Capped fractional-Kelly sizing: `floor(base * min(cap, fraction * f*))`
+/// where `f* = edge / odds`.
+/// 
+/// **Research-only by construction.** This is the one sizing policy that must
+/// never reach live money untuned, so the type exists only under the
+/// `research` feature (compile-time, not a runtime flag): a build without it
+/// cannot name the type at all.
+/// 
+/// `edge` and `odds` are observed estimates the signal carried on
+/// [`SignalOutput`]: absence is **not** a zero — a missing or non-finite
+/// input sizes zero, and the composed strategy refuses that zero quantity
+/// with a reason
+/// ([`EconRefusal::ZeroQuantity`](crate::economics::EconRefusal::ZeroQuantity)).
+/// A non-positive edge sizes zero too: this is a *sizing* element, never a
+/// direction element, so it never flips a losing idea into a short.
+/// 
+/// `fraction` and `cap` both live in `(0, 1]`, so the policy can only ever ask
+/// for `base` at most — and [`SizingCaps::contain`] remains the second,
+/// independent bound (the risk cap and buying power bind after the policy,
+/// never before).
 pub struct FractionalKelly {
     /// Contracts at the full Kelly fraction (and the hard upper bound).
     pub base: u32,
@@ -1056,6 +1172,9 @@ impl Sizing for FractionalKelly {
 /// contracts. Same shape as [`PercentNetLiq`]: configured fraction and
 /// per-unit price, observed buying power, zero when unobserved.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Buying-power funding: `floor(fraction * buying_power / per_unit_price)`
+/// contracts. Same shape as [`PercentNetLiq`]: configured fraction and
+/// per-unit price, observed buying power, zero when unobserved.
 pub struct BuyingPower {
     /// Fraction of buying power funded, in `(0, 1]`.
     pub fraction: f64,
@@ -1110,6 +1229,7 @@ impl Sizing for BuyingPower {
 
 /// What loss management proposes for a live position.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What loss management proposes for a live position.
 pub struct LossAction {
     /// Machine-readable kind (e.g. `"stop"`, `"profit-target"`, `"roll"`).
     pub kind: String,
@@ -1143,6 +1263,7 @@ pub trait LossMgmt: Send + Sync {
 
 /// Loss management that never acts (hold every position).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Loss management that never acts (hold every position).
 pub struct HoldLoss;
 
 impl LossMgmt for HoldLoss {
@@ -1212,6 +1333,9 @@ fn review_level(
 /// strictly past the threshold. Exactly on the threshold holds — the
 /// boundary is not a trigger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Protective stop: fires `"stop"` once the book's unrealised loss runs
+/// strictly past the threshold. Exactly on the threshold holds — the
+/// boundary is not a trigger.
 pub struct StopLoss {
     /// Unrealised loss that trips the stop.
     pub max_loss: Money,
@@ -1250,6 +1374,8 @@ impl LossMgmt for StopLoss {
 /// Profit target: fires `"profit-target"` once the book's unrealised gain
 /// runs strictly past the threshold. Exactly on the threshold holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Profit target: fires `"profit-target"` once the book's unrealised gain
+/// runs strictly past the threshold. Exactly on the threshold holds.
 pub struct ProfitTarget {
     /// Unrealised gain that trips the target.
     pub target: Money,
@@ -1289,6 +1415,10 @@ impl LossMgmt for ProfitTarget {
 /// holds; and — like every rule — an absent mark holds, so a dark chain
 /// never triggers an exit the platform cannot price.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Time stop: fires `"time-stop"` once the book's remaining DTE drops
+/// strictly below the floor. Exactly on the floor holds; an unknown expiry
+/// holds; and — like every rule — an absent mark holds, so a dark chain
+/// never triggers an exit the platform cannot price.
 pub struct TimeStop {
     /// DTE floor the book must stay above.
     pub max_dte_days: u32,
@@ -1346,6 +1476,22 @@ impl LossMgmt for TimeStop {
 /// never silence and never a default window. Like every rule, it also holds
 /// on an absent mark: a dark chain prices no exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Assignment and ex-dividend protection: fires `"assignment-protection"`
+/// once when a **short leg** sits inside the event window.
+/// 
+/// Two arms, one action. The **ex-div arm** fires when the underlying goes
+/// ex-dividend within `days_before_ex_div` days before (or on) a short leg's
+/// own expiry — both edges inclusive, measured on the calendar both sides
+/// name. The **assignment arm** fires when the venue flags
+/// [`PositionEvents::assignment_eligible`] and the guard was built with
+/// `include_assignment_window`. At most one action per review, however many
+/// legs sit inside.
+/// 
+/// The guard needs legs *and* events and refuses to act without them:
+/// [`can_judge`](Self::can_judge) reports whether the position carries both,
+/// so an unknown calendar reads as "cannot judge" — a distinguishable state,
+/// never silence and never a default window. Like every rule, it also holds
+/// on an absent mark: a dark chain prices no exit.
 pub struct AssignmentGuard {
     /// Days before a short leg's expiry an ex-div still trips the guard.
     pub days_before_ex_div: u32,
@@ -1453,6 +1599,19 @@ impl LossMgmt for AssignmentGuard {
 /// refused naked-short leg sets, so a draft can only ever name a defined-risk
 /// package, and the venue fills it atomically or not at all.
 #[derive(Debug, Clone, PartialEq)]
+/// A roll/adjustment draft: the rule's priced decision, not yet a proposal.
+/// 
+/// An `Adjustment` is a **proposal draft** — structure, legs, target DTE,
+/// credit intent, and the economics the rule priced off the mark — never an
+/// order intent and never a [`LossAction`]. The types are distinct on purpose:
+/// a roll is not an exit, and folding it into loss management would either
+/// bypass the roll permission or collapse two authorities into one. Identity
+/// (`id`, strategy, creation time) is the runner's; everything economic is
+/// the rule's, set when the rule reviewed the position.
+/// 
+/// The legs travel as one validated [`SpreadLegs`]: construction already
+/// refused naked-short leg sets, so a draft can only ever name a defined-risk
+/// package, and the venue fills it atomically or not at all.
 pub struct Adjustment {
     /// Structure shape the roll takes.
     pub structure: StructureKind,
@@ -1559,6 +1718,9 @@ pub trait AdjustRule: Send + Sync {
 /// concatenates the firings, so protection reads before profit-taking
 /// reads before time reads when installed that way.
 #[derive(Default)]
+/// Ordered rule set: reviews every rule in installation order and
+/// concatenates the firings, so protection reads before profit-taking
+/// reads before time reads when installed that way.
 pub struct LossSet {
     /// Rules in firing order.
     pub rules: Vec<Arc<dyn LossMgmt>>,
@@ -1600,6 +1762,8 @@ impl LossMgmt for LossSet {
 /// A read-only monitoring observation. Monitors may propose actions, but only
 /// an approval or an armed grant can turn one into an order.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A read-only monitoring observation. Monitors may propose actions, but only
+/// an approval or an armed grant can turn one into an order.
 pub struct MonitorAlert {
     /// Portfolio the observation belongs to.
     pub portfolio: String,
@@ -1616,6 +1780,7 @@ pub trait Monitor: Send + Sync {
 
 /// Monitor that never alerts.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Monitor that never alerts.
 pub struct NullMonitor;
 
 impl Monitor for NullMonitor {
@@ -1631,6 +1796,8 @@ impl Monitor for NullMonitor {
 /// Threshold breach monitor: alerts when open risk crosses its cap.
 /// The alert is a proposal input, never an order.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Threshold breach monitor: alerts when open risk crosses its cap.
+/// The alert is a proposal input, never an order.
 pub struct LimitMonitor {
     /// Portfolio under watch.
     pub portfolio: String,
@@ -1659,6 +1826,9 @@ impl Monitor for LimitMonitor {
 /// sizing fill in direction, structure, and quantity; price, loss, notional,
 /// and expiry come from the caller's quote and structure math.
 #[derive(Debug, Clone, Copy)]
+/// Economics the caller supplies for a proposal. Signal, structure, and
+/// sizing fill in direction, structure, and quantity; price, loss, notional,
+/// and expiry come from the caller's quote and structure math.
 pub struct ProposeInput<'a> {
     /// Strategy name for attribution.
     pub strategy: &'a str,

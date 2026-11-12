@@ -131,6 +131,8 @@ pub use wheel::{
 /// Paint-edge marker; touches the linked paint dependency so wiring breaks
 /// loudly if the dependency stops resolving.
 #[must_use]
+/// Paint-edge marker; touches the linked paint dependency so wiring breaks
+/// loudly if the dependency stops resolving.
 pub fn is_paint_edge() -> bool {
     let _ = egui::Color32::WHITE;
     true

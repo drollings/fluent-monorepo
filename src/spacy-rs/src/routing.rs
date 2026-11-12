@@ -31,6 +31,10 @@ use fluent_types::InterlinguaId;
 /// Router dispatch deterministically on the parse — the same phrasing
 /// collapses to the same predicate/object ids regardless of surface words.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The interlingua frame of one sentence: the content-
+/// addressed ids of the routing-relevant tokens. This is what lets Coral
+/// Router dispatch deterministically on the parse — the same phrasing
+/// collapses to the same predicate/object ids regardless of surface words.
 pub struct InterlinguaSignal {
     /// The predicate (root) token's lemma id.
     pub predicate_id: Option<InterlinguaId>,
@@ -59,6 +63,10 @@ pub struct InterlinguaSignal {
 /// Serde-serializable so it can ride in `StageDecision.metadata` and be stored
 /// in a ledger `ContentNode`'s metadata verbatim.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The routing frame of one sentence, plus its per-token transcript.
+/// 
+/// Serde-serializable so it can ride in `StageDecision.metadata` and be stored
+/// in a ledger `ContentNode`'s metadata verbatim.
 pub struct RoutingSignal {
     /// The sentence text (token orths joined with spaces).
     pub sentence: String,
@@ -104,6 +112,13 @@ pub struct RoutingSignal {
 /// heads set); a raw tokenizer output yields degenerate signals (first token
 /// as predicate, everything else a dependent).
 #[must_use]
+/// Extract one [`RoutingSignal`] per sentence of an attached `doc`.
+/// 
+/// Sentence boundaries come from the `sent_start` markers (set by the
+/// sentencizer and by `set_children_from_heads` at each root). A doc with no
+/// markers is treated as a single sentence. Requires an attached doc (deps and
+/// heads set); a raw tokenizer output yields degenerate signals (first token
+/// as predicate, everything else a dependent).
 pub fn extract_routing_signals(doc: &Doc) -> Vec<RoutingSignal> {
     if doc.is_empty() {
         return Vec::new();

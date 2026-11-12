@@ -115,6 +115,7 @@ pub const BINARY_CONTROL_CHAR_RATIO: f64 = 0.3;
 
 /// A discovered file with its stat metadata (single `stat` per file).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A discovered file with its stat metadata (single `stat` per file).
 pub struct WalkEntry {
     /// Absolute path.
     pub path: PathBuf,
@@ -126,6 +127,7 @@ pub struct WalkEntry {
 
 /// Why a file was excluded from a filtered walk (scan diagnostics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why a file was excluded from a filtered walk (scan diagnostics).
 pub enum SkipReason {
     /// Extension not in the filter set.
     Extension,
@@ -140,6 +142,8 @@ pub enum SkipReason {
 /// Selection predicate for [`walk_files_filtered`] (P2 `FileSelection`
 /// building block; domain-agnostic — no file-kind knowledge here).
 #[derive(Debug, Clone, Default)]
+/// Selection predicate for [`walk_files_filtered`] (P2 `FileSelection`
+/// building block; domain-agnostic — no file-kind knowledge here).
 pub struct WalkFilter {
     /// Extensions to visit (without the dot); empty visits every file.
     pub extensions: HashSet<String>,
@@ -158,6 +162,10 @@ pub struct WalkFilter {
 /// Control characters are bytes below `0x20` except `\t`, `\n`, `\r`,
 /// plus `0x7f`.
 #[must_use]
+/// Returns `true` when `window` looks binary: the control-character ratio
+/// over the sniffed prefix exceeds [`BINARY_CONTROL_CHAR_RATIO`].
+/// Control characters are bytes below `0x20` except `\t`, `\n`, `\r`,
+/// plus `0x7f`.
 pub fn sniff_is_binary(window: &[u8]) -> bool {
     let end = window.len().min(BINARY_SNIFF_BYTES);
     let window = &window[..end];

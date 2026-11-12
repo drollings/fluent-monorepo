@@ -16,8 +16,44 @@ use search_vector::GuidanceDb;
 mod embed;
 mod index_cmd;
 mod mcp;
+mod profile;
 mod search;
 mod structure;
+mod summarize_cmd;
+
+/// Concurrent sidecar regenerations per propagation wave. Bounded so a
+/// hub change cannot overrun the AST pool's queue.
+const PROPAGATION_CONCURRENCY: usize = 16;
+
+/// In-flight cap for AST pool submissions: the pool queue is finite, so
+/// unbounded concurrent submits fail instead of waiting. Every member-gen
+/// submit below (walk and propagation regen) holds a permit, bounding
+/// queue occupancy on thousand-file syncs.
+const AST_SUBMIT_IN_FLIGHT: usize = 8;
+
+/// Pool submit with backpressure: waits for a permit instead of failing
+/// when the pool queue is full. A closed semaphore maps to the pool's
+/// canceled verdict; callers report it like any other pool error.
+async fn submit_ast(
+    pool: &Arc<
+        fluent_concurrency::pool::ResultPool<
+            runtime::AstGenPayload,
+            fluent_types::GuidanceDoc,
+            guidance_core::sync_engine::SyncEngineError,
+        >,
+    >,
+    semaphore: &Arc<tokio::sync::Semaphore>,
+    payload: runtime::AstGenPayload,
+) -> Result<
+    fluent_types::GuidanceDoc,
+    fluent_concurrency::pool::ResultPoolError<guidance_core::sync_engine::SyncEngineError>,
+> {
+    let _permit = semaphore
+        .acquire()
+        .await
+        .map_err(|_| fluent_concurrency::pool::ResultPoolError::Canceled)?;
+    pool.submit(payload).await
+}
 
 #[derive(Parser)]
 #[command(
@@ -34,6 +70,11 @@ struct Cli {
 
     #[arg(global = true, long)]
     debug: bool,
+
+    /// Refuse anything but fresh: read paths exit 2 naming stale files
+    /// instead of serving labelled results.
+    #[arg(global = true, long)]
+    strict: bool,
 
     #[arg(global = true, long)]
     show_prompts: bool,
@@ -74,6 +115,9 @@ enum Commands {
         db: String,
     },
     Sync {
+        /// Sync one file only: member gen plus the fragment-index half
+        /// (ingest with sig-gated dependent propagation) scoped to it.
+        /// Re-running on an unchanged file is a no-op in both halves.
         #[arg(short, long)]
         file: Option<String>,
 
@@ -106,6 +150,16 @@ enum Commands {
 
         #[arg(long, default_value_t = 500)]
         watch_debounce_ms: u64,
+
+        /// Autonomy cap for the fix pre-pass (`L0` index only, `L1` and
+        /// up run the deterministic fixers the mechanical list allows).
+        #[arg(long, default_value = "L2")]
+        autonomy: String,
+
+        /// Also run the background comment-summary pass after the index
+        /// rebuilds (opt-in; the query path never calls a model).
+        #[arg(long)]
+        summarize: bool,
     },
     Status {
         #[arg(short = 'g', long, default_value = ".guidance")]
@@ -233,6 +287,42 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+    /// Converge the workspace: sync the mirror, fix what deterministic
+    /// rungs can fix (format, machine-applicable lint), reindex, and
+    /// report. Exit 0 clean, 1 work remains, 2 stuck with escalations,
+    /// 4 halted by the breaker.
+    Run {
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        #[arg(long, default_value = ".guidance")]
+        json_dir: String,
+
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
+
+        /// Wave budget for the fix loop.
+        #[arg(long, default_value_t = 4)]
+        max_waves: usize,
+
+        /// Autonomy cap (`L0` index only, `L1` and up run the
+        /// deterministic fixers the mechanical list allows).
+        #[arg(long, default_value = "L2")]
+        autonomy: String,
+    },
+    /// Knowledge-base summary for orchestrators: mirror freshness,
+    /// member counts, index presence, and the commands that consume
+    /// this workspace. JSON on stdout, stable keys.
+    Kb {
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        #[arg(long, default_value = ".guidance")]
+        json_dir: String,
+
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
+    },
     ComponentGate {
         #[arg(default_value = ".")]
         path: String,
@@ -277,6 +367,18 @@ enum Commands {
     Seal {
         #[arg(short = 'w', long, default_value = ".")]
         workspace: String,
+    },
+    /// Summarize file and node comments in the background (opt-in;
+    /// never on the query path). Writes sidecars plus the DB projection.
+    Summarize {
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        #[arg(long, default_value = ".guidance")]
+        json_dir: String,
+
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
     },
     Impact {
         /// Symbol name or file path whose impact to report.
@@ -360,10 +462,43 @@ enum Commands {
         #[arg(long, default_value_t = 10)]
         count: usize,
     },
+    /// Audit one source file against its sidecar: freshness, skew,
+    /// and receipt verdicts. Exit 0 when fresh, else 1.
+    Verify {
+        /// Source file to audit (workspace-relative or absolute).
+        path: String,
+
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        /// Also print recorded-vs-live hashes and the clock reading.
+        #[arg(long)]
+        deep: bool,
+    },
     /// Request a context pack from a JSON `PackInput` file.
     Pack {
         #[arg(long)]
         file: String,
+    },
+    /// Measure a decision point on a labelled corpus plus harvested
+    /// journal negatives; store a calibration entry only when the
+    /// precision/recall bars pass. Measurement is never an error.
+    Calibrate {
+        /// Decision point (`dp.triage_residual`, `dp.route_query`).
+        #[arg(long)]
+        point: String,
+        /// Gold corpus JSON (see `src/guidance/corpora/`).
+        #[arg(long)]
+        dataset: String,
+        /// Measured procedure identity (default: the static procedure).
+        #[arg(long)]
+        model_fingerprint: Option<String>,
+        /// State dir holding `calibration.json`.
+        #[arg(long, default_value = ".guidance/state")]
+        state_dir: String,
+        /// Journal dir to harvest reverted drafts from.
+        #[arg(long, default_value = ".guidance/journal")]
+        journal_dir: String,
     },
 }
 
@@ -394,7 +529,17 @@ async fn main() {
             no_llm,
             filter,
         }) => {
-            cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter).await;
+            if cli.strict && strict_refuse(workspace) {
+                std::process::exit(2);
+            }
+            if index_mismatched(db) {
+                eprintln!("refused: index generation mismatch (re-run sync to rebuild)");
+                std::process::exit(2);
+            }
+            cmd_explain(
+                query, guidance, db, workspace, *limit, *no_llm, filter, cli.strict,
+            )
+            .await;
         }
         Some(Commands::Test) => cmd_test(),
         Some(Commands::Init {
@@ -414,6 +559,8 @@ async fn main() {
             verbose,
             watch,
             watch_debounce_ms,
+            autonomy,
+            summarize,
         }) => {
             cmd_sync(
                 file.as_deref(),
@@ -427,10 +574,17 @@ async fn main() {
                 *verbose,
                 *watch,
                 *watch_debounce_ms,
+                autonomy,
+                *summarize,
             )
             .await;
         }
         Some(Commands::Status { guidance_dir }) => cmd_status(guidance_dir),
+        Some(Commands::Verify {
+            path,
+            workspace,
+            deep,
+        }) => cmd_verify(path, workspace, *deep),
         Some(Commands::Clean { json_dir, db }) => cmd_clean(json_dir, db),
         Some(Commands::Commit { .. }) => {
             removed_command("commit", "guidance check or guidance status");
@@ -469,6 +623,13 @@ async fn main() {
             mtime_after,
             mtime_before,
         }) => {
+            if cli.strict && strict_refuse(workspace) {
+                std::process::exit(2);
+            }
+            // rg reads live bytes; every other mode reads the index.
+            if !rg && refuse_stale_index(db) {
+                std::process::exit(2);
+            }
             let rg_options = search::RgDisplayOptions {
                 before: (*before).max(*context),
                 after: (*after).max(*context),
@@ -503,12 +664,35 @@ async fn main() {
             // `index` owns member-doc generation for the path scope.
             index_cmd::cmd_index(workspace, json_dir, Some(path), *force);
         }
+        Some(Commands::Run {
+            workspace,
+            json_dir,
+            db,
+            max_waves,
+            autonomy,
+        }) => cmd_run(workspace, json_dir, db, *max_waves, autonomy).await,
+        Some(Commands::Kb {
+            workspace,
+            json_dir,
+            db,
+        }) => {
+            cmd_kb(workspace, json_dir, db);
+        }
         Some(Commands::ComponentGate { path }) => cmd_component_gate(path),
         Some(Commands::Seal { workspace }) => cmd_seal(workspace),
+        Some(Commands::Summarize {
+            workspace,
+            json_dir,
+            db,
+        }) => cmd_summarize(workspace, json_dir, db).await,
         Some(Commands::Impact { target, workspace }) => cmd_impact(target, workspace),
-        Some(Commands::QueuePost { id, scope, kind, deps, queue }) => {
-            cmd_queue_post(id, scope, kind, deps, queue)
-        }
+        Some(Commands::QueuePost {
+            id,
+            scope,
+            kind,
+            deps,
+            queue,
+        }) => cmd_queue_post(id, scope, kind, deps, queue),
         Some(Commands::EscalationFile { id, ledger }) => cmd_escalation_file(id, ledger),
         Some(Commands::EscalationClaim { id, owner, ledger }) => {
             cmd_escalation_claim(id, owner, ledger)
@@ -517,10 +701,25 @@ async fn main() {
             cmd_escalation_resolve(id, owner, ledger)
         }
         Some(Commands::PlanImport { id, file }) => cmd_plan_import(id, file),
-        Some(Commands::LedgerTail { journal_dir, since, count }) => {
-            cmd_ledger_tail(journal_dir, *since, *count)
-        }
+        Some(Commands::LedgerTail {
+            journal_dir,
+            since,
+            count,
+        }) => cmd_ledger_tail(journal_dir, *since, *count),
         Some(Commands::Pack { file }) => cmd_pack(file),
+        Some(Commands::Calibrate {
+            point,
+            dataset,
+            model_fingerprint,
+            state_dir,
+            journal_dir,
+        }) => cmd_calibrate(
+            point,
+            dataset,
+            model_fingerprint.clone(),
+            state_dir,
+            journal_dir,
+        ),
         Some(Commands::Scorecard {
             format,
             deep,
@@ -548,6 +747,9 @@ async fn main() {
         None => {
             // First word still searches: `guidance <query>` is `search`.
             if let Some(query) = &cli.query {
+                if cli.strict && strict_refuse(".") {
+                    std::process::exit(2);
+                }
                 search::cmd_search(
                     query,
                     ".",
@@ -595,18 +797,28 @@ fn load_project_config(workspace: &Path) -> config::ProjectConfig {
 #[allow(clippy::too_many_arguments)]
 async fn cmd_explain(
     query: &str,
-    _guidance_dir: &str,
+    guidance_dir: &str,
     db_path: &str,
     workspace: &str,
     limit: usize,
     _no_llm: bool,
     _filter: &str,
+    strict: bool,
 ) {
-
-    // Fused recall (the M1 port: the legacy `hybrid_search` + member-JSON
-    // fallback legs are gone — explain reads the same fused index as
-    // `search --fuse`). Any recall failure degrades to empty, never a
-    // hard error — the empty state below is the stable contract.
+    // The guidance dir flag is workspace-relative by convention;
+    // resolve once so sidecar mapping works from any cwd.
+    let guidance_path = PathBuf::from(guidance_dir);
+    let guidance_path = if guidance_path.is_absolute() {
+        guidance_path
+    } else {
+        PathBuf::from(workspace).join(guidance_path)
+    };
+    let guidance_dir = guidance_path.to_string_lossy().into_owned();
+    let _total = profile::Phase::new("explain.total");
+    // Fused recall reads the same fused index as `search --fuse`. Any
+    // recall failure degrades to empty, never a hard error — the empty
+    // state below is the stable contract.
+    let recall_phase = profile::Phase::new("explain.recall");
     let hits = match search::fused_hits(query, workspace, db_path, limit) {
         Ok(hits) => hits,
         Err(error) => {
@@ -614,11 +826,13 @@ async fn cmd_explain(
             Vec::new()
         }
     };
+    drop(recall_phase);
 
     // Query-time closure expansion over the hydrated graph (no rebuild)
     // through the shared context assembly; context renders as an
     // additive section with provenance (the hits table is never
     // perturbed). Hydration failure degrades to hits only.
+    let context_phase = profile::Phase::new("explain.context");
     let anchors = search::anchor_files(&hits, guidance_core::graph_index::CLOSURE_ANCHOR_FILES);
     let mut context = Vec::new();
     if !anchors.is_empty() {
@@ -632,8 +846,46 @@ async fn cmd_explain(
             }
         }
     }
+    drop(context_phase);
 
-    let rows = search::build_explain_rows(&hits);
+    let cite_phase = profile::Phase::new("explain.citations");
+    let cites = search::cite_hits(&hits, workspace);
+    let mut rows = search::build_explain_rows(&hits, &cites);
+    drop(cite_phase);
+    // Freshness is labelled on the row, never hidden: files whose
+    // sidecar is missing or older than the source read stale.
+    let stale_phase = profile::Phase::new("explain.staleness");
+    let stale = search::stale_hit_sources(
+        &hits,
+        &guidance_dir,
+        &src_dirs_from_config(Path::new(workspace)),
+    );
+    drop(stale_phase);
+    for row in &mut rows {
+        if stale.iter().any(|path| {
+            row.source == *path
+                || PathBuf::from(workspace).join(&row.source).to_string_lossy() == *path
+        }) {
+            row.cite.push_str(" (stale)");
+        }
+    }
+    if strict {
+        let bad: Vec<&str> = rows
+            .iter()
+            .filter(|row| row.cite == "unverified" || row.cite.ends_with("(stale)"))
+            .map(|row| row.source.as_str())
+            .collect();
+        if !bad.is_empty() {
+            eprintln!(
+                "refused: {} stale or unverified citations (strict mode)",
+                bad.len()
+            );
+            for source in &bad {
+                eprintln!("  stale: {source}");
+            }
+            std::process::exit(2);
+        }
+    }
 
     print!("{}", search::render_explain_table(query, &rows, &context));
 }
@@ -688,6 +940,30 @@ fn cmd_init(dir: &str) {
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn cmd_summarize(workspace: &str, json_dir: &str, db_path: &str) {
+    let workspace_path = PathBuf::from(workspace);
+    let guidance_dir = PathBuf::from(json_dir);
+    let cfg = load_project_config(&workspace_path);
+    let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
+    match summarize_cmd::run_summarize(&guidance_dir, db_path, &src_dirs, &cfg, false).await {
+        Ok(report) => {
+            println!(
+                "Summarized {} nodes ({} cached) across {} files: {} failed, {} unavailable, {} gaps.",
+                report.summarized,
+                report.cached,
+                report.files,
+                report.failed,
+                report.unavailable,
+                report.gaps,
+            );
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
 async fn cmd_sync(
     file: Option<&str>,
     scan: Option<&str>,
@@ -700,7 +976,10 @@ async fn cmd_sync(
     verbose: bool,
     watch: bool,
     watch_debounce_ms: u64,
+    autonomy: &str,
+    summarize: bool,
 ) {
+    let _total = profile::Phase::new("sync.total");
     let workspace_path = PathBuf::from(workspace);
     let guidance_dir = PathBuf::from(json_dir);
     let cfg = load_project_config(&workspace_path);
@@ -765,6 +1044,28 @@ async fn cmd_sync(
                 }
                 return;
             }
+            // Fix pre-pass scoped to the file: lint, fix, and format
+            // before member gen and indexing, so both converge on fixed
+            // bytes. L0 and dry runs skip the rewrite half.
+            if !dry_run && source_path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                let mut policy = cfg.policy.clone();
+                policy.autonomy = autonomy.to_string();
+                if guidance_core::policy::autonomy_allows_fix(&policy) {
+                    let _phase = profile::Phase::new("sync.fix");
+                    let scope = vec![source_path.to_path_buf()];
+                    let fix =
+                        run_fix_scope(&scope, &guidance_dir, &cfg, &policy, SYNC_FIX_MAX_WAVES);
+                    if fix.waves.fixed > 0 || !fix.waves.escalated.is_empty() {
+                        println!(
+                            "fix: {} fixed ({} formatted), {} escalated, drafts kept {}",
+                            fix.waves.fixed,
+                            fix.waves.formatted,
+                            fix.waves.escalated.len(),
+                            fix.drafts.kept
+                        );
+                    }
+                }
+            }
             match runtime::ast_pool()
                 .submit(runtime::AstGenPayload {
                     source_path: source_path.to_path_buf(),
@@ -784,6 +1085,24 @@ async fn cmd_sync(
                         doc.members.len(),
                         doc.meta.language
                     );
+                    // Scoped derived-index half: the same ingest plus
+                    // sig-gated propagation the full sync runs, limited
+                    // to this file (the purge stays root-scoped, so
+                    // neighbors are never doomed). Skipped under
+                    // `--no-db`/`--dry-run` like the full path.
+                    if !no_db && !dry_run {
+                        let scoped = vec![guidance_core::sync_engine::absolute_or(
+                            source_path.to_path_buf(),
+                        )];
+                        refresh_search_index(
+                            &workspace_path,
+                            &guidance_dir,
+                            db_path,
+                            &scoped,
+                            verbose,
+                        )
+                        .await;
+                    }
                 }
                 Err(ResultPoolError::Inner(e)) => eprintln!("error generating {path}: {e}"),
                 Err(ResultPoolError::Canceled) => {
@@ -805,17 +1124,76 @@ async fn cmd_sync(
         let mut stale_files = 0usize;
         let mut generated = 0usize;
 
+        // Rotation sweep and rename adoption run before derivation so
+        // rotated receipts and moved files re-enter the stale set.
+        {
+            let _phase = profile::Phase::new("sync.sweep_rotation");
+            sweep_for_rotation(guidance_dir.as_path(), &src_dirs);
+        }
+        {
+            let _phase = profile::Phase::new("sync.adopt_renames");
+            adopt_renames(guidance_dir.as_path(), &src_dirs);
+        }
+
+        // Fix pre-pass: lint, fix, and format stale Rust files before
+        // member gen and indexing, so the mirror and the index converge
+        // on fixed bytes. L0 and dry runs skip the rewrite half.
+        {
+            let mut policy = cfg.policy.clone();
+            policy.autonomy = autonomy.to_string();
+            if !dry_run && guidance_core::policy::autonomy_allows_fix(&policy) {
+                let mut dirty: Vec<PathBuf> = Vec::new();
+                for src_dir in &src_dirs {
+                    if !src_dir.is_dir() {
+                        continue;
+                    }
+                    let engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
+                    for path in engine.stale_files() {
+                        if path.extension().and_then(|ext| ext.to_str()) == Some("rs")
+                            && path.is_file()
+                        {
+                            dirty.push(path);
+                        }
+                    }
+                }
+                dirty.sort();
+                dirty.dedup();
+                if dirty.len() > SYNC_FIX_MAX_FILES {
+                    println!(
+                        "fix: skipped ({} dirty files exceed the {}-file pre-pass budget; run 'guidance run' to converge)",
+                        dirty.len(),
+                        SYNC_FIX_MAX_FILES
+                    );
+                } else if !dirty.is_empty() {
+                    let _phase = profile::Phase::new("sync.fix");
+                    let fix =
+                        run_fix_scope(&dirty, &guidance_dir, &cfg, &policy, SYNC_FIX_MAX_WAVES);
+                    println!(
+                        "fix: {} fixed ({} formatted), {} escalated, drafts kept {}",
+                        fix.waves.fixed,
+                        fix.waves.formatted,
+                        fix.waves.escalated.len(),
+                        fix.drafts.kept
+                    );
+                }
+            }
+        }
+
         for src_dir in &src_dirs {
             if !src_dir.is_dir() {
                 continue;
             }
             ensure_dir_or_panic(&guidance_dir);
             let engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
-            let status = engine.status().expect("status");
+            let status = {
+                let _phase = profile::Phase::new("sync.status");
+                engine.status().expect("status")
+            };
             total_files += status.total_files;
             stale_files += status.stale_files;
 
             if stale_files > 0 || force {
+                let _phase = profile::Phase::new("sync.walk_and_gen");
                 generated += walk_and_gen_async(
                     guidance_dir.clone(),
                     src_dir.clone(),
@@ -831,123 +1209,39 @@ async fn cmd_sync(
         println!("Syncing {total_files} total files ({stale_files} stale)...");
 
         if !no_db && !dry_run {
-            // Fragment ingestion first: its change gate reports the
-            // fingerprint-changed set (plus files missing on disk) that
-            // seeds dependent propagation below.
-            let existing_dirs: Vec<PathBuf> = src_dirs
-                .iter()
-                .filter(|dir| dir.is_dir())
-                .cloned()
-                .collect();
-            let frag_stats = match index_cmd::ingest_workspace_fragments(
-                Path::new(db_path),
-                &workspace_path,
-                &existing_dirs,
-            ) {
-                Ok(stats) => {
-                    println!(
-                        "Ingested {} files ({} fragments, {} unchanged skipped, {} images skipped, {} failed) to {db_path}",
-                        stats.files, stats.fragments, stats.skipped_unchanged, stats.skipped_images, stats.failed
-                    );
-                    stats
-                }
-                Err(e) => {
-                    eprintln!("Warning: fragment ingestion failed: {e}");
-                    index_cmd::FragmentIngestStats::default()
-                }
-            };
-            // Propagation: seeds (changed + deleted + pre-resolved
-            // deleted-dependents) expand through the hydrated dependents
-            // closure; affected files re-process via
-            // the existing single-file regen path (forced, so
-            // dependency-derived state reconverges even when the
-            // dependent's own bytes are unchanged). Deleted files drop
-            // their JSON sidecars with the existing deleter.
-            if !frag_stats.changed.is_empty()
-                || !frag_stats.deleted.is_empty()
-                || !frag_stats.deleted_dependents.is_empty()
-            {
-                let roots: Vec<String> = existing_dirs
-                    .iter()
-                    .map(|dir| dir.to_string_lossy().into_owned())
-                    .collect();
-                // Dependents resolved pre-purge (their graph rows are gone
-                // by now) re-enter as seeds so the post-purge closure can
-                // still expand transitively through surviving nodes.
-                let mut changed = frag_stats.changed.clone();
-                changed.extend(frag_stats.deleted_dependents.iter().cloned());
-                let affected = match GuidanceDb::open(Path::new(db_path)) {
-                    Ok(db) => {
-                        index_cmd::affected_for_sync(&db, &changed, &frag_stats.deleted, &roots)
-                    }
-                    Err(error) => {
-                        eprintln!(
-                            "Warning: graph hydration failed ({error}); re-processing seeds only"
-                        );
-                        let mut seeds = changed;
-                        seeds.extend(frag_stats.deleted.iter().cloned());
-                        seeds.sort();
-                        seeds.dedup();
-                        seeds
-                    }
-                };
-                if !affected.is_empty() {
-                    let pool = runtime::ast_pool();
-                    for path in &affected {
-                        let candidate = PathBuf::from(path);
-                        if !candidate.is_file() {
-                            continue;
-                        }
-                        let ext = candidate.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        if !fluent_types::file_kind::SOURCE_EXTENSIONS.contains(&ext) {
-                            continue;
-                        }
-                        regen_single_file(
-                            &pool,
-                            candidate,
-                            &existing_dirs,
-                            &workspace_path,
-                            &guidance_dir,
-                            verbose,
-                        )
-                        .await;
-                        generated += 1;
-                    }
-                }
-                for prefix in &frag_stats.deleted {
-                    remove_sidecars(&guidance_dir, &existing_dirs, Path::new(prefix));
-                }
-            }
-            if generated > 0 {
-                println!("Generated {generated} files.");
-            }
-
-            let json_src = guidance_dir.join("src");
-            if json_src.is_dir() {
-                match runtime::db_pool()
-                    .submit(runtime::DbSyncPayload {
-                        json_dir: json_src,
-                        db_path: PathBuf::from(db_path),
-                    })
-                    .await
-                {
-                    Ok(count) => println!("Synced {count} nodes to {db_path}"),
-                    Err(ResultPoolError::Inner(e)) => {
-                        eprintln!("Warning: db sync failed: {e}")
-                    }
-                    Err(ResultPoolError::Canceled) => eprintln!("Warning: db sync canceled"),
-                    Err(ResultPoolError::Pool(e)) => {
-                        eprintln!("Warning: db sync queue: {e}")
-                    }
-                }
-            }
-            println!("Sync complete.");
-        } else {
-            if generated > 0 {
-                println!("Generated {generated} files.");
-            }
-            println!("Sync complete.");
+            generated +=
+                refresh_search_index(&workspace_path, &guidance_dir, db_path, &src_dirs, verbose)
+                    .await;
         }
+        if summarize && !dry_run {
+            // Opt-in summary pass after the index rebuilds: node sync is
+            // done, so summary-body writes cannot move its fingerprint,
+            // and the pass refreshes the generation marker itself.
+            let src_roots: Vec<PathBuf> = src_dirs.clone();
+            match summarize_cmd::run_summarize(&guidance_dir, db_path, &src_roots, &cfg, verbose)
+                .await
+            {
+                Ok(report) => {
+                    println!(
+                        "Summarized {} nodes ({} cached) across {} files: {} failed, {} unavailable, {} gaps.",
+                        report.summarized,
+                        report.cached,
+                        report.files,
+                        report.failed,
+                        report.unavailable,
+                        report.gaps,
+                    );
+                    generated += report.summarized;
+                }
+                Err(error) => {
+                    eprintln!("warning: summary pass skipped: {error}");
+                }
+            }
+        }
+        if generated > 0 {
+            println!("Generated {generated} files.");
+        }
+        println!("Sync complete.");
     }
 
     if watch {
@@ -964,6 +1258,215 @@ async fn cmd_sync(
     }
 }
 
+/// Fragment ingest plus dependent propagation plus node sync: the
+/// derived-index half of a sync, shared by `sync` and `run` (one copy —
+/// the two commands differ in whether they fix, never in how they
+/// reindex). Returns regen'd files for the caller's report.
+async fn refresh_search_index(
+    workspace_path: &Path,
+    guidance_dir: &Path,
+    db_path: &str,
+    src_dirs: &[PathBuf],
+    verbose: bool,
+) -> usize {
+    let _total = profile::Phase::new("index.total");
+    let mut generated = 0usize;
+    // Generation gate: a rotated schema refuses the index read and
+    // rebuilds fully (stored rows may misread); content drift alone
+    // rides the normal incremental ingest below, which re-derives
+    // exactly the changed rows from sidecars.
+    let index_dir = Path::new(db_path)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut full_rebuild = false;
+    {
+        let _phase = profile::Phase::new("index.generation_guard");
+        let schema_now = guidance_core::index_generation::schema_generation();
+        match guidance_core::index_generation::stored_schema(&index_dir) {
+            // No marker: first build (or a crash mid-write) rebuilds.
+            None => {
+                eprintln!("index generation unknown; rebuilding from sidecars");
+                let _ = std::fs::remove_file(db_path);
+                full_rebuild = true;
+            }
+            Some(stored) if stored != schema_now => {
+                eprintln!("index schema rotated; rebuilding from sidecars");
+                let _ = std::fs::remove_file(db_path);
+                full_rebuild = true;
+            }
+            Some(_) => {}
+        }
+    }
+    // Fragment ingestion first: its change gate reports the
+    // fingerprint-changed set (plus files missing on disk) that
+    // seeds dependent propagation below.
+    // Roots may be files (the `sync --file` scope) or directories;
+    // missing roots stay skipped.
+    let existing_dirs: Vec<PathBuf> = src_dirs
+        .iter()
+        .filter(|dir| dir.exists())
+        .cloned()
+        .collect();
+    let ingest_phase = profile::Phase::new("index.ingest");
+    let frag_stats = match index_cmd::ingest_workspace_fragments(
+        Path::new(db_path),
+        workspace_path,
+        &existing_dirs,
+    ) {
+        Ok(stats) => {
+            println!(
+                "Ingested {} files ({} fragments, {} unchanged skipped, {} images skipped, {} failed) to {db_path}",
+                stats.files, stats.fragments, stats.skipped_unchanged, stats.skipped_images, stats.failed
+            );
+            stats
+        }
+        Err(e) => {
+            eprintln!("Warning: fragment ingestion failed: {e}");
+            index_cmd::FragmentIngestStats::default()
+        }
+    };
+    drop(ingest_phase);
+    let _propagation = profile::Phase::new("index.propagation");
+    // Propagation: seeds (changed + deleted + pre-resolved
+    // deleted-dependents) expand through the hydrated dependents
+    // closure; affected files re-process via
+    // the existing single-file regen path (forced, so
+    // dependency-derived state reconverges even when the
+    // dependent's own bytes are unchanged). Deleted files drop
+    // their JSON sidecars with the existing deleter.
+    // A rebuild's changed set is every file; sidecars remain the source of
+    // truth, so dependency-driven regeneration would rewrite the mirror.
+    if !full_rebuild
+        && (!frag_stats.changed.is_empty()
+            || !frag_stats.deleted.is_empty()
+            || !frag_stats.deleted_dependents.is_empty())
+    {
+        let roots: Vec<String> = existing_dirs
+            .iter()
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .collect();
+        // Dependents resolved pre-purge (their graph rows are gone
+        // by now) re-enter as seeds so the post-purge closure can
+        // still expand transitively through surviving nodes. Seeds are
+        // sig-gated: only interface-moved files expand to dependents
+        // (unknown interfaces fail open); macro-defining changes widen
+        // to their package since edges hide macro expansions.
+        let mut seeds = frag_stats.sig_moved.clone();
+        seeds.extend(frag_stats.deleted_dependents.iter().cloned());
+        profile::count("index.changed_files", frag_stats.changed.len());
+        profile::count("index.deleted_files", frag_stats.deleted.len());
+        profile::count(
+            "index.deleted_dependents",
+            frag_stats.deleted_dependents.len(),
+        );
+        let affected = match GuidanceDb::open(Path::new(db_path)) {
+            Ok(db) => {
+                let mut affected =
+                    index_cmd::affected_for_sync(&db, &seeds, &frag_stats.deleted, &roots);
+                if !frag_stats.macro_moved.is_empty() {
+                    let known: Vec<(String, String)> = db
+                        .list_files()
+                        .map(|files| {
+                            files
+                                .into_iter()
+                                .map(|file| (file.absolute_path, file.root_path))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    affected.extend(guidance_core::invalidation::macro_expansion(
+                        &known,
+                        &frag_stats.macro_moved,
+                    ));
+                    affected.sort();
+                    affected.dedup();
+                }
+                affected
+            }
+            Err(error) => {
+                eprintln!("Warning: graph hydration failed ({error}); re-processing seeds only");
+                let mut seeds = seeds;
+                seeds.extend(frag_stats.deleted.iter().cloned());
+                seeds.sort();
+                seeds.dedup();
+                seeds
+            }
+        };
+        profile::count("index.affected_files", affected.len());
+        if verbose && profile::enabled() {
+            for path in frag_stats.changed.iter().take(5) {
+                eprintln!("[profile] changed: {path}");
+            }
+        }
+        if !affected.is_empty() {
+            let pool = runtime::ast_pool();
+            // Shared backpressure with the walk above: regen waves stay
+            // bounded however large the affected set is.
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(AST_SUBMIT_IN_FLIGHT));
+            let source_dirs = Arc::new(existing_dirs.clone());
+            let workspace = workspace_path.to_path_buf();
+            let guidance = guidance_dir.to_path_buf();
+            // Bound the wave: the pool has finite queue slots, and
+            // sequential submits leave its workers idle on a hub change.
+            for chunk in affected.chunks(PROPAGATION_CONCURRENCY) {
+                let mut handles = Vec::new();
+                for path in chunk {
+                    let candidate = PathBuf::from(path);
+                    if !candidate.is_file() {
+                        continue;
+                    }
+                    let ext = candidate.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if !guidance_core::sync_engine::MEMBER_SOURCE_EXTENSIONS.contains(&ext) {
+                        continue;
+                    }
+                    let pool = Arc::clone(&pool);
+                    let semaphore = Arc::clone(&semaphore);
+                    let source_dirs = Arc::clone(&source_dirs);
+                    let workspace = workspace.clone();
+                    let guidance = guidance.clone();
+                    handles.push(tokio::spawn(async move {
+                        regen_single_file(
+                            &pool,
+                            &semaphore,
+                            candidate,
+                            &source_dirs,
+                            &workspace,
+                            &guidance,
+                            verbose,
+                        )
+                        .await;
+                    }));
+                    generated += 1;
+                }
+                for handle in handles {
+                    let _ = handle.await;
+                }
+            }
+        }
+        for prefix in &frag_stats.deleted {
+            remove_sidecars(guidance_dir, &existing_dirs, Path::new(prefix));
+        }
+    }
+    drop(_propagation);
+    let json_src = guidance_dir.join("src");
+    // Node counts now derive from the fragment index (see
+    // `handle_guidance_status`); the legacy member-node table is no
+    // longer rewritten on every sync — `sync_from_dir` remains for
+    // explicit use, but the live path leaves it alone.
+    // Index-final stamp: the generation marker commits only after the
+    // derived index rebuilt, so the next read never serves a mixed pair.
+    {
+        let _phase = profile::Phase::new("index.generation_write");
+        let generation = guidance_core::index_generation::generation_of(&json_src);
+        if let Err(error) =
+            guidance_core::index_generation::write_generation(&index_dir, &generation)
+        {
+            eprintln!("warning: generation marker not written: {error}");
+        }
+    }
+    generated
+}
+
 fn src_dirs_from_config_with(workspace_path: &Path, cfg: &config::ProjectConfig) -> Vec<PathBuf> {
     if cfg.src_dirs.is_empty() {
         vec![workspace_path.to_path_buf()]
@@ -973,6 +1476,105 @@ fn src_dirs_from_config_with(workspace_path: &Path, cfg: &config::ProjectConfig)
             .map(|d| workspace_path.join(d))
             .collect()
     }
+}
+
+/// Component-rotation sweep: one header-only pass per source root
+/// backdates exactly the receipts that consumed a rotated component.
+/// Runs before dirty-set derivation so rotated files re-enter the set.
+fn sweep_for_rotation(guidance_dir: &Path, src_dirs: &[PathBuf]) -> usize {
+    use guidance_core::components::ComponentVector;
+    use guidance_core::policy::MaintenancePolicy;
+    let current = ComponentVector::current(&MaintenancePolicy::default());
+    let sidecar_dir = guidance_dir.join("src");
+    let mut backdated = 0usize;
+    for src_dir in src_dirs {
+        if !src_dir.is_dir() {
+            continue;
+        }
+        for outcome in guidance_core::components::sweep_sidecars(&sidecar_dir, src_dir, &current) {
+            if matches!(
+                outcome.decision,
+                guidance_core::components::SweepDecision::Backdated
+            ) {
+                backdated += 1;
+            }
+        }
+    }
+    if backdated > 0 {
+        println!("swept components: {backdated} receipts backdated");
+    }
+    backdated
+}
+
+/// Rename adoption: sources without a sidecar whose bytes match exactly
+/// one orphaned sidecar inherit it instead of reprocessing. Runs before
+/// generation so renames never count as new work.
+fn adopt_renames(guidance_dir: &Path, src_dirs: &[PathBuf]) -> usize {
+    use guidance_core::freshness::adopt_renamed_sidecar;
+    let sidecar_dir = guidance_dir.join("src");
+    let mut adopted = 0usize;
+    for src_dir in src_dirs {
+        if !src_dir.is_dir() {
+            continue;
+        }
+        let engine = SyncEngine::new(guidance_dir.to_path_buf(), src_dir.clone());
+        let mut sources = Vec::new();
+        walk::walk_files(
+            src_dir,
+            guidance_core::sync_engine::MEMBER_SOURCE_EXTENSIONS,
+            |path| {
+                sources.push(path.to_path_buf());
+            },
+        );
+        sources.sort();
+        for source in &sources {
+            // Test files never have sidecars; probing them made adoption
+            // hash every test on every sync (the 9 s warm-sync cost).
+            if guidance_core::offload::is_test_path(source) {
+                continue;
+            }
+            if engine.sidecar_path(source).exists() {
+                continue;
+            }
+            let Some(hash) = guidance_core::diff::hash_file(source) else {
+                continue;
+            };
+            if adopt_renamed_sidecar(&sidecar_dir, src_dir, source, &hash).is_some() {
+                adopted += 1;
+            }
+        }
+    }
+    if adopted > 0 {
+        println!("adopted {adopted} renamed sidecars");
+    }
+    adopted
+}
+
+/// Stuck files keep a truthful stale verdict: mark escalated sidecars
+/// stuck and backdate them below their sources while the snapshot
+/// explains why. The flag carries the verdict past the content-hash
+/// shortcut; the backdated mtime carries it past the clock check.
+fn backdate_stuck(guidance_dir: &Path, src_dirs: &[PathBuf], files: &[String]) -> usize {
+    let mut backdated = 0usize;
+    for file in files {
+        let source = PathBuf::from(file);
+        let Some(src_dir) = src_dirs
+            .iter()
+            .find(|root| source.strip_prefix(root).is_ok())
+        else {
+            continue;
+        };
+        let engine = SyncEngine::new(guidance_dir.to_path_buf(), src_dir.clone());
+        let sidecar = engine.sidecar_path(&source);
+        if !sidecar.is_file() {
+            continue;
+        }
+        guidance_core::freshness::mark_stuck_sidecar(&sidecar);
+        if guidance_core::freshness::backdate_sidecar(&sidecar, &source) {
+            backdated += 1;
+        }
+    }
+    backdated
 }
 
 fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
@@ -989,21 +1591,25 @@ async fn walk_and_gen_async(
     db_path: Option<&str>,
 ) -> usize {
     let exts: Vec<&str> = if filter_exts.is_empty() {
-        fluent_types::file_kind::SOURCE_EXTENSIONS.to_vec()
+        guidance_core::sync_engine::MEMBER_SOURCE_EXTENSIONS.to_vec()
     } else {
         filter_exts.to_vec()
     };
     let mut files = Vec::new();
+    let walk_phase = profile::Phase::new("sync.walk_and_gen.walk");
     walk::walk_files(&source_dir, &exts, |p| files.push(p.to_path_buf()));
+    drop(walk_phase);
     if files.is_empty() {
         return 0;
     }
     // Stored source hashes for the member-JSON clock gate (one small
     // listing; empty on any failure — the gate then keeps mtime behavior).
+    let hash_phase = profile::Phase::new("sync.walk_and_gen.source_hashes");
     let source_hashes: std::collections::HashMap<String, String> = db_path
         .and_then(|path| search_vector::GuidanceDb::open(Path::new(path)).ok())
         .and_then(|db| db.source_content_hashes().ok())
         .unwrap_or_default();
+    drop(hash_phase);
 
     // AST pool built lazily on the first stale file: no-work walks
     // (warm syncs, quiet watch cycles) build zero workers instead of
@@ -1018,10 +1624,19 @@ async fn walk_and_gen_async(
             >,
         >,
     > = None;
+    // Backpressure shared by every task below: at most a handful of pool
+    // submissions are in flight however many files the walk found.
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(AST_SUBMIT_IN_FLIGHT));
     let mut handles = Vec::with_capacity(files.len());
     let mut generated = 0usize;
 
+    let staleness_phase = profile::Phase::new("sync.walk_and_gen.staleness");
     for path in &files {
+        // Test files have no sidecars by policy; without this filter the
+        // walker queues every test on every sync and the pool rejects each.
+        if guidance_core::offload::is_test_path(path) {
+            continue;
+        }
         let rel = path.strip_prefix(&source_dir).unwrap_or(path);
         let json_path = guidance_dir
             .join("src")
@@ -1051,19 +1666,25 @@ async fn walk_and_gen_async(
         let src_dir = source_dir.clone();
         let gd = guidance_dir.clone();
         let rel_str = rel.display().to_string();
+        let semaphore = Arc::clone(&semaphore);
         handles.push(tokio::spawn(async move {
-            let result = pool
-                .submit(runtime::AstGenPayload {
+            let result = submit_ast(
+                &pool,
+                &semaphore,
+                runtime::AstGenPayload {
                     source_path,
                     source_dir: src_dir,
                     guidance_dir: gd,
                     config: guidance_core::sync_engine::GenConfig::default(),
-                })
-                .await;
+                },
+            )
+            .await;
             (rel_str, result)
         }));
     }
 
+    drop(staleness_phase);
+    let gen_phase = profile::Phase::new("sync.walk_and_gen.generate");
     let mut gen_failed = 0usize;
     for handle in handles {
         let (rel_path, result) = handle.await.unwrap();
@@ -1095,6 +1716,7 @@ async fn walk_and_gen_async(
         }
     }
 
+    drop(gen_phase);
     if gen_failed > 0 {
         eprintln!("Warning: {gen_failed} files failed to generate");
     }
@@ -1155,9 +1777,13 @@ fn harvest_watch_inputs(src_dirs: &[PathBuf]) -> Vec<guidance_core::graph_index:
     let mut inputs = Vec::new();
     for dir in src_dirs {
         let mut files = Vec::new();
-        walk::walk_files(dir, fluent_types::file_kind::SOURCE_EXTENSIONS, |p| {
-            files.push(p.to_path_buf());
-        });
+        walk::walk_files(
+            dir,
+            guidance_core::sync_engine::MEMBER_SOURCE_EXTENSIONS,
+            |p| {
+                files.push(p.to_path_buf());
+            },
+        );
         for path in files {
             // Test code never enters the graph: it is neither indexed nor
             // described, so it must not drive invalidation either.
@@ -1183,11 +1809,14 @@ fn harvest_watch_inputs(src_dirs: &[PathBuf]) -> Vec<guidance_core::graph_index:
 /// Regenerate one source file through the AST pool (per-file isolation:
 /// one failure never aborts the batch).
 async fn regen_single_file(
-    pool: &fluent_concurrency::pool::ResultPool<
-        runtime::AstGenPayload,
-        fluent_types::GuidanceDoc,
-        guidance_core::sync_engine::SyncEngineError,
+    pool: &Arc<
+        fluent_concurrency::pool::ResultPool<
+            runtime::AstGenPayload,
+            fluent_types::GuidanceDoc,
+            guidance_core::sync_engine::SyncEngineError,
+        >,
     >,
+    semaphore: &Arc<tokio::sync::Semaphore>,
     source_path: PathBuf,
     src_dirs: &[PathBuf],
     workspace_path: &Path,
@@ -1196,14 +1825,17 @@ async fn regen_single_file(
 ) {
     let source_dir =
         find_source_dir(&source_path, src_dirs).unwrap_or_else(|| workspace_path.to_path_buf());
-    match pool
-        .submit(runtime::AstGenPayload {
+    match submit_ast(
+        pool,
+        semaphore,
+        runtime::AstGenPayload {
             source_path: source_path.clone(),
             source_dir,
             guidance_dir: guidance_dir.to_path_buf(),
             config: guidance_core::sync_engine::GenConfig::default(),
-        })
-        .await
+        },
+    )
+    .await
     {
         Ok(doc) => {
             if verbose {
@@ -1313,24 +1945,29 @@ async fn start_watcher(
                         let mut files = Vec::new();
                         walk::walk_files(
                             &PathBuf::from(dir),
-                            fluent_types::file_kind::SOURCE_EXTENSIONS,
+                            guidance_core::sync_engine::MEMBER_SOURCE_EXTENSIONS,
                             |p| files.push(p.to_path_buf()),
                         );
                         seeds.extend(files.iter().map(|p| p.to_string_lossy().into_owned()));
                     }
                     let affected = graph.dependents_closure(&seeds);
                     let mut done = 0usize;
+                    // Sequential awaits never pressure the pool, but the
+                    // regen helper takes a shared semaphore: one permit
+                    // total here is exact, not a bound.
+                    let semaphore = Arc::new(tokio::sync::Semaphore::new(AST_SUBMIT_IN_FLIGHT));
                     for path in &affected {
                         let path = PathBuf::from(path);
                         if !path.is_file() {
                             continue;
                         }
                         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        if !fluent_types::file_kind::SOURCE_EXTENSIONS.contains(&ext) {
+                        if !guidance_core::sync_engine::MEMBER_SOURCE_EXTENSIONS.contains(&ext) {
                             continue;
                         }
                         regen_single_file(
                             &ast_pool,
+                            &semaphore,
                             path,
                             &src_dirs_owned,
                             &workspace_path,
@@ -1435,6 +2072,11 @@ fn remove_sidecars(guidance_dir: &Path, src_dirs: &[PathBuf], prefix: &Path) {
 fn find_source_dir(path: &Path, src_dirs: &[PathBuf]) -> Option<PathBuf> {
     for dir in src_dirs {
         if path.starts_with(dir) {
+            // A file entry scopes the sync, not the source tree: sidecar
+            // paths resolve against its parent.
+            if dir.is_file() {
+                return dir.parent().map(Path::to_path_buf);
+            }
             return Some(dir.clone());
         }
     }
@@ -1477,7 +2119,10 @@ fn cmd_seal(workspace: &str) {
         let mut new_failures = Vec::new();
         let stdout = String::from_utf8_lossy(&output.stdout);
         if !output.status.success() {
-            for line in stdout.lines().chain(String::from_utf8_lossy(&output.stderr).lines()) {
+            for line in stdout
+                .lines()
+                .chain(String::from_utf8_lossy(&output.stderr).lines())
+            {
                 let line = line.trim_start_matches("test ").trim_start();
                 if let Some((name, rest)) = line.split_once(' ') {
                     if rest.trim_start().starts_with("FAILED") {
@@ -1502,10 +2147,27 @@ fn cmd_seal(workspace: &str) {
         test,
         target_dir: None,
     });
-    println!("Seal: {} packages, {} cells", report.packages.len(), report.cells.len());
-    println!("  build: {}", if report.build_ok { "clean" } else { "FAILED" });
-    println!("  tests: {}", if report.tests_ok { "clean" } else { "FAILED" });
-    println!("  witness: {}", if report.witness_clean { "clean" } else { "DIRTY" });
+    println!(
+        "Seal: {} packages, {} cells",
+        report.packages.len(),
+        report.cells.len()
+    );
+    println!(
+        "  build: {}",
+        if report.build_ok { "clean" } else { "FAILED" }
+    );
+    println!(
+        "  tests: {}",
+        if report.tests_ok { "clean" } else { "FAILED" }
+    );
+    println!(
+        "  witness: {}",
+        if report.witness_clean {
+            "clean"
+        } else {
+            "DIRTY"
+        }
+    );
     for detail in &report.details {
         println!("  - {detail}");
     }
@@ -1515,10 +2177,11 @@ fn cmd_seal(workspace: &str) {
 /// Report what a change touches: dependents, owners, narrowest gates,
 /// edge tiers, and the tests exercising it.
 fn cmd_impact(target: &str, workspace: &str) {
+    use guidance_core::fidelity::safe_to_delete;
     use guidance_core::graph_index::GraphIndex;
-    use guidance_core::query::context_pack::impact_report_with_tests;
+    use guidance_core::query::context_pack::{impact_report, tests_touching, UNSEEN_CHANNELS};
     let root = PathBuf::from(workspace);
-    let inputs = harvest_watch_inputs(std::slice::from_ref(&root));
+    let mut inputs = harvest_watch_inputs(std::slice::from_ref(&root));
     let mut test_files = Vec::new();
     walk::walk_files(&root, &["rs"], |path| {
         if guidance_core::offload::is_test_path(path) {
@@ -1527,10 +2190,20 @@ fn cmd_impact(target: &str, workspace: &str) {
             }
         }
     });
+    // Test files join the impact graph read-only: their import and call
+    // refs become tests-touching evidence, but nothing in the fix or
+    // invalidation planes reads this graph. The watch harvest above
+    // still excludes them, so test code never drives invalidation.
+    for (path, text) in &test_files {
+        inputs.push(guidance_core::graph_index::HarvestInput {
+            path: path.clone(),
+            format: "rust".to_string(),
+            text: text.clone(),
+        });
+    }
     let roots = vec![root.to_string_lossy().into_owned()];
-    let graph = GraphIndex::build(&inputs, &roots).unwrap_or_else(|_| {
-        GraphIndex::build(&[], &roots).expect("empty graph builds")
-    });
+    let graph = GraphIndex::build(&inputs, &roots)
+        .unwrap_or_else(|_| GraphIndex::build(&[], &roots).expect("empty graph builds"));
     let target_path = PathBuf::from(target);
     let changed: Vec<String> = if target_path.exists() {
         vec![target.to_string()]
@@ -1548,7 +2221,15 @@ fn cmd_impact(target: &str, workspace: &str) {
         }
         files
     };
-    let report = impact_report_with_tests(&graph, &changed, &test_files, &[target.to_string()]);
+    // Index first: committed edges over token guesses. The mention
+    // heuristic only fills an empty index result, labelled as such.
+    let report = impact_report(&graph, &changed);
+    let mut tests = report.tests.clone();
+    let mut heuristic = false;
+    if tests.is_empty() {
+        tests = tests_touching(&test_files, &[target.to_string()]);
+        heuristic = !tests.is_empty();
+    }
     println!("Impact for {target}:");
     for dependent in &report.dependents {
         println!("  dependent: {dependent}");
@@ -1556,14 +2237,47 @@ fn cmd_impact(target: &str, workspace: &str) {
     for (owner, gate) in &report.owners {
         println!("  owner: {owner} (gate: {})", gate.gate);
     }
-    for test in &report.tests {
-        println!("  test: {test}");
+    for test in &tests {
+        if heuristic {
+            println!("  test (heuristic, unverified): {test}");
+        } else {
+            println!("  test: {test}");
+        }
     }
-    println!("  tiers: {}", if report.tiers.is_empty() {
-        "(no edges)".to_string()
-    } else {
-        report.tiers.join(", ")
-    });
+    println!(
+        "  tiers: {}",
+        if report.tiers.is_empty() {
+            "(no edges)".to_string()
+        } else {
+            report.tiers.join(", ")
+        }
+    );
+    // Conservative deletion verdict: any dependent or exercising test
+    // is proof of use (`no`); otherwise unknown with the unseen channels
+    // named — the index can never prove a bare yes. Heuristic (token)
+    // test guesses never count as proof, only committed edges do.
+    let mut usages: Vec<String> = report
+        .dependents
+        .iter()
+        .filter(|dependent| !changed.contains(dependent))
+        .cloned()
+        .collect();
+    if !heuristic {
+        for test in &tests {
+            if !usages.contains(test) {
+                usages.push(test.clone());
+            }
+        }
+    }
+    let verdict = match safe_to_delete(false, &usages, false) {
+        guidance_core::fidelity::DeleteVerdict::No => "no (has dependents)",
+        guidance_core::fidelity::DeleteVerdict::UnreferencedWithCaveats => {
+            "unreferenced-with-caveats (private, dead-code clean)"
+        }
+        guidance_core::fidelity::DeleteVerdict::Unknown => "unknown",
+    };
+    println!("  deletion: {verdict}");
+    println!("  unseen: {}", UNSEEN_CHANNELS.join(", "));
 }
 
 /// Narrow inbound surface: validated queue posts. The queue snapshot
@@ -1576,14 +2290,22 @@ fn cmd_queue_post(id: &str, scope: &str, kind: &str, deps: &str, queue_path: &st
         id: id.to_string(),
         scope: scope.to_string(),
         kind: kind.to_string(),
-        deps: deps.split(',').map(str::trim).filter(|dep| !dep.is_empty()).map(str::to_string).collect(),
+        deps: deps
+            .split(',')
+            .map(str::trim)
+            .filter(|dep| !dep.is_empty())
+            .map(str::to_string)
+            .collect(),
     };
     if let Err(error) = post_work(&mut queue, &req) {
         eprintln!("refused: {error}");
         std::process::exit(2);
     }
     save_queue_snapshot(queue_path, &queue);
-    println!("{}", serde_json::to_string_pretty(&queue.snapshot()).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&queue.snapshot()).unwrap_or_default()
+    );
 }
 
 /// Load a queue snapshot file; absent or unreadable means an empty queue.
@@ -1635,7 +2357,10 @@ fn cmd_escalation_file(id: &str, ledger: &str) {
         std::process::exit(2);
     }
     save_ledger(ledger, &entries);
-    println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&entries).unwrap_or_default()
+    );
 }
 
 fn cmd_escalation_claim(id: &str, owner: &str, ledger: &str) {
@@ -1645,7 +2370,10 @@ fn cmd_escalation_claim(id: &str, owner: &str, ledger: &str) {
         std::process::exit(2);
     }
     save_ledger(ledger, &entries);
-    println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&entries).unwrap_or_default()
+    );
 }
 
 fn cmd_escalation_resolve(id: &str, owner: &str, ledger: &str) {
@@ -1655,7 +2383,10 @@ fn cmd_escalation_resolve(id: &str, owner: &str, ledger: &str) {
         std::process::exit(2);
     }
     save_ledger(ledger, &entries);
-    println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&entries).unwrap_or_default()
+    );
 }
 
 /// Import plan items from a JSON array file into a reviewable plan.
@@ -1695,7 +2426,10 @@ fn cmd_plan_import(id: &str, file: &str) {
         });
     }
     match guidance_core::orchestrator::import_plan(id, plan_items) {
-        Ok(plan) => println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default()),
+        Ok(plan) => println!(
+            "{}",
+            serde_json::to_string_pretty(&plan).unwrap_or_default()
+        ),
         Err(error) => {
             eprintln!("refused: {error}");
             std::process::exit(2);
@@ -1724,6 +2458,256 @@ fn cmd_pack(file: &str) {
     let (pack, manifest) = guidance_core::orchestrator::request_pack(&input);
     let out = serde_json::json!({ "pack": pack, "manifest": manifest });
     println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+}
+
+/// Measure a decision point on a gold corpus plus harvested journal
+/// negatives; store a calibration entry only when the precision/recall
+/// bars pass. Measurement itself is never an error: exit 0 carries the
+/// AUTHORIZED or HELD verdict.
+#[allow(clippy::too_many_arguments)]
+/// Measure a decision point on a gold corpus plus harvested journal
+/// negatives; store a calibration entry only when the precision/recall
+/// bars pass. Measurement itself is never an error: exit 0 carries the
+/// AUTHORIZED or HELD verdict.
+fn cmd_calibrate(
+    point: &str,
+    dataset: &str,
+    model_fingerprint: Option<String>,
+    state_dir: &str,
+    journal_dir: &str,
+) {
+    use fluent_llm::decision::CalibrationRegistry;
+    use guidance_core::triage::{self, ROUTE_POINT, STATIC_PROCEDURE_FINGERPRINT, TRIAGE_POINT};
+    if point == TRIAGE_POINT {
+        let fingerprint = model_fingerprint
+            .as_deref()
+            .unwrap_or(STATIC_PROCEDURE_FINGERPRINT);
+        let outcome = match triage::calibrate_point(
+            Path::new(dataset),
+            Path::new(journal_dir),
+            fingerprint,
+        ) {
+            Ok(outcome) => outcome,
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        };
+        println!("point: {point}");
+        println!("accuracy: {:.3}", outcome.report.accuracy);
+        println!(
+            "macro precision/recall: {:.3}/{:.3}",
+            outcome.report.macro_precision, outcome.report.macro_recall
+        );
+        println!("support: {}", outcome.report.total);
+        println!(
+            "harvested: {} (skipped {})",
+            outcome.harvested, outcome.skipped
+        );
+        println!(
+            "control fires: {}/{}",
+            outcome.control_fires.len(),
+            outcome.control_total
+        );
+        match outcome.entry {
+            Some(entry) => {
+                let path = Path::new(state_dir).join("calibration.json");
+                let mut registry = if path.exists() {
+                    match CalibrationRegistry::load(&path) {
+                        Ok(registry) => registry,
+                        Err(detail) => {
+                            eprintln!("calibrate: {detail}");
+                            std::process::exit(2);
+                        }
+                    }
+                } else {
+                    CalibrationRegistry::empty()
+                };
+                registry.upsert(entry);
+                if let Err(detail) = registry.save(&path) {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+                println!("verdict: AUTHORIZED (entry stored at {})", path.display());
+            }
+            None => println!("verdict: HELD (below the precision/recall bars; nothing stored)"),
+        }
+    } else if point == ROUTE_POINT {
+        match triage::route_agreement(Path::new(dataset)) {
+            Ok((agreed, total)) => {
+                println!("point: {point}");
+                println!("static agreement: {agreed}/{total}");
+                println!("verdict: MEASURED ONLY (no verdict scorer yet; nothing stored)");
+            }
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        }
+    } else {
+        eprintln!("calibrate: unknown point {point} ({TRIAGE_POINT}, {ROUTE_POINT})");
+        std::process::exit(2);
+    }
+}
+
+/// Stale mirror files for a workspace, display paths relative to it.
+/// Same roots and mirror as `cmd_status`, so strict mode and status
+/// never disagree about what is stale.
+fn mirror_stale_files(workspace: &str) -> Vec<String> {
+    use guidance_core::sync_engine::absolute_or;
+    let workspace_path = absolute_or(PathBuf::from(workspace));
+    let cfg = load_project_config(&workspace_path);
+    let gdir = workspace_path.join(".guidance");
+    let mut out = Vec::new();
+    for src_dir in src_dirs_from_config_with(&workspace_path, &cfg) {
+        if !src_dir.is_dir() {
+            continue;
+        }
+        let engine = SyncEngine::new(gdir.clone(), src_dir);
+        for path in engine.stale_files() {
+            let display = path.strip_prefix(&workspace_path).unwrap_or(&path);
+            out.push(display.to_string_lossy().into_owned());
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Whether the recorded index schema disagrees with this binary:
+/// stored rows may misread, so reads refuse until a rebuild. Content
+/// drift alone never refuses — freshness labels cover it, and the next
+/// sync re-derives exactly the changed rows.
+fn index_mismatched(db: &str) -> bool {
+    use guidance_core::index_generation::{schema_generation, stored_schema};
+    let index_dir = Path::new(db)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    // No marker means no index was ever built: reads as empty.
+    let Some(stored) = stored_schema(&index_dir) else {
+        return false;
+    };
+    stored != schema_generation()
+}
+
+/// Refuse an index read on generation mismatch: re-running sync
+/// rebuilds instead of serving a mixed pair. rg reads live bytes and
+/// never consults the marker.
+fn refuse_stale_index(db: &str) -> bool {
+    if !index_mismatched(db) {
+        return false;
+    }
+    eprintln!("refused: index generation mismatch (re-run sync to rebuild)");
+    true
+}
+
+/// Refuse a strict read when the mirror is not fresh. Prints the
+/// freshness report naming files; true means the caller stops.
+fn strict_refuse(workspace: &str) -> bool {
+    let stale = mirror_stale_files(workspace);
+    if stale.is_empty() {
+        return false;
+    }
+    eprintln!("refused: mirror is not fresh (strict mode)");
+    for file in &stale {
+        eprintln!("stale: {file}");
+    }
+    eprintln!("run `guidance sync` to converge, then retry");
+    true
+}
+
+fn cmd_verify(path: &str, workspace: &str, deep: bool) {
+    use guidance_core::freshness::{probe_timestamp_granularity, verify_sidecar, VerifyVerdict};
+    use guidance_core::sync_engine::absolute_or;
+    let workspace_path = absolute_or(PathBuf::from(workspace));
+    let candidate = absolute_or(PathBuf::from(path));
+    if !candidate.is_file() {
+        eprintln!("verify: not a file: {path}");
+        std::process::exit(2);
+    }
+    let cfg = load_project_config(&workspace_path);
+    let gdir = workspace_path.join(".guidance");
+    let mut engine_opt = None;
+    for src_dir in src_dirs_from_config_with(&workspace_path, &cfg) {
+        if candidate.strip_prefix(&src_dir).is_ok() {
+            engine_opt = Some(SyncEngine::new(gdir.clone(), src_dir));
+            break;
+        }
+    }
+    let Some(engine) = engine_opt else {
+        eprintln!("verify: {path} is outside the configured source roots");
+        std::process::exit(2);
+    };
+    let sidecar = engine.sidecar_path(&candidate);
+    let granularity = probe_timestamp_granularity(&gdir);
+    let display = candidate
+        .strip_prefix(&workspace_path)
+        .unwrap_or(&candidate)
+        .to_string_lossy()
+        .into_owned();
+    let code = match verify_sidecar(&sidecar, &candidate, granularity) {
+        VerifyVerdict::Fresh => {
+            println!("fresh: {display}");
+            0
+        }
+        VerifyVerdict::Stale => {
+            println!("stale: {display} (sidecar predates its inputs; re-run the loop)");
+            1
+        }
+        VerifyVerdict::SourceChanged => {
+            println!("source-changed: {display} (bytes moved under a preserved mtime)");
+            1
+        }
+        VerifyVerdict::SkewSuspect => {
+            println!("skew-suspect: {display} (bytes moved under a complete-or-newer clock)");
+            1
+        }
+        VerifyVerdict::Tampered => {
+            println!("tampered: {display} (sidecar body no longer matches its header)");
+            1
+        }
+        VerifyVerdict::Unknown => {
+            println!("unknown: {display} (no sidecar or no source to audit)");
+            1
+        }
+    };
+    if deep {
+        print_verify_deep(&sidecar, &candidate, granularity);
+    }
+    if code != 0 {
+        std::process::exit(code);
+    }
+}
+
+/// Deep audit detail: recorded vs live hashes plus the clock reading.
+/// Display only; the verdict above is already decided.
+fn print_verify_deep(
+    sidecar: &std::path::Path,
+    source: &std::path::Path,
+    granularity: std::time::Duration,
+) {
+    let content = std::fs::read_to_string(sidecar).unwrap_or_default();
+    let (header, _) = fluent_types::sidecar::strip_header(&content);
+    let recorded = header
+        .and_then(|h| h.src_hash)
+        .unwrap_or_else(|| "none".to_string());
+    let live = std::fs::read(source)
+        .ok()
+        .map(|bytes| common_core::hash::sha256_hex(&bytes))
+        .unwrap_or_else(|| "unreadable".to_string());
+    let clock = match (
+        common_core::io::mtime(sidecar),
+        common_core::io::mtime(source),
+    ) {
+        (Some(a), Some(b)) if a > b => "sidecar newer than source",
+        (Some(a), Some(b)) if a < b => "sidecar older than source",
+        (Some(_), Some(_)) => "mtimes equal",
+        _ => "clock unreadable",
+    };
+    println!("recorded: {recorded}");
+    println!("live: {live}");
+    println!("clock: {clock} (granularity {}ms)", granularity.as_millis());
 }
 
 fn cmd_status(guidance_dir: &str) {
@@ -1784,7 +2768,10 @@ fn cmd_check(workspace: &str, check_ready: bool, fixpoint: bool) {
     // changed set in bounded passes before the stages verify. Baseline
     // stages (test/lint/fmt) still verify only — the loop reports what,
     // if anything, remains instead of spinning.
-    if fixpoint && !check_ready && !converge_mirror(&workspace_path, &cfg) {
+    if fixpoint
+        && !check_ready
+        && !converge_mirror(&workspace_path, &workspace_path.join(".guidance"), &cfg)
+    {
         all_passed = false;
     }
 
@@ -1931,8 +2918,14 @@ fn cmd_check(workspace: &str, check_ready: bool, fixpoint: bool) {
     }
 }
 
-fn converge_mirror(workspace_path: &Path, cfg: &config::ProjectConfig) -> bool {
+fn converge_mirror(
+    workspace_path: &Path,
+    guidance_dir: &Path,
+    cfg: &config::ProjectConfig,
+) -> bool {
     const MAX_PASSES: u32 = 5;
+    let src_dirs = src_dirs_from_config_with(workspace_path, cfg);
+    adopt_renames(guidance_dir, &src_dirs);
     for pass in 1..=MAX_PASSES {
         let mut generated = 0usize;
         let mut failed = 0usize;
@@ -1940,8 +2933,7 @@ fn converge_mirror(workspace_path: &Path, cfg: &config::ProjectConfig) -> bool {
             if !src_dir.is_dir() {
                 continue;
             }
-            let mut engine =
-                SyncEngine::new(workspace_path.join(".guidance"), src_dir.clone());
+            let mut engine = SyncEngine::new(guidance_dir.to_path_buf(), src_dir.clone());
             match engine.gen_scoped(&src_dir) {
                 Ok((made, bad)) => {
                     generated += made;
@@ -1967,6 +2959,330 @@ fn converge_mirror(workspace_path: &Path, cfg: &config::ProjectConfig) -> bool {
     }
     println!("fixpoint: still converging after {MAX_PASSES} passes");
     false
+}
+
+/// Converge the workspace through the deterministic fix loop: mirror
+/// to fixpoint, fix the stale set in waves (format + machine-applicable
+/// lint, journaled and witnessed), reindex, and report with contract
+/// exit codes (0 clean, 1 work remains, 2 stuck, 4 halted).
+async fn cmd_run(workspace: &str, json_dir: &str, db: &str, max_waves: usize, autonomy: &str) {
+    use guidance_core::maintenance::{MaintenanceQueue, WorkState};
+    let workspace_path = PathBuf::from(workspace);
+    let guidance_dir = PathBuf::from(json_dir);
+    let cfg = load_project_config(&workspace_path);
+    ensure_dir_or_panic(&guidance_dir);
+    let policy = guidance_core::policy::MaintenancePolicy {
+        autonomy: autonomy.to_string(),
+        ..guidance_core::policy::MaintenancePolicy::default()
+    };
+
+    // 1. Rotation sweep first: backdated receipts re-enter the stale
+    // set derived below instead of hiding behind fresh mtimes.
+    sweep_for_rotation(
+        &guidance_dir,
+        &src_dirs_from_config_with(&workspace_path, &cfg),
+    );
+    // 1b. Dirty set from staleness (make semantics: fresh files
+    // carry a verifying receipt and need no work). Rust only: format
+    // and clippy are the toolchain rungs the loop owns. The mirror
+    // converges next, but the set is already pinned.
+    let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
+    let mut dirty: Vec<PathBuf> = Vec::new();
+    for src_dir in &src_dirs {
+        if !src_dir.is_dir() {
+            continue;
+        }
+        let engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
+        for path in engine.stale_files() {
+            if path.extension().and_then(|ext| ext.to_str()) == Some("rs") && path.is_file() {
+                dirty.push(path);
+            }
+        }
+    }
+    dirty.sort();
+    dirty.dedup();
+
+    // 2. Converge the mirror above the pinned set: the fix loop works
+    // above fresh sidecars, and clippy attribution reads live bytes.
+    if !converge_mirror(&workspace_path, &guidance_dir, &cfg) {
+        eprintln!("run: mirror did not converge; fix the scope errors above");
+        std::process::exit(3);
+    }
+
+    if dirty.is_empty() {
+        // The index gate still runs with no fix work: generation is
+        // verified (and rebuilt on mismatch) on every run, not just
+        // on runs that rewrite files.
+        refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, false).await;
+        println!("run: clean (0 stale files)");
+        return;
+    }
+
+    // Autonomy cap: L0 converges the mirror and the index, never the
+    // tree. The queue still records what a higher autonomy would own.
+    if !guidance_core::policy::autonomy_allows_fix(&policy) {
+        refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, false).await;
+        println!(
+            "run: clean (autonomy L0: index only, {} stale files held)",
+            dirty.len()
+        );
+        return;
+    }
+
+    // 3. Durable queue record of what this run owns (crash-resume).
+    let state_dir = guidance_dir.join("state");
+    if common_core::io::ensure_dir(&state_dir).is_err() {
+        eprintln!("warning: state dir not writable");
+    }
+    let snapshot_path = state_dir.join("queue.json");
+    let mut queue = MaintenanceQueue::new();
+    for path in &dirty {
+        let scope = path
+            .parent()
+            .map(|parent| parent.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let _ = queue.enqueue(&path.to_string_lossy(), &scope, "clippy-fix", &[]);
+    }
+    queue.set_snapshot_path(&snapshot_path);
+    if queue.save_snapshot(&snapshot_path).is_err() {
+        eprintln!("warning: queue snapshot not written");
+    }
+
+    // 4. Fix waves plus the model-draft rung (shared with `sync`):
+    // mechanical rungs first, then local code-model drafts for whatever
+    // the waves could not converge.
+    let fix = run_fix_scope(&dirty, &guidance_dir, &cfg, &policy, max_waves);
+    let mut report = fix.waves;
+    let drafted: std::collections::HashSet<String> = fix.drafts.kept_files.into_iter().collect();
+    report
+        .escalated
+        .retain(|esc| !drafted.contains(esc.file.as_str()));
+    report.fixed += drafted.len();
+    if !drafted.is_empty() {
+        // Drafts landed after the witness wave, so the witness no longer
+        // covers the tree: the next run re-witnesses to clean.
+        report.witness_clean = false;
+        println!(
+            "model drafts: {} kept, {} failed, {} skipped",
+            fix.drafts.kept, fix.drafts.failed, fix.drafts.skipped
+        );
+    }
+
+    // 5. Record wave outcomes on the queue: converged files verify,
+    // escalated files stay owned with a reason.
+    for path in &dirty {
+        let id = path.to_string_lossy().into_owned();
+        let escalated = report.escalated.iter().any(|esc| esc.file == id);
+        queue.set_state(
+            &id,
+            if escalated {
+                WorkState::Escalated
+            } else {
+                WorkState::Verified
+            },
+        );
+    }
+    if queue.save_snapshot(&snapshot_path).is_err() {
+        eprintln!("warning: queue snapshot not written");
+    }
+
+    // 6. Reindex what the waves changed so the knowledge base is
+    // current when the report lands.
+    refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, false).await;
+
+    // 5b. Stuck files keep a truthful stale verdict: backdate escalated
+    // sidecars below their sources while the snapshot explains why.
+    // Runs after the final refresh — the reindex would otherwise
+    // regenerate (and re-fresh) the stuck record it just explained.
+    let stuck: Vec<String> = report
+        .escalated
+        .iter()
+        .map(|esc| esc.file.clone())
+        .collect();
+    let backdated = backdate_stuck(&guidance_dir, &src_dirs, &stuck);
+    if backdated > 0 {
+        println!("stuck: {backdated} files backdated below their sources");
+    }
+
+    // 7. Contract report: fixed, escalated with reasons, witness.
+    println!(
+        "run: {} files, {} waves, {} clippy runs",
+        dirty.len(),
+        report.waves_run,
+        report.clippy_invocations
+    );
+    println!("fixed: {} (formatted: {})", report.fixed, report.formatted);
+    println!("escalated: {}", report.escalated.len());
+    for esc in &report.escalated {
+        println!("  {} ({})", esc.file, esc.reason);
+    }
+    println!(
+        "witness: {}",
+        if report.witness_clean {
+            "clean"
+        } else {
+            "not clean"
+        }
+    );
+    let code = report.exit_code().as_i32();
+    if code != 0 {
+        std::process::exit(code);
+    }
+}
+
+/// Waves budget for the sync fix pre-pass: one fixing wave plus its
+/// witness. Escalations fall through to the model-draft rung.
+const SYNC_FIX_MAX_WAVES: usize = 2;
+
+/// Pre-pass file budget: beyond this many dirty files the fix loop is
+/// skipped (whole-tree convergence belongs to `run`), so a cleared or
+/// initial tree still indexes swiftly instead of fixing the world.
+const SYNC_FIX_MAX_FILES: usize = 32;
+
+/// Fix-scope outcome: mechanical waves plus the model-draft rung.
+struct FixScopeOutcome {
+    waves: guidance_core::waves::WaveReport,
+    drafts: guidance_core::waves::ModelDraftReport,
+}
+
+/// Lint, fix, and format `files` before indexing: rustfmt plus the
+/// mechanical clippy rungs under the policy attempt budget, then up to
+/// three local code-model drafts per file the waves could not converge.
+/// Honors the autonomy cap (L0 never rewrites); a dark or unreachable
+/// model endpoint skips the draft rung instead of failing. Shared by
+/// `run` (workspace scope) and `sync` (workspace or single file): fix
+/// always precedes member gen and indexing on the same bytes.
+fn run_fix_scope(
+    files: &[PathBuf],
+    guidance_dir: &Path,
+    cfg: &config::ProjectConfig,
+    policy: &guidance_core::policy::MaintenancePolicy,
+    max_waves: usize,
+) -> FixScopeOutcome {
+    // Live toolchain driver, the configured decision endpoint, and a
+    // dedicated target dir (no lock fights with the user's own cargo).
+    // The calibration registry loads once; a missing file is the
+    // seed-empty registry (shadow-only holds).
+    let registry_path = cfg
+        .calibration_registry
+        .clone()
+        .unwrap_or_else(|| guidance_dir.join("state").join("calibration.json"));
+    let calibration = match std::fs::read_to_string(&registry_path) {
+        Ok(raw) => match serde_json::from_str(&raw) {
+            Ok(registry) => registry,
+            Err(error) => {
+                eprintln!("warning: calibration registry unreadable: {error}");
+                fluent_llm::decision::CalibrationRegistry::empty()
+            }
+        },
+        Err(_) => fluent_llm::decision::CalibrationRegistry::empty(),
+    };
+    let decision = guidance_core::waves::DecisionEndpoint {
+        base_url: cfg.decision.base_url.clone(),
+        model: cfg.decision.model.clone(),
+        timeout_ms: cfg.decision.timeout_ms,
+        enabled: cfg.decision.enabled,
+    };
+    let clippy = guidance_core::waves::live_runner(guidance_core::clippy::ClippyCtx {
+        target_dir: Some(guidance_dir.join("target")),
+        shaping: guidance_core::clippy::shaping_for(false),
+        extra_args: Vec::new(),
+    });
+    let protected: Vec<String> = Vec::new();
+    let wave_ctx = guidance_core::waves::WaveCtx {
+        journal_dir: guidance_dir.join("journal"),
+        wal_dir: guidance_dir.join("wal"),
+        protected_globs: &protected,
+        allow_pub_change: false,
+        allow_cfg_change: false,
+        max_bytes: 1_000_000,
+        max_changed_lines: 500,
+        max_waves,
+        max_attempts: policy.attempt_limit,
+        decision,
+        calibration,
+        mechanical_classes: &policy.mechanical_classes,
+        requires_approval: &policy.requires_approval,
+        clippy,
+    };
+    let waves = guidance_core::waves::run_fix_waves(files, &wave_ctx);
+    let escalated: Vec<(PathBuf, String)> = waves
+        .escalated
+        .iter()
+        .map(|esc| (PathBuf::from(&esc.file), esc.reason.clone()))
+        .collect();
+    let generative = guidance_core::waves::GenerativeEndpoint {
+        base_url: cfg.generative.base_url.clone(),
+        model: cfg.generative.model.clone(),
+        timeout_ms: cfg.generative.timeout_ms,
+        enabled: cfg.generative.enabled,
+    };
+    let drafts = if escalated.is_empty() {
+        guidance_core::waves::ModelDraftReport::default()
+    } else {
+        guidance_core::waves::run_model_draft_rung(&escalated, &generative)
+    };
+    FixScopeOutcome { waves, drafts }
+}
+
+/// Knowledge-base summary for orchestrators: one JSON object naming
+/// the mirror, its freshness, the derived index, and the commands that
+/// consume this workspace. Counts come from sidecars on disk (parse
+/// failures count zero members, never fail the command).
+fn cmd_kb(workspace: &str, json_dir: &str, db: &str) {
+    let workspace_path = PathBuf::from(workspace);
+    let guidance_dir = PathBuf::from(json_dir);
+    let cfg = load_project_config(&workspace_path);
+    let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
+    let mut files = 0usize;
+    let mut stale = 0usize;
+    for src_dir in &src_dirs {
+        if !src_dir.is_dir() {
+            continue;
+        }
+        let engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
+        match engine.status() {
+            Ok(status) => {
+                files += status.total_files;
+                stale += status.stale_files;
+            }
+            Err(error) => eprintln!("warning: status failed: {error}"),
+        }
+    }
+    let mut members = 0usize;
+    walk::walk_files(&guidance_dir.join("src"), &["json"], |path| {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            // Sidecars carry a header first line; members live in the
+            // JSON body below it (never fail the command on odd files).
+            let body = fluent_types::sidecar::strip_header(&raw).1;
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+                if let Some(items) = value.get("members").and_then(|m| m.as_array()) {
+                    members += items.len();
+                }
+            }
+        }
+    });
+    let out = serde_json::json!({
+        "workspace": workspace,
+        "mirror": json_dir,
+        "files": files,
+        "stale": stale,
+        "fresh": stale == 0,
+        "members": members,
+        "schema": guidance_core::query::envelope::ENVELOPE_SCHEMA_VERSION,
+        "index": {"db": db, "exists": Path::new(db).is_file()},
+        "query": [
+            "guidance search --fuse --workspace <ws> \"<question>\"",
+            "guidance explain --workspace <ws> \"<question>\"",
+            "guidance impact --workspace <ws> <symbol|path>",
+        ],
+        "maintain": [
+            "guidance run --workspace <ws>",
+            "guidance verify --workspace <ws> <file>",
+            "guidance seal --workspace <ws>",
+        ],
+    });
+    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
 }
 
 fn cmd_component_gate(path: &str) {
@@ -2130,5 +3446,50 @@ mod tests {
         let mut cmd = super::Cli::command();
         let help = cmd.render_help();
         assert!(!help.to_string().is_empty());
+    }
+
+    #[test]
+    fn rotation_sweep_backdates_only_rotated_receipts() {
+        use std::time::SystemTime;
+        // A sidecar whose recorded toolchain differs from the current
+        // vector is backdated; a current one is untouched.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).expect("mkdir");
+        std::fs::write(src.join("a.rs"), "fn a() {}\n").expect("write");
+        std::fs::write(src.join("b.rs"), "fn b() {}\n").expect("write");
+        // Sleep-free staleness: backdate via explicit timestamps.
+        let now = SystemTime::now();
+        let sidecar_dir = dir.path().join(".guidance").join("src");
+        std::fs::create_dir_all(&sidecar_dir).expect("mkdir");
+        let stale_header = "GHDR1 src=a\tbody=b\tcomp=toolchain=old\n";
+        std::fs::write(
+            sidecar_dir.join("a.rs.json"),
+            format!("{stale_header}{{\"members\":[]}}"),
+        )
+        .expect("write");
+        std::fs::write(
+            sidecar_dir.join("b.rs.json"),
+            format!("{stale_header}{{\"members\":[]}}"),
+        )
+        .expect("write");
+        for name in ["a.rs.json", "b.rs.json"] {
+            let path = sidecar_dir.join(name);
+            let file = std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .expect("open");
+            file.set_modified(now).expect("touch");
+        }
+        let backdated =
+            super::sweep_for_rotation(&dir.path().join(".guidance"), std::slice::from_ref(&src));
+        assert_eq!(backdated, 2, "both receipts rotated");
+        for name in ["a.rs.json", "b.rs.json"] {
+            let mtime = std::fs::metadata(sidecar_dir.join(name))
+                .expect("meta")
+                .modified()
+                .expect("mtime");
+            assert!(mtime < now, "backdated below the read time");
+        }
     }
 }

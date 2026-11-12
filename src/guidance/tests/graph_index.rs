@@ -1149,3 +1149,62 @@ fn m2_rerank_breaks_score_ties_by_id() {
     let flipped: Vec<&str> = nan_flipped.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(order, flipped);
 }
+
+// --- tests-touching edges: recorded refs, never token guesses --------
+
+fn touches_fixture() -> GraphIndex {
+    GraphIndex::build(
+        &[
+            HarvestInput {
+                path: "/repo/src/a.rs".to_string(),
+                format: "rust".to_string(),
+                text: "pub fn target_a() -> u64 {\n    1\n}\n".to_string(),
+            },
+            HarvestInput {
+                path: "/repo/src/b.rs".to_string(),
+                format: "rust".to_string(),
+                text: "pub fn other_b() -> u64 {\n    2\n}\n".to_string(),
+            },
+            HarvestInput {
+                path: "/repo/tests/test_t.rs".to_string(),
+                format: "rust".to_string(),
+                text: "use crate::a::target_a;\n#[test]\nfn t() {\n    assert_eq!(target_a(), 1);\n}\n"
+                    .to_string(),
+            },
+        ],
+        &["/repo".to_string()],
+    )
+    .expect("graph builds")
+}
+
+#[test]
+fn tests_touching_names_exact_recorded_refs() {
+    let graph = touches_fixture();
+    // The test names `target_a` as a call: recorded, not guessed.
+    assert_eq!(
+        graph.tests_touching("target_a"),
+        vec!["/repo/tests/test_t.rs".to_string()]
+    );
+    // Nothing names `other_b`: absent, never invented.
+    assert!(graph.tests_touching("other_b").is_empty());
+    // Token substrings never match: `target` is not a callee.
+    assert!(graph.tests_touching("target").is_empty());
+    // Empty names never match.
+    assert!(graph.tests_touching("").is_empty());
+}
+
+#[test]
+fn tests_touching_files_resolves_changed_files() {
+    let graph = touches_fixture();
+    assert_eq!(
+        graph.tests_touching_files(&["/repo/src/a.rs".to_string()]),
+        vec!["/repo/tests/test_t.rs".to_string()],
+        "the test exercises an item defined in a.rs"
+    );
+    assert!(
+        graph
+            .tests_touching_files(&["/repo/src/b.rs".to_string()])
+            .is_empty(),
+        "nothing exercises b.rs"
+    );
+}

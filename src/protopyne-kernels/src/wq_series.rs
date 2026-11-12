@@ -23,6 +23,9 @@ use crate::math::{div_or_none, strict_window, warmup_none};
 /// the exposed edge; `None` fill leaves the edge missing. `d == 0` is the
 /// identity (missing values stay missing).
 #[must_use]
+/// Shift forward (`d > 0`) or backward (`d < 0`) with an optional fill for
+/// the exposed edge; `None` fill leaves the edge missing. `d == 0` is the
+/// identity (missing values stay missing).
 pub fn ts_delay(values: &[f64], d: i64, fill: Option<f64>) -> Vec<Option<f64>> {
     use std::cmp::Ordering;
     let len = values.len();
@@ -58,6 +61,8 @@ pub fn ts_delay(values: &[f64], d: i64, fill: Option<f64>) -> Vec<Option<f64>> {
 /// Discrete difference `x[i] - x[i-d]`; the first `d` slots read `None`.
 /// A zero lag is degenerate and refuses as all-`None`.
 #[must_use]
+/// Discrete difference `x[i] - x[i-d]`; the first `d` slots read `None`.
+/// A zero lag is degenerate and refuses as all-`None`.
 pub fn ts_delta(values: &[f64], d: usize) -> Vec<Option<f64>> {
     if d == 0 {
         return warmup_none(values.len());
@@ -76,6 +81,7 @@ pub fn ts_delta(values: &[f64], d: usize) -> Vec<Option<f64>> {
 
 /// Rolling sum over the strict `d`-bar window.
 #[must_use]
+/// Rolling sum over the strict `d`-bar window.
 pub fn ts_sum(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -86,6 +92,7 @@ pub fn ts_sum(values: &[f64], d: usize) -> Vec<Option<f64>> {
 
 /// Rolling mean over the strict `d`-bar window.
 #[must_use]
+/// Rolling mean over the strict `d`-bar window.
 pub fn ts_mean(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -100,6 +107,8 @@ pub fn ts_mean(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Rolling product, skipping `NaN` like the reference's `nanprod`; `None`
 /// only while warming or when the whole window is missing.
 #[must_use]
+/// Rolling product, skipping `NaN` like the reference's `nanprod`; `None`
+/// only while warming or when the whole window is missing.
 pub fn ts_product(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -130,6 +139,8 @@ pub fn ts_product(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Running total that skips missing values instead of poisoning: `None`
 /// until the first finite print, then the accumulation resumes.
 #[must_use]
+/// Running total that skips missing values instead of poisoning: `None`
+/// until the first finite print, then the accumulation resumes.
 pub fn ts_cum_sum(values: &[f64]) -> Vec<Option<f64>> {
     let mut running = 0.0;
     let mut seen = false;
@@ -148,6 +159,7 @@ pub fn ts_cum_sum(values: &[f64]) -> Vec<Option<f64>> {
 
 /// Running product with the same skip-missing convention as [`ts_cum_sum`].
 #[must_use]
+/// Running product with the same skip-missing convention as [`ts_cum_sum`].
 pub fn ts_cum_prod(values: &[f64]) -> Vec<Option<f64>> {
     let mut running = 1.0;
     let mut seen = false;
@@ -166,6 +178,7 @@ pub fn ts_cum_prod(values: &[f64]) -> Vec<Option<f64>> {
 
 /// Running maximum (`None` until the first finite print).
 #[must_use]
+/// Running maximum (`None` until the first finite print).
 pub fn ts_cum_max(values: &[f64]) -> Vec<Option<f64>> {
     let mut running = f64::NEG_INFINITY;
     values
@@ -186,6 +199,7 @@ pub fn ts_cum_max(values: &[f64]) -> Vec<Option<f64>> {
 
 /// Running minimum (`None` until the first finite print).
 #[must_use]
+/// Running minimum (`None` until the first finite print).
 pub fn ts_cum_min(values: &[f64]) -> Vec<Option<f64>> {
     let mut running = f64::INFINITY;
     values
@@ -207,6 +221,8 @@ pub fn ts_cum_min(values: &[f64]) -> Vec<Option<f64>> {
 /// Running count of finite prints. Leading gaps read `0`, never `None` —
 /// counting missing values is defined, matching the reference zeros.
 #[must_use]
+/// Running count of finite prints. Leading gaps read `0`, never `None` —
+/// counting missing values is defined, matching the reference zeros.
 pub fn ts_cum_count(values: &[f64]) -> Vec<Option<f64>> {
     let mut count = 0.0;
     values
@@ -227,6 +243,11 @@ pub fn ts_cum_count(values: &[f64]) -> Vec<Option<f64>> {
 /// thresholds.
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Resetting accumulation, transcribed verbatim: zero and missing reset to
+/// `0`, a sign flip restarts from the current print, same-sign prints
+/// compound. The output is always defined (missing input emits `0`).
+/// Exact-zero comparisons are the transcribed reset levels, not measured
+/// thresholds.
 pub fn ts_cum_sum_reset(values: &[f64]) -> Vec<Option<f64>> {
     let mut last = 0.0;
     values
@@ -256,12 +277,16 @@ pub fn ts_cum_sum_reset(values: &[f64]) -> Vec<Option<f64>> {
 /// value, and nothing is emitted before the first seed. Transcribed from
 /// the reference loops (`r[i] + acc` / `r[i] * acc`, `NaN` sticky).
 #[must_use]
+/// Seeded accumulation: an explicit seed wins, gaps compound from the last
+/// value, and nothing is emitted before the first seed. Transcribed from
+/// the reference loops (`r[i] + acc` / `r[i] * acc`, `NaN` sticky).
 pub fn ts_cum_sum_by(gains: &[f64], seeds: &[f64]) -> Vec<Option<f64>> {
     cum_by(gains, seeds, false)
 }
 
 /// Seeded compounding, same convention as [`ts_cum_sum_by`] with products.
 #[must_use]
+/// Seeded compounding, same convention as [`ts_cum_sum_by`] with products.
 pub fn ts_cum_prod_by(gains: &[f64], seeds: &[f64]) -> Vec<Option<f64>> {
     cum_by(gains, seeds, true)
 }
@@ -292,6 +317,7 @@ fn cum_by(gains: &[f64], seeds: &[f64], multiply: bool) -> Vec<Option<f64>> {
 
 /// Rolling maximum over the strict `d`-bar window.
 #[must_use]
+/// Rolling maximum over the strict `d`-bar window.
 pub fn ts_max(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -308,6 +334,7 @@ pub fn ts_max(values: &[f64], d: usize) -> Vec<Option<f64>> {
 
 /// Rolling minimum over the strict `d`-bar window.
 #[must_use]
+/// Rolling minimum over the strict `d`-bar window.
 pub fn ts_min(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -324,12 +351,14 @@ pub fn ts_min(values: &[f64], d: usize) -> Vec<Option<f64>> {
 
 /// Distance below the window maximum: `x - max(x, d)`.
 #[must_use]
+/// Distance below the window maximum: `x - max(x, d)`.
 pub fn ts_max_diff(values: &[f64], d: usize) -> Vec<Option<f64>> {
     elementwise_with_extreme(values, d, true)
 }
 
 /// Distance above the window minimum: `x - min(x, d)`.
 #[must_use]
+/// Distance above the window minimum: `x - min(x, d)`.
 pub fn ts_min_diff(values: &[f64], d: usize) -> Vec<Option<f64>> {
     elementwise_with_extreme(values, d, false)
 }
@@ -355,12 +384,14 @@ fn elementwise_with_extreme(values: &[f64], d: usize, use_max: bool) -> Vec<Opti
 
 /// Range-composite `(min + max) - f * x` over the strict window.
 #[must_use]
+/// Range-composite `(min + max) - f * x` over the strict window.
 pub fn ts_min_max_cps(values: &[f64], d: usize, f: f64) -> Vec<Option<f64>> {
     min_max_composite(values, d, f, true)
 }
 
 /// Range-composite `x - f * (min + max)` over the strict window.
 #[must_use]
+/// Range-composite `x - f * (min + max)` over the strict window.
 pub fn ts_min_max_diff(values: &[f64], d: usize, f: f64) -> Vec<Option<f64>> {
     min_max_composite(values, d, f, false)
 }
@@ -389,6 +420,9 @@ fn min_max_composite(values: &[f64], d: usize, f: f64, min_max_first: bool) -> V
 /// reference's `nanmean` form; `None` while warming or when the window is
 /// entirely missing. `k = 0` reads `1` wherever defined.
 #[must_use]
+/// `k`-th central moment `mean((x - mean)^k)`, skipping `NaN` like the
+/// reference's `nanmean` form; `None` while warming or when the window is
+/// entirely missing. `k = 0` reads `1` wherever defined.
 pub fn ts_moment(values: &[f64], d: usize, k: i32) -> Vec<Option<f64>> {
     values
         .iter()
@@ -417,6 +451,9 @@ pub fn ts_moment(values: &[f64], d: usize, k: i32) -> Vec<Option<f64>> {
 /// (`0` for population, `1` for sample). Refuses (`None`) when `ddof`
 /// reaches the window width: there is no variance left to estimate.
 #[must_use]
+/// Rolling standard deviation with an explicit degree-of-freedom parameter
+/// (`0` for population, `1` for sample). Refuses (`None`) when `ddof`
+/// reaches the window width: there is no variance left to estimate.
 pub fn ts_std_dev(values: &[f64], d: usize, ddof: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -437,6 +474,8 @@ pub fn ts_std_dev(values: &[f64], d: usize, ddof: usize) -> Vec<Option<f64>> {
 /// Rolling skewness. `bias = false` matches the pandas-adjusted form;
 /// degenerate (constant) windows read `None`.
 #[must_use]
+/// Rolling skewness. `bias = false` matches the pandas-adjusted form;
+/// degenerate (constant) windows read `None`.
 pub fn ts_skewness(values: &[f64], d: usize, bias: bool) -> Vec<Option<f64>> {
     standardized_moment(values, d, bias, 3)
 }
@@ -444,6 +483,8 @@ pub fn ts_skewness(values: &[f64], d: usize, bias: bool) -> Vec<Option<f64>> {
 /// Rolling (Fisher) kurtosis. `bias = false` matches the pandas-adjusted
 /// form; degenerate windows read `None`.
 #[must_use]
+/// Rolling (Fisher) kurtosis. `bias = false` matches the pandas-adjusted
+/// form; degenerate windows read `None`.
 pub fn ts_kurtosis(values: &[f64], d: usize, bias: bool) -> Vec<Option<f64>> {
     standardized_moment(values, d, bias, 4)
 }
@@ -488,6 +529,7 @@ fn standardized_moment(values: &[f64], d: usize, bias: bool, order: u32) -> Vec<
 
 /// Euclidean norm `sqrt(sum(x^2))` over the strict window.
 #[must_use]
+/// Euclidean norm `sqrt(sum(x^2))` over the strict window.
 pub fn ts_l2_norm(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -501,6 +543,7 @@ pub fn ts_l2_norm(values: &[f64], d: usize) -> Vec<Option<f64>> {
 
 /// Information ratio `mean / std_dev(ddof = 0)` over the strict window.
 #[must_use]
+/// Information ratio `mean / std_dev(ddof = 0)` over the strict window.
 pub fn ts_ir(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -519,6 +562,7 @@ pub fn ts_ir(values: &[f64], d: usize) -> Vec<Option<f64>> {
 
 /// Rolling median (even windows average the two middle values).
 #[must_use]
+/// Rolling median (even windows average the two middle values).
 pub fn ts_median(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -539,6 +583,8 @@ pub fn ts_median(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Rolling nearest-rank quantile. `pct` outside `[0, 1]` refuses as
 /// all-`None`: a quantile outside the unit interval is a caller error.
 #[must_use]
+/// Rolling nearest-rank quantile. `pct` outside `[0, 1]` refuses as
+/// all-`None`: a quantile outside the unit interval is a caller error.
 pub fn ts_percentage(values: &[f64], d: usize, pct: f64) -> Vec<Option<f64>> {
     if !(0.0..=1.0).contains(&pct) {
         return warmup_none(values.len());
@@ -561,6 +607,9 @@ pub fn ts_percentage(values: &[f64], d: usize, pct: f64) -> Vec<Option<f64>> {
 /// Tie identity is exact equality, not a tolerance.
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Rank of the current print within its window (average ties, 1-based),
+/// normalized by the window width. Any missing leg voids the window.
+/// Tie identity is exact equality, not a tolerance.
 pub fn ts_rank(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -584,6 +633,12 @@ pub fn ts_rank(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// rule. The reversed mode agrees with the shared argmax/argmin helpers on
 /// clean data.
 #[must_use]
+/// Distance from the window end (`reverse = true`, most-recent extreme reads
+/// `0`) or from the window start (`reverse = false`) to the extreme print.
+/// Ties resolve to the most-recent (reversed) or earliest (forward) match,
+/// and a missing current print voids the window — the transcribed numba
+/// rule. The reversed mode agrees with the shared argmax/argmin helpers on
+/// clean data.
 pub fn ts_arg_max(values: &[f64], d: usize, reverse: bool) -> Vec<Option<f64>> {
     arg_extreme(values, d, reverse, true)
 }
@@ -591,6 +646,8 @@ pub fn ts_arg_max(values: &[f64], d: usize, reverse: bool) -> Vec<Option<f64>> {
 /// Distance to the window minimum under the same convention as
 /// [`ts_arg_max`].
 #[must_use]
+/// Distance to the window minimum under the same convention as
+/// [`ts_arg_max`].
 pub fn ts_arg_min(values: &[f64], d: usize, reverse: bool) -> Vec<Option<f64>> {
     arg_extreme(values, d, reverse, false)
 }
@@ -598,6 +655,8 @@ pub fn ts_arg_min(values: &[f64], d: usize, reverse: bool) -> Vec<Option<f64>> {
 /// Shared extreme search: extreme identity is exact equality, not a
 /// tolerance (a tie is a tie only when the prints are identical).
 #[allow(clippy::float_cmp)]
+/// Shared extreme search: extreme identity is exact equality, not a
+/// tolerance (a tie is a tie only when the prints are identical).
 fn arg_extreme(values: &[f64], d: usize, reverse: bool, want_max: bool) -> Vec<Option<f64>> {
     use crate::math::{extreme_position, TieBreak};
     let tie = if reverse {
@@ -628,6 +687,10 @@ fn arg_extreme(values: &[f64], d: usize, reverse: bool, want_max: bool) -> Vec<O
 /// only documents the convention — the value is identical for any `ddof`.
 /// `None` on zero-variance legs.
 #[must_use]
+/// Rolling Pearson correlation with an explicit degree-of-freedom parameter
+/// matching the reference signature. `ddof` cancels out of the ratio, so it
+/// only documents the convention — the value is identical for any `ddof`.
+/// `None` on zero-variance legs.
 pub fn ts_corr(xs: &[f64], ys: &[f64], d: usize, _ddof: usize) -> Vec<Option<f64>> {
     let len = xs.len().min(ys.len());
     (0..len)
@@ -644,6 +707,8 @@ pub fn ts_corr(xs: &[f64], ys: &[f64], d: usize, _ddof: usize) -> Vec<Option<f64
 /// Rolling covariance with an explicit `ddof` scale (`n - ddof` denominator).
 /// `None` while warming or when `ddof` reaches the window width.
 #[must_use]
+/// Rolling covariance with an explicit `ddof` scale (`n - ddof` denominator).
+/// `None` while warming or when `ddof` reaches the window width.
 pub fn ts_covariance(xs: &[f64], ys: &[f64], d: usize, ddof: usize) -> Vec<Option<f64>> {
     let len = xs.len().min(ys.len());
     (0..len)
@@ -675,6 +740,7 @@ fn pair_sums(xs: &[f64], ys: &[f64], end: usize, d: usize) -> Option<(f64, f64, 
 
 /// Rolling z-score `(x - mean) / std_dev(ddof = 0)`.
 #[must_use]
+/// Rolling z-score `(x - mean) / std_dev(ddof = 0)`.
 pub fn ts_zscore(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -699,6 +765,9 @@ pub fn ts_zscore(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// The flat check is exact equality of two window prints, not a tolerance.
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Min-max normalization `(x - min) / (max - min)`; a flat window reads
+/// `0`, not `None` — a defined level, matching the reference `otherwise`.
+/// The flat check is exact equality of two window prints, not a tolerance.
 pub fn ts_scale(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -721,6 +790,8 @@ pub fn ts_scale(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Linear-decay weighted mean: the oldest print carries weight `1`, the
 /// newest weight `d`.
 #[must_use]
+/// Linear-decay weighted mean: the oldest print carries weight `1`, the
+/// newest weight `d`.
 pub fn ts_decay_linear(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -741,6 +812,9 @@ pub fn ts_decay_linear(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// run `factor^(d-1)` (oldest) to `1` (newest), formula for formula with the
 /// reference construction.
 #[must_use]
+/// Exponential-decay weighted mean with per-bar factor `factor`: weights
+/// run `factor^(d-1)` (oldest) to `1` (newest), formula for formula with the
+/// reference construction.
 pub fn ts_decay_exp_window(values: &[f64], d: usize, factor: f64) -> Vec<Option<f64>> {
     values
         .iter()
@@ -762,6 +836,8 @@ pub fn ts_decay_exp_window(values: &[f64], d: usize, factor: f64) -> Vec<Option<
 /// Two-bar weighted carry `(1 - k) * prev + k * current`: a weighted sum,
 /// not an average, matching the reference construction.
 #[must_use]
+/// Two-bar weighted carry `(1 - k) * prev + k * current`: a weighted sum,
+/// not an average, matching the reference construction.
 pub fn ts_weighted_decay(values: &[f64], k: f64) -> Vec<Option<f64>> {
     values
         .iter()
@@ -778,12 +854,15 @@ pub fn ts_weighted_decay(values: &[f64], k: f64) -> Vec<Option<f64>> {
 /// Weighted mean over aligned `values`/`weights` windows; a zero weight
 /// total refuses (`None`). Mismatched leg lengths refuse as all-`None`.
 #[must_use]
+/// Weighted mean over aligned `values`/`weights` windows; a zero weight
+/// total refuses (`None`). Mismatched leg lengths refuse as all-`None`.
 pub fn ts_weighted_mean(values: &[f64], weights: &[f64], d: usize) -> Vec<Option<f64>> {
     weighted_sum(values, weights, d, true)
 }
 
 /// Weighted sum over aligned windows (no normalization).
 #[must_use]
+/// Weighted sum over aligned windows (no normalization).
 pub fn ts_weighted_sum(values: &[f64], weights: &[f64], d: usize) -> Vec<Option<f64>> {
     weighted_sum(values, weights, d, false)
 }
@@ -812,6 +891,8 @@ fn weighted_sum(values: &[f64], weights: &[f64], d: usize, normalize: bool) -> V
 /// Simple returns `(x - shift) / shift`; a zero base refuses (`None`) where
 /// the reference yields infinities.
 #[must_use]
+/// Simple returns `(x - shift) / shift`; a zero base refuses (`None`) where
+/// the reference yields infinities.
 pub fn ts_returns(values: &[f64], d: usize) -> Vec<Option<f64>> {
     if d == 0 {
         return warmup_none(values.len());
@@ -831,6 +912,8 @@ pub fn ts_returns(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Log differences `ln(x[i]) - ln(x[i-d])`; non-positive prints void the
 /// window through the `NaN` they produce.
 #[must_use]
+/// Log differences `ln(x[i]) - ln(x[i-d])`; non-positive prints void the
+/// window through the `NaN` they produce.
 pub fn ts_log_diff(values: &[f64], d: usize) -> Vec<Option<f64>> {
     if d == 0 {
         return warmup_none(values.len());
@@ -850,6 +933,8 @@ pub fn ts_log_diff(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Realized volatility: population std-dev of the trailing `d` log
 /// differences (needs `d + 1` closes).
 #[must_use]
+/// Realized volatility: population std-dev of the trailing `d` log
+/// differences (needs `d + 1` closes).
 pub fn ts_realized_volatility(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -878,6 +963,9 @@ pub fn ts_realized_volatility(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// zero test, not a measured threshold.
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Count of nonzero prints in the window (`NaN` counts as truthy, mirroring
+/// the reference cast). `None` only while warming. Truthiness is an exact
+/// zero test, not a measured threshold.
 pub fn ts_count(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -897,6 +985,10 @@ pub fn ts_count(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Truthiness is an exact zero test.
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Whether the trailing `n` prints are all set and the trailing-`d` total
+/// hits exactly `n`: Kleene-`AND` of the two conditions, so short windows
+/// report `false` rather than missing whenever either side is decidable.
+/// Truthiness is an exact zero test.
 pub fn ts_count_eq(values: &[f64], d: usize, n: usize) -> Vec<Option<f64>> {
     count_condition(values, d, n, false)
 }
@@ -905,6 +997,8 @@ pub fn ts_count_eq(values: &[f64], d: usize, n: usize) -> Vec<Option<f64>> {
 /// reaches at least `n`, under the same Kleene convention.
 #[allow(clippy::float_cmp)]
 #[must_use]
+/// Whether the trailing `n` prints are all set and the trailing-`d` total
+/// reaches at least `n`, under the same Kleene convention.
 pub fn ts_count_ge(values: &[f64], d: usize, n: usize) -> Vec<Option<f64>> {
     count_condition(values, d, n, true)
 }
@@ -941,6 +1035,7 @@ fn count_condition(values: &[f64], d: usize, n: usize, at_least: bool) -> Vec<Op
 
 /// Count of `NaN` prints in the window (`None` only while warming).
 #[must_use]
+/// Count of `NaN` prints in the window (`None` only while warming).
 pub fn ts_count_nans(values: &[f64], d: usize) -> Vec<Option<f64>> {
     values
         .iter()
@@ -957,6 +1052,8 @@ pub fn ts_count_nans(values: &[f64], d: usize) -> Vec<Option<f64>> {
 /// Forward-fill missing prints with the last finite value; `limit` caps the
 /// consecutive-fill run (`None` means unbounded). Leading gaps stay `None`.
 #[must_use]
+/// Forward-fill missing prints with the last finite value; `limit` caps the
+/// consecutive-fill run (`None` means unbounded). Leading gaps stay `None`.
 pub fn ts_fill_null(values: &[f64], limit: Option<usize>) -> Vec<Option<f64>> {
     let mut last = f64::NAN;
     let mut run = 0usize;

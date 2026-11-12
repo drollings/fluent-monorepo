@@ -40,6 +40,7 @@ fn push_history(history: &mut Vec<serde_json::Value>, entry: serde_json::Value) 
 
 /// Session failures. Missing audio is reported, never faked.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// Session failures. Missing audio is reported, never faked.
 pub enum S2sError {
     /// Transport or endpoint failure.
     #[error("audio endpoint failed: {0}")]
@@ -199,6 +200,11 @@ fn rebuild_reply(
 /// answers 400 with `audio input is not supported` in the body.
 /// Every other failure shape advances no audio fallback.
 #[must_use]
+/// Whether the endpoint reports it cannot encode audio input.
+/// 
+/// Pinned by transcript goldens: the reference text-only gateway
+/// answers 400 with `audio input is not supported` in the body.
+/// Every other failure shape advances no audio fallback.
 pub fn audio_input_unsupported(error: &S2sError) -> bool {
     matches!(error, S2sError::Backend(message) if message.contains("audio input is not supported"))
 }
@@ -211,6 +217,13 @@ pub fn audio_input_unsupported(error: &S2sError) -> bool {
 /// synthesizes speech. Usage and validation failures never reach
 /// this gate; callers return them before consulting it.
 #[must_use]
+/// Whether a voice failure advances the fallback chain.
+/// 
+/// Advances on voiceless turns (`NoAudio`) and on transport failures
+/// that produced no audio (`Backend`/`Overflow` with empty buffers).
+/// Terminal on cancellation (`Aborted`): an interrupted turn never
+/// synthesizes speech. Usage and validation failures never reach
+/// this gate; callers return them before consulting it.
 pub const fn should_advance_chain(error: &S2sError) -> bool {
     match error {
         S2sError::NoAudio | S2sError::Backend(_) | S2sError::Overflow(_) => true,
@@ -220,6 +233,7 @@ pub const fn should_advance_chain(error: &S2sError) -> bool {
 
 /// One completed turn: spoken audio plus its text.
 #[derive(Debug, Clone, PartialEq)]
+/// One completed turn: spoken audio plus its text.
 pub struct ChatTurn {
     /// Reply text deltas joined.
     pub text: String,
@@ -233,6 +247,9 @@ pub struct ChatTurn {
 /// transcripts, never raw audio back); the first interleaved turn
 /// carries the system prompt with a context reset.
 #[allow(clippy::struct_excessive_bools)]
+/// Audio endpoint session. History holds text only (the model sees
+/// transcripts, never raw audio back); the first interleaved turn
+/// carries the system prompt with a context reset.
 pub struct AudioSession {
     config: S2sConfig,
     // Streaming transport with a 120 s bound: turns carry audio and

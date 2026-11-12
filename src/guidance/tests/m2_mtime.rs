@@ -60,7 +60,9 @@ fn skew_boundaries_follow_granularity() {
         crate::freshness::MtimeSkew::SourceNewer
     );
     // Older source is fresh regardless of window.
-    let earlier = base.checked_sub(Duration::from_secs(10)).unwrap_or(SystemTime::UNIX_EPOCH);
+    let earlier = base
+        .checked_sub(Duration::from_secs(10))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
     assert_eq!(
         mtime_skew_with_granularity(base, earlier, gran),
         crate::freshness::MtimeSkew::SourceOlder
@@ -75,7 +77,11 @@ fn regen_matrix_never_false_regens_identical() {
     // files never regen. Outside it the clock rules with zero hash
     // cost: an identical-bytes regen there is one idempotent pass
     // that converges on the next touch, never a loop.
-    for gran in [Duration::from_nanos(1), Duration::from_secs(1), Duration::from_secs(2)] {
+    for gran in [
+        Duration::from_nanos(1),
+        Duration::from_secs(1),
+        Duration::from_secs(2),
+    ] {
         // Inside the window the hash decides.
         let inside = base + gran;
         assert!(!regen_decision(base, inside, gran, true));
@@ -85,7 +91,9 @@ fn regen_matrix_never_false_regens_identical() {
         assert!(regen_decision(base, outside, gran, true));
         assert!(regen_decision(base, outside, gran, false));
         // An older source never regens.
-        let earlier = base.checked_sub(Duration::from_secs(10)).unwrap_or(SystemTime::UNIX_EPOCH);
+        let earlier = base
+            .checked_sub(Duration::from_secs(10))
+            .unwrap_or(SystemTime::UNIX_EPOCH);
         assert!(!regen_decision(base, earlier, gran, false));
     }
 }
@@ -101,8 +109,14 @@ fn completion_touch_makes_sidecar_strictly_newer() {
     let body = common_core::hash::sha256_hex(b"pub fn a() void {}\n");
     json_store::save_guidance(&sidecar, &test_doc(), &receipt(&[], Some(&body))).expect("save");
     crate::freshness::completion_touch(&sidecar, &source, Duration::from_secs(1)).expect("touch");
-    let sidecar_mtime = std::fs::metadata(&sidecar).expect("stat").modified().expect("mtime");
-    let source_mtime = std::fs::metadata(&source).expect("stat").modified().expect("mtime");
+    let sidecar_mtime = std::fs::metadata(&sidecar)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
+    let source_mtime = std::fs::metadata(&source)
+        .expect("stat")
+        .modified()
+        .expect("mtime");
     assert!(sidecar_mtime > source_mtime);
 }
 
@@ -193,8 +207,8 @@ fn rename_moves_sidecar_by_source_hash() {
     .expect("save");
     let new = sources.join("new.zig");
     std::fs::rename(&old, &new).expect("rename source");
-    let moved = crate::freshness::adopt_renamed_sidecar(&sidecars, &sources, &new, &hash)
-        .expect("adopt");
+    let moved =
+        crate::freshness::adopt_renamed_sidecar(&sidecars, &sources, &new, &hash).expect("adopt");
     assert_eq!(moved.file_name().unwrap(), "new.zig.json");
     assert!(!sidecars.join("old.zig.json").exists());
     assert!(sidecars.join("new.zig.json").exists());
@@ -211,7 +225,9 @@ fn sweep_leaves_source_untouched() {
     std::fs::write(&source, "pub fn a() void {}\n").expect("write");
     let before = std::fs::read(&source).expect("read");
     let saved = ComponentVector {
-        components: [("parser".to_string(), "p1".to_string())].into_iter().collect(),
+        components: [("parser".to_string(), "p1".to_string())]
+            .into_iter()
+            .collect(),
     };
     json_store::save_guidance(
         &sidecars.join("a.zig.json"),
@@ -220,10 +236,15 @@ fn sweep_leaves_source_untouched() {
     )
     .expect("save");
     let evolved = ComponentVector {
-        components: [("parser".to_string(), "p2".to_string())].into_iter().collect(),
+        components: [("parser".to_string(), "p2".to_string())]
+            .into_iter()
+            .collect(),
     };
     let _ = saved;
     let outcomes = sweep_sidecars(&sidecars, &sources, &evolved);
-    assert_eq!(outcomes[0].decision, crate::components::SweepDecision::Backdated);
+    assert_eq!(
+        outcomes[0].decision,
+        crate::components::SweepDecision::Backdated
+    );
     assert_eq!(std::fs::read(&source).expect("read"), before);
 }

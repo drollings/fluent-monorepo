@@ -14,6 +14,8 @@ use protopyne_view::{CommandStatus, HealthView};
 /// Read-only health projection: liveness, the state tag, and the two
 /// affordances the terminal may render.
 #[derive(Debug, Clone, PartialEq)]
+/// Read-only health projection: liveness, the state tag, and the two
+/// affordances the terminal may render.
 pub struct HealthModel {
     /// Liveness marker (`ok`).
     pub status: String,

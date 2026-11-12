@@ -20,6 +20,7 @@ pub const ENTITIES_META_KEY: &str = "entities";
 
 /// A candidate context entity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A candidate context entity.
 pub struct Entity {
     pub id: String,
     pub kind: String, // "file" | "message" | "record" | ...
@@ -28,6 +29,7 @@ pub struct Entity {
 
 /// The result of binding a target's `DepSpec`s against a set of entities.
 #[derive(Debug, Clone, Default)]
+/// The result of binding a target's `DepSpec`s against a set of entities.
 pub struct Bindings {
     /// Concrete asset keys satisfied by bound entities: `"entity:{kind}:{id}"`.
     pub satisfied: HashSet<String>,
@@ -41,6 +43,7 @@ pub struct Bindings {
 
 /// A dep that matched more than one entity — adjudication engages.
 #[derive(Debug, Clone)]
+/// A dep that matched more than one entity — adjudication engages.
 pub struct AmbiguousDep {
     pub dep: String,
     /// Human/LLM label from the dep spec (or the dep name when absent).

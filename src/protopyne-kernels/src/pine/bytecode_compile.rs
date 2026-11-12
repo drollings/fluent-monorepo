@@ -54,6 +54,12 @@ use std::collections::{HashMap, HashSet};
 /// does.
 #[must_use]
 #[allow(clippy::implicit_hasher)]
+/// Compile one linked module to bytecode. Total: see the module docs.
+/// Callers pass the linked module's key, program, alias table, the
+/// cross-module enum registry, and the cross-module declaration
+/// registry; enum members resolve and value bindings gate through the
+/// registries exactly like the tree-walk's execution-order registration
+/// does.
 pub fn compile_module(
     key: &str,
     program: &PineProgram,
@@ -229,6 +235,9 @@ impl ExportRegistry {
 /// Member values never flow — handles carry identity only, exactly like
 /// the tree-walk's `enum_lookup`, which ignores the value table.
 #[derive(Debug)]
+/// One declared enum: where it was declared and which members it names.
+/// Member values never flow — handles carry identity only, exactly like
+/// the tree-walk's `enum_lookup`, which ignores the value table.
 struct EnumEntry {
     /// Link-order position of the declaring module.
     module: usize,
@@ -243,6 +252,10 @@ struct EnumEntry {
 /// name, mirroring the tree-walk's execution-order registration (which
 /// registers on first execution, bar zero onward).
 #[derive(Debug, Default)]
+/// Top-level enum declarations visible to later uses, built once per run
+/// across all linked modules in link order. First declaration wins per
+/// name, mirroring the tree-walk's execution-order registration (which
+/// registers on first execution, bar zero onward).
 pub struct EnumRegistry {
     /// Enum name → declaring position + member names. Positions index
     /// the build-time module list, shared with [`DeclRegistry`].
@@ -425,6 +438,14 @@ impl EnumRegistry {
 /// statically, so uses keep falling back and the tree-walk decides
 /// na-vs-refusal at run time.
 #[derive(Debug, Default)]
+/// Unconditional top-level value declarations visible to later uses:
+/// plain `=`/`const`/`var` bindings and `for`/`for-in` loop targets.
+/// Built from the same pre-pass as [`EnumRegistry`], with the same
+/// first-declaration-wins rule — mirroring the tree-walk, where a name
+/// binds the first time its declaration executes. Conditional and nested
+/// declarations are skipped: their binding timing is unknowable
+/// statically, so uses keep falling back and the tree-walk decides
+/// na-vs-refusal at run time.
 pub struct DeclRegistry {
     /// Module keys in link order.
     order: Vec<String>,
@@ -435,6 +456,7 @@ pub struct DeclRegistry {
 
 /// One declaration site: where the name first binds.
 #[derive(Debug)]
+/// One declaration site: where the name first binds.
 struct DeclEntry {
     /// Link-order position of the declaring module.
     module: usize,
@@ -684,6 +706,11 @@ struct PlotParts {
 /// would observe across the call boundary forces journaled lowering;
 /// anything else keeps the locals-only fast path.
 #[derive(Default)]
+/// Which plain names one statement list assigns, plus whether it
+/// rebinds, loops, or declares persistence: the static escape probe one
+/// function body runs before lowering. Anything the tree-walk's journal
+/// would observe across the call boundary forces journaled lowering;
+/// anything else keeps the locals-only fast path.
 struct EscapeSet {
     /// Plain (non-dotted) names assigned anywhere in the body.
     written: HashSet<String>,

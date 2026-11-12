@@ -24,6 +24,32 @@ mod common;
 
 use common::sync;
 
+/// Scoped `sync --file`: member gen plus the derived-index half for one
+/// file only. Returns the command stdout.
+fn sync_file(dir: &Path, db_name: &str, file: &Path, verbose: bool) -> String {
+    let root = dir.to_str().unwrap().to_string();
+    let json_dir = dir.join(".guidance").to_str().unwrap().to_string();
+    let db = dir.join(db_name).to_str().unwrap().to_string();
+    let file = file.to_str().unwrap().to_string();
+    let mut args = vec![
+        "sync",
+        "--file",
+        file.as_str(),
+        "--workspace",
+        root.as_str(),
+        "--json-dir",
+        json_dir.as_str(),
+        "--db",
+        db.as_str(),
+    ];
+    if verbose {
+        args.push("--verbose");
+    }
+    let out = common::run(dir, &args);
+    assert!(out.status.success(), "sync --file failed: {out:?}");
+    common::stdout(&out)
+}
+
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(
@@ -45,6 +71,9 @@ fn fixture() -> tempfile::TempDir {
 }
 
 /// Verbose `regenerated:` lines → sorted affected set (absolute paths).
+/// These come from dependent propagation only: the seed file itself is
+/// re-processed by the `index` half of the helper, so propagation lines
+/// name dependents (or nothing when the gate holds).
 fn regenerated(out: &str) -> Vec<String> {
     let mut paths: Vec<String> = out
         .lines()
@@ -87,10 +116,11 @@ fn importee_signature_edit_reprocesses_importer() {
 
     let before = fragment_texts(root, "importer.rs");
 
-    // Same-size edit pins the size arm; the mtime arm must fire.
+    // Real signature edit (new parameter): the interface moves, so the
+    // importer re-processes.
     std::fs::write(
         root.join("importee.rs"),
-        "pub fn fee(x: u64) -> u64 {\n    x + 2\n}\n",
+        "pub fn fee(x: u64, y: u64) -> u64 {\n    x + y\n}\n",
     )
     .expect("write");
     let out = sync(root, ".sync.db", true);
@@ -108,11 +138,148 @@ fn importee_signature_edit_reprocesses_importer() {
         );
     }
     let over: Vec<_> = measured.iter().filter(|p| !oracle.contains(p)).collect();
-    eprintln!("M3 probe: affected={measured:?} over-invalidation={over:?}");
+    assert!(
+        over.is_empty(),
+        "signature edits pull exactly the dependent set: over={over:?}"
+    );
 
     // DB content converges: the importer's bytes never changed, so its
     // derived rows must be identical-or-fresher, never divergent.
     assert_eq!(before, fragment_texts(root, "importer.rs"));
+}
+
+#[test]
+fn body_only_edit_reprocesses_only_itself() {
+    // Same signature, new body: the interface is unchanged, so only the
+    // seed file re-processes — a dependent re-process would be wasted
+    // work, and the sig gate must stop it.
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+
+    let before = fragment_texts(root, "importer.rs");
+    std::fs::write(
+        root.join("importee.rs"),
+        "pub fn fee(x: u64) -> u64 {\n    x + 2\n}\n",
+    )
+    .expect("write");
+    let out = sync(root, ".sync.db", true);
+
+    // The seed's own rows must converge on the new body...
+    assert!(
+        out.contains("Ingested 1 files"),
+        "seed must re-ingest: {out}"
+    );
+    // ...while propagation stays empty: the interface never moved.
+    let measured = regenerated(&out);
+    let importer = root.join("importer.rs").to_string_lossy().into_owned();
+    assert!(
+        !measured.contains(&importer),
+        "must-NOT-fire: body-only edits stop at the seed: {measured:?}"
+    );
+    assert!(
+        measured.is_empty(),
+        "no interface move, no propagation: {measured:?}"
+    );
+    assert_eq!(before, fragment_texts(root, "importer.rs"));
+}
+
+#[test]
+fn comment_only_edit_reprocesses_only_itself() {
+    // Documentation edits never move an interface: same gate as bodies.
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+
+    std::fs::write(
+        root.join("importee.rs"),
+        "/// Computes a fee.\n///\n/// Details here.\npub fn fee(x: u64) -> u64 {\n    x + 1\n}\n",
+    )
+    .expect("write");
+    let out = sync(root, ".sync.db", true);
+
+    // The seed's own rows must converge on the new comment...
+    assert!(
+        out.contains("Ingested 1 files"),
+        "seed must re-ingest: {out}"
+    );
+    // ...while propagation stays empty: documentation never moves an
+    // interface.
+    let measured = regenerated(&out);
+    let importer = root.join("importer.rs").to_string_lossy().into_owned();
+    assert!(
+        !measured.contains(&importer),
+        "must-NOT-fire: comment-only edits stop at the seed: {measured:?}"
+    );
+    assert!(
+        measured.is_empty(),
+        "no interface move, no propagation: {measured:?}"
+    );
+}
+
+#[test]
+fn macro_definition_change_widens_to_the_package() {
+    // Macro bodies defeat edge analysis, so a macro-defining change
+    // re-processes the whole package conservatively.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("macros.rs"),
+        "macro_rules! one {\n    () => { 1 };\n}\n",
+    )
+    .expect("write");
+    std::fs::write(root.join("user.rs"), "pub fn use_it() -> u64 {\n    1\n}\n").expect("write");
+    sync(root, ".sync.db", false);
+
+    std::fs::write(
+        root.join("macros.rs"),
+        "macro_rules! one {\n    () => { 2 };\n}\n",
+    )
+    .expect("write");
+    let out = sync(root, ".sync.db", true);
+
+    let measured = regenerated(&out);
+    for name in ["macros.rs", "user.rs"] {
+        let expected = root.join(name).to_string_lossy().into_owned();
+        assert!(
+            measured.contains(&expected),
+            "macro widening must reach {expected}: {measured:?}"
+        );
+    }
+}
+
+#[test]
+fn missing_interface_rows_fail_open_toward_regeneration() {
+    // Stored interface rows are the gate's memory; without them the gate
+    // fails open toward regeneration, never toward a silent skip.
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+
+    let db = root.join(".sync.db");
+    let importee_id = root.join("importee.rs").to_string_lossy().into_owned();
+    let out = std::process::Command::new("sqlite3")
+        .args([
+            db.to_str().unwrap(),
+            &format!("DELETE FROM symbols WHERE file_id = '{importee_id}'"),
+        ])
+        .output()
+        .expect("sqlite3");
+    assert!(out.status.success(), "sqlite3 failed: {out:?}");
+
+    std::fs::write(
+        root.join("importee.rs"),
+        "pub fn fee(x: u64) -> u64 {\n    x + 2\n}\n",
+    )
+    .expect("write");
+    let out = sync(root, ".sync.db", true);
+
+    let measured = regenerated(&out);
+    let importer = root.join("importer.rs").to_string_lossy().into_owned();
+    assert!(
+        measured.contains(&importer),
+        "missing interface must fail open: {measured:?}"
+    );
 }
 
 #[test]
@@ -124,21 +291,21 @@ fn leaf_edit_reprocesses_only_itself() {
     std::fs::write(root.join("leaf.rs"), "pub fn leaf() -> u64 {\n    43\n}\n").expect("write");
     let out = sync(root, ".sync.db", true);
 
-    let measured = regenerated(&out);
-    let leaf = root.join("leaf.rs").to_string_lossy().into_owned();
-    let importer = root.join("importer.rs").to_string_lossy().into_owned();
+    // The seed's own rows must converge on the new bytes...
     assert!(
-        measured.contains(&leaf),
-        "leaf itself must re-process: {measured:?}"
+        out.contains("Ingested 1 files"),
+        "seed must re-ingest: {out}"
     );
+    // ...while propagation stays empty: nothing depends on the leaf.
+    let measured = regenerated(&out);
+    let importer = root.join("importer.rs").to_string_lossy().into_owned();
     assert!(
         !measured.contains(&importer),
         "must-NOT-fire: importer untouched by a leaf edit: {measured:?}"
     );
-    assert_eq!(
-        measured.len(),
-        1,
-        "affected is exactly the leaf: {measured:?}"
+    assert!(
+        measured.is_empty(),
+        "no dependents, no propagation: {measured:?}"
     );
 }
 
@@ -209,4 +376,234 @@ fn deleted_file_drops_rows_sidecar_and_reprocesses_dependents() {
         "0",
         "deleted file's node rows must be gone"
     );
+}
+
+#[test]
+fn sync_file_runs_scoped_ingest_and_propagation() {
+    // `sync --file` is a full single-file sync: member gen plus the
+    // derived-index half scoped to the file. A signature edit on the
+    // seed pulls its dependent through propagation.
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+
+    std::fs::write(
+        root.join("importee.rs"),
+        "pub fn fee(x: u64, y: u64) -> u64 {\n    x + y\n}\n",
+    )
+    .expect("write");
+    let out = sync_file(root, ".sync.db", &root.join("importee.rs"), true);
+
+    assert!(
+        out.contains("Ingested 1 files"),
+        "scoped ingest must run: {out}"
+    );
+    let measured = regenerated(&out);
+    let importer = root.join("importer.rs").to_string_lossy().into_owned();
+    assert!(
+        measured.contains(&importer),
+        "dependent must re-process through scoped propagation: {measured:?}"
+    );
+}
+
+#[test]
+fn sync_file_body_edit_propagates_to_nothing() {
+    // Same-shape control: a body-only edit through `sync --file`
+    // re-ingests the seed and stops — the sig gate holds scoped too.
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+
+    std::fs::write(
+        root.join("importee.rs"),
+        "pub fn fee(x: u64) -> u64 {\n    x + 2\n}\n",
+    )
+    .expect("write");
+    let out = sync_file(root, ".sync.db", &root.join("importee.rs"), true);
+
+    assert!(
+        out.contains("Ingested 1 files"),
+        "seed must re-ingest: {out}"
+    );
+    assert!(
+        regenerated(&out).is_empty(),
+        "no interface move, no propagation: {out}"
+    );
+}
+
+#[test]
+fn sync_file_fixes_formatting_before_indexing() {
+    // Fix-before-sync: a rustfmt-dirty file is formatted first, then the
+    // fixed bytes are what get indexed.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("messy.rs"), "fn messy(x:u32)->u32{x+1}\n").expect("write");
+    let out = sync_file(root, ".sync.db", &root.join("messy.rs"), true);
+
+    let formatted = std::fs::read_to_string(root.join("messy.rs")).expect("read");
+    assert!(
+        formatted.contains("x: u32"),
+        "rustfmt must run before sync: {formatted}"
+    );
+    assert!(out.contains("Ingested 1 files"), "{out}");
+}
+
+#[test]
+fn full_sync_formats_dirty_file_before_indexing() {
+    // The full sync pins the same order: fix, then member gen, then index.
+    // No prior `index` call here: the dirty set pins from staleness, so
+    // the fixture starts unindexed like a real dirty tree.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("messy.rs"), "fn messy(x:u32)->u32{x+1}\n").expect("write");
+    let root_str = root.to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance");
+    let json_str = json_dir.to_str().unwrap().to_string();
+    let db = dir.path().join(".sync.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let out = common::run(
+        dir.path(),
+        &[
+            "sync",
+            "--workspace",
+            &root_str,
+            "--json-dir",
+            &json_str,
+            "--db",
+            &db_str,
+            "--verbose",
+        ],
+    );
+    assert!(out.status.success(), "sync converges: {out:?}");
+    let text = common::stdout(&out);
+
+    let formatted = std::fs::read_to_string(root.join("messy.rs")).expect("read");
+    assert!(
+        formatted.contains("x: u32"),
+        "rustfmt must run before sync: {formatted}"
+    );
+    assert!(text.contains("Ingested 1 files"), "{text}");
+}
+
+#[test]
+fn autonomy_l0_skips_fix_but_still_syncs() {
+    // L0 is index-only: the dirty file keeps its bytes, and the sync
+    // half still converges.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("messy.rs"), "fn messy(x:u32)->u32{x+1}\n").expect("write");
+    let root_str = root.to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance");
+    let json_str = json_dir.to_str().unwrap().to_string();
+    let db = dir.path().join(".sync.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let out = common::run(
+        dir.path(),
+        &[
+            "sync",
+            "--workspace",
+            &root_str,
+            "--json-dir",
+            &json_str,
+            "--db",
+            &db_str,
+            "--autonomy",
+            "L0",
+            "--verbose",
+        ],
+    );
+    assert!(out.status.success(), "L0 sync converges: {out:?}");
+    let text = common::stdout(&out);
+    let untouched = std::fs::read_to_string(root.join("messy.rs")).expect("read");
+    assert!(
+        untouched.contains("x:u32"),
+        "L0 must not rewrite: {untouched}"
+    );
+    assert!(text.contains("Ingested 1 files"), "{text}");
+}
+
+#[test]
+fn oversized_dirty_set_skips_fix_but_still_syncs() {
+    // Scale guard: beyond the pre-pass budget the fix loop is skipped
+    // (whole-tree convergence belongs to `run`), and indexing proceeds
+    // on unmodified bytes.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    for i in 0..33 {
+        std::fs::write(
+            root.join(format!("m{i:02}.rs")),
+            "fn messy(x:u32)->u32{x+1}\n",
+        )
+        .expect("write");
+    }
+    let root_str = root.to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance");
+    let json_str = json_dir.to_str().unwrap().to_string();
+    let db = dir.path().join(".sync.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let out = common::run(
+        dir.path(),
+        &[
+            "sync",
+            "--workspace",
+            &root_str,
+            "--json-dir",
+            &json_str,
+            "--db",
+            &db_str,
+            "--verbose",
+        ],
+    );
+    assert!(out.status.success(), "sync converges: {out:?}");
+    let text = common::stdout(&out);
+    assert!(text.contains("pre-pass budget"), "{text}");
+    let untouched = std::fs::read_to_string(root.join("m00.rs")).expect("read");
+    assert!(
+        untouched.contains("x:u32"),
+        "over-budget files keep their bytes: {untouched}"
+    );
+    assert!(text.contains("Ingested 33 files"), "{text}");
+}
+
+#[ignore = "heavy (~1m): 256-file workspace proves bounded pool submission; run via `make guidance-soak`"]
+#[test]
+fn full_sync_scales_past_pool_queue_without_drops() {
+    // Scale pin for backpressured member gen: far more stale files than
+    // pool queue slots must all generate — none rejected, none skipped
+    // by the queue. Without the in-flight bound the excess fail with
+    // `pool queue is full` and their sidecars never land.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    for i in 0..256 {
+        std::fs::write(
+            root.join(format!("s{i:03}.rs")),
+            "/// Item.\npub fn item() -> u64 {\n    1\n}\n",
+        )
+        .expect("write");
+    }
+    let root_str = root.to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance");
+    let json_str = json_dir.to_str().unwrap().to_string();
+    let db = dir.path().join(".sync.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let out = common::run(
+        dir.path(),
+        &[
+            "sync",
+            "--workspace",
+            &root_str,
+            "--json-dir",
+            &json_str,
+            "--db",
+            &db_str,
+        ],
+    );
+    assert!(out.status.success(), "scale sync converges: {out:?}");
+    let text = common::stdout(&out);
+    assert!(text.contains("Ingested 256 files"), "{text}");
+    assert!(!text.contains("failed to generate"), "{text}");
+    let sidecars = std::fs::read_dir(json_dir.join("src"))
+        .expect("sidecars")
+        .count();
+    assert_eq!(sidecars, 256, "every file lands a sidecar");
 }

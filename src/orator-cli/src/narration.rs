@@ -13,6 +13,7 @@ use fluent_wvr::{
 
 /// Spoken portion selector for one assistant reply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Spoken portion selector for one assistant reply.
 pub enum NarrationLevel {
     /// Text only: nothing voices.
     #[default]
@@ -82,6 +83,9 @@ pub fn parse_narration_level(raw: &str) -> Result<NarrationLevel, String> {
 /// anything else falls back to `none` so the loop can name the bad
 /// value instead of refusing the session.
 #[must_use]
+/// Session start from the `chat.narration` leaf: valid spellings map,
+/// anything else falls back to `none` so the loop can name the bad
+/// value instead of refusing the session.
 pub fn initial_narration_mode(config: &orator::OratorConfig) -> NarrationLevel {
     parse_narration_level(config.chat.narration.trim()).unwrap_or_default()
 }
@@ -89,6 +93,8 @@ pub fn initial_narration_mode(config: &orator::OratorConfig) -> NarrationLevel {
 /// Split `text` into sentences on `.`/`!`/`?`, keeping the terminator.
 /// Empty fragments drop; a text with no terminator is one sentence.
 #[must_use]
+/// Split `text` into sentences on `.`/`!`/`?`, keeping the terminator.
+/// Empty fragments drop; a text with no terminator is one sentence.
 pub fn split_sentences(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -114,6 +120,7 @@ pub fn split_sentences(text: &str) -> Vec<String> {
 
 /// First sentence of `reply` (shared `first_sentence` home).
 #[must_use]
+/// First sentence of `reply` (shared `first_sentence` home).
 pub fn first_sentence_of(reply: &str) -> String {
     let first = common_core::string::first_sentence(reply);
     if first.is_empty() {
@@ -128,6 +135,7 @@ pub fn first_sentence_of(reply: &str) -> String {
 
 /// Last sentence of `reply`; single-sentence replies return it.
 #[must_use]
+/// Last sentence of `reply`; single-sentence replies return it.
 pub fn last_sentence_of(reply: &str) -> String {
     split_sentences(reply).pop().unwrap_or_default()
 }
@@ -135,6 +143,8 @@ pub fn last_sentence_of(reply: &str) -> String {
 /// Text between the first and last sentence, joined with spaces.
 /// Empty for fewer than three sentences (nothing to summarize).
 #[must_use]
+/// Text between the first and last sentence, joined with spaces.
+/// Empty for fewer than three sentences (nothing to summarize).
 pub fn middle_text_of(reply: &str) -> String {
     let sentences = split_sentences(reply);
     if sentences.len() < 3 {
@@ -147,6 +157,9 @@ pub fn middle_text_of(reply: &str) -> String {
 /// first sentence for intro, full reply for full. Summary returns
 /// `None` here (it needs the summarized middle first).
 #[must_use]
+/// Spoken text for levels needing no LLM: `None` for none/empty,
+/// first sentence for intro, full reply for full. Summary returns
+/// `None` here (it needs the summarized middle first).
 pub fn spoken_for_narration(reply: &str, level: NarrationLevel) -> Option<String> {
     match level {
         // None voices nothing; summary needs the LLM middle first so
@@ -174,6 +187,9 @@ pub fn spoken_for_narration(reply: &str, level: NarrationLevel) -> Option<String
 /// empties and collapsing first==last (one-sentence replies voice
 /// once, never twice).
 #[must_use]
+/// Compose summary-level spoken text from its three parts, skipping
+/// empties and collapsing first==last (one-sentence replies voice
+/// once, never twice).
 pub fn compose_summary_spoken(first: &str, summary: &str, last: &str) -> String {
     let first = first.trim();
     let summary = summary.trim();
@@ -194,6 +210,8 @@ pub fn compose_summary_spoken(first: &str, summary: &str, last: &str) -> String 
 /// Prompt asking the chat model to compress `middle` into one or two
 /// short speakable sentences (no fences, no preamble).
 #[must_use]
+/// Prompt asking the chat model to compress `middle` into one or two
+/// short speakable sentences (no fences, no preamble).
 pub fn build_summary_prompt(middle: &str) -> String {
     format!(
         "Summarize the following in one or two short sentences suitable for spoken delivery. Reply with only the summary, no preamble, no fences: {middle}"
@@ -204,6 +222,9 @@ pub fn build_summary_prompt(middle: &str) -> String {
 /// whose schema, field access, and validation all derive from one
 /// definition (the `chat.narration` leaf round-trips through it).
 #[derive(Debug, Clone, PartialEq, Eq, FieldAccess, Describable)]
+/// Runtime-editable narration handle: the fluent-wvr single source
+/// whose schema, field access, and validation all derive from one
+/// definition (the `chat.narration` leaf round-trips through it).
 pub struct NarrationSetting {
     /// Active level spelling (`none`|`intro`|`summary`|`full`).
     #[field(desc = "Chat narration level (none|intro|summary|full)", max_len = 16)]

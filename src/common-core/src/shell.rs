@@ -15,6 +15,7 @@ pub fn shell_cmd() -> (&'static str, &'static str) {
 
 /// Captured output from a subprocess, including exit status, stdout, and stderr.
 #[derive(Debug)]
+/// Captured output from a subprocess, including exit status, stdout, and stderr.
 pub struct CommandOutput {
     pub success: bool,
     pub stdout: String,

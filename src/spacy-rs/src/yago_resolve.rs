@@ -57,6 +57,10 @@ impl Clone for YagoResolveStage {
 /// (replacing the telescoping `new`/`with_enabled`/`with_fetch` chain);
 /// `enabled` without `fetch` stays fail-closed (`None`).
 #[derive(Clone, Default)]
+/// Construction config for [`YagoResolveStage`]: the guarded-spike flag plus
+/// the owner-provided knowledge-half fetch. The canonical construction site
+/// (replacing the telescoping `new`/`with_enabled`/`with_fetch` chain);
+/// `enabled` without `fetch` stays fail-closed (`None`).
 pub struct YagoResolveConfig {
     /// Whether the guarded semantic-plausibility spike runs.
     pub enabled: bool,

@@ -26,6 +26,11 @@ use tokio::sync::Notify;
 /// [`StreamAbort::cancelled`] (resolves immediately if already fired); inspect
 /// it with [`StreamAbort::is_cancelled`].
 #[derive(Clone, Default)]
+/// A sticky, `Clone` cancellation signal for a long-lived stream.
+/// 
+/// Fire it with [`StreamAbort::cancel`] (idempotent); wait on it with
+/// [`StreamAbort::cancelled`] (resolves immediately if already fired); inspect
+/// it with [`StreamAbort::is_cancelled`].
 pub struct StreamAbort {
     state: Arc<AbortState>,
 }

@@ -10,6 +10,7 @@ use orator_voice::s2s::S2sError;
 
 /// Daemon voice-endpoint outcome for one lookup.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Daemon voice-endpoint outcome for one lookup.
 pub enum DaemonVoiceHint {
     /// The daemon serves an endpoint URL.
     Available(String),
@@ -70,6 +71,13 @@ fn structured_kind(body: &str) -> Option<&str> {
 /// structured `kind` marker wins when present; the wording match stays
 /// only for old daemons that omitted it.
 #[must_use]
+/// Classify a daemon `VoiceEndpoint` failure body.
+/// 
+/// The daemon reports ejection, saturation, and boot contention as
+/// `ok: false` with the reason in the body; absence or refusal
+/// without those markers is `Unavailable` (the caller may boot). The
+/// structured `kind` marker wins when present; the wording match stays
+/// only for old daemons that omitted it.
 pub fn classify_daemon_voice_error(body: &str) -> DaemonVoiceHint {
     if let Some(kind) = structured_kind(body) {
         match kind {
@@ -105,6 +113,12 @@ pub fn classify_daemon_voice_error(body: &str) -> DaemonVoiceHint {
 /// `None` and unmarked refusals are `Unavailable`; ejected,
 /// saturated, and contention bodies become the chain-skipping arms.
 #[must_use]
+/// Classify a transport-level daemon-call failure for the voice path.
+/// 
+/// `text` is the quiet-core failure line when the daemon answered
+/// `ok: false`, or `None` when the call never reached the daemon.
+/// `None` and unmarked refusals are `Unavailable`; ejected,
+/// saturated, and contention bodies become the chain-skipping arms.
 pub fn classify_daemon_call_failure(text: Option<&str>) -> DaemonVoiceHint {
     match text {
         Some(body) => match classify_daemon_voice_error(body) {
@@ -124,6 +138,10 @@ pub fn classify_daemon_call_failure(text: Option<&str>) -> DaemonVoiceHint {
 /// Single home for the decision: the serving arms call this instead
 /// of matching variants inline.
 #[must_use]
+/// Whether `error` advances the voice fallback chain.
+/// 
+/// Single home for the decision: the serving arms call this instead
+/// of matching variants inline.
 pub fn should_advance(error: &S2sError) -> bool {
     orator_voice::s2s::should_advance_chain(error)
 }
@@ -135,6 +153,12 @@ pub fn should_advance(error: &S2sError) -> bool {
 /// runs on the normalized form so chunk boundaries match what is
 /// actually synthesized.
 #[must_use]
+/// Split `text` for speech after normalizing once.
+/// 
+/// Fenced code, markup, and bare URLs never reach the voice: the
+/// reply on screen keeps them, the spoken form drops them. The split
+/// runs on the normalized form so chunk boundaries match what is
+/// actually synthesized.
 pub fn normalized_chunks(text: &str) -> Vec<String> {
     let normalized = orator_voice::tts::normalize_for_speech(text);
     orator_voice::tts::split_all(&normalized)
@@ -148,6 +172,10 @@ pub fn normalized_chunks(text: &str) -> Vec<String> {
 /// already-played prefix is never spoken twice. Splits on a char
 /// boundary; short or over-long counts clamp to the ends.
 #[must_use]
+/// Remaining text after `played_chars` chars were already heard.///
+/// The daemon last resort speaks only the unsynthesized suffix so an
+/// already-played prefix is never spoken twice. Splits on a char
+/// boundary; short or over-long counts clamp to the ends.
 pub fn unsynthesized_suffix(full: &str, played_chars: usize) -> &str {
     if played_chars == 0 {
         return full;
@@ -165,6 +193,7 @@ pub fn unsynthesized_suffix(full: &str, played_chars: usize) -> &str {
 
 /// Count characters already voiced across fully played chunks.
 #[must_use]
+/// Count characters already voiced across fully played chunks.
 pub fn played_chars_for_chunks(chunks: &[String], played_chunks: usize) -> usize {
     chunks
         .iter()

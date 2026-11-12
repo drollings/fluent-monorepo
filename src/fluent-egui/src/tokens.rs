@@ -87,6 +87,7 @@ static FIELD_NAMES: &[&str] = &[
 
 /// The closed role vocabulary: every name [`MaterialTokens`] accepts.
 #[must_use]
+/// The closed role vocabulary: every name [`MaterialTokens`] accepts.
 pub fn known_roles() -> &'static [&'static str] {
     &FIELD_NAMES[2..]
 }
@@ -97,6 +98,10 @@ pub fn known_roles() -> &'static [&'static str] {
 /// deserialization; every entry point validates before anything resolves.
 #[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
+/// Named token theme: a mode, a contrast dial, and role colors.
+/// 
+/// Roles enter through [`insert_role`](Self::insert_role), `set_field`, or
+/// deserialization; every entry point validates before anything resolves.
 pub struct MaterialTokens {
     /// Color mode: `light`, `dark`, or `auto` (via the injected detector).
     #[builder(default = default_mode())]
@@ -302,6 +307,8 @@ impl_component!(MaterialTokens);
 /// One resolved scheme: every role parsed, immutable, fingerprinted for
 /// cache keys. Bit-identical token input resolves bit-identically.
 #[derive(Debug, Clone, PartialEq)]
+/// One resolved scheme: every role parsed, immutable, fingerprinted for
+/// cache keys. Bit-identical token input resolves bit-identically.
 pub struct ResolvedScheme {
     /// Whether this scheme resolved for dark mode.
     pub dark: bool,
@@ -318,6 +325,10 @@ pub struct ResolvedScheme {
 /// caller layers the projection over its theme base — so a shared slot
 /// paints one value on both sides.
 #[must_use]
+/// Project the chart's slots out of a resolved scheme: every theme style
+/// key the scheme names a role for. Shell-only roles stay out, and the
+/// caller layers the projection over its theme base — so a shared slot
+/// paints one value on both sides.
 pub fn chart_roles(scheme: &ResolvedScheme) -> BTreeMap<String, egui::Color32> {
     ThemeConfig::style_keys()
         .iter()
@@ -334,6 +345,9 @@ pub fn chart_roles(scheme: &ResolvedScheme) -> BTreeMap<String, egui::Color32> {
 /// with the surface, ink, and primary slots applied. Roles the scheme does
 /// not name keep the base values.
 #[must_use]
+/// Lower a resolved scheme to `egui` visuals: the platform dark/light base
+/// with the surface, ink, and primary slots applied. Roles the scheme does
+/// not name keep the base values.
 pub fn apply_visuals(scheme: &ResolvedScheme) -> egui::Visuals {
     let mut visuals = if scheme.dark {
         egui::Visuals::dark()

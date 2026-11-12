@@ -23,6 +23,15 @@ use crate::error::PlanError;
 /// bar spacing instead, so a hole between two runs is exactly the missing
 /// bars' span.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+/// A half-open millisecond span with optional bounds.
+/// 
+/// Stamps name instants; spans name coverage over them. A covered bar stamped
+/// `t` occupies the stamp-space point `t`, and a run of contiguous bars from
+/// `first` to `last` spans `[first, last + 1)`: the `+1` is what makes a
+/// single covered stamp a non-empty half-open span. Bar-span ranges — the
+/// runs [`Coverage`](crate::coverage::Coverage) keeps — extend the end by the
+/// bar spacing instead, so a hole between two runs is exactly the missing
+/// bars' span.
 pub struct TimeRange {
     /// Lower bound, inclusive. `None` means no lower bound.
     pub start_ms: Option<i64>,

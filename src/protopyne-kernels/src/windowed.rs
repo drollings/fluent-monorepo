@@ -40,6 +40,7 @@ use crate::KernelError;
 
 /// Which chart legs a window evaluation reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which chart legs a window evaluation reads.
 pub enum WindowLegs {
     /// Closes only: the common case.
     Close,
@@ -56,6 +57,12 @@ pub enum WindowLegs {
 /// refuses through its own arithmetic rather than silently reading closes as
 /// highs.
 #[derive(Debug, Clone, Copy)]
+/// One window of chart legs, oldest first.
+/// 
+/// A leg the kernel did not ask for is an **empty** slice, never an alias of a
+/// leg it did: a kernel that reads the wrong leg gets an empty window and
+/// refuses through its own arithmetic rather than silently reading closes as
+/// highs.
 pub struct Window<'a> {
     /// The window's closes (always present, `period` values).
     pub closes: &'a [f64],

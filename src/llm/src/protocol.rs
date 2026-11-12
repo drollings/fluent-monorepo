@@ -66,6 +66,8 @@ use fluent_concurrency::pool::{PoolError, ResultPool, ResultPoolError};
 
 /// Errors returned by LLM chat completions and the request queue.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+/// ─── LLM protocol types ─────────────────────────────────────────────────────
+/// Errors returned by LLM chat completions and the request queue.
 pub enum LlmError {
     #[error("API error: {0}")]
     Api(String),
@@ -94,6 +96,7 @@ impl From<reqwest::Error> for LlmError {
 
 /// A single chat message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+/// A single chat message in a conversation.
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
@@ -122,6 +125,8 @@ impl ChatMessage {
 /// clones it into every `LlmTask` it submits.
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 #[builder(start_fn = new)]
+/// Per-request LLM configuration. The `LlmClient` carries one of these and
+/// clones it into every `LlmTask` it submits.
 pub struct LlmConfig {
     pub api_url: String,
     pub model: String,
@@ -151,6 +156,7 @@ pub struct LlmTask {
 
 /// Bounded-worker-pool tuning for the queue.
 #[derive(Debug, Clone, Copy)]
+/// Bounded-worker-pool tuning for the queue.
 pub struct LlmQueueConfig {
     pub worker_count: usize,
     pub queue_capacity: usize,

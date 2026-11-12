@@ -11,6 +11,7 @@ pub const DEFAULT_CHUNK_OVERLAP_CHARS: usize = 540;
 
 /// A source file ready for extraction.
 #[derive(Debug, Clone)]
+/// A source file ready for extraction.
 pub struct ExtractSource {
     /// Stable file id.
     pub file_id: String,
@@ -24,6 +25,7 @@ pub struct ExtractSource {
 
 /// Chunk budget (port of `ChunkOptions`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Chunk budget (port of `ChunkOptions`).
 pub struct ChunkOptions {
     /// Maximum chunk size (UTF-16 code units, zvec parity).
     pub max_chunk_chars: usize,
@@ -55,6 +57,7 @@ impl ChunkOptions {
 
 /// Line-anchored text range (port of `TextRange`).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Line-anchored text range (port of `TextRange`).
 pub struct FragmentRange {
     /// 1-based first line.
     pub start_line: usize,
@@ -68,6 +71,7 @@ pub struct FragmentRange {
 
 /// Fragment metadata (shared scope type for code + markdown, P2.3).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Fragment metadata (shared scope type for code + markdown, P2.3).
 pub enum FragmentMetadata {
     /// Code entity metadata (port of `CodeEntityMetadata`).
     Code {
@@ -100,6 +104,8 @@ pub enum FragmentMetadata {
 /// One extracted fragment before id assignment (ids are positional:
 /// `make_entity_id(file_id, index)` in output order).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One extracted fragment before id assignment (ids are positional:
+/// `make_entity_id(file_id, index)` in output order).
 pub struct PreparedFragment {
     /// Entity id (`make_entity_id(file_id, position)`).
     pub id: String,
@@ -128,6 +134,7 @@ impl PreparedFragment {
 
 /// Extraction failure (per-file isolation: stored, never thrown past prepare).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Extraction failure (per-file isolation: stored, never thrown past prepare).
 pub enum ExtractError {
     /// Non-text source handed to a text extractor.
     #[error("extractor received a non-text source: {0}")]
@@ -145,12 +152,14 @@ pub enum ExtractError {
 
 /// Entity id: `sha256(fileId + NUL + index)` hex (64 chars, zvec parity).
 #[must_use]
+/// Entity id: `sha256(fileId + NUL + index)` hex (64 chars, zvec parity).
 pub fn make_entity_id(file_id: &str, index: usize) -> String {
     common_core::hash::sha256_hex(format!("{file_id}\0{index}").as_bytes())
 }
 
 /// UTF-16 width of a string (zvec parity unit for chunk budgets).
 #[must_use]
+/// UTF-16 width of a string (zvec parity unit for chunk budgets).
 pub fn utf16_len(text: &str) -> usize {
     text.encode_utf16().count()
 }
@@ -158,6 +167,8 @@ pub fn utf16_len(text: &str) -> usize {
 /// Slice `text` to at most `max_units` UTF-16 code units without splitting
 /// a character (char boundaries imply surrogate-pair safety in Rust).
 #[must_use]
+/// Slice `text` to at most `max_units` UTF-16 code units without splitting
+/// a character (char boundaries imply surrogate-pair safety in Rust).
 pub fn utf16_prefix(text: &str, max_units: usize) -> &str {
     utf16_slice(text, 0, max_units)
 }
@@ -166,6 +177,9 @@ pub fn utf16_prefix(text: &str, max_units: usize) -> &str {
 /// boundaries (start snaps forward to the containing character, end snaps
 /// back so the window never exceeds the budget).
 #[must_use]
+/// UTF-16 window `[start_units, start_units + len_units)` snapped to char
+/// boundaries (start snaps forward to the containing character, end snaps
+/// back so the window never exceeds the budget).
 pub fn utf16_slice(text: &str, start_units: usize, len_units: usize) -> &str {
     let end_units = start_units + len_units;
     let mut byte_start = None;

@@ -11,6 +11,8 @@ pub const TOOL_OUTPUT_CHARS: usize = 6000;
 /// Cap `text` at [`TOOL_OUTPUT_CHARS`] chars with a total-length marker.
 /// Small outputs pass through verbatim.
 #[must_use]
+/// Cap `text` at [`TOOL_OUTPUT_CHARS`] chars with a total-length marker.
+/// Small outputs pass through verbatim.
 pub fn truncate_tool_output(text: &str) -> String {
     if text.chars().count() <= TOOL_OUTPUT_CHARS {
         return text.to_string();

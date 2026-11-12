@@ -24,6 +24,9 @@ pub struct Provider {
 /// config writes. (The flat `embedding_dims` / `embedding_cache_limit`
 /// fields below are the legacy alternative shape; the object wins.)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// The top-level `"embed": {"dims", "cache_limit"}` object the default
+/// config writes. (The flat `embedding_dims` / `embedding_cache_limit`
+/// fields below are the legacy alternative shape; the object wins.)
 pub struct EmbedConfig {
     #[serde(default)]
     pub dims: Option<usize>,
@@ -36,6 +39,10 @@ pub struct EmbedConfig {
 /// which is the fail-closed signal: callers fall through to the
 /// deterministic path, never to a silent answer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// One independently-addressable model role: its own endpoint, model,
+/// timeout, and kill switch. A disabled role resolves to no endpoint,
+/// which is the fail-closed signal: callers fall through to the
+/// deterministic path, never to a silent answer.
 pub struct ModelRole {
     #[serde(default = "default_role_base_url")]
     pub base_url: String,
@@ -64,6 +71,7 @@ fn default_role_enabled() -> bool {
 
 /// Decision-role defaults: small local judgment model, own address.
 #[must_use]
+/// Decision-role defaults: small local judgment model, own address.
 pub fn default_decision_role() -> ModelRole {
     ModelRole {
         base_url: default_role_base_url(),
@@ -75,6 +83,7 @@ pub fn default_decision_role() -> ModelRole {
 
 /// Generative-role defaults: synthesis model, own address.
 #[must_use]
+/// Generative-role defaults: synthesis model, own address.
 pub fn default_generative_role() -> ModelRole {
     ModelRole {
         base_url: default_role_base_url(),

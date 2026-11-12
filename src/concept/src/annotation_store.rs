@@ -39,6 +39,7 @@ pub const ANNOTATIONS_TABLE: &str = "ledger_annotations";
 
 /// The tiered annotation store over the shared ledger connection.
 #[derive(Debug, Clone)]
+/// The tiered annotation store over the shared ledger connection.
 pub struct AnnotationStore {
     store: Arc<SqliteStore>,
 }

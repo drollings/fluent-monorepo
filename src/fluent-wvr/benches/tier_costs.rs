@@ -30,6 +30,7 @@ use std::sync::Arc;
     serde::Deserialize,
 )]
 #[allow(dead_code)]
+/// ── Fixtures: the same struct serves Tiers 1–3, so fixtures cannot drift ──
 struct S3 {
     name: String,
     count: u64,

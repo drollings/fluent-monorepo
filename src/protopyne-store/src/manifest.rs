@@ -36,6 +36,8 @@ pub const MANIFEST_FILE: &str = "manifest.json";
 /// One sealed artifact's manifest row. The shape is the SQL-era row field
 /// for field, so an export reads identically.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One sealed artifact's manifest row. The shape is the SQL-era row field
+/// for field, so an export reads identically.
 pub struct SnapshotRecord {
     /// The instrument the sealed tape belongs to.
     pub symbol_id: SymbolId,
@@ -64,6 +66,12 @@ pub struct SnapshotRecord {
 /// when no seal has committed yet); [`upsert`](Self::upsert) replaces any
 /// row for the same key, and [`save`](Self::save) persists atomically.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+/// The file-backed manifest: every sealed artifact's row, keyed by
+/// `(symbol_id, timeframe, path)`.
+/// 
+/// Loaded once per seal operation from `<seals>/manifest.json` (or empty
+/// when no seal has committed yet); [`upsert`](Self::upsert) replaces any
+/// row for the same key, and [`save`](Self::save) persists atomically.
 pub struct SealManifest {
     /// Every manifest row, in key order.
     #[serde(default)]

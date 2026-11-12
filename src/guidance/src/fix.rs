@@ -13,6 +13,9 @@ use crate::gates::{
 /// `fmt_conflict` finding. Text is only appliable when no conflict is
 /// reported; a conflict routes to human review instead of the loop.
 #[derive(Debug, Clone)]
+/// Outcome of the format rung: formatted text plus an optional
+/// `fmt_conflict` finding. Text is only appliable when no conflict is
+/// reported; a conflict routes to human review instead of the loop.
 pub struct FormatOutcome {
     /// Spliced formatted text (test regions preserved).
     pub text: String,
@@ -23,16 +26,21 @@ pub struct FormatOutcome {
 /// Rustfmt keys that alter prose: with any enabled, formatted comments
 /// may move, so hunks touching prose are reported, never silently kept.
 fn prose_pressure_keys(config_text: &str) -> Vec<String> {
-    ["wrap_comments", "normalize_comments", "format_code_in_doc_comments", "format_strings"]
-        .into_iter()
-        .filter(|key| {
-            config_text.lines().any(|line| {
-                let line = line.trim_start();
-                !line.starts_with('#') && line.starts_with(key) && line.contains("true")
-            })
+    [
+        "wrap_comments",
+        "normalize_comments",
+        "format_code_in_doc_comments",
+        "format_strings",
+    ]
+    .into_iter()
+    .filter(|key| {
+        config_text.lines().any(|line| {
+            let line = line.trim_start();
+            !line.starts_with('#') && line.starts_with(key) && line.contains("true")
         })
-        .map(str::to_string)
-        .collect()
+    })
+    .map(str::to_string)
+    .collect()
 }
 
 /// Find the project rustfmt config by walking up from the source file.
@@ -54,9 +62,12 @@ pub(crate) fn find_rustfmt_config(source_path: &Path) -> Option<PathBuf> {
 /// D1 rustfmt on a scratch copy with test-preserving splice-back. Never
 /// touches the source file; the caller gates and writes back.
 #[must_use]
+/// D1 rustfmt on a scratch copy with test-preserving splice-back. Never
+/// touches the source file; the caller gates and writes back.
 pub fn format_rust(source_path: &Path, text: &str) -> FormatOutcome {
     let config = find_rustfmt_config(source_path);
-    let Some((spliced, formatted)) = crate::gates::rustfmt_and_splice(text, config.as_deref())
+    let Some((spliced, formatted)) =
+        crate::gates::rustfmt_and_splice(text, config.as_deref(), source_path.parent())
     else {
         return FormatOutcome {
             text: text.to_string(),
@@ -74,8 +85,12 @@ pub fn format_rust(source_path: &Path, text: &str) -> FormatOutcome {
             let mut spliced_units = parser.rust_prose_units(&spliced);
             formatted_units.sort_unstable();
             spliced_units.sort_unstable();
-            (formatted_units != spliced_units)
-                .then(|| format!("fmt_conflict: prose config ({}) alters prose", keys.join(", ")))
+            (formatted_units != spliced_units).then(|| {
+                format!(
+                    "fmt_conflict: prose config ({}) alters prose",
+                    keys.join(", ")
+                )
+            })
         });
     FormatOutcome {
         text: spliced,
@@ -85,6 +100,7 @@ pub fn format_rust(source_path: &Path, text: &str) -> FormatOutcome {
 
 /// One machine-applicable replacement from clippy JSON diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One machine-applicable replacement from clippy JSON diagnostics.
 pub struct Suggestion {
     /// Byte start of the replaced span.
     pub start: u64,
@@ -97,6 +113,8 @@ pub struct Suggestion {
 /// One span object to a suggestion: only byte-spanned,
 /// `MachineApplicable` replacements convert; everything else is `None`.
 #[must_use]
+/// One span object to a suggestion: only byte-spanned,
+/// `MachineApplicable` replacements convert; everything else is `None`.
 pub fn suggestion_from_span(span: &serde_json::Value) -> Option<Suggestion> {
     let applicable = span
         .get("suggestion_applicability")
@@ -108,8 +126,7 @@ pub fn suggestion_from_span(span: &serde_json::Value) -> Option<Suggestion> {
     let (Some(start), Some(end), Some(replacement)) = (
         span.get("byte_start").and_then(serde_json::Value::as_u64),
         span.get("byte_end").and_then(serde_json::Value::as_u64),
-        span
-            .get("suggested_replacement")
+        span.get("suggested_replacement")
             .and_then(|replacement| replacement.as_str()),
     ) else {
         return None;
@@ -129,6 +146,10 @@ pub fn suggestion_from_span(span: &serde_json::Value) -> Option<Suggestion> {
 /// lines ignored). Only byte-spanned, applicable suggestions parse;
 /// everything else is skipped without error.
 #[must_use]
+/// Parse `MachineApplicable` suggestions from `cargo clippy
+/// --message-format=json` output (one JSON object per line, `rendered`
+/// lines ignored). Only byte-spanned, applicable suggestions parse;
+/// everything else is skipped without error.
 pub fn parse_clippy_suggestions(json_lines: &str) -> Vec<Suggestion> {
     let mut out = Vec::new();
     for line in json_lines.lines() {
@@ -151,6 +172,7 @@ pub fn parse_clippy_suggestions(json_lines: &str) -> Vec<Suggestion> {
 
 /// Outcome of suggestion application.
 #[derive(Debug, Clone)]
+/// Outcome of suggestion application.
 pub struct ApplyOutcome {
     /// Patched text.
     pub text: String,
@@ -164,6 +186,9 @@ pub struct ApplyOutcome {
 /// overlaps deferred. `cargo fix` is never invoked: it rewrites tests
 /// and prose-adjacent ranges, violating the oracle guarantees.
 #[must_use]
+/// D2 suggestion application: range-filtered, reverse-offset order,
+/// overlaps deferred. `cargo fix` is never invoked: it rewrites tests
+/// and prose-adjacent ranges, violating the oracle guarantees.
 pub fn apply_suggestions(
     text: &str,
     suggestions: &[Suggestion],
@@ -179,8 +204,9 @@ pub fn apply_suggestions(
         let in_excluded = excluded
             .iter()
             .any(|(start, end)| suggestion.start < *end && *start < suggestion.end);
-        let overlaps =
-            taken.iter().any(|(start, end)| suggestion.start < *end && *start < suggestion.end);
+        let overlaps = taken
+            .iter()
+            .any(|(start, end)| suggestion.start < *end && *start < suggestion.end);
         if in_excluded || overlaps {
             deferred += 1;
             continue;
@@ -217,6 +243,10 @@ fn is_unresolved_import(diagnostic: &str) -> bool {
 /// return `None` without touching anything. Insertion point is the
 /// caller's job (M8); the recipe only drafts the line.
 #[must_use]
+/// D3 unambiguous-import recipe: exactly one index candidate drafts one
+/// `use` line. Ambiguous, empty, unlisted, or policy-disabled inputs
+/// return `None` without touching anything. Insertion point is the
+/// caller's job (M8); the recipe only drafts the line.
 pub fn recipe_import(diagnostic: &str, candidates: &[String], allowed: bool) -> Option<String> {
     if !allowed || !is_unresolved_import(diagnostic) || candidates.len() != 1 {
         return None;
@@ -228,6 +258,9 @@ pub fn recipe_import(diagnostic: &str, candidates: &[String], allowed: bool) -> 
 /// owns the byte offset. Out-of-range offsets and disabled policy
 /// return `None`.
 #[must_use]
+/// D3 missing-`mut` recipe: inserts `mut` after the `let` binding that
+/// owns the byte offset. Out-of-range offsets and disabled policy
+/// return `None`.
 pub fn recipe_mut(text: &str, name_offset: u64, allowed: bool) -> Option<String> {
     if !allowed {
         return None;
@@ -238,7 +271,10 @@ pub fn recipe_mut(text: &str, name_offset: u64, allowed: bool) -> Option<String>
     }
     let head = &text[..offset];
     let let_at = head.rfind("let ")?;
-    if text[let_at..offset].trim_start_matches("let ").contains([';', '{', '}', '\n']) {
+    if text[let_at..offset]
+        .trim_start_matches("let ")
+        .contains([';', '{', '}', '\n'])
+    {
         return None;
     }
     let mut patched = String::with_capacity(text.len() + 4);
@@ -280,6 +316,7 @@ pub struct ApplyCtx<'a> {
 
 /// Verified-apply disposition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Verified-apply disposition.
 pub enum FixVerdict {
     /// Gates green: the write-back stands.
     Kept,
@@ -289,6 +326,7 @@ pub enum FixVerdict {
 
 /// Verified-apply report for the ledger (M7 journals it).
 #[derive(Debug, Clone)]
+/// Verified-apply report for the ledger (M7 journals it).
 pub struct FixReport {
     /// Disposition.
     pub verdict: FixVerdict,
@@ -327,6 +365,7 @@ pub fn apply_verified_patch(path: &Path, new_text: &str, ctx: &ApplyCtx) -> FixR
         build: ctx.build.clone(),
         tests: ctx.tests.clone(),
         rustfmt_config: ctx.rustfmt_config.clone(),
+        source_dir: path.parent().map(std::path::Path::to_path_buf),
     };
     let file = ChangedFile {
         path: path.to_string_lossy().into_owned(),

@@ -157,6 +157,24 @@ fn log_classifier_raw_response(response: &str) {
 // a pure-prose response as a direct answer. On `always_route` routes the
 // classifier is never allowed to answer directly, so prose remains a hard
 // failure.
+/// LLM boundary: parse the classifier's raw LLM response text (JSON in a
+/// string from the model). Routes through the shared `fluent_llm::parse_typed`
+/// codec — direct-deserialize fast path, then fence-strip → parse →
+/// extract-first-value → deterministic repair — then, as a last resort, the
+/// fluent-wvr schema-driven boundary decode (`decode_boundary`), which
+/// recognises members against `ClassifierOutput`'s own `field_names()` schema
+/// and coerces each value string through `set_field` (the derive-macro
+/// `coerce`/`parse` modes). When no JSON attempt was made at all, and the
+/// requested route permits direct answering, pure prose becomes a direct answer
+/// ([`prose_as_respond`]). `Ok((output, true))` = pristine parse;
+/// `Ok((output, false))` = recovered; `Err(reason)` = total parse failure (the
+/// caller applies the `ClassifierFailurePolicy`).
+/// 
+/// `direct_answer_allowed` gates the prose-as-respond rung: only routes that
+/// permit the classifier to answer directly (`always_route: false`) may treat
+/// a pure-prose response as a direct answer. On `always_route` routes the
+/// classifier is never allowed to answer directly, so prose remains a hard
+/// failure.
 fn parse_classifier_response(
     response: &str,
     default_route: &str,

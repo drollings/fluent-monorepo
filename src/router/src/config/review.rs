@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 /// Async review configuration. `None` (the default)
 /// disables the review worker and its endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Async review configuration. `None` (the default)
+/// disables the review worker and its endpoints.
 pub struct ReviewConfig {
     /// Model key for the review model — an **independent, more capable**
     /// tier so review is not self-review (§12.7).

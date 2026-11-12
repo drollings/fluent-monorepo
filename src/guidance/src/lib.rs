@@ -39,8 +39,8 @@ pub mod freshness;
 pub mod gates;
 pub mod graph_index;
 pub mod grounding;
-pub mod index_pipeline;
 pub mod index_generation;
+pub mod index_pipeline;
 pub mod invalidation;
 pub mod item_hashes;
 pub mod journal;
@@ -67,6 +67,7 @@ pub mod search_constants;
 pub mod search_types;
 
 pub mod query;
+pub mod summary;
 
 pub mod sync {
     pub mod comments;

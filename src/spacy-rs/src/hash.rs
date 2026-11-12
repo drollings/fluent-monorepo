@@ -20,6 +20,11 @@ pub const HASH_SEED: u64 = 1;
 /// the C `getblock`), mixes the 1..7-byte tail with a fall-through switch, and
 /// finalizes with two `h ^= h >> 47` rounds. Pure, allocation-free, and safe.
 #[must_use]
+/// MurmurHash64A, matching `murmurhash.mrmr.hash64(data, len, seed)`.
+/// 
+/// Reads 8-byte blocks little-endian (matching the little-endian fast path of
+/// the C `getblock`), mixes the 1..7-byte tail with a fall-through switch, and
+/// finalizes with two `h ^= h >> 47` rounds. Pure, allocation-free, and safe.
 pub fn murmur64a(data: &[u8], seed: u64) -> u64 {
     const M: u64 = 0xc6a4_a793_5bd1_e995;
     const R: u32 = 47;
@@ -77,6 +82,8 @@ pub fn murmur64a(data: &[u8], seed: u64) -> u64 {
 /// spaCy's `hash_utf8` / `hash_string`: MurmurHash64A over the UTF-8 bytes
 /// with the fixed seed.
 #[must_use]
+/// spaCy's `hash_utf8` / `hash_string`: MurmurHash64A over the UTF-8 bytes
+/// with the fixed seed.
 pub fn hash_utf8(s: &str) -> u64 {
     murmur64a(s.as_bytes(), HASH_SEED)
 }

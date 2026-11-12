@@ -24,6 +24,7 @@ use fluent_types::{lemma_id_for_str, ConceptMetadata, InterlinguaId};
 
 /// Recorded when a second canonical claims an already-taken id (first-wins).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Recorded when a second canonical claims an already-taken id (first-wins).
 pub enum CollisionNote {
     None,
     Collision {

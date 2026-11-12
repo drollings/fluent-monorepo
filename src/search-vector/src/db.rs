@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -11,6 +11,8 @@ use thiserror::Error;
 
 pub mod fragments;
 pub mod graph_rows;
+pub mod summaries;
+pub mod embedding_status;
 pub(crate) mod schema;
 
 use fragments::{
@@ -21,6 +23,8 @@ pub use fragments::{
     FragmentRow, ScoredFragment, SymbolRecord,
 };
 pub use graph_rows::{GraphEdgeRow, GraphSymbolRow};
+pub use summaries::{build_summary_fts_match, SummaryRecord};
+pub use embedding_status::EmbeddingStatusRecord;
 
 #[derive(Error, Debug)]
 pub enum VectorDbError {
@@ -58,6 +62,13 @@ pub struct GuidanceDb {
 impl GuidanceDb {
     pub fn open(path: &Path) -> Result<Self, VectorDbError> {
         let store = SqliteStore::open(path)?;
+        // Derived index with a rebuild path: WAL + NORMAL stays process-crash
+        // consistent without one fsync per per-file commit. Sidecars are truth.
+        store.with_conn(|conn| {
+            conn.execute_batch("PRAGMA synchronous=NORMAL;")
+                .map_err(DbError::from)?;
+            Ok(())
+        })?;
         let db = Self {
             store,
             hnsw: HnswIndex::new(),
@@ -399,6 +410,31 @@ impl GuidanceDb {
         Ok(count.unwrap_or(0))
     }
 
+    /// Fragment rows committed: the live retrieval-unit count behind the
+    /// MCP `node_count` key (the legacy `guidance_nodes` table is no
+    /// longer written by sync; see `sync_from_dir`).
+    pub fn fragment_count(&self) -> Result<i64, VectorDbError> {
+        let count = self
+            .store
+            .query_row("SELECT COUNT(*) FROM fragments", &[], |row| {
+                row.get::<_, i64>(0)
+            })?;
+        Ok(count.unwrap_or(0))
+    }
+
+    /// Fragments carrying a vector (FP32 or quantized): the live count
+    /// behind the MCP `embedding_count` key.
+    pub fn embedded_fragment_count(&self) -> Result<i64, VectorDbError> {
+        let count = self
+            .store
+            .query_row(
+                "SELECT COUNT(*) FROM fragments WHERE embedding IS NOT NULL OR embedding_q8 IS NOT NULL",
+                &[],
+                |row| row.get::<_, i64>(0),
+            )?;
+        Ok(count.unwrap_or(0))
+    }
+
     /// Sync all JSON files from a directory into the `guidance_nodes` table.
     /// Walks JSON files, parses GuidanceDoc, upserts into database.
     /// Rebuilds HNSW index after sync.
@@ -426,74 +462,81 @@ impl GuidanceDb {
             return Ok(0);
         }
 
-        let synced = {
-            let mut synced = 0;
-
-            // Clear existing nodes before re-sync to avoid stale duplicates.
-            self.store.execute("DELETE FROM guidance_nodes", &[])?;
-
-            for path in &json_files {
-                let content = common_core::io::read_to_string_err(path).map_err(|e| {
-                    DbError::Other(format!("failed to read {}: {e}", path.display()))
-                })?;
-                // Sidecar receipts ride on the first line; only the JSON
-                // body parses here. The header manifest feeds the GEN gate.
-                let (_header, body) = fluent_types::sidecar::strip_header(&content);
-                if body.trim().is_empty() {
-                    continue;
-                }
-
-                let doc: serde_json::Value = serde_json::from_str(body).map_err(|e| {
-                    DbError::Other(format!("failed to parse {}: {e}", path.display()))
-                })?;
-
-                let source = doc["meta"]["source"].as_str().unwrap_or("");
-                let module = doc["meta"]["module"].as_str().unwrap_or("");
-                let language = doc["meta"]["language"].as_str().unwrap_or("zig");
-                let comment = doc["comment"].as_str();
-
-                // Upsert node — skip duplicates where (name, signature)
-                // already exists.  This handles multiple JSON files for
-                // the same source (e.g. `guidance/src/...` vs `src/guidance/src/...`).
-                if let Some(members) = doc["members"].as_array() {
-                    for member in members {
-                        let name = member["name"].as_str().unwrap_or("");
-                        let signature = member["signature"].as_str();
-                        let member_comment = member["comment"].as_str();
-                        let _is_anchor = member["is_anchor"].as_bool().unwrap_or(false);
-
-                        // Check for existing row with same (name, signature).
-                        let exists: bool = self
-                            .store
-                            .query_row(
-                                "SELECT 1 FROM guidance_nodes WHERE name = ?1 AND signature IS ?2 LIMIT 1",
-                                rusqlite::params![name, signature],
-                                |_| Ok(true),
-                            )?
-                            .unwrap_or(false);
-                        if exists {
-                            continue;
-                        }
-
-                        let _ = self.store.execute(
-                            "INSERT INTO guidance_nodes (name, source, signature, comment, module, language)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                            rusqlite::params![
-                                name,
-                                source,
-                                signature,
-                                member_comment.or(comment),
-                                module,
-                                language
-                            ],
-                        );
-                        synced += 1;
-                    }
-                }
+        // Build the whole batch first: duplicates are a property of the docs,
+        // so one set replaces a SELECT per member; one transaction writes it.
+        struct NodeRow {
+            name: String,
+            source: String,
+            signature: Option<String>,
+            comment: Option<String>,
+            module: String,
+            language: String,
+        }
+        let mut rows: Vec<NodeRow> = Vec::new();
+        let mut seen: HashSet<(String, Option<String>)> = HashSet::new();
+        for path in &json_files {
+            let content = common_core::io::read_to_string_err(path)
+                .map_err(|e| DbError::Other(format!("failed to read {}: {e}", path.display())))?;
+            // Sidecar receipts ride on the first line; only the JSON
+            // body parses here. The header manifest feeds the GEN gate.
+            let (_header, body) = fluent_types::sidecar::strip_header(&content);
+            if body.trim().is_empty() {
+                continue;
             }
 
-            synced
-        };
+            let doc: serde_json::Value = serde_json::from_str(body)
+                .map_err(|e| DbError::Other(format!("failed to parse {}: {e}", path.display())))?;
+
+            let source = doc["meta"]["source"].as_str().unwrap_or("").to_string();
+            let module = doc["meta"]["module"].as_str().unwrap_or("").to_string();
+            let language = doc["meta"]["language"]
+                .as_str()
+                .unwrap_or("zig")
+                .to_string();
+            let comment = doc["comment"].as_str().map(str::to_string);
+
+            // Skip duplicates where (name, signature) already exists. This
+            // handles multiple JSON files for the same source (e.g.
+            // `guidance/src/...` vs `src/guidance/src/...`).
+            if let Some(members) = doc["members"].as_array() {
+                for member in members {
+                    let name = member["name"].as_str().unwrap_or("").to_string();
+                    let signature = member["signature"].as_str().map(str::to_string);
+                    if !seen.insert((name.clone(), signature.clone())) {
+                        continue;
+                    }
+                    let member_comment = member["comment"].as_str().map(str::to_string);
+                    rows.push(NodeRow {
+                        name,
+                        source: source.clone(),
+                        signature,
+                        comment: member_comment.or_else(|| comment.clone()),
+                        module: module.clone(),
+                        language: language.clone(),
+                    });
+                }
+            }
+        }
+
+        let synced = self.store.transaction(|tx| {
+            // Clear existing nodes before re-sync to avoid stale duplicates.
+            fluent_db::query::execute(tx, "DELETE FROM guidance_nodes", [])?;
+            let mut insert = tx.prepare(
+                "INSERT INTO guidance_nodes (name, source, signature, comment, module, language)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )?;
+            for row in &rows {
+                insert.execute(rusqlite::params![
+                    row.name,
+                    row.source,
+                    row.signature,
+                    row.comment,
+                    row.module,
+                    row.language
+                ])?;
+            }
+            Ok(rows.len())
+        })?;
 
         // Rebuild HNSW index after releasing the conn lock
         if synced > 0 {
@@ -575,7 +618,7 @@ impl GuidanceDb {
                 use rusqlite::params;
                 fluent_db::query::execute(
                     tx,
-                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM fragments WHERE file_id = ?1)",
+                    "DELETE FROM fragment_lemmas WHERE fragment_rowid IN (SELECT rowid FROM fragments WHERE file_id = ?1)",
                     params![file.id],
                 )?;
                 fluent_db::query::execute(
@@ -639,13 +682,32 @@ impl GuidanceDb {
                         ],
                     )?;
                 }
-                for lemma in lemmas {
-                    fluent_db::query::execute(
+                // One prepared statement per file: the lemma batch is the
+                // hot path (hundreds of rows per source file). Fragment and
+                // term ids resolve to integers once per file and cache.
+                let mut rowid_of: HashMap<&str, i64> = HashMap::new();
+                for fragment in fragments {
+                    let rowid: Option<i64> = fluent_db::query::query_row(
                         tx,
-                        "INSERT OR REPLACE INTO fragment_lemmas (fragment_id, lemma, confidence)
-                         VALUES (?1, ?2, ?3)",
-                        params![lemma.fragment_id, lemma.lemma, lemma.confidence],
+                        "SELECT rowid FROM fragments WHERE id = ?1",
+                        params![fragment.id],
+                        |row| row.get(0),
                     )?;
+                    if let Some(rowid) = rowid {
+                        rowid_of.insert(fragment.id.as_str(), rowid);
+                    }
+                }
+                let mut term_of: HashMap<String, i64> = HashMap::new();
+                let mut insert_lemma = tx.prepare_cached(
+                    "INSERT OR REPLACE INTO fragment_lemmas (fragment_rowid, lemma_id, confidence)
+                     VALUES (?1, ?2, ?3)",
+                )?;
+                for lemma in lemmas {
+                    let Some(fragment_rowid) = rowid_of.get(lemma.fragment_id.as_str()) else {
+                        continue;
+                    };
+                    let lemma_id = Self::lemma_term_id(tx, &mut term_of, &lemma.lemma)?;
+                    insert_lemma.execute(params![fragment_rowid, lemma_id, lemma.confidence])?;
                 }
                 Ok(fragments.len())
             })
@@ -690,17 +752,79 @@ impl GuidanceDb {
         }))
     }
 
+    /// Freshness fingerprints for every indexed file in one pass: the
+    /// bulk form of [`GuidanceDb::fragment_freshness`] for the sync
+    /// change gate. One file-table scan plus one embedded-set scan
+    /// instead of a probe per file — a per-file loop here costs seconds
+    /// on thousand-file trees while the scans cost milliseconds.
+    pub fn all_fragment_freshness(
+        &self,
+    ) -> Result<HashMap<String, FragmentFreshness>, VectorDbError> {
+        let rows: Vec<(String, i64, i64)> = self
+            .store
+            .query_rows(
+                "SELECT id, size_bytes, last_modified_time FROM files",
+                &[],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(VectorDbError::from)?;
+        let embedded: HashSet<String> = self
+            .store
+            .query_rows(
+                "SELECT DISTINCT file_id FROM fragments
+                 WHERE embedding IS NOT NULL OR embedding_q8 IS NOT NULL",
+                &[],
+                |row| row.get(0),
+            )
+            .map_err(VectorDbError::from)?
+            .into_iter()
+            .collect();
+        Ok(rows
+            .into_iter()
+            .map(|(id, size, mtime)| {
+                (
+                    id.clone(),
+                    FragmentFreshness {
+                        size_bytes: u64::try_from(size).unwrap_or(u64::MAX),
+                        last_modified_time: mtime,
+                        embedded: embedded.contains(&id),
+                    },
+                )
+            })
+            .collect())
+    }
+
+    /// Merge FTS segments left by bulk inserts. Call once per bulk pass;
+    /// per-file callers would pay a whole-index merge each time.
+    pub fn optimize_fts(&self) -> Result<(), VectorDbError> {
+        self.store
+            .execute("INSERT INTO fragments_fts(fragments_fts) VALUES('optimize')", &[])?;
+        Ok(())
+    }
+
     /// Insert or replace lemma rows without touching fragments.
     pub fn insert_fragment_lemmas(&self, lemmas: &[FragmentLemma]) -> Result<usize, VectorDbError> {
         self.store
             .transaction(|tx| {
+                let mut term_of: HashMap<String, i64> = HashMap::new();
+                let mut insert = tx.prepare_cached(
+                    "INSERT OR REPLACE INTO fragment_lemmas (fragment_rowid, lemma_id, confidence)
+                     VALUES (?1, ?2, ?3)",
+                )?;
                 for lemma in lemmas {
-                    fluent_db::query::execute(
+                    let fragment_rowid: Option<i64> = fluent_db::query::query_row(
                         tx,
-                        "INSERT OR REPLACE INTO fragment_lemmas (fragment_id, lemma, confidence)
-                         VALUES (?1, ?2, ?3)",
-                        rusqlite::params![lemma.fragment_id, lemma.lemma, lemma.confidence],
+                        "SELECT rowid FROM fragments WHERE id = ?1",
+                        params![lemma.fragment_id],
+                        |row| row.get(0),
                     )?;
+                    let Some(fragment_rowid) = fragment_rowid else {
+                        continue;
+                    };
+                    let lemma_id = Self::lemma_term_id(tx, &mut term_of, &lemma.lemma)?;
+                    insert
+                        .execute(params![fragment_rowid, lemma_id, lemma.confidence])
+                        .map_err(DbError::from)?;
                 }
                 Ok(lemmas.len())
             })
@@ -742,6 +866,32 @@ impl GuidanceDb {
                 })
             })
             .map_err(VectorDbError::from)
+    }
+
+    /// Lemma dictionary entry point: the id for one lemma string, creating
+    /// the term row on first use. Callers batch through a per-file cache.
+    fn lemma_term_id(
+        tx: &rusqlite::Transaction<'_>,
+        cache: &mut HashMap<String, i64>,
+        lemma: &str,
+    ) -> Result<i64, DbError> {
+        if let Some(id) = cache.get(lemma) {
+            return Ok(*id);
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO lemma_terms(lemma) VALUES (?1)",
+            rusqlite::params![lemma],
+        )
+        .map_err(DbError::from)?;
+        let id: i64 = tx
+            .query_row(
+                "SELECT id FROM lemma_terms WHERE lemma = ?1",
+                rusqlite::params![lemma],
+                |row| row.get(0),
+            )
+            .map_err(DbError::from)?;
+        cache.insert(lemma.to_string(), id);
+        Ok(id)
     }
 
     /// Ranked vector recall (P6: quantized-first brute-force cosine KNN
@@ -839,9 +989,16 @@ impl GuidanceDb {
             return Ok(Vec::new());
         }
         let placeholders: Vec<String> = (0..lemmas.len()).map(|i| format!("?{}", i + 1)).collect();
+        // `fragment_lemmas` is WITHOUT ROWID; its insertion-order tiebreak
+        // reads `fragments.rowid` through the id join instead. Lemma
+        // strings resolve through the dictionary; the grain and order are
+        // unchanged from the string-keyed layout.
         let sql = format!(
-            "SELECT fragment_id FROM fragment_lemmas WHERE lemma IN ({}) \
-             GROUP BY fragment_id ORDER BY COUNT(*) DESC, MIN(rowid) ASC LIMIT ?{}",
+            "SELECT f.id FROM fragments f \
+             JOIN fragment_lemmas l ON l.fragment_rowid = f.rowid \
+             JOIN lemma_terms d ON d.id = l.lemma_id \
+             WHERE d.lemma IN ({}) \
+             GROUP BY f.id, f.rowid ORDER BY COUNT(*) DESC, MIN(f.rowid) ASC LIMIT ?{}",
             placeholders.join(","),
             lemmas.len() + 1
         );
@@ -997,7 +1154,7 @@ impl GuidanceDb {
             .transaction(|tx| {
                 fluent_db::query::execute(
                     tx,
-                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM fragments WHERE file_id = ?1)",
+                    "DELETE FROM fragment_lemmas WHERE fragment_rowid IN (SELECT rowid FROM fragments WHERE file_id = ?1)",
                     rusqlite::params![file_id],
                 )?;
                 fluent_db::query::execute(

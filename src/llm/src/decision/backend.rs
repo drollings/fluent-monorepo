@@ -20,6 +20,8 @@ use crate::decision::{Decision, DecisionError, DecisionKind};
 /// One labelled option with an optional description for native endpoints
 /// that rank option text rather than single tokens.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One labelled option with an optional description for native endpoints
+/// that rank option text rather than single tokens.
 pub struct DecisionOption {
     pub label: String,
     pub description: String,
@@ -29,6 +31,9 @@ pub struct DecisionOption {
 /// no borrows, so it crosses the `dyn` boundary and the pool without
 /// per-element dispatch. See `ScriptedDecideBackend` for construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Owned judgment request (`DecideRequest`): everything a backend needs,
+/// no borrows, so it crosses the `dyn` boundary and the pool without
+/// per-element dispatch. See `ScriptedDecideBackend` for construction.
 pub struct DecideRequest {
     pub prompt: String,
     pub state: String,

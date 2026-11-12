@@ -190,26 +190,33 @@ Then you you must read
     │   ├── guidance/
     │   │   ├── Cargo.toml
     │   │   ├── src/
-    │   │   │   ├── benchmark.rs
-    │   │   │   ├── commit.rs
-    │   │   │   ├── editor.rs
     │   │   │   ├── embed.rs  # //! Embedding-backend resolution from pr
     │   │   │   ├── index_cmd.rs  # //! `index` command (P5): thin shell ove
     │   │   │   ├── main.rs  # #![forbid(unsafe_code)]
     │   │   │   ├── mcp.rs  # //! MCP (Model Context Protocol) server 
+    │   │   │   ├── profile.rs  # //! Opt-in phase timing: `GUIDANCE_PROFI
     │   │   │   ├── search.rs  # //! `search` command (P5): thin shell ov
-    │   │   │   └── structure.rs  # use std::collections::BTreeMap;
+    │   │   │   ├── structure.rs  # use std::collections::BTreeMap;
+    │   │   │   └── summarize_cmd.rs  # //! `summarize` command (M5.
     │   │   └── tests/
+    │   │       ├── calibrate_cli.rs  # //! `calibrate` command goldens: the cor
     │   │       ├── cli_e2e.rs  # //! P5 acceptance: `cli.test.
     │   │       ├── common.rs  # //! Shared hermetic scaffold for the bin
     │   │       ├── component_gate_cli.rs  # //! `guidance component-gate` is a read-
     │   │       ├── explain_cli.rs  # //! M4 compat: explain not-found + `--he
+    │   │       ├── impact_cli.rs  # //! `impact` command goldens: index-back
     │   │       ├── index_cmd.rs  # //! Unit tests for the `index` command s
+    │   │       ├── kb_cli.rs  # //! `kb` command golden: compact JSON kn
     │   │       ├── mcp_contract.rs  # //! P5 `mcp-contract` port: toolsets, ba
     │   │       ├── mcp_explain.rs  # //! Unit tests for the MCP `guidance_exp
+    │   │       ├── prune_surface.rs  # //! Pruned surface: VISION-excluded subc
     │   │       ├── rg_cli.rs  # //! P5 `rg-cli` port: the managed-rg byp
+    │   │       ├── run_cli.rs  # //! `run` command goldens: the maintain 
     │   │       ├── search_cmd.rs  # //! Unit tests for the `search` command 
-    │   │       └── sync_propagate.rs  # //! M3 acceptance: stale-dependent propa
+    │   │       ├── strict_verify.rs  # //! Strict-mode and per-file verify gold
+    │   │       ├── summarize_cli.rs  # //! `summarize` command contract: additi
+    │   │       ├── sync_propagate.rs  # //! M3 acceptance: stale-dependent propa
+    │   │       └── truth_cli.rs  # //! Truth-model wiring goldens: generati
     │   └── yamake-coral/
     │       ├── Cargo.toml
     │       └── src/
@@ -675,8 +682,11 @@ Then you you must read
     │   │   ├── excerpt_seed.json
     │   │   ├── intent_seed.json
     │   │   ├── nav_seed.json
+    │   │   ├── route_calibration.json
     │   │   ├── staleness_seed.json
     │   │   ├── sufficiency_seed.json
+    │   │   ├── summary_index_seed.json
+    │   │   ├── triage_calibration.json
     │   │   └── triage_seed.json
     │   ├── fixture_graph/
     │   │   ├── g_caller.rs  # fn g_call() {
@@ -693,11 +703,12 @@ Then you you must read
     │   ├── src/
     │   │   ├── ast_parser.rs  # use std::path::Path;
     │   │   ├── change_set.rs  # //! P3 change tracking (port of zvec-gre
+    │   │   ├── clippy.rs  # //! Per-package clippy driver: one JSON 
     │   │   ├── component_map.rs  # //! Workspace file → narrowest-gate...
+    │   │   ├── components.rs  # //! Named input components for sidecar r
     │   │   ├── config.rs  # use std::collections::HashMap;
     │   │   ├── coordinator.rs  # //! P3 index coordinator: watcher batche
     │   │   ├── diff.rs  # //! P2 diff: scanned files vs stored rec
-    │   │   ├── enhancer.rs  # use fluent_llm::client::LlmClient;
     │   │   ├── extractor/
     │   │   │   ├── adapter.rs  # //! P2 language adapters (port of `extra
     │   │   │   ├── code.rs  # //! P2 code extraction (port of `extract
@@ -705,20 +716,32 @@ Then you you must read
     │   │   │   ├── mod.rs  # //! P2 extraction core: shared fragment 
     │   │   │   ├── text.rs  # //! P2 plain-text extraction (port of `e
     │   │   │   └── vector_content.rs  # //! P2 metadata-prefixed embedding text 
+    │   │   ├── fidelity.rs  # //! Rust slice fidelity: cfg-matrix veri
+    │   │   ├── fix.rs  # //! Deterministic fix rungs D1-D3 plus t
     │   │   ├── freshness.rs  # //! P3 freshness contract (port of zvec-
+    │   │   ├── gates.rs  # //! Model-free certification gates P1-P1
     │   │   ├── graph_index.rs  # //! P3 dependency graph (L4): file-layer
     │   │   ├── grounding.rs  # //! Grounding enforcement — ensures...
+    │   │   ├── index_generation.rs  # //! Generation guard for the derived ind
     │   │   ├── index_pipeline.rs  # //! P2 incremental index pipeline: scan 
+    │   │   ├── invalidation.rs  # //! Sig-gated invalidation: whose depend
+    │   │   ├── item_hashes.rs  # //! Normalized item hashes: BLAKE3 over 
+    │   │   ├── journal.rs  # //! Write-ahead intent log plus the reve
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── memory.rs
+    │   │   ├── maintenance.rs  # //! Persisted work queue plus fixpoint l
     │   │   ├── model_lanes.rs  # //! Model-call priority lanes: interacti
     │   │   ├── offload.rs  # //! Deterministic offload applier: the n
-    │   │   ├── plugin.rs  # use std::path::{Path, PathBuf};
+    │   │   ├── orchestrator.rs  # //! Narrow inbound orchestrator contract
+    │   │   ├── pipeline.rs  # //! Ordered pipeline driver: the fixed p
+    │   │   ├── plans.rs  # //! Durable work plans: human-authored i
+    │   │   ├── policy.rs  # //! Versioned maintenance policy: scope,
     │   │   ├── query/
+    │   │   │   ├── calibration.rs  # //! Calibration corpora for the query de
     │   │   │   ├── concept_ground.rs  # //! Taxonomy groundedness for concept se
+    │   │   │   ├── context_pack.rs  # //! Token-budgeted context packs and imp
     │   │   │   ├── db_storage.rs  # //! `GuidanceDb` as recall storage: conv
     │   │   │   ├── decision_points.rs  # //! Decision points for the guidance que
-    │   │   │   ├── diagnose.rs  # //! Recall diagnosis: why an entity/file
+    │   │   │   ├── envelope.rs  # //! Unified answer envelope: every query
     │   │   │   ├── formatter.rs  # use std::fmt::Write;
     │   │   │   ├── fts_backend.rs  # //! Lexical backend: single-route FTS re
     │   │   │   ├── fusion.rs  # //! Candidate fusion: score sums, orderi
@@ -728,8 +751,7 @@ Then you you must read
     │   │   │   ├── ingest.rs  # //! P1 minimal ingestion: whole-file fra
     │   │   │   ├── lemma_backend.rs  # //! Lemma backend: query lemmas looked u
     │   │   │   ├── llm_filter.rs  # use common_core::string::contains_ignore
-    │   │   │   ├── llm_filter_batch.rs  # //! Chunked synchronous scoring over one
-    │   │   │   ├── mod.rs  # pub mod concept_ground;
+    │   │   │   ├── mod.rs  # pub mod calibration;
     │   │   │   ├── plan.rs  # //! Search-plan validation: closed-enum 
     │   │   │   ├── recall.rs  # //! Hybrid recall pipeline: plan validat
     │   │   │   ├── rerank.rs  # //! LLM reranker response parsing: order
@@ -738,34 +760,46 @@ Then you you must read
     │   │   │   ├── shadow.rs  # //! Shadow decision hooks for the guidan
     │   │   │   ├── snapshot.rs  # use std::path::Path;
     │   │   │   ├── strategy.rs  # use super::identifier;
-    │   │   │   ├── structure_enrich.rs  # //! Structure enrichment (P5): lexical h
     │   │   │   ├── synthesize.rs  # use fluent_types::{GuidanceDoc, Member, 
-    │   │   │   └── vector_backend.rs  # //! Vector backend: single-route embeddi
+    │   │   │   ├── vector_backend.rs  # //! Vector backend: single-route embeddi
+    │   │   │   └── writer.rs  # //! Unified fragment writer: item chunks
     │   │   ├── query_engine.rs  # use fluent_types::GuidanceDoc;
     │   │   ├── runtime.rs  # use std::path::PathBuf;
-    │   │   ├── scanner.rs  # use common_core::string::{contains_any, 
     │   │   ├── scheduler.rs  # //! P3 reconcile job queue: the coalesci
     │   │   ├── scorecard.rs  # //! Hermetic scorecard: the measuring in
+    │   │   ├── seal.rs  # //! Workspace seal: the human-or-CI gate
     │   │   ├── search_constants.rs  # //! Tested search/index constants (P0 co
     │   │   ├── search_types.rs  # //! Search value types + pure search hel
     │   │   ├── selection.rs  # //! P2 file selection: `FileSelection` (
+    │   │   ├── shadow.rs  # //! Shadow verification for model-drafte
+    │   │   ├── summary.rs  # //! Comment summary generation (maintain
     │   │   ├── sync/
     │   │   │   ├── comments.rs  # use std::path::Path;
     │   │   │   ├── json_store.rs  # use std::path::{Path, PathBuf};
-    │   │   │   ├── json_writer.rs  # use fluent_types::{GuidanceDoc, Member};
+    │   │   │   ├── json_writer.rs  # use fluent_types::{CommentSummary, Guida
     │   │   │   ├── mod.rs  # pub mod comments;
     │   │   │   └── staleness.rs  # use std::path::Path;
     │   │   ├── sync_engine.rs  # use std::path::{Path, PathBuf};
     │   │   ├── tests/
     │   │   │   ├── common.rs  # //! Crate-typed test fixtures shared by 
     │   │   │   └── mod.rs  # //! Tier-1 test suites for guidance-core
-    │   │   └── watcher.rs  # //! P3 file watcher (port of zvec-grep `
+    │   │   ├── triage.rs  # //! Grammar-direct triage for residual d
+    │   │   ├── watcher.rs  # //! P3 file watcher (port of zvec-grep `
+    │   │   └── waves.rs  # //! Wave scheduler for the deterministic
     │   └── tests/
+    │       ├── answer_envelope.rs  # //! Envelope fields on exact, homonym, a
+    │       ├── authorization_gates.rs  # //! Authorization gates: advisory versus
+    │       ├── calibration_goldens.rs  # //! Calibration corpora goldens: the che
     │       ├── capability_decision.rs  # use super::{grounded_first, member_groun
+    │       ├── certified_commentary.rs  # //! Certified commentary: bad-symbol, ba
     │       ├── change_set.rs  # //! P3 `change_set` tests (port of zvec-
+    │       ├── clippy_driver.rs  # //! Clippy-driver pins: JSON parsing, fi
+    │       ├── comment_scope.rs  # //! Shared comment fixtures for scope te
     │       ├── common/
     │       │   └── mod.rs  # //! Tier-2 (crate-root `tests/`) shared 
     │       ├── component_gate_map.rs  # use super::{component_gate_for_path, sna
+    │       ├── component_sweep.rs  # //! Component-vector sweep: changing one
+    │       ├── context_pack.rs  # //! Pack budget compliance, determinism,
     │       ├── coordinator.rs  # //! P3 coordinator tests (port of zvec-g
     │       ├── corpus_seeds.rs  # use fluent_llm::decision::{gate_for_poin
     │       ├── decision_metrics.rs  # use super::{evaluate_with_metrics, Decis
@@ -776,31 +810,56 @@ Then you you must read
     │       ├── extract_markdown.rs  # //! P2 markdown-extraction tests: headin
     │       ├── extract_text.rs  # //! P2 text-extraction tests: window bud
     │       ├── extract_vector_content.rs  # //! P2 `vector_content` tests: metadata 
+    │       ├── fixpoint.rs  # //! Fixpoint behavior: clean reruns do z
     │       ├── freshness.rs  # //! P3 freshness-matrix tests: `fresh` /
+    │       ├── freshness_vocab.rs  # //! Freshness vocabulary: pending, stale
+    │       ├── generation_guard.rs  # //! Generation guard: matching markers s
     │       ├── graph_accuracy.rs  # use super::{GraphIndex, HarvestInput, Re
     │       ├── graph_index.rs  # //! P3 `graph_index` tests: per-language
     │       ├── graph_resolution_labels.rs  # use super::{GraphIndex, HarvestInput, Re
+    │       ├── graph_single_harvest.rs  # //! Single-harvest graph equivalence: on
     │       ├── hybrid_parity.rs  # //! Hermetic known-item parity matrix (P
+    │       ├── impact.rs  # //! Impact agreement with the graph clos
     │       ├── index_diff.rs  # //! P2 diff tests: added/modified/pendin
     │       ├── index_pipeline.rs  # //! P2 pipeline tests (ports `service.
     │       ├── index_selection.rs  # //! P2.4 scanner-utils port: discovery r
     │       ├── intent_decision.rs  # use crate::query::decision_points::{inte
+    │       ├── invalidation.rs  # //! Invalidation pins: interface diffs, 
     │       ├── l2_probe.rs  # //! P6 target (4) probe: inflected-query
     │       ├── lane_priority.rs  # use super::{Lane, LaneConfig, LaneError,
+    │       ├── lemma_provenance.rs  # use crate::query::ingest::query_lemmas;
     │       ├── live/
     │       │   ├── README.md  # # guidance-core — Live-AI tests
-    │       │   ├── decision_live.rs  # //! Live canary probe for decision-model
-    │       │   └── smoke_live.rs  # //! Opt-in live-AI smoke test for the gu
+    │       │   └── decision_live.rs  # //! Live canary probe for decision-model
     │       ├── live.rs  # //! Live-AI integration test crate for g
+    │       ├── loop_safety.rs  # //! Loop safety: no overwrite of human e
+    │       ├── m0_hygiene.rs  # //! M0 hygiene pins: shared lock/IO/path
+    │       ├── m10_fidelity.rs  # //! Fidelity pins: cfg matrix verificati
+    │       ├── m11_packs.rs  # //! Pack and bench pins: deterministic t
+    │       ├── m12_redteam.rs  # //! Red-team and property suite: invaria
+    │       ├── m1_truth.rs  # //! Truth-model pins: sidecar header rou
+    │       ├── m2_mtime.rs  # //! Mtime-shortcut pins: granularity pro
+    │       ├── m3_items.rs  # //! Item-hash pins: normalized sig/body/
+    │       ├── m4_cutoff.rs  # //! Cutoff and invalidation pins: conver
+    │       ├── m5_citations.rs  # //! Citation-integrity pins: member pers
+    │       ├── m6_fix.rs  # //! Fix-rung pins: D1 splice convergence
+    │       ├── m6_gates.rs  # //! Per-gate pins: each gate rejects its
+    │       ├── m7_journal.rs  # //! Journal pins: intent reconcile matri
+    │       ├── m8_waves.rs  # //! Wave-loop pins: per-package invocati
+    │       ├── m9_triage.rs  # //! Triage goldens: static table first, 
     │       ├── model_roles.rs  # use super::super::config::{
     │       ├── offload_apply.rs  # use super::apply_verified;
     │       ├── offload_draft.rs  # use super::DEFAULT_MAX_ATTEMPTS;
     │       ├── offload_stale_only.rs  # use super::SyncEngine;
     │       ├── offload_summary.rs  # use super::{apply_draft, EscalationPacke
     │       ├── offload_triage.rs  # use super::{classify_finding, triage_spe
+    │       ├── orchestrator_contract.rs  # //! Inbound orchestrator contract: valid
+    │       ├── pack_screening.rs  # //! Pack screening: the single triage pr
     │       ├── parity/
     │       │   ├── corpus_cjk.rs  # //! CJK-heavy fixture corpus (Gate 0 ...
     │       │   └── mod.rs  # //! P0 fixture corpora for legacy parity
+    │       ├── pipeline_order.rs  # //! Pipeline order: dependency depth fir
+    │       ├── policy_staleness.rs  # //! Policy staleness: version change re-
     │       ├── query_concept_ground.rs  # //! Hermetic pins for `query::concept_gr
     │       ├── query_db_storage.rs  # //! Row-translator characterization (inc
     │       ├── query_fts_backend.rs  # use super::*;
@@ -812,19 +871,34 @@ Then you you must read
     │       ├── query_plausibility.rs  # //! Hermetic pins for `query::concept_gr
     │       ├── query_recall.rs  # use super::*;
     │       ├── query_rg_backend.rs  # use super::*;
-    │       ├── query_structure_enrich.rs  # //! Ported `structure-enrichment.test.
     │       ├── query_vector_backend.rs  # use super::*;
+    │       ├── redteam_hardening.rs  # //! Red-team hardening: expanded corpora
     │       ├── scheduler.rs  # //! P3 scheduler tests: the coalescing c
     │       ├── scorecard.rs  # use super::{render_human, score_metrics,
     │       ├── scorecard_ratchet.rs  # use super::{
+    │       ├── seal.rs  # //! Seal pins: clean seals Done, finding
     │       ├── search_constants.rs  # use super::*;
     │       ├── search_types.rs  # use super::*;
+    │       ├── shadow_verify.rs  # //! Shadow-verify pins: individual check
+    │       ├── staged_routing.rs  # //! Cheapest sufficient rung wins; exact
     │       ├── staleness_decision.rs  # use super::{normalize_signature, stalene
     │       ├── sufficiency_decision.rs  # use super::{route_sufficiency, sufficien
+    │       ├── summary.rs  # use super::*;
+    │       ├── summary_budget.rs  # use super::*;
+    │       ├── summary_sidecar.rs  # use super::*;
+    │       ├── suspicion_corpus.rs  # //! Suspicion calibration corpus for `is
+    │       ├── symbol_identity.rs  # //! Symbol identity: body edits keep the
     │       ├── sync_fixpoint.rs  # use super::absolute_or;
     │       ├── synthesis_gate.rs  # use super::{can_synthesize, stage_conten
     │       ├── synthesis_gate_wiring.rs  # use super::{QueryEngine, QueryEngineErro
-    │       └── watcher.rs  # //! P3 watcher tests (port of zvec-grep 
+    │       ├── systemic_breaker.rs  # //! Systemic breaker signal: one cause f
+    │       ├── test_skip.rs  # //! Test-path exclusion: unit tests and 
+    │       ├── threshold_calibration.rs  # //! Threshold calibration: must-fire and
+    │       ├── tier_labels.rs  # //! Retrieval tiers: every hit, edge, an
+    │       ├── watcher.rs  # //! P3 watcher tests (port of zvec-grep 
+    │       ├── work_plans.rs  # //! Work plans: import, merge-preserving
+    │       ├── work_queue.rs  # //! Work-queue persistence: dep order, i
+    │       └── writer_parity.rs  # //! Writer parity: live and batch shapes
     ├── knowledge/
     │   ├── Cargo.toml
     │   ├── src/
@@ -1048,6 +1122,71 @@ Then you you must read
     │       ├── yago_loader.rs  # use super::*;
     │       ├── yago_view.rs  # //! Moved with the view (M5.
     │       └── ysm1.rs  # //! YSM1 codec suite: control group (mus
+    ├── orator/
+    │   ├── Cargo.toml
+    │   ├── src/
+    │   │   ├── bench.rs  # //! Bench log and render: timestamped st
+    │   │   ├── config.rs  # //! Layered JSON configuration with runt
+    │   │   ├── error.rs  # //! Engine and protocol error types.
+    │   │   ├── gpu.rs  # //! GPU device presence: one probe for e
+    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
+    │   │   ├── paths.rs  # //! Trusted path resolution: one home lo
+    │   │   ├── prompts.rs  # //! One prompt home for every orator sur
+    │   │   ├── protocol.rs  # //! The single wire-protocol registry.
+    │   │   ├── signal.rs  # //! Process shutdown signal: SIGTERM or 
+    │   │   ├── socket.rs  # //! Credentialed socket framing: length,
+    │   │   ├── traits.rs  # //! Engine traits: one bounded step at a
+    │   │   ├── truncate.rs  # //! One char-count truncator for every t
+    │   │   ├── types.rs  # //! Shared audio and transcript vocabula
+    │   │   └── untrusted.rs  # //! Untrusted content: tool output, fetc
+    │   └── tests/
+    │       ├── bench.rs  # //! Bench-log tests: stat-file round-tri
+    │       ├── config.rs  # //! Unit tests for [`crate::config`]: do
+    │       ├── error.rs  # //! Unit tests for [`crate::error`]: dis
+    │       ├── gpu.rs  # //! Device-probe tests: consistent answe
+    │       ├── it_config.rs  # //! Load-or-default goldens: missing fil
+    │       ├── it_source_guard.rs  # //! Source hygiene guards: project code 
+    │       ├── paths.rs  # //! `paths` resolution-helper tests: exp
+    │       ├── prompts.rs  # //! Prompt-home tests: every surface com
+    │       ├── protocol.rs  # //! Unit tests for [`crate::protocol`]: 
+    │       ├── signal.rs  # //! Shutdown-signal test: a real SIGTERM
+    │       ├── socket.rs  # //! Socket framing tests: round-trip, tr
+    │       ├── traits.rs  # //! Unit tests for [`crate::traits`]: en
+    │       ├── truncate.rs  # //! Truncator tests: one char-count cap 
+    │       ├── types.rs  # //! Unit tests for [`crate::types`]: tim
+    │       └── untrusted.rs  # //! Untrusted-wrap tests: delimiters hol
+    ├── orator-agent/
+    │   ├── Cargo.toml
+    │   ├── src/
+    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
+    │   │   ├── llm/
+    │   │   │   ├── probe.rs  # //! Boot health probe: `GET {base}/model
+    │   │   │   └── session.rs  # //! Endpoint session: one turn's confirm
+    │   │   ├── llm.rs  # //! Supervised local inference endpoint 
+    │   │   ├── tools/
+    │   │   │   ├── approve.rs  # //! Approvals: a rendezvous with a deadl
+    │   │   │   ├── builtins.rs  # //! The v1 tool catalog: two read-only t
+    │   │   │   ├── loop_.rs  # //! The tool-call loop: at most five too
+    │   │   │   ├── parse.rs  # //! Tool-call parsing: strict JSON prima
+    │   │   │   ├── policy.rs  # //! Policy engine: `decide(call, ctx) ->
+    │   │   │   ├── sandbox.rs  # //! Guarded execution: the process half 
+    │   │   │   ├── tool.rs  # //! One `Tool` trait: the single source 
+    │   │   │   └── untrusted.rs  # //! Compatibility re-export: the `<data>
+    │   │   └── tools.rs  # //! Tool trait and static registry, poli
+    │   └── tests/
+    │       ├── llm_live.rs  # //! Live ask: real endpoint, real infere
+    │       ├── llm_prefix_calibration.rs  # //! Adversarial prefix check: abort at e
+    │       ├── llm_probe.rs  # //! Endpoint probe contract: `/models` s
+    │       ├── llm_session.rs  # //! Session contract: chunked prefill, a
+    │       ├── tools_approve.rs  # //! Approval tests: rounds resolve, dead
+    │       ├── tools_builtins.rs  # //! Builtin tests: calculator math, arg 
+    │       ├── tools_loop.rs  # //! Loop tests: round bound, preamble ca
+    │       ├── tools_parse.rs  # //! Parse tests: both paths, preamble ca
+    │       ├── tools_policy.rs  # //! Policy tests: tier table, ambient de
+    │       ├── tools_redteam.rs  # //! Red-team calibration: planted instru
+    │       ├── tools_sandbox.rs  # //! Sandbox tests: timeout kills the gro
+    │       ├── tools_tool.rs  # //! Registry tests: single definitions, 
+    │       └── tools_untrusted.rs  # //! Untrusted-wrap tests: delimiters hol
     ├── orator-audio/
     │   ├── Cargo.toml
     │   ├── src/
@@ -1077,22 +1216,6 @@ Then you you must read
     │       ├── resample.rs  # //! Resample tests: exact ratios, length
     │       ├── source.rs  # //! Capture-source tests: synthetic alwa
     │       └── wav.rs  # //! WAV tests: hand-built fixtures, exac
-    ├── orator-bench/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── events.rs  # //! Compatibility re-export: the bench l
-    │   │   ├── gates.rs  # //! Regression gates over replayed numbe
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── replay.rs  # //! Deterministic replay: scripts in, ti
-    │   │   ├── scenarios.rs  # //! Scripted bench scenarios over the li
-    │   │   └── stats.rs  # //! Compatibility re-export: histograms 
-    │   └── tests/
-    │       ├── events.rs  # //! Event tests: stat-file round-trip, o
-    │       ├── gates.rs  # //! Gate tests: green replay passes, eve
-    │       ├── replay.rs  # //! Replay tests: determinism, fault cos
-    │       ├── scenarios.rs  # //! Scripted bench scenarios: single-tur
-    │       ├── soak.rs  # //! Fault soak (heavy tier): periodic fa
-    │       └── stats.rs  # //! Stats tests: histogram rendering nam
     ├── orator-cli/
     │   ├── Cargo.toml
     │   ├── src/
@@ -1145,39 +1268,6 @@ Then you you must read
     │       ├── stream.rs  # //! Overlap goldens: chunked playout str
     │       ├── transcribe.rs  # //! Transcribe tests: golden outputs per
     │       └── tui.rs  # //! Headless TUI tests: keystroke mappin
-    ├── orator-core/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── bench.rs  # //! Bench log and render: timestamped st
-    │   │   ├── config.rs  # //! Layered JSON configuration with runt
-    │   │   ├── error.rs  # //! Engine and protocol error types.
-    │   │   ├── gpu.rs  # //! GPU device presence: one probe for e
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── paths.rs  # //! Trusted path resolution: one home lo
-    │   │   ├── prompts.rs  # //! One prompt home for every orator sur
-    │   │   ├── protocol.rs  # //! The single wire-protocol registry.
-    │   │   ├── signal.rs  # //! Process shutdown signal: SIGTERM or 
-    │   │   ├── socket.rs  # //! Credentialed socket framing: length,
-    │   │   ├── traits.rs  # //! Engine traits: one bounded step at a
-    │   │   ├── truncate.rs  # //! One char-count truncator for every t
-    │   │   ├── types.rs  # //! Shared audio and transcript vocabula
-    │   │   └── untrusted.rs  # //! Untrusted content: tool output, fetc
-    │   └── tests/
-    │       ├── bench.rs  # //! Bench-log tests: stat-file round-tri
-    │       ├── config.rs  # //! Unit tests for [`crate::config`]: do
-    │       ├── error.rs  # //! Unit tests for [`crate::error`]: dis
-    │       ├── gpu.rs  # //! Device-probe tests: consistent answe
-    │       ├── it_config.rs  # //! Load-or-default goldens: missing fil
-    │       ├── it_source_guard.rs  # //! Source hygiene guards: project code 
-    │       ├── paths.rs  # //! `paths` resolution-helper tests: exp
-    │       ├── prompts.rs  # //! Prompt-home tests: every surface com
-    │       ├── protocol.rs  # //! Unit tests for [`crate::protocol`]: 
-    │       ├── signal.rs  # //! Shutdown-signal test: a real SIGTERM
-    │       ├── socket.rs  # //! Socket framing tests: round-trip, tr
-    │       ├── traits.rs  # //! Unit tests for [`crate::traits`]: en
-    │       ├── truncate.rs  # //! Truncator tests: one char-count cap 
-    │       ├── types.rs  # //! Unit tests for [`crate::types`]: tim
-    │       └── untrusted.rs  # //! Untrusted-wrap tests: delimiters hol
     ├── orator-daemon/
     │   ├── Cargo.toml
     │   ├── src/
@@ -1228,191 +1318,158 @@ Then you you must read
     │       ├── notify.rs  # //! Notify tests: content-free summaries
     │       ├── refine.rs  # //! Refine-chain goldens: LLM polish win
     │       └── tray.rs  # //! Tray model tests: labels and the non
-    ├── orator-diary/
+    ├── orator-memory/
     │   ├── Cargo.toml
     │   ├── src/
-    │   │   ├── align.rs  # //! Alignment and naming: speaker segmen
-    │   │   ├── cluster.rs  # //! Agglomerative clustering on cosine d
-    │   │   ├── embed.rs  # //! Speaker embeddings: batched extracti
+    │   │   ├── diary/
+    │   │   │   ├── align.rs  # //! Alignment and naming: speaker segmen
+    │   │   │   ├── cluster.rs  # //! Agglomerative clustering on cosine d
+    │   │   │   ├── embed.rs  # //! Speaker embeddings: batched extracti
+    │   │   │   ├── pipeline.rs  # //! Checkpointed post-processing: resuma
+    │   │   │   └── segment.rs  # //! Speaker-turn segmentation: fixed win
+    │   │   ├── diary.rs  # //! Meeting diarization: segmentation, s
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── pipeline.rs  # //! Checkpointed post-processing: resuma
-    │   │   └── segment.rs  # //! Speaker-turn segmentation: fixed win
+    │   │   ├── notes/
+    │   │   │   ├── export.rs  # //! Meeting file export: deterministic m
+    │   │   │   ├── facts.rs  # //! Markdown facts and the rolling summa
+    │   │   │   ├── live.rs  # //! Live-notes scheduler stub: when the 
+    │   │   │   ├── search.rs  # //! Keyword-honest notes search over the
+    │   │   │   └── summarize.rs  # //! Map-reduce summarizer with validated
+    │   │   ├── notes.rs  # //! Live notes, map-reduce summarization
+    │   │   ├── store/
+    │   │   │   ├── events.rs  # //! Append-only event log with paged rep
+    │   │   │   └── schema.rs  # //! Durable event-log schema on the shar
+    │   │   └── store.rs  # //! Durable records on fluent-db: the ap
     │   └── tests/
-    │       ├── align.rs  # //! Alignment tests: midpoint attributio
-    │       ├── cluster.rs  # //! Clustering tests: two voices separat
-    │       ├── embed.rs  # //! Embedding tests: order-preserving ba
-    │       ├── pipeline.rs  # //! Pipeline tests: rewind golden and cr
-    │       ├── result_pool_shape.rs  # //! Test-only harness proving the `Resul
-    │       └── segment.rs  # //! Segmentation tests: window math, ove
-    ├── orator-lfm/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── arch.rs  # //! Architecture constants for LFM3-Audi
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── manifest.rs  # //! Weight-layout manifest for LFM3-Audi
-    │   │   ├── params.rs  # //! Generation defaults for LFM3-Audio t
-    │   │   └── template.rs  # //! Chat-template assembly for LFM3-Audi
-    │   └── tests/
-    │       ├── arch.rs  # //! `arch` pins: layer interleave, token
-    │       ├── fixtures/
-    │       │   ├── probe_reference.py  # #!/usr/bin/env python3
-    │       │   └── reference_expansion.json
-    │       ├── live.rs  # //! Live reference agreement: re-runs th
-    │       ├── manifest.rs  # //! `manifest` checks: layout shape plus
-    │       ├── params.rs  # //! `params` pins: generation defaults a
-    │       ├── reference.rs  # //! Reference anchoring: every expectati
-    │       └── template.rs  # //! `template` goldens: marker expansion
-    ├── orator-llm/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── probe.rs  # //! Boot health probe: `GET {base}/model
-    │   │   ├── session.rs  # //! Endpoint session: one turn's confirm
-    │   │   └── supervisor.rs  # //! Supervised local inference endpoint:
-    │   └── tests/
-    │       ├── live.rs  # //! Live ask: real endpoint, real infere
-    │       ├── prefix_calibration.rs  # //! Adversarial prefix check: abort at e
-    │       ├── probe.rs  # //! Endpoint probe contract: `/models` s
-    │       ├── session.rs  # //! Session contract: chunked prefill, a
-    │       └── supervisor.rs  # //! Supervisor contract: resolution orde
+    │       ├── diary_align.rs  # //! Alignment tests: midpoint attributio
+    │       ├── diary_cluster.rs  # //! Clustering tests: two voices separat
+    │       ├── diary_embed.rs  # //! Embedding tests: order-preserving ba
+    │       ├── diary_pipeline.rs  # //! Pipeline tests: rewind golden and cr
+    │       ├── diary_result_pool_shape.rs  # //! Test-only harness proving the `Resul
+    │       ├── diary_segment.rs  # //! Segmentation tests: window math, ove
+    │       ├── notes_export.rs  # //! Export goldens: the renderer is byte
+    │       ├── notes_facts.rs  # //! Facts tests: append shape, rolling b
+    │       ├── notes_live.rs  # //! Live-notes scheduler tests: window r
+    │       ├── notes_search.rs  # //! Search tests: keyword honesty, ranki
+    │       ├── notes_summarize.rs  # //! Summarizer tests: ordered map, citat
+    │       ├── store_events.rs  # //! Event-log tests: append cursors, pag
+    │       ├── store_schema.rs  # //! Migration goldens: version table, ne
+    │       └── store_writer.rs  # //! Writer and gate tests: credit-gated 
     ├── orator-models/
     │   ├── Cargo.toml
     │   ├── src/
+    │   │   ├── lfm/
+    │   │   │   ├── arch.rs  # //! Architecture constants for LFM3-Audi
+    │   │   │   ├── manifest.rs  # //! Weight-layout manifest for LFM3-Audi
+    │   │   │   ├── params.rs  # //! Generation defaults for LFM3-Audio t
+    │   │   │   └── template.rs  # //! Chat-template assembly for LFM3-Audi
+    │   │   ├── lfm.rs  # //! LFM3-Audio model knowledge: the dete
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── model.rs  # //! Model catalog: what the assistant ma
     │   │   ├── ops.rs  # //! Model file operations: list, verify,
     │   │   └── residency.rs  # //! Model residency: budget enforcement 
     │   └── tests/
     │       ├── calibration.rs  # //! Model-verification calibration: the 
+    │       ├── fixtures/
+    │       │   ├── probe_reference.py  # #!/usr/bin/env python3
+    │       │   └── reference_expansion.json
+    │       ├── lfm_arch.rs  # //! `arch` pins: layer interleave, token
+    │       ├── lfm_live.rs  # //! Live reference agreement: re-runs th
+    │       ├── lfm_manifest.rs  # //! `manifest` checks: layout shape plus
+    │       ├── lfm_params.rs  # //! `params` pins: generation defaults a
+    │       ├── lfm_reference.rs  # //! Reference anchoring: every expectati
+    │       ├── lfm_template.rs  # //! `template` goldens: marker expansion
     │       ├── model.rs  # //! Model catalog tests: structure, look
     │       ├── ops.rs  # //! Model-operation tests: list shape, v
     │       └── residency.rs  # //! Residency tests: eviction order, bud
-    ├── orator-notes/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── export.rs  # //! Meeting file export: deterministic m
-    │   │   ├── facts.rs  # //! Markdown facts and the rolling summa
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── live.rs  # //! Live-notes scheduler stub: when the 
-    │   │   ├── search.rs  # //! Keyword-honest notes search over the
-    │   │   └── summarize.rs  # //! Map-reduce summarizer with validated
-    │   └── tests/
-    │       ├── export.rs  # //! Export goldens: the renderer is byte
-    │       ├── facts.rs  # //! Facts tests: append shape, rolling b
-    │       ├── live.rs  # //! Live-notes scheduler tests: window r
-    │       ├── search.rs  # //! Search tests: keyword honesty, ranki
-    │       └── summarize.rs  # //! Summarizer tests: ordered map, citat
-    ├── orator-s2s/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── config.rs  # //! Audio-endpoint configuration and ses
-    │   │   ├── ensure.rs  # //! Audio endpoint assurance: use the co
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── protocol.rs  # //! Audio-endpoint wire codec: WAV frami
-    │   │   ├── session.rs  # //! Audio endpoint session: single-shot 
-    │   │   ├── voice.rs  # //! Supervised voice server: stock `llam
-    │   │   └── worker.rs  # //! Supervised vocoder speech: text in, 
-    │   └── tests/
-    │       ├── calibration.rs  # //! Readiness/fallback calibration: dead
-    │       ├── config.rs  # //! Speech-config tests: bundle presence
-    │       ├── duplex_calibration.rs  # //! Duplex threshold calibration: script
-    │       ├── ensure.rs  # //! Assurance tests: shared when served,
-    │       ├── live.rs  # //! Live speech: real audio endpoint, re
-    │       ├── protocol.rs  # //! Wire-codec tests: WAV bytes, message
-    │       ├── session.rs  # //! Session tests: scripted SSE turns (t
-    │       ├── voice.rs  # //! Voice-server tests: resolution order
-    │       ├── voice_readiness.rs  # //! Voice readiness probes over loopback
-    │       └── worker.rs  # //! Worker tests: stub-binary synthesis 
-    ├── orator-store/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── events.rs  # //! Append-only event log with paged rep
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── schema.rs  # //! Durable event-log schema on the shar
-    │   │   └── store.rs  # //! Single-writer feed and instance/back
-    │   └── tests/
-    │       ├── events.rs  # //! Event-log tests: append cursors, pag
-    │       ├── schema.rs  # //! Migration goldens: version table, ne
-    │       └── writer.rs  # //! Writer and gate tests: credit-gated 
-    ├── orator-stt/
+    ├── orator-supervise/
     │   ├── Cargo.toml
     │   ├── src/
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── moonshine.rs  # //! Moonshine backend: local streaming-A
-    │   │   ├── streaming.rs  # //! Rolling-window streaming wrapper: co
-    │   │   ├── wer.rs  # //! Word error rate: the STT accuracy ya
-    │   │   └── whisper.rs  # //! whisper.cpp backend: lazy model load
+    │   │   └── supervisor.rs  # //! Supervised local inference endpoint:
     │   └── tests/
-    │       ├── corpus/
-    │       │   └── README.md  # # WER corpus contract
-    │       ├── live.rs  # //! Live decode: real model, real infere
-    │       ├── moonshine.rs  # //! Moonshine backend tests: refusal sha
-    │       ├── streaming.rs  # //! Streaming tests: agreement commits, 
-    │       ├── wer.rs  # //! WER goldens: identical, substitution
-    │       └── whisper.rs  # //! Backend tests: unloaded backends fai
+    │       └── supervise_supervisor.rs  # //! Supervisor contract: resolution orde
     ├── orator-testkit/
     │   ├── Cargo.toml
     │   ├── src/
     │   │   ├── fakes.rs  # //! Deterministic fakes: scripted clocks
+    │   │   ├── harness/
+    │   │   │   ├── events.rs  # //! Compatibility re-export: the bench l
+    │   │   │   ├── gates.rs  # //! Regression gates over replayed numbe
+    │   │   │   ├── replay.rs  # //! Deterministic replay: scripts in, ti
+    │   │   │   ├── scenarios.rs  # //! Scripted bench scenarios over the li
+    │   │   │   └── stats.rs  # //! Compatibility re-export: histograms 
+    │   │   ├── harness.rs  # //! Deterministic replay harness and reg
     │   │   └── lib.rs  # #![forbid(unsafe_code)]
     │   └── tests/
-    │       └── fakes.rs  # //! Fake tests: clock math, fault cadenc
-    ├── orator-tools/
+    │       ├── fakes.rs  # //! Fake tests: clock math, fault cadenc
+    │       ├── harness_events.rs  # //! Event tests: stat-file round-trip, o
+    │       ├── harness_gates.rs  # //! Gate tests: green replay passes, eve
+    │       ├── harness_replay.rs  # //! Replay tests: determinism, fault cos
+    │       ├── harness_scenarios.rs  # //! Scripted bench scenarios: single-tur
+    │       ├── harness_soak.rs  # //! Fault soak (heavy tier): periodic fa
+    │       └── harness_stats.rs  # //! Stats tests: histogram rendering nam
+    ├── orator-voice/
     │   ├── Cargo.toml
     │   ├── src/
-    │   │   ├── approve.rs  # //! Approvals: a rendezvous with a deadl
-    │   │   ├── builtins.rs  # //! The v1 tool catalog: two read-only t
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── loop_.rs  # //! The tool-call loop: at most five too
-    │   │   ├── parse.rs  # //! Tool-call parsing: strict JSON prima
-    │   │   ├── policy.rs  # //! Policy engine: `decide(call, ctx) ->
-    │   │   ├── sandbox.rs  # //! Guarded execution: the process half 
-    │   │   ├── tool.rs  # //! One `Tool` trait: the single source 
-    │   │   └── untrusted.rs  # //! Compatibility re-export: the `<data>
+    │   │   ├── s2s/
+    │   │   │   ├── config.rs  # //! Audio-endpoint configuration and ses
+    │   │   │   ├── ensure.rs  # //! Audio endpoint assurance: use the co
+    │   │   │   ├── protocol.rs  # //! Audio-endpoint wire codec: WAV frami
+    │   │   │   ├── session.rs  # //! Audio endpoint session: single-shot 
+    │   │   │   ├── voice.rs  # //! Supervised voice server: stock `llam
+    │   │   │   └── worker.rs  # //! Supervised vocoder speech: text in, 
+    │   │   ├── s2s.rs  # //! Speech-to-speech over the supervised
+    │   │   ├── stt/
+    │   │   │   ├── moonshine.rs  # //! Moonshine backend: local streaming-A
+    │   │   │   ├── streaming.rs  # //! Rolling-window streaming wrapper: co
+    │   │   │   ├── wer.rs  # //! Word error rate: the STT accuracy ya
+    │   │   │   └── whisper.rs  # //! whisper.cpp backend: lazy model load
+    │   │   ├── stt.rs  # //! Streaming speech-to-text: the whispe
+    │   │   ├── tts/
+    │   │   │   ├── kokoro.rs  # //! Kokoro backend: lazy model load, ser
+    │   │   │   ├── normalize.rs  # //! Spoken-text normalizer: markdown and
+    │   │   │   ├── pipeline.rs  # //! Speaking pipeline: normalized text i
+    │   │   │   └── splitter.rs  # //! Sentence streamer: LLM tokens in, sp
+    │   │   ├── tts.rs  # //! Speech synthesis: the Kokoro backend
+    │   │   ├── turn/
+    │   │   │   ├── driver.rs  # //! Turn driver: epoch discipline, barge
+    │   │   │   └── machine.rs  # //! The turn-taking state machine: a pur
+    │   │   ├── turn.rs  # //! The turn-taking state machine: endpo
+    │   │   ├── vad/
+    │   │   │   ├── energy.rs  # //! Zero-dependency energy voice activit
+    │   │   │   └── gate.rs  # //! Commit gate for transcription: wheth
+    │   │   └── vad.rs  # //! Voice activity detection: the zero-d
     │   └── tests/
-    │       ├── approve.rs  # //! Approval tests: rounds resolve, dead
-    │       ├── builtins.rs  # //! Builtin tests: calculator math, arg 
-    │       ├── loop.rs  # //! Loop tests: round bound, preamble ca
-    │       ├── parse.rs  # //! Parse tests: both paths, preamble ca
-    │       ├── policy.rs  # //! Policy tests: tier table, ambient de
-    │       ├── redteam.rs  # //! Red-team calibration: planted instru
-    │       ├── sandbox.rs  # //! Sandbox tests: timeout kills the gro
-    │       ├── tool.rs  # //! Registry tests: single definitions, 
-    │       └── untrusted.rs  # //! Untrusted-wrap tests: delimiters hol
-    ├── orator-tts/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── kokoro.rs  # //! Kokoro backend: lazy model load, ser
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── normalize.rs  # //! Spoken-text normalizer: markdown and
-    │   │   ├── pipeline.rs  # //! Speaking pipeline: normalized text i
-    │   │   └── splitter.rs  # //! Sentence streamer: LLM tokens in, sp
-    │   └── tests/
-    │       ├── kokoro.rs  # //! Backend tests: missing files fail un
-    │       ├── live.rs  # //! Live synth: real Kokoro weights, rea
-    │       ├── normalize.rs  # //! Normalizer goldens: code never spoke
-    │       ├── pipeline.rs  # //! Pipeline tests: prebuffer lead, stal
-    │       └── splitter.rs  # //! Splitter goldens: buffer-end holds, 
-    ├── orator-turn/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── driver.rs  # //! Turn driver: epoch discipline, barge
-    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   └── machine.rs  # //! The turn-taking state machine: a pur
-    │   └── tests/
-    │       ├── barge_in_calibration.rs  # //! Barge-in calibration: scripted evide
-    │       ├── driver.rs  # //! Driver tests: epoch stickiness at th
-    │       ├── hold_calibration.rs  # //! CAL: endpoint-hold calibration on a 
-    │       └── machine.rs  # //! Machine tests: the transition table 
-    ├── orator-vad/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── energy.rs  # //! Zero-dependency energy voice activit
-    │   │   ├── gate.rs  # //! Commit gate for transcription: wheth
-    │   │   └── lib.rs  # #![forbid(unsafe_code)]
-    │   └── tests/
-    │       ├── energy.rs  # //! VAD tests: attack/hangover timing, h
-    │       └── gate.rs  # //! Commit-gate tests: tonal isolation p
+    │       ├── corpus/
+    │       │   └── README.md  # # WER corpus contract
+    │       ├── s2s_calibration.rs  # //! Readiness/fallback calibration: dead
+    │       ├── s2s_config.rs  # //! Speech-config tests: bundle presence
+    │       ├── s2s_duplex_calibration.rs  # //! Duplex threshold calibration: script
+    │       ├── s2s_ensure.rs  # //! Assurance tests: shared when served,
+    │       ├── s2s_live.rs  # //! Live speech: real audio endpoint, re
+    │       ├── s2s_protocol.rs  # //! Wire-codec tests: WAV bytes, message
+    │       ├── s2s_session.rs  # //! Session tests: scripted SSE turns (t
+    │       ├── s2s_voice.rs  # //! Voice-server tests: resolution order
+    │       ├── s2s_voice_readiness.rs  # //! Voice readiness probes over loopback
+    │       ├── s2s_worker.rs  # //! Worker tests: stub-binary synthesis 
+    │       ├── stt_live.rs  # //! Live decode: real model, real infere
+    │       ├── stt_moonshine.rs  # //! Moonshine backend tests: refusal sha
+    │       ├── stt_streaming.rs  # //! Streaming tests: agreement commits, 
+    │       ├── stt_wer.rs  # //! WER goldens: identical, substitution
+    │       ├── stt_whisper.rs  # //! Backend tests: unloaded backends fai
+    │       ├── tts_kokoro.rs  # //! Backend tests: missing files fail un
+    │       ├── tts_live.rs  # //! Live synth: real Kokoro weights, rea
+    │       ├── tts_normalize.rs  # //! Normalizer goldens: code never spoke
+    │       ├── tts_pipeline.rs  # //! Pipeline tests: prebuffer lead, stal
+    │       ├── tts_splitter.rs  # //! Splitter goldens: buffer-end holds, 
+    │       ├── turn_barge_in_calibration.rs  # //! Barge-in calibration: scripted evide
+    │       ├── turn_driver.rs  # //! Driver tests: epoch stickiness at th
+    │       ├── turn_hold_calibration.rs  # //! CAL: endpoint-hold calibration on a 
+    │       ├── turn_machine.rs  # //! Machine tests: the transition table 
+    │       ├── vad_energy.rs  # //! VAD tests: attack/hangover timing, h
+    │       └── vad_gate.rs  # //! Commit-gate tests: tonal isolation p
     ├── protopyne-chart-model/
     │   ├── Cargo.toml
     │   ├── src/
@@ -2712,10 +2769,12 @@ Then you you must read
     │   ├── src/
     │   │   ├── aliases.rs  # use std::collections::HashMap;
     │   │   ├── db/
+    │   │   │   ├── embedding_status.rs  # //! Per-fragment embedding status: which
     │   │   │   ├── fragments.rs  # //! Fragment recall rows, filter pushdow
     │   │   │   ├── graph_rows.rs  # //! Graph recall rows: persisted import 
-    │   │   │   └── schema.rs  # //! Fragment/graph schema: DDL, init, an
-    │   │   ├── db.rs  # use std::collections::HashMap;
+    │   │   │   ├── schema.rs  # //! Fragment/graph schema: DDL, init, an
+    │   │   │   └── summaries.rs  # //! Generated summary storage: a derived
+    │   │   ├── db.rs  # use std::collections::{HashMap, HashSet}
     │   │   ├── fusion.rs  # //! Score fusion: RRF kernel surface, bo
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── salience.rs  # //! Candidate-centrality scoring: a mini
@@ -2732,6 +2791,7 @@ Then you you must read
     │       ├── node_sync.rs  # //! Node-sync change-gate goldens: `sync
     │       ├── salience.rs  # use super::*;
     │       ├── schema.rs  # //! Schema snapshot golden: opening a `G
+    │       ├── summaries.rs  # use super::*;
     │       └── vector_index.rs  # use super::*;
     ├── spacy-rs/
     │   ├── Cargo.toml
@@ -2853,7 +2913,8 @@ Then you you must read
     │   │   ├── model_ref.rs  # //! Canonical model-reference parsing: t
     │   │   ├── openai_wire.rs  # //! OpenAI-compatible chat wire types...
     │   │   ├── provenance.rs  # //! Ledger annotation provenance — ...
-    │   │   └── rounds.rs  # //! Bounded config newtypes — valid...
+    │   │   ├── rounds.rs  # //! Bounded config newtypes — valid...
+    │   │   └── sidecar.rs  # //! Sidecar header: fixed-layout first l
     │   └── tests/
     │       ├── file_kind.rs  # //! `file_kind` unit pins: canonical ext
     │       ├── label_enum.rs  # //! Macro unit tests for `fluent_types::
@@ -2874,5 +2935,5 @@ Then you you must read
         ├── Cargo.toml
         └── src/
             ├── main.rs  # //! xtask for taxonomy operator pipeline
-            └── main.rs.json
+            └── main.rs.json  # xtask for taxonomy operator pipeline ...
 ```

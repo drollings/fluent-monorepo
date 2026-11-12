@@ -33,6 +33,7 @@ use crate::viewport::{visible_rows, BreakLine, Viewport};
 
 /// One candle's screen geometry plus its tint keys.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One candle's screen geometry plus its tint keys.
 pub struct CandleGeom {
     /// Bar index.
     pub index: usize,
@@ -130,6 +131,12 @@ pub fn culled_candle_geoms(
 /// bar, per-candle drawing cannot add information), never confidence: there
 /// is nothing to tune, only the boundary to hold.
 #[must_use]
+/// Whether a bar spacing needs pixel-column aggregation: strictly below one
+/// pixel per bar. Exactly `1.0` still draws native candles — one bar owns
+/// its column — while below it bars overdraw, so one screen column folds to
+/// one candle. The predicate measures pixel-exactness (below one pixel per
+/// bar, per-candle drawing cannot add information), never confidence: there
+/// is nothing to tune, only the boundary to hold.
 pub fn needs_column_aggregation(bar_spacing: f32) -> bool {
     bar_spacing.is_finite() && bar_spacing < 1.0
 }
@@ -205,6 +212,15 @@ pub fn column_candle_geoms(
 /// non-monotonic mapping still folds deterministically; monotonicity is the
 /// caller's contract, grouping is this function's.
 #[must_use]
+/// Partition slot-ordered bars into consecutive pixel-column runs.
+/// 
+/// `column_of` maps a bar slot to its pixel column; the call site passes the
+/// floored x pixel of each slot, so one run is exactly the bars that would
+/// overdraw one screen column. Returns `(column, bar-range)` runs in slot
+/// order, one per non-empty column — a single linear pass, one `column_of`
+/// call per bar. Runs group consecutive-equal columns only, so a
+/// non-monotonic mapping still folds deterministically; monotonicity is the
+/// caller's contract, grouping is this function's.
 pub fn column_runs(
     bar_count: usize,
     column_of: impl Fn(usize) -> i64,
@@ -231,6 +247,16 @@ pub fn column_runs(
 /// (`rows_of` drops non-finite legs); a NaN leg would poison the fold, so
 /// callers pass converted rows, never raw floats.
 #[must_use]
+/// Fold one pixel column's rows into a single aggregate candle.
+/// 
+/// open = first open, high = max high, low = min low, close = last close,
+/// volume = saturating sum, time = first bar time. This is what makes
+/// sub-pixel zoom honest: one screen column can only ever show one vertical
+/// span, so the aggregate draws exactly the pixels the individual candles
+/// would have overdrawn. Empty input reads `None` — a column with no bars
+/// draws nothing, never a zero candle. Rows are conversion-finite
+/// (`rows_of` drops non-finite legs); a NaN leg would poison the fold, so
+/// callers pass converted rows, never raw floats.
 pub fn aggregate_column(rows: &[ChartRow]) -> Option<ChartRow> {
     let first = rows.first()?;
     let mut high = first.high;
@@ -260,6 +286,11 @@ pub fn aggregate_column(rows: &[ChartRow]) -> Option<ChartRow> {
 /// Holes never substitute: trailing holes fall back to the last present
 /// value, all-holes (or empty) reads `None`, so gaps stay gaps.
 #[must_use]
+/// Last present value in a column window: the display sample for line-like
+/// series at sub-pixel zoom — including native-timeframe indicator output,
+/// which is computed over full-resolution bars and only *sampled* here.
+/// Holes never substitute: trailing holes fall back to the last present
+/// value, all-holes (or empty) reads `None`, so gaps stay gaps.
 pub fn sample_column_last(values: &[Option<f64>]) -> Option<f64> {
     values.iter().rev().find_map(|slot| *slot)
 }
@@ -270,6 +301,11 @@ pub fn sample_column_last(values: &[Option<f64>]) -> Option<f64> {
 /// lift-finite (`map_series_optional` holes non-finite outputs), so the
 /// fold needs no NaN guard of its own.
 #[must_use]
+/// Vertical span of the present values in a column window: the display
+/// sample for band-like series at sub-pixel zoom. Holes are skipped, never
+/// zero-filled; all-holes (or empty) reads `None`. Present values are
+/// lift-finite (`map_series_optional` holes non-finite outputs), so the
+/// fold needs no NaN guard of its own.
 pub fn sample_column_extremes(values: &[Option<f64>]) -> Option<(f64, f64)> {
     let mut extremes: Option<(f64, f64)> = None;
     for slot in values.iter().flatten() {
@@ -294,6 +330,18 @@ pub fn sample_column_extremes(values: &[Option<f64>]) -> Option<(f64, f64)> {
 /// through the shared window predicate — never extrapolated, never
 /// zero-filled.
 #[must_use]
+/// Sampled vertices of one line-like series at sub-pixel zoom: one vertex
+/// per pixel column over global bar slots `base..`, sampled with
+/// [`sample_column_last`] and mapped like [`oscillator_points`].
+/// 
+/// This is the display-only sampler behind native-timeframe evaluation:
+/// indicator values are computed over full-resolution bars and only
+/// *sampled* here, so a zoomed-out overlay costs O(columns) vertices while
+/// carrying exactly what sampling the native series per column run yields.
+/// Holes stay holes (an all-hole run lifts the pen), trailing holes fall
+/// back to the run's last present value, and off-window samples refuse
+/// through the shared window predicate — never extrapolated, never
+/// zero-filled.
 pub fn sampled_line_points(
     values: &[Option<f64>],
     viewport: &Viewport,
@@ -320,6 +368,14 @@ pub fn sampled_line_points(
 /// A run whose high or low leg sits off-window spans nothing — spans break at
 /// the window edge exactly where fill runs do.
 #[must_use]
+/// Sampled spans of one band-like series at sub-pixel zoom: one `(x, top,
+/// bottom)` span per pixel column, sampled with [`sample_column_extremes`]
+/// and mapped through the shared window predicate.
+/// 
+/// The same display-only contract as [`sampled_line_points`]: full-resolution
+/// values in, one span per column out, holes staying holes at every stage.
+/// A run whose high or low leg sits off-window spans nothing — spans break at
+/// the window edge exactly where fill runs do.
 pub fn sampled_band_spans(
     values: &[Option<f64>],
     viewport: &Viewport,
@@ -340,6 +396,7 @@ pub fn sampled_band_spans(
 
 /// One ribbon fill strip between the band edges.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One ribbon fill strip between the band edges.
 pub struct RibbonBand {
     /// Bar index.
     pub index: usize,
@@ -382,6 +439,7 @@ pub fn ribbon_bands(ribbon: &RibbonView, viewport: &Viewport) -> Vec<Option<Ribb
 
 /// One zero-based delta bar: heights above/below the zero line.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One zero-based delta bar: heights above/below the zero line.
 pub struct DeltaBarGeom {
     /// Bar index.
     pub index: usize,
@@ -516,6 +574,10 @@ pub fn column_delta_geoms(
 /// lifts the pen. Off-window legs refuse through the shared window
 /// predicate rather than extrapolating off-pane.
 #[must_use]
+/// Map a zero-centered oscillator series to screen points; holes,
+/// non-finite readings, and off-window values yield `None` so the emitter
+/// lifts the pen. Off-window legs refuse through the shared window
+/// predicate rather than extrapolating off-pane.
 pub fn oscillator_points(values: &[Option<f64>], viewport: &Viewport) -> Vec<Option<(f32, f32)>> {
     oscillator_points_sliced(values, viewport, 0)
 }
@@ -527,6 +589,12 @@ pub fn oscillator_points(values: &[Option<f64>], viewport: &Viewport) -> Vec<Opt
 /// coordinates instead of cloning a window. [`oscillator_points`] is the
 /// zero-based entry over the same core, never a second mapping.
 #[must_use]
+/// Map a borrowed series window to screen points with a window base.
+/// 
+/// The single mapping behind [`oscillator_points`]: `base` is the global
+/// index of the first value, so culled windows re-offset x pixels to window
+/// coordinates instead of cloning a window. [`oscillator_points`] is the
+/// zero-based entry over the same core, never a second mapping.
 pub fn oscillator_points_sliced(
     values: &[Option<f64>],
     viewport: &Viewport,
@@ -554,6 +622,13 @@ pub fn oscillator_points_sliced(
 /// [`oscillator_points`] output while native-zoom frames cost O(visible)
 /// instead of O(history). Empty and off-window viewports paint nothing.
 #[must_use]
+/// Native line points over the twice-visible window only.
+/// 
+/// Computes the viewport's proportional window over `values`, borrows that
+/// slice through the shared slicer, and maps it with the window base — so the
+/// result is pixel-identical to the corresponding slice of full-window
+/// [`oscillator_points`] output while native-zoom frames cost O(visible)
+/// instead of O(history). Empty and off-window viewports paint nothing.
 pub fn proportional_line_points(
     values: &[Option<f64>],
     viewport: &Viewport,
@@ -566,6 +641,7 @@ pub fn proportional_line_points(
 
 /// One pivot dot on the oscillator pane.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One pivot dot on the oscillator pane.
 pub struct PivotDot {
     /// Bar index of the crossing.
     pub index: usize,
@@ -584,6 +660,12 @@ pub struct PivotDot {
 /// through the shared window predicate, so the dots lift the pen exactly
 /// where [`oscillator_points`] does.
 #[must_use]
+/// Place pivot dots from crossing marks onto fast-oscillator values.
+/// 
+/// Marks whose value is missing, non-finite, out of range, or out of bounds
+/// are skipped — dots decorate crossings only. Off-window values refuse
+/// through the shared window predicate, so the dots lift the pen exactly
+/// where [`oscillator_points`] does.
 pub fn pivot_dots(marks: &[PivotMark], fast: &[Option<f64>], viewport: &Viewport) -> Vec<PivotDot> {
     marks
         .iter()
@@ -609,6 +691,11 @@ pub fn pivot_dots(marks: &[PivotMark], fast: &[Option<f64>], viewport: &Viewport
 /// Marks past the rows, on holes, or with unmappable extremes are skipped —
 /// dots decorate confirmed extremes only.
 #[must_use]
+/// Place pivot dots at bar price extremes, mirroring the reference overlay
+/// labels: `High` marks sit on the bar high, `Low` marks on the bar low.
+/// 
+/// Marks past the rows, on holes, or with unmappable extremes are skipped —
+/// dots decorate confirmed extremes only.
 pub fn pivot_price_dots(
     marks: &[PivotMark],
     rows: &[ChartRow],
@@ -643,6 +730,10 @@ pub fn pivot_price_dots(
 /// refusal rides the shared window predicate, so every rule emitter
 /// inherits it rather than re-deciding containment.
 #[must_use]
+/// Y pixel of a `±threshold` rule; `None` when the threshold is not a
+/// positive finite value or sits outside the pane range. The off-window
+/// refusal rides the shared window predicate, so every rule emitter
+/// inherits it rather than re-deciding containment.
 pub fn threshold_line(threshold: f64, viewport: &Viewport) -> Option<f32> {
     if !threshold.is_finite() || threshold <= 0.0 {
         return None;
@@ -714,6 +805,19 @@ pub const CANDLE_BODY_FRACTION: f32 = 0.8;
 /// body follows the horizontal zoom the chart currently shows rather than the
 /// configured default. Non-finite spacing reads the minimum.
 #[must_use]
+/// The candle body width for a displayed time-bar width.
+/// 
+/// A candle is the width of the unit of time it draws, so the body *is* the
+/// slot at ordinary zoom and the bars read as a solid tape. Past
+/// [`CANDLE_GAP_THRESHOLD_PX`] the slot is wide enough that neighbours run
+/// together, so the body drops to [`CANDLE_BODY_FRACTION`] of it and the gap
+/// separates them. The width never falls below [`CANDLE_MIN_BODY_PX`]: a
+/// fully zoomed-out bar stays a visible mark rather than disappearing, which
+/// would hide data by zooming.
+/// 
+/// `bar_spacing` is the *live* spacing from the pane's own viewport, so the
+/// body follows the horizontal zoom the chart currently shows rather than the
+/// configured default. Non-finite spacing reads the minimum.
 pub fn candle_body_width(bar_spacing: f32) -> f32 {
     if !bar_spacing.is_finite() {
         return CANDLE_MIN_BODY_PX;
@@ -782,6 +886,11 @@ pub fn paint_candles(
 /// it (theme key, momentum tint, or fallback): the emitter draws exactly
 /// what it is given, like every painter here.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One candle plus its resolved paint color.
+/// 
+/// Pairs headless geometry with the display color the caller resolved for
+/// it (theme key, momentum tint, or fallback): the emitter draws exactly
+/// what it is given, like every painter here.
 pub struct TintedCandle {
     /// Candle geometry in UI space (caller shifts pane-local geometry).
     pub geom: CandleGeom,
@@ -860,6 +969,13 @@ pub fn paint_ribbon(
 /// a continuous area, never per-bar candle lookalikes. Pane-local, like
 /// every geometry here: the caller shifts points by the pane origin.
 #[derive(Debug, Clone, PartialEq)]
+/// One ribbon fill run: a closed polygon between the band edges over a
+/// contiguous stretch of bars sharing one trend key.
+/// 
+/// `points` walks the upper edge forward, then the lower edge reversed, so
+/// the emitter fills exactly the band the reference `fill()` shades —
+/// a continuous area, never per-bar candle lookalikes. Pane-local, like
+/// every geometry here: the caller shifts points by the pane origin.
 pub struct RibbonPolygon {
     /// Bar indices covered by this run (contiguous).
     pub indices: Vec<usize>,
@@ -996,6 +1112,16 @@ pub fn proportional_ribbon_polygons(
 /// window predicate. Culls to the viewport window first, so a month view
 /// emits one band per painted column, never one per bar.
 #[must_use]
+/// Sampled ribbon bands at sub-pixel zoom: one band per pixel column.
+/// 
+/// Composes the two display samplers, never a third: each column run (over
+/// floored slot pixels) spans the present upper legs through
+/// [`sample_column_extremes`] for its top and the present lower legs for its
+/// bottom, reading the run's most recent trend key — a column reads as its
+/// newest bar, exactly as the candle dispatcher does. Holes stay holes (an
+/// all-hole leg spans nothing); off-window edges refuse through the shared
+/// window predicate. Culls to the viewport window first, so a month view
+/// emits one band per painted column, never one per bar.
 pub fn sampled_ribbon_bands(
     upper: &[Option<f64>],
     lower: &[Option<f64>],
@@ -1048,6 +1174,16 @@ pub fn sampled_ribbon_bands(
 /// emits; callers wanting a named refusal validate through their own
 /// boundary (the terminal's `area_view` refuses it as `baseline`).
 #[must_use]
+/// Build area fill polygons: maximal runs of contiguous bars whose values
+/// map, closed against one constant baseline.
+/// 
+/// Same run-closing core as [`ribbon_polygons`] — no second polygon code —
+/// with the lower edge fixed at `baseline` and the trend key fixed at
+/// `false`, so no per-bar lower/trend vectors are materialized. Holes,
+/// non-finite values, and unmappable edges break runs (never bridged). A
+/// non-finite baseline maps nowhere, so every run breaks and nothing
+/// emits; callers wanting a named refusal validate through their own
+/// boundary (the terminal's `area_view` refuses it as `baseline`).
 pub fn area_polygons(
     values: &[Option<f64>],
     baseline: f64,
@@ -1213,6 +1349,16 @@ pub fn paint_ribbon_fill(
 /// gradient stops. Pure color math over reused polygon points — no new
 /// polygon code.
 #[must_use]
+/// Blend one gradient vertex color between the top and bottom fill colors by
+/// its y pixel: `top_y` reads exactly `top`, `bottom_y` exactly `bottom`,
+/// between lerps per channel (alpha included), outside clamps to the nearer
+/// end. A degenerate range reads `top` for every vertex instead of dividing
+/// by zero. Non-finite `y`, `top_y`, or `bottom_y` refuse (`None`) exactly
+/// as every sibling emitter skips non-finite input — a `NaN` must never
+/// saturate into a black vertex. Blending runs in premultiplied space
+/// (`Color32` storage), which is the correct composite for translucent
+/// gradient stops. Pure color math over reused polygon points — no new
+/// polygon code.
 pub fn area_vertex_color(
     top: egui::Color32,
     bottom: egui::Color32,
@@ -1373,6 +1519,9 @@ pub fn paint_delta_bars_styled(
 /// (theme key, momentum tint, or fallback): the emitter draws exactly what it
 /// is given, like every painter here.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One delta bar paired with the display color the caller resolved for it
+/// (theme key, momentum tint, or fallback): the emitter draws exactly what it
+/// is given, like every painter here.
 pub struct TintedDeltaBar {
     /// Bar geometry in UI space (caller shifts pane-local geometry).
     pub geom: DeltaBarGeom,
@@ -1419,6 +1568,13 @@ pub fn paint_delta_bars_tinted(painter: &egui::Painter, bars: &[TintedDeltaBar],
 /// and the stroked oscillator emitters — emitters pass their `alpha`
 /// straight through and never restate the arithmetic.
 #[must_use]
+/// Map a unit alpha fraction to a byte opacity for premultiplied
+/// `Color32` blending: `clamp(0,1) * 255`, half-away rounding, then a
+/// second clamp into byte range before the float-to-int conversion (Rust
+/// saturation, never wrapping: NaN reads 0, out-of-range reads the nearer
+/// edge). The one spelling behind the ribbon fill, the ribbon polygons,
+/// and the stroked oscillator emitters — emitters pass their `alpha`
+/// straight through and never restate the arithmetic.
 pub fn alpha_u8(alpha: f32) -> u8 {
     (alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8
 }
@@ -1429,6 +1585,11 @@ pub fn alpha_u8(alpha: f32) -> u8 {
 /// Out-of-range inputs clamp; non-finite input paints opaque (fail-soft —
 /// paint stays visible and debuggable rather than silently vanishing).
 #[must_use]
+/// Map a Pine-style transparency percent to a byte opacity.
+/// 
+/// `color.new(c, t)` semantics: `0` is fully opaque, `100` fully invisible.
+/// Out-of-range inputs clamp; non-finite input paints opaque (fail-soft —
+/// paint stays visible and debuggable rather than silently vanishing).
 pub fn opacity_from_transparency(transparency: f64) -> u8 {
     if !transparency.is_finite() {
         return 255;
@@ -1450,6 +1611,9 @@ pub const ACTION_PILL_PX: f32 = 3.0;
 /// spelling instead of per-widget branches. A `frac` outside `[0, 1]` (or a
 /// non-finite one) is not a blend, so the base stands untouched.
 #[must_use]
+/// Blend one state overlay over a zone fill: hover and press tints share one
+/// spelling instead of per-widget branches. A `frac` outside `[0, 1]` (or a
+/// non-finite one) is not a blend, so the base stands untouched.
 pub fn state_layer(base: egui::Color32, overlay: egui::Color32, frac: f32) -> egui::Color32 {
     if !frac.is_finite() || frac < 0.0 || frac > 1.0 {
         return base;
@@ -1470,6 +1634,8 @@ pub fn state_layer(base: egui::Color32, overlay: egui::Color32, frac: f32) -> eg
 /// Fade ink toward its surface for the disabled state, keeping the ink's own
 /// alpha: a translucent mark stays translucent-honest while reading dimmed.
 #[must_use]
+/// Fade ink toward its surface for the disabled state, keeping the ink's own
+/// alpha: a translucent mark stays translucent-honest while reading dimmed.
 pub fn disabled_content(color: egui::Color32, surface: egui::Color32) -> egui::Color32 {
     const FADE: f32 = 0.38;
     fade_toward(color, surface, FADE)
@@ -1478,6 +1644,8 @@ pub fn disabled_content(color: egui::Color32, surface: egui::Color32) -> egui::C
 /// Fade ink toward its surface for disabled outlines, keeping the ink's own
 /// alpha (see [`disabled_content`]).
 #[must_use]
+/// Fade ink toward its surface for disabled outlines, keeping the ink's own
+/// alpha (see [`disabled_content`]).
 pub fn disabled_outline(color: egui::Color32, surface: egui::Color32) -> egui::Color32 {
     const FADE: f32 = 0.12;
     fade_toward(color, surface, FADE)
@@ -1598,6 +1766,8 @@ pub fn paint_thresholds(
 /// Pane-local crosshair spans for one readout: the snapped pixel plus the
 /// full-pane extents the emitter draws through.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Pane-local crosshair spans for one readout: the snapped pixel plus the
+/// full-pane extents the emitter draws through.
 pub struct CrosshairLines {
     /// Snapped x pixel (bar center).
     pub x: f32,
@@ -1621,6 +1791,13 @@ pub struct CrosshairLines {
 /// coordinate math. `None` when the readout price is unmappable, sits
 /// outside the window, or the extents are degenerate.
 #[must_use]
+/// Build crosshair spans for a readout over a `width × height` pane.
+/// 
+/// The snapped pixel comes from the pure [`crosshair_pixel`], so the edge
+/// draws exactly what the headless mapping resolves — `egui` translates
+/// pointer events into readouts and paints these spans, never its own
+/// coordinate math. `None` when the readout price is unmappable, sits
+/// outside the window, or the extents are degenerate.
 pub fn crosshair_lines(
     crosshair: &Crosshair,
     viewport: &Viewport,
@@ -1668,6 +1845,7 @@ pub fn paint_crosshair(
 
 /// One resolved annotation marker: bar position plus display role.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// One resolved annotation marker: bar position plus display role.
 pub struct MarkerDot {
     /// Bar index of the annotated bar.
     pub index: usize,
@@ -1710,6 +1888,16 @@ impl MarkerDot {
 /// are skipped — markers decorate published annotations only, never
 /// extrapolated points off the pane.
 #[must_use]
+/// Resolve markers to pixels over the caller's window.
+/// 
+/// Markers ride the append-only set (the render-side journal): operator
+/// clicks append through [`crate::annotations::annotate_at`], Pine drawings
+/// arrive through the terminal bridge, and both paint here alike. One
+/// [`crate::annotations::TimeIndex`] serves the whole batch, so the window
+/// is walked once per frame no matter how many markers resolve; bars
+/// outside the window, duplicate timestamps, or off-window/unmappable prices
+/// are skipped — markers decorate published annotations only, never
+/// extrapolated points off the pane.
 pub fn marker_dots(
     markers: &[Annotation],
     rows: &[ChartRow],
@@ -1800,6 +1988,12 @@ pub fn paint_session_breaks(
 /// by side shifts each layer by its own origin first. `origin.0` moves x,
 /// `origin.1` moves every y leg.
 #[must_use]
+/// Shift pane-local candle geometry into UI space by a pane origin.
+/// 
+/// Geometry here is pane-local (origin at the pane's top-left); every emitter
+/// draws exactly the coordinates it is given, so a frame that lays panes side
+/// by side shifts each layer by its own origin first. `origin.0` moves x,
+/// `origin.1` moves every y leg.
 pub fn translate_candles(geoms: Vec<CandleGeom>, origin: (f32, f32)) -> Vec<CandleGeom> {
     geoms
         .into_iter()
@@ -1816,6 +2010,7 @@ pub fn translate_candles(geoms: Vec<CandleGeom>, origin: (f32, f32)) -> Vec<Cand
 
 /// Shift pane-local fill runs into UI space (see [`translate_candles`]).
 #[must_use]
+/// Shift pane-local fill runs into UI space (see [`translate_candles`]).
 pub fn translate_polygons(polygons: Vec<RibbonPolygon>, origin: (f32, f32)) -> Vec<RibbonPolygon> {
     polygons
         .into_iter()
@@ -1832,6 +2027,8 @@ pub fn translate_polygons(polygons: Vec<RibbonPolygon>, origin: (f32, f32)) -> V
 /// Shift pane-local session gridlines into UI space: a gridline has one x
 /// coordinate and spans the pane height at paint time, so only `dx` moves it.
 #[must_use]
+/// Shift pane-local session gridlines into UI space: a gridline has one x
+/// coordinate and spans the pane height at paint time, so only `dx` moves it.
 pub fn translate_breaks(lines: Vec<BreakLine>, dx: f32) -> Vec<BreakLine> {
     lines
         .into_iter()
@@ -1845,6 +2042,8 @@ pub fn translate_breaks(lines: Vec<BreakLine>, dx: f32) -> Vec<BreakLine> {
 /// Shift pane-local series points into UI space (see [`translate_candles`]).
 /// Holes stay holes.
 #[must_use]
+/// Shift pane-local series points into UI space (see [`translate_candles`]).
+/// Holes stay holes.
 pub fn translate_points(
     points: Vec<Option<(f32, f32)>>,
     origin: (f32, f32),
@@ -1857,6 +2056,7 @@ pub fn translate_points(
 
 /// Shift pane-local pivot dots into UI space (see [`translate_candles`]).
 #[must_use]
+/// Shift pane-local pivot dots into UI space (see [`translate_candles`]).
 pub fn translate_dots(dots: Vec<PivotDot>, origin: (f32, f32)) -> Vec<PivotDot> {
     dots.into_iter()
         .map(|mut dot| {
@@ -1869,6 +2069,7 @@ pub fn translate_dots(dots: Vec<PivotDot>, origin: (f32, f32)) -> Vec<PivotDot> 
 
 /// Shift pane-local markers into UI space (see [`translate_candles`]).
 #[must_use]
+/// Shift pane-local markers into UI space (see [`translate_candles`]).
 pub fn translate_markers(dots: Vec<MarkerDot>, origin: (f32, f32)) -> Vec<MarkerDot> {
     dots.into_iter()
         .map(|mut dot| {
@@ -1883,6 +2084,9 @@ pub fn translate_markers(dots: Vec<MarkerDot>, origin: (f32, f32)) -> Vec<Marker
 /// Both legs and the zero line share the vertical shift; holed legs stay
 /// holed.
 #[must_use]
+/// Shift pane-local delta bars into UI space (see [`translate_candles`]).
+/// Both legs and the zero line share the vertical shift; holed legs stay
+/// holed.
 pub fn translate_delta_bars(bars: Vec<DeltaBarGeom>, origin: (f32, f32)) -> Vec<DeltaBarGeom> {
     bars.into_iter()
         .map(|mut bar| {
@@ -1899,6 +2103,9 @@ pub fn translate_delta_bars(bars: Vec<DeltaBarGeom>, origin: (f32, f32)) -> Vec<
 /// Holes stay holes: the per-column sampled bands paint through the same
 /// rect emitter as the native strips, so both paths share one shift.
 #[must_use]
+/// Shift pane-local ribbon bands into UI space (see [`translate_candles`]).
+/// Holes stay holes: the per-column sampled bands paint through the same
+/// rect emitter as the native strips, so both paths share one shift.
 pub fn translate_bands(
     bands: Vec<Option<RibbonBand>>,
     origin: (f32, f32),
@@ -1923,6 +2130,8 @@ const LID_ARC_SAMPLES: usize = 9;
 /// One eye control icon: lid arcs above and below center, a pupil on
 /// center, and a slash exactly when the slot it toggles is hidden.
 #[derive(Debug, Clone, PartialEq)]
+/// One eye control icon: lid arcs above and below center, a pupil on
+/// center, and a slash exactly when the slot it toggles is hidden.
 pub struct EyeIconGeom {
     /// Icon center in UI space.
     pub center: (f32, f32),
@@ -1947,6 +2156,12 @@ pub struct EyeIconGeom {
 /// below center and the lower lid never rises above it. Refuses non-finite
 /// centers, non-finite radii, and radii at or below zero.
 #[must_use]
+/// Build eye geometry around `center` at `radius`.
+/// 
+/// The lids are ellipse arcs (`0.6` vertical squash) pinned exactly to the
+/// horizontal through center at both corners, so the upper lid never dips
+/// below center and the lower lid never rises above it. Refuses non-finite
+/// centers, non-finite radii, and radii at or below zero.
 pub fn eye_icon_geom(center: (f32, f32), radius: f32, visible: bool) -> Option<EyeIconGeom> {
     if !center.0.is_finite() || !center.1.is_finite() || !radius.is_finite() || radius <= 0.0 {
         return None;
@@ -1985,6 +2200,7 @@ pub fn eye_icon_geom(center: (f32, f32), radius: f32, visible: bool) -> Option<E
 
 /// One six-sided bolt control icon: six rim vertices plus an inner bore.
 #[derive(Debug, Clone, PartialEq)]
+/// One six-sided bolt control icon: six rim vertices plus an inner bore.
 pub struct HexBoltIconGeom {
     /// Icon center in UI space.
     pub center: (f32, f32),
@@ -2002,6 +2218,9 @@ pub struct HexBoltIconGeom {
 ///
 /// Refuses non-finite centers, non-finite radii, and radii at or below zero.
 #[must_use]
+/// Build six-sided bolt geometry around `center` at `radius`.
+/// 
+/// Refuses non-finite centers, non-finite radii, and radii at or below zero.
 pub fn hex_bolt_icon_geom(center: (f32, f32), radius: f32) -> Option<HexBoltIconGeom> {
     if !center.0.is_finite() || !center.1.is_finite() || !radius.is_finite() || radius <= 0.0 {
         return None;
@@ -2025,6 +2244,7 @@ pub fn hex_bolt_icon_geom(center: (f32, f32), radius: f32) -> Option<HexBoltIcon
 
 /// One search control icon: a lens circle plus a handle leaving its rim.
 #[derive(Debug, Clone, PartialEq)]
+/// One search control icon: a lens circle plus a handle leaving its rim.
 pub struct SearchIconGeom {
     /// Icon center in UI space (also the lens center).
     pub center: (f32, f32),
@@ -2043,6 +2263,10 @@ pub struct SearchIconGeom {
 /// The handle leaves the lens rim at 45 degrees down-right. Refuses
 /// non-finite centers, non-finite radii, and radii at or below zero.
 #[must_use]
+/// Build search geometry around `center` at `radius`.
+/// 
+/// The handle leaves the lens rim at 45 degrees down-right. Refuses
+/// non-finite centers, non-finite radii, and radii at or below zero.
 pub fn search_icon_geom(center: (f32, f32), radius: f32) -> Option<SearchIconGeom> {
     if !center.0.is_finite() || !center.1.is_finite() || !radius.is_finite() || radius <= 0.0 {
         return None;

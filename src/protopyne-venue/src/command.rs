@@ -113,6 +113,9 @@ impl Default for PortfolioRegistry {
 /// engine, never wider: entries need [`TradingState::Enabled`], exits always
 /// route so a halted book stays manageable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Whether the platform may route orders right now. Narrower than the risk
+/// engine, never wider: entries need [`TradingState::Enabled`], exits always
+/// route so a halted book stays manageable.
 pub enum TradingState {
     /// New entries and exits both route.
     Enabled,
@@ -150,6 +153,9 @@ impl TradingState {
 /// it. Locking never crosses an await (all transitions are synchronous), so
 /// a recovering mutex is the honest primitive, never a wedged gate.
 #[derive(Debug, Clone, Default)]
+/// Shared handle to the trading state: commands transition it, gates read
+/// it. Locking never crosses an await (all transitions are synchronous), so
+/// a recovering mutex is the honest primitive, never a wedged gate.
 pub struct StateHandle {
     inner: Arc<Mutex<TradingState>>,
 }
@@ -180,6 +186,9 @@ impl StateHandle {
 /// readers (service/gateway) read it. The journal is the authority; this is a
 /// derived handle the fold refreshes, never a second source of truth.
 #[derive(Debug, Clone, Default)]
+/// Shared handle to the live armed grant: the command plane transitions it,
+/// readers (service/gateway) read it. The journal is the authority; this is a
+/// derived handle the fold refreshes, never a second source of truth.
 pub struct GrantHandle {
     inner: Arc<Mutex<Option<Grant>>>,
 }
@@ -250,6 +259,11 @@ pub const COMMAND_START_LOOP_KIND: &str = "command.start_loop";
 /// [`TradingState::Enabled`] — wiring is a no-op until the first command is
 /// journaled, and a restart rebuilds exactly the state the operator left.
 #[must_use]
+/// Rebuild the trading state from journaled command rows: last command
+/// wins; disarm halts, resume restores; close/cancel rows are audit-only.
+/// No rows means no operator ever acted, so the fold starts
+/// [`TradingState::Enabled`] — wiring is a no-op until the first command is
+/// journaled, and a restart rebuilds exactly the state the operator left.
 pub fn replay_trading_state(events: &[JournalEvent]) -> TradingState {
     let mut state = TradingState::Enabled;
     for event in events {
@@ -265,6 +279,8 @@ pub fn replay_trading_state(events: &[JournalEvent]) -> TradingState {
 /// Whether the operator journaled an explicit loop-start command. The live
 /// loop starts only when this is true *and* a live grant is armed.
 #[must_use]
+/// Whether the operator journaled an explicit loop-start command. The live
+/// loop starts only when this is true *and* a live grant is armed.
 pub fn loop_started(events: &[JournalEvent]) -> bool {
     events
         .iter()
@@ -273,6 +289,7 @@ pub fn loop_started(events: &[JournalEvent]) -> bool {
 
 /// The detail body of a revoke row.
 #[derive(Deserialize)]
+/// The detail body of a revoke row.
 struct RevokeGrantBody {
     grant_id: String,
 }
@@ -283,6 +300,11 @@ struct RevokeGrantBody {
 /// means nothing is armed. The server's `live_grant` filters the revoked copy
 /// out, so after a revoke nothing routes.
 #[must_use]
+/// Rebuild the live grant from journaled arm/revoke rows: last arm wins, and a
+/// revoke marks the matching live grant revoked so the state stays
+/// representable; an unmatched revoke leaves the live grant alone. No rows
+/// means nothing is armed. The server's `live_grant` filters the revoked copy
+/// out, so after a revoke nothing routes.
 pub fn replay_grant(events: &[JournalEvent]) -> Option<Grant> {
     let mut live: Option<Grant> = None;
     for event in events {
@@ -310,6 +332,7 @@ pub fn replay_grant(events: &[JournalEvent]) -> Option<Grant> {
 
 /// The detail body of an attest row.
 #[derive(Deserialize)]
+/// The detail body of an attest row.
 struct AttestGrantBody {
     grant_id: String,
 }
@@ -321,6 +344,12 @@ struct AttestGrantBody {
 /// twice reports the same instant and moves no budget. Rows whose detail is
 /// not an attest body never attest.
 #[must_use]
+/// Rebuild the last attestation instant from journaled attest rows: last row
+/// wins; no rows means never attested (callers fall back to the grant's
+/// `valid_from`, matching ledger initialization). Idempotent by
+/// construction — the fold reports a time, never a consumption, so folding
+/// twice reports the same instant and moves no budget. Rows whose detail is
+/// not an attest body never attest.
 pub fn replay_attestation(events: &[JournalEvent]) -> Option<DateTime<Utc>> {
     events
         .iter()
@@ -377,6 +406,9 @@ pub fn decide_proposal(
 /// proposal wins; unparseable rows and every other kind never project. The
 /// inbox reads this fold, so the served states are the journaled ones.
 #[must_use]
+/// Project journaled lifecycle rows into per-proposal states: last row per
+/// proposal wins; unparseable rows and every other kind never project. The
+/// inbox reads this fold, so the served states are the journaled ones.
 pub fn replay_proposal_states(
     events: &[JournalEvent],
 ) -> std::collections::BTreeMap<String, ProposalState> {
@@ -409,6 +441,10 @@ pub const PROPOSAL_BODY_KIND: &str = "proposal_body";
 /// joins this with [`replay_proposal_states`] so the served rows are the
 /// journaled bodies beside their journaled states.
 #[must_use]
+/// Project journaled proposal bodies into a map `id`→proposal: last body per
+/// id wins; unparseable rows and every other kind never project. The inbox
+/// joins this with [`replay_proposal_states`] so the served rows are the
+/// journaled bodies beside their journaled states.
 pub fn proposal_bodies(events: &[JournalEvent]) -> std::collections::BTreeMap<String, Proposal> {
     let mut bodies = std::collections::BTreeMap::new();
     for event in events {
@@ -425,6 +461,8 @@ pub fn proposal_bodies(events: &[JournalEvent]) -> std::collections::BTreeMap<St
 /// One inbox row rebuilt from the journal: the proposal body beside its
 /// journaled lifecycle state. A body with no transition row reads `Proposed`.
 #[derive(Debug, Clone, PartialEq)]
+/// One inbox row rebuilt from the journal: the proposal body beside its
+/// journaled lifecycle state. A body with no transition row reads `Proposed`.
 pub struct JournaledProposal {
     /// The proposal as proposed.
     pub proposal: Proposal,
@@ -436,6 +474,9 @@ pub struct JournaledProposal {
 /// latest states, in stable id order. This is what a restart serves — never a
 /// second in-memory authority.
 #[must_use]
+/// The approval inbox from journaled rows alone: bodies joined with their
+/// latest states, in stable id order. This is what a restart serves — never a
+/// second in-memory authority.
 pub fn replay_proposals(events: &[JournalEvent]) -> Vec<JournaledProposal> {
     let states = replay_proposal_states(events);
     proposal_bodies(events)
@@ -454,6 +495,12 @@ pub fn replay_proposals(events: &[JournalEvent]) -> Vec<JournaledProposal> {
 /// back to [`TradingState::Enabled`]; `ArmGrant`/`RevokeGrant` transition the
 /// live grant, journaled first like every other command.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One command-plane directive. `CloseAll` flattens every open group in the
+/// venue book (one atomic intent per leg-group, never leg-by-leg);
+/// `CancelAll` lists active orders for cancellation; `Disarm` transitions
+/// the shared state to [`TradingState::Disabled`]; `Resume` transitions it
+/// back to [`TradingState::Enabled`]; `ArmGrant`/`RevokeGrant` transition the
+/// live grant, journaled first like every other command.
 pub enum CommandKind {
     /// Flatten every open group, scoped to a registered portfolio name.
     CloseAll {
@@ -510,6 +557,8 @@ pub enum CommandKind {
 /// One closable unit: an exposure side, an absolute quantity, and the
 /// structure that must travel with it (`None` for single-leg books).
 #[derive(Debug, Clone)]
+/// One closable unit: an exposure side, an absolute quantity, and the
+/// structure that must travel with it (`None` for single-leg books).
 pub struct LegGroup {
     /// Underlying the group tracks.
     pub underlying: String,
@@ -531,6 +580,9 @@ pub struct LegGroup {
 /// row shape the route, the gateway, and the loop executor all write and
 /// read, so the three never disagree about what was ordered.
 #[must_use]
+/// The journaled detail for a close-all command over `portfolio`: the one
+/// row shape the route, the gateway, and the loop executor all write and
+/// read, so the three never disagree about what was ordered.
 pub fn close_all_detail(portfolio: &str) -> String {
     serde_json::json!({ "portfolio": portfolio }).to_string()
 }
@@ -538,6 +590,8 @@ pub fn close_all_detail(portfolio: &str) -> String {
 /// The journaled detail for a cancel-all command over `portfolio`: same one
 /// shape as [`close_all_detail`].
 #[must_use]
+/// The journaled detail for a cancel-all command over `portfolio`: same one
+/// shape as [`close_all_detail`].
 pub fn cancel_all_detail(portfolio: &str) -> String {
     serde_json::json!({ "portfolio": portfolio }).to_string()
 }
@@ -552,6 +606,15 @@ pub fn cancel_all_detail(portfolio: &str) -> String {
 /// through here, and the live loop reads its registry book through here —
 /// never a second grouping.
 #[must_use]
+/// Read venue books as closable groups: one single-leg group per nonzero net
+/// position, one spread group per execution prefix (legs of one fill share a
+/// client-ID prefix and therefore close as one package). Prototype grouping,
+/// documented as such: mixed-ratio books close the minimum whole-unit count,
+/// and exact ties on dominant side break toward the first leg in OCC order.
+/// 
+/// The one grouping implementation: the command unit reads its paper book
+/// through here, and the live loop reads its registry book through here —
+/// never a second grouping.
 pub fn open_groups_of<S: std::hash::BuildHasher>(
     positions: Vec<Position>,
     spread: &HashMap<String, SpreadPosition, S>,
@@ -726,6 +789,13 @@ fn flip_legs(legs: &SpreadLegs) -> Result<SpreadLegs, String> {
 ////// Client IDs of orders still working: active only, so cancel sweeps never
 /// chase terminal orders.
 #[must_use]
+/// Operator cancel listing: the loop's per-bar fold sweeps the registry's
+/// active orders through [`cancel_all_ids`] and cancels them through the
+/// registry; the route and the gateway journal the command row that fold
+/// consumes. Cancels hold no budget — there is no claim to settle or
+/// release, so usage and pending read unchanged across the sweep.
+/// /// Client IDs of orders still working: active only, so cancel sweeps never
+/// chase terminal orders.
 pub fn cancel_all_ids(orders: &[OrderRecord]) -> Vec<String> {
     orders
         .iter()
@@ -740,6 +810,10 @@ pub fn cancel_all_ids(orders: &[OrderRecord]) -> Vec<String> {
 /// execution failures so supervision cancels dependents fail-closed.
 #[derive(bon::Builder)]
 #[builder(start_fn = new)]
+/// A command-plane directive as a supervised unit: reads venue books and the
+/// portfolio registry synchronously (no hidden I/O, no awaits), transitions
+/// shared state or emits intent data, and reports unknown portfolios as
+/// execution failures so supervision cancels dependents fail-closed.
 pub struct CommandUnit {
     /// Command name (also the supervision identity).
     pub name: String,
@@ -1044,6 +1118,8 @@ impl_component!(TradingStateUnit);
 /// One journaled order as the replica sees it: client ID plus latest
 /// lifecycle kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One journaled order as the replica sees it: client ID plus latest
+/// lifecycle kind.
 pub struct ReplicaOrder {
     /// Client ID the lifecycle belongs to.
     pub client_id: String,
@@ -1056,6 +1132,10 @@ pub struct ReplicaOrder {
 /// and it is distinct from the server preview aggregate that shares the
 /// shape's name in another crate.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Read-only monitor view over journaled lifecycle state. This is the
+/// terminal data contract for rendering — it carries no order authority,
+/// and it is distinct from the server preview aggregate that shares the
+/// shape's name in another crate.
 pub struct PortfolioView {
     /// Latest lifecycle kind per client, in first-seen order.
     pub orders: Vec<ReplicaOrder>,

@@ -31,6 +31,14 @@ use crate::error::OrtError;
 /// last token's end; its score is the mean of the covered tokens' scores.
 /// Pure and unit-testable — the classifier's deterministic half.
 #[must_use]
+/// Decode per-token BILUO labels into char-aligned spans.
+/// 
+/// `offsets` are the per-token byte offsets (from the LFM tokenizer), `labels`
+/// the predicted label strings (`"O"`, `"B-contact.email"`, `"I-contact.email"`,
+/// `"E-contact.email"`, `"S-contact.email"`), `scores` the per-token
+/// confidence. A span's char range runs from its first token's start to its
+/// last token's end; its score is the mean of the covered tokens' scores.
+/// Pure and unit-testable — the classifier's deterministic half.
 pub fn decode_biluo(offsets: &[(usize, usize)], labels: &[String], scores: &[f64]) -> Vec<PiiSpan> {
     let n = offsets.len().min(labels.len()).min(scores.len());
     let mut spans: Vec<PiiSpan> = Vec::new();
@@ -192,6 +200,7 @@ pub fn label_map_for(config: &OnnxConfig) -> Result<Option<HashMap<i64, String>>
 
 /// The subset of a model `config.json` the PII label-map reader needs.
 #[derive(Debug, Default, Deserialize)]
+/// The subset of a model `config.json` the PII label-map reader needs.
 struct ConfigJsonLabels {
     #[serde(default)]
     id2label: Option<HashMap<i64, String>>,

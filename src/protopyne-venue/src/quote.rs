@@ -35,6 +35,7 @@ pub const PACKAGE_TOLERANCE_BPS: u32 = 200;
 /// A two-sided quote at one instant.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// A two-sided quote at one instant.
 pub struct Quote {
     /// Best bid.
     pub bid: Money,
@@ -84,6 +85,8 @@ impl Quote {
 /// (**(task-value)**); age bounds validity (**(correctness)**).
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Minimum market quality for a fill. Width and size bound economics
+/// (**(task-value)**); age bounds validity (**(correctness)**).
 pub struct LiquidityFilter {
     /// Maximum acceptable spread width **(task-value)**.
     pub max_spread_width: Money,
@@ -139,6 +142,9 @@ impl LiquidityFilter {
 /// never producer health.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Adverse price move applied to the touch, in basis points of price.
+/// Axis: **(task-value)** — slippage tolerance prices adverse selection,
+/// never producer health.
 pub struct Slippage {
     /// Basis points of adverse move (10_000 = 100%).
     pub bps: u32,
@@ -173,6 +179,13 @@ impl Slippage {
 /// schedule exactly, bytes included, so adding this arm moved no existing pin.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
+/// Commission schedule: a flat per-contract charge plus an optional
+/// percentage of notional.
+/// 
+/// The two arms exist because venues and reference strategies charge
+/// differently, and a run must be able to state which model it assumed. A
+/// percentage of `0` is not merely small — it reproduces the per-contract-only
+/// schedule exactly, bytes included, so adding this arm moved no existing pin.
 pub struct FeeSchedule {
     /// Commission per contract (or share).
     pub per_contract: Money,

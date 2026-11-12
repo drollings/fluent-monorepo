@@ -30,6 +30,7 @@ pub const MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Gate failures. Each names the blown ceiling.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Gate failures. Each names the blown ceiling.
 pub enum GateError {
     /// A stage exceeded its ceiling.
     #[error("stage {0} took {1} ms (ceiling {2} ms)")]
@@ -50,6 +51,7 @@ pub enum GateError {
 
 /// Which hardware profile gates the run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which hardware profile gates the run.
 pub enum Profile {
     /// Mid-range GPU with an 8B 4-bit-quantized model.
     Gpu,
@@ -60,6 +62,8 @@ pub enum Profile {
 /// Stage latencies in ms derived from the log: `SendPcm − InputPcm`
 /// per stage occurrence, maximum per stage.
 #[must_use]
+/// Stage latencies in ms derived from the log: `SendPcm − InputPcm`
+/// per stage occurrence, maximum per stage.
 pub fn stage_latencies(log: &BenchLog) -> HashMap<String, u64> {
     let mut open: HashMap<String, u64> = HashMap::new();
     let mut max: HashMap<String, u64> = HashMap::new();
@@ -84,6 +88,7 @@ pub fn stage_latencies(log: &BenchLog) -> HashMap<String, u64> {
 
 /// End-to-end ms: first `InputPcm` to last `SendPcm`.
 #[must_use]
+/// End-to-end ms: first `InputPcm` to last `SendPcm`.
 pub fn end_to_end_ms(log: &BenchLog) -> u64 {
     let first = log.events.iter().map(|event| event.t_ms).min().unwrap_or(0);
     let last = log.events.iter().map(|event| event.t_ms).max().unwrap_or(0);

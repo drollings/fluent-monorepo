@@ -32,6 +32,20 @@ use std::collections::{HashMap, HashSet};
 /// Source: `guidance-core::search_types::RrfScore` (moved, not copied).
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
+/// Fused RRF composite score: an ordinal over within-route positions,
+/// not a confidence and not a magnitude. The fusion kernel sums
+/// `1/(K + rank)` terms across routes whose private scales do not
+/// commute (unbounded BM25 magnitudes, constant lemma weights,
+/// embedding distances), so composites compare positions only.
+/// Consequences, enforced by the shape of this type rather than by
+/// prose: no arithmetic (`Add`/`Sub`/`Mul`/`Div`/`Sum` are deliberately
+/// absent — a composite never combines with anything, and a raw route
+/// score cannot flow here without an explicit wrap); ordering through
+/// the derived `PartialOrd` (same `partial_cmp` semantics as the bare
+/// `f64` it replaces); magnitude reads only through [`RrfScore::value`]
+/// for lossy display. Serialization is transparent: on the wire this
+/// is still a JSON number, byte-identical to before.
+/// Source: `guidance-core::search_types::RrfScore` (moved, not copied).
 pub struct RrfScore(pub f64);
 
 impl RrfScore {
@@ -55,6 +69,8 @@ impl RrfScore {
 /// One fused candidate: id + RRF score + 1-based rank.
 /// Source: `guidance-core::search_types::FusedHit` (moved, not copied).
 #[derive(Debug, Clone, PartialEq)]
+/// One fused candidate: id + RRF score + 1-based rank.
+/// Source: `guidance-core::search_types::FusedHit` (moved, not copied).
 pub struct FusedHit {
     /// Candidate id.
     pub id: String,
@@ -90,6 +106,12 @@ pub const ROLE_EPSILON: f64 = 1e-4;
 /// `fuse_candidates` both compose this seam instead of calling
 /// `fluent_db::vector::rrf_merge_n` themselves.
 #[must_use]
+/// Score `(id, rank)` postings through the single kernel:
+/// `score = Σ 1/(K + rank)` per id; duplicate postings for one id sum
+/// (one recall per route, as in zvec `fuseCandidates`). The one
+/// kernel-call site in the workspace — [`rrf_fuse`] and the guidance
+/// `fuse_candidates` both compose this seam instead of calling
+/// `fluent_db::vector::rrf_merge_n` themselves.
 pub fn score_postings(postings: Vec<(String, usize)>, k: f64) -> HashMap<String, f64> {
     fluent_db::vector::rrf_merge_n(
         postings
@@ -111,6 +133,13 @@ pub fn score_postings(postings: Vec<(String, usize)>, k: f64) -> HashMap<String,
 /// re-composed over [`score_postings`]; the per-list dedupe and the
 /// `(score desc, id asc)` order are byte-identical to the moved code.
 #[must_use]
+/// N-route RRF fusion: `score = Σ 1/(K + rank)` over every found recall,
+/// lexicographic id tie-break, 1-based ranks.
+/// Source: `pipeline/search/index.ts` (`fuseCandidates`; storage recall
+/// ranks are 1-based positions, so list position `pos` fuses at rank
+/// `pos + 1`). Moved from `guidance-core::search_types::rrf_fuse` and
+/// re-composed over [`score_postings`]; the per-list dedupe and the
+/// `(score desc, id asc)` order are byte-identical to the moved code.
 pub fn rrf_fuse(lists: &[Vec<String>], k: f64) -> Vec<FusedHit> {
     let mut postings: Vec<(String, usize)> = Vec::new();
     for list in lists {
@@ -144,6 +173,11 @@ pub fn rrf_fuse(lists: &[Vec<String>], k: f64) -> Vec<FusedHit> {
 /// to the result; callers push in structural order
 /// (file → dependent → call → scope) for auditability.
 #[must_use]
+/// Additive boost application: `base + Σ boosts`. Boosts stack —
+/// a candidate sharing its anchor's file *and* calling its anchor's
+/// symbol earns both terms. Pure addition, so push order never matters
+/// to the result; callers push in structural order
+/// (file → dependent → call → scope) for auditability.
 pub fn apply_boosts(base: f64, boosts: impl IntoIterator<Item = f64>) -> f64 {
     boosts.into_iter().fold(base, |acc, boost| acc + boost)
 }

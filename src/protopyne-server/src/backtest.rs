@@ -54,6 +54,10 @@ pub(crate) fn ensure_bars_for_session(
 /// (`backtest.rs`, `runner.rs`), instead of one private copy per module
 /// (M7.3b).
 #[allow(clippy::trivially_copy_pass_by_ref)]
+/// `skip_serializing_if` requires a `&bool` predicate; the type is `Copy`.
+/// Crate-visible: the one `is_false` for every serde default-triple
+/// (`backtest.rs`, `runner.rs`), instead of one private copy per module
+/// (M7.3b).
 pub(crate) fn is_false(value: &bool) -> bool {
     !*value
 }
@@ -66,6 +70,12 @@ pub(crate) fn is_false(value: &bool) -> bool {
 /// liquidity.
 #[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
+/// How quotes are derived from closed-bar closes in the prototype.
+/// 
+/// The mid equals the bar close; the spread is `close * spread_bps / 10_000`
+/// split symmetrically around the mid. Sizes are fixed. This is a stated
+/// fill assumption surfaced in every report, not a claim about real
+/// liquidity.
 pub struct BacktestConfig {
     /// Symbol this history belongs to.
     pub underlying: String,
@@ -166,6 +176,10 @@ impl fluent_wvr::validate::Validate for BacktestConfig {
 /// Returns `None` (fail closed, bar skipped with a reason) when the close is
 /// non-positive or the derived touch would be crossed.
 #[must_use]
+/// Synthesize a two-sided quote for `bar` under `config`.
+/// 
+/// Returns `None` (fail closed, bar skipped with a reason) when the close is
+/// non-positive or the derived touch would be crossed.
 pub fn quote_for_bar(bar: &Bar, config: &BacktestConfig) -> Option<Quote> {
     if config.quote_spread_bps > 10_000 {
         return None;
@@ -208,6 +222,21 @@ pub fn quote_for_bar(bar: &Bar, config: &BacktestConfig) -> Option<Quote> {
 /// through the one [`load_history`] entry point, so file, dynamic, and stored
 /// histories replay through the identical decide path.
 #[derive(Debug, Clone)]
+/// Where a run's bars come from: a file set, a caller-supplied tape, or
+/// a durable store.
+/// 
+/// The files arm carries CSV or Parquet candidates in fallback order and
+/// walks them through the one candidate ladder (a missing or unreadable file
+/// skips to the next; any parse or structural refusal stops the walk).
+/// The dynamic arm carries an in-memory tape (synthetic fixtures, a
+/// live-captured session, a second symbol with no file) with the same
+/// fail-closed shape — an empty tape refuses just like an empty candidate
+/// set. The tape arm
+/// plans and reads a span through a [`CandleStore`], the same read path a
+/// chart or a replay uses; it is a **substrate arm**, not a third parsing
+/// path, and the store stays outside [`BacktestVenue`]. Every arm loads
+/// through the one [`load_history`] entry point, so file, dynamic, and stored
+/// histories replay through the identical decide path.
 pub enum HistorySource {
     /// File candidates in fallback order (`.csv` or `.parquet` by extension).
     Files(Vec<std::path::PathBuf>),
@@ -230,6 +259,10 @@ pub enum HistorySource {
 /// `provenance` is empty; a run over them pins exactly as it did before tape
 /// data existed.
 #[derive(Debug, Clone, PartialEq)]
+/// Bars loaded from a history source, with the planner provenance the tape
+/// arm carries. The file and dynamic arms have no planner to name, so their
+/// `provenance` is empty; a run over them pins exactly as it did before tape
+/// data existed.
 pub struct LoadedHistory {
     /// Committed bars, ascending by `ts`.
     pub bars: Vec<Bar>,

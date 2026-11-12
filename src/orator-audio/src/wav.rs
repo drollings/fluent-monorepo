@@ -7,6 +7,7 @@ use orator::SttError;
 
 /// PCM audio in memory.
 #[derive(Debug, Clone, PartialEq)]
+/// PCM audio in memory.
 pub struct WavPcm {
     /// Mono f32 samples.
     pub samples: Vec<f32>,
@@ -35,6 +36,13 @@ pub fn decode_wav_bytes(bytes: &[u8]) -> Result<WavPcm, SttError> {
 /// stays within one LSB of `x`. The header comes from
 /// `common_core::pcm::wav_frame_header`.
 #[must_use]
+/// Encode mono f32 samples as 16-bit PCM WAV bytes at `sample_rate`.
+/// 
+/// The writer mirrors the parser: the payload quantizes with the
+/// (32767, TowardZero) convention shared with the s2s frame encoder
+/// (`common_core::pcm`), so `decode_wav_bytes(encode_wav_mono(x))`
+/// stays within one LSB of `x`. The header comes from
+/// `common_core::pcm::wav_frame_header`.
 pub fn encode_wav_mono(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     use common_core::pcm::{Rounding, Scale16};
     common_core::pcm::encode_wav_mono_pcm16(

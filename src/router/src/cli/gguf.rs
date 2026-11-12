@@ -27,6 +27,7 @@ use serde_json::Value;
 
 /// Model metadata associated with one GGUF weights file on disk.
 #[derive(Debug, Clone)]
+/// Model metadata associated with one GGUF weights file on disk.
 pub struct GgufEntry {
     /// Model path relative to `gguf_dir` (lowercased, `-gguf` suffix stripped),
     /// e.g. `abiray/lfm2.5-2.6b-heretic-abliterated`.
@@ -47,6 +48,7 @@ pub struct GgufEntry {
 
 /// The on-disk `models.json` cache (schema-compatible with `gguf_tool.py` v2).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// The on-disk `models.json` cache (schema-compatible with `gguf_tool.py` v2).
 pub struct GgufCache {
     pub version: u32,
     #[serde(default)]

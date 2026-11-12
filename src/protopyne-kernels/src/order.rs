@@ -20,6 +20,7 @@ use crate::indicator::IndicatorId;
 
 /// One registered kernel's id and its declared edges.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One registered kernel's id and its declared edges.
 pub struct KernelEdges {
     /// Registry key.
     pub id: IndicatorId,

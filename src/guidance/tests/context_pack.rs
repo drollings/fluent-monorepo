@@ -3,7 +3,10 @@
 use super::{pack_context, ContextItem, DEFAULT_PACK_TOKENS};
 
 fn item(source: &str, text: &str) -> ContextItem {
-    ContextItem { text: text.to_string(), source: source.to_string() }
+    ContextItem {
+        text: text.to_string(),
+        source: source.to_string(),
+    }
 }
 
 #[test]
@@ -19,7 +22,11 @@ fn budget_bounds_total_estimate() {
     let big: String = "x ".repeat(10_000);
     let items = vec![item("a", &big), item("b", "tiny")];
     let pack = pack_context(&items, 100);
-    let total: u64 = pack.items.iter().map(|item| fluent_llm::tokens::estimate_tokens(&item.text)).sum();
+    let total: u64 = pack
+        .items
+        .iter()
+        .map(|item| fluent_llm::tokens::estimate_tokens(&item.text))
+        .sum();
     assert!(total <= 100, "total {total} exceeds budget");
     assert!(pack.dropped >= 1);
     assert_eq!(pack.items.len() + pack.dropped, items.len());

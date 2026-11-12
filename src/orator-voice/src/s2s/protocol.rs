@@ -15,6 +15,7 @@ pub use orator::prompts::S2S_INTERLEAVED_PROMPT as SYSTEM_INTERLEAVED;
 
 /// One parsed stream event.
 #[derive(Debug, Clone, PartialEq)]
+/// One parsed stream event.
 pub enum StreamEvent {
     /// Spoken-audio samples at 24 kHz.
     Audio(Vec<f32>),
@@ -30,6 +31,11 @@ pub enum StreamEvent {
 /// with the Transcribe encoder (`TowardZero`). Byte-identical to the
 /// previous inline construction (pinned by `orator_s2s_wav_header_golden`).
 #[must_use]
+/// Encode mono f32 samples as 16-bit PCM WAV bytes.
+/// Header layout shared with `orator_audio::wav::encode_wav_mono`
+/// (`common_core::pcm::wav_frame_header`); payload quantizer shared
+/// with the Transcribe encoder (`TowardZero`). Byte-identical to the
+/// previous inline construction (pinned by `orator_s2s_wav_header_golden`).
 pub fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     use common_core::pcm::{Rounding, Scale16};
     common_core::pcm::encode_wav_mono_pcm16(
@@ -43,6 +49,8 @@ pub fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 /// Base64 (standard) encode bytes for a message part.
 /// Shared codec home: `common_core::pcm`.
 #[must_use]
+/// Base64 (standard) encode bytes for a message part.
+/// Shared codec home: `common_core::pcm`.
 pub fn b64(bytes: &[u8]) -> String {
     common_core::pcm::encode_base64(bytes)
 }
@@ -57,24 +65,30 @@ pub fn unb64(text: &str) -> Result<Vec<u8>, String> {
 /// A trailing partial sample is dropped, never fabricated.
 /// Shared framing home: `common_core::pcm`.
 #[must_use]
+/// Little-endian f32 PCM bytes to samples (the `audio_chunk` shape).
+/// A trailing partial sample is dropped, never fabricated.
+/// Shared framing home: `common_core::pcm`.
 pub fn pcm_bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
     common_core::pcm::decode_f32_le(bytes)
 }
 
 /// System message part.
 #[must_use]
+/// System message part.
 pub fn system_msg(prompt: &str) -> serde_json::Value {
     serde_json::json!({ "role": "system", "content": prompt })
 }
 
 /// Text user message part.
 #[must_use]
+/// Text user message part.
 pub fn text_msg(text: &str) -> serde_json::Value {
     serde_json::json!({ "role": "user", "content": text })
 }
 
 /// Audio user message part: base64 WAV as an `input_audio` block.
 #[must_use]
+/// Audio user message part: base64 WAV as an `input_audio` block.
 pub fn audio_msg(wav_bytes: &[u8]) -> serde_json::Value {
     serde_json::json!({
         "role": "user",
@@ -90,6 +104,10 @@ pub fn audio_msg(wav_bytes: &[u8]) -> serde_json::Value {
 /// versioned route — the reference audio server serves only it,
 /// while OpenAI-compatible gateways accept it.
 #[must_use]
+/// Completions endpoint URL: `{base}/v1/chat/completions` (a base
+/// already ending there passes through). The audio contract is the
+/// versioned route — the reference audio server serves only it,
+/// while OpenAI-compatible gateways accept it.
 pub fn completions_url(base: &str) -> String {
     let trimmed = base.trim_end_matches('/');
     if trimmed.ends_with("/v1/chat/completions") {
@@ -101,6 +119,7 @@ pub fn completions_url(base: &str) -> String {
 
 /// Streaming chat body with the context-reset scope.
 #[must_use]
+/// Streaming chat body with the context-reset scope.
 pub fn chat_body(
     model: &str,
     messages: &[serde_json::Value],
@@ -120,6 +139,9 @@ pub fn chat_body(
 /// keep-alives and unparseable lines (skipped, never fatal);
 /// `[DONE]` yields `Done`.
 #[must_use]
+/// Parse one SSE `data:` line into stream events. `None` for
+/// keep-alives and unparseable lines (skipped, never fatal);
+/// `[DONE]` yields `Done`.
 pub fn parse_sse_line(line: &str) -> Option<Vec<StreamEvent>> {
     let line = line.trim();
     let data = line.strip_prefix("data:")?.trim();

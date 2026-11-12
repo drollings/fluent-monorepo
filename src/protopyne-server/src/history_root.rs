@@ -67,6 +67,9 @@ pub const DEFAULT_TICKER: &str = "SPY";
 /// supplements. Holds only the root path — discovery and parsing run per
 /// read, merged series live in [`HistoryCache`].
 #[derive(Debug, Clone)]
+/// A history directory root: `<root>/TICKER/YYYY/MM/*.parquet` plus CSV
+/// supplements. Holds only the root path — discovery and parsing run per
+/// read, merged series live in [`HistoryCache`].
 pub struct HistoryRoot {
     root: PathBuf,
 }
@@ -281,6 +284,8 @@ impl HistoryRoot {
 /// One month file excluded from a ticker merge: the path and the refusal
 /// that excluded it. Rendered by every caller — never dropped silently.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One month file excluded from a ticker merge: the path and the refusal
+/// that excluded it. Rendered by every caller — never dropped silently.
 pub struct SkippedFile {
     /// The month file that refused to parse.
     pub path: PathBuf,
@@ -292,6 +297,9 @@ pub struct SkippedFile {
 /// that interpret it. Skips are observations, never confidence — a non-zero
 /// count means the series carries holes the caller must disclose.
 #[derive(Debug, Clone, PartialEq)]
+/// One ticker's merged history: the ascending series plus the load facts
+/// that interpret it. Skips are observations, never confidence — a non-zero
+/// count means the series carries holes the caller must disclose.
 pub struct TickerLoad {
     /// Merged 1M bars, ascending and `validate_new_bar`-clean.
     pub bars: Vec<Bar>,
@@ -345,6 +353,10 @@ fn collect_by_extension(
 /// load. One ticker's merged series is the cost bound — the workspace holds
 /// its own converted rows beside this, and switching back never re-reads.
 #[derive(Debug)]
+/// On-demand per-ticker cache over a [`HistoryRoot`]: the first read of a
+/// ticker walks and merges its months, every later read clones the held
+/// load. One ticker's merged series is the cost bound — the workspace holds
+/// its own converted rows beside this, and switching back never re-reads.
 pub struct HistoryCache {
     root: HistoryRoot,
     loads: HashMap<String, TickerLoad>,

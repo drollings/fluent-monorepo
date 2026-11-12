@@ -73,6 +73,7 @@ async fn lane_timeout_bounds_the_call_not_the_queue() {
             assert_eq!(timeout_ms, 20);
         }
         LaneError::Closed => panic!("gate closed unexpectedly"),
+        LaneError::Unavailable { detail, .. } => panic!("unexpected unavailable: {detail}"),
     }
 }
 
@@ -111,4 +112,49 @@ fn lane_defaults_preserve_single_server_behavior() {
     let outcome =
         common_core::runtime::block_on_shared(gate.admit(Lane::Background, || async { "direct" }));
     assert_eq!(outcome.expect("uncontended background runs"), "direct");
+}
+
+#[tokio::test]
+async fn unavailable_backend_waits_then_propagates_without_timeout() {
+    // A busy/unreachable model surfaces `Unavailable` through the lane:
+    // background still defers to interactive (waiting, not failure),
+    // and the ladder signal arrives intact — never converted into a
+    // timeout or a silent fallback.
+    use fluent_llm::decision::DecisionError;
+    let gate = Arc::new(LaneGate::new(tight_config()));
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+    let holder = {
+        let gate = Arc::clone(&gate);
+        tokio::spawn(async move {
+            gate.admit(Lane::Interactive, || async move {
+                let _ = started_tx.send(());
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                "interactive"
+            })
+            .await
+        })
+    };
+    started_rx.await.expect("holder owns the lane");
+    let defer_start = Instant::now();
+    let outcome: Result<Result<&str, DecisionError>, LaneError> = gate
+        .admit_checked(Lane::Background, || async {
+            Err::<&str, DecisionError>(DecisionError::Unavailable("backend busy".to_string()))
+        })
+        .await;
+    let deferred = defer_start.elapsed();
+    let held = holder
+        .await
+        .expect("holder joins")
+        .expect("interactive admitted");
+    assert_eq!(held, "interactive");
+    assert!(
+        deferred >= Duration::from_millis(80),
+        "must defer until release, took {deferred:?}"
+    );
+    match outcome {
+        Ok(Err(DecisionError::Unavailable(detail))) => {
+            assert!(detail.contains("busy"), "{detail}");
+        }
+        other => panic!("unavailable must propagate intact, got {other:?}"),
+    }
 }

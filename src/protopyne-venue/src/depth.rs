@@ -46,6 +46,7 @@ pub const DEFAULT_MAX_LEVELS: usize = 64;
 
 /// One price level: a price and the size resting there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// One price level: a price and the size resting there.
 pub struct PriceLevel {
     /// Limit price at this level (must be positive).
     pub price: Money,
@@ -56,6 +57,8 @@ pub struct PriceLevel {
 /// One incremental ladder update: level upserts (`size == 0` removes the
 /// level) applied atomically at one sequence number.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One incremental ladder update: level upserts (`size == 0` removes the
+/// level) applied atomically at one sequence number.
 pub struct DepthDelta {
     /// Bid upserts/removals.
     pub bids: Vec<PriceLevel>,
@@ -73,6 +76,11 @@ pub struct DepthDelta {
 /// validates: stale or gapped sequences, non-positive prices, and
 /// over-bound books refuse fail-closed, never by repairing caller data.
 #[derive(Debug, Clone)]
+/// Sorted two-sided ladder for one symbol. Levels live in `BTreeMap`s keyed
+/// by price, so best-first order is structural (best bid is the greatest
+/// key, best ask the least) rather than a caller promise. Every mutation
+/// validates: stale or gapped sequences, non-positive prices, and
+/// over-bound books refuse fail-closed, never by repairing caller data.
 pub struct DepthBook {
     underlying: String,
     key: SymKey,
@@ -297,6 +305,12 @@ impl fluent_wvr::validate::Validate for DepthBook {
 /// Width math delegates to [`Quote::spread_width`]: `None` there is the
 /// cross verdict here.
 #[must_use]
+/// Whether the book's top is crossed or locked (`bid >= ask`):
+/// **(correctness)** — a crossed top has no valid mid. Pure function
+/// returning the reason; `None` means clean. An empty side is not a cross
+/// (it is dark, owned by no detector here), so empties pass silent.
+/// Width math delegates to [`Quote::spread_width`]: `None` there is the
+/// cross verdict here.
 pub fn is_crossed(book: &DepthBook) -> Option<String> {
     let top = book.top()?;
     if top.spread_width().is_none() {
@@ -315,6 +329,9 @@ pub fn is_crossed(book: &DepthBook) -> Option<String> {
 /// **(correctness)** — an old book describes a dead market. Pure function
 /// returning the reason; `None` means fresh.
 #[must_use]
+/// Whether the book is older than `max_age_secs` at `now`:
+/// **(correctness)** — an old book describes a dead market. Pure function
+/// returning the reason; `None` means fresh.
 pub fn is_stale(book: &DepthBook, now: DateTime<Utc>, max_age_secs: u64) -> Option<String> {
     let age = now.signed_duration_since(book.ts).num_seconds().max(0) as u64;
     if age > max_age_secs {
@@ -330,6 +347,8 @@ pub fn is_stale(book: &DepthBook, now: DateTime<Utc>, max_age_secs: u64) -> Opti
 /// One dark-detector trip, recorded for the journal/telemetry. The book
 /// keeps trading without it: findings never gate fills.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One dark-detector trip, recorded for the journal/telemetry. The book
+/// keeps trading without it: findings never gate fills.
 pub struct DarkFinding {
     /// Canonical symbol spelling (strings serialize; keys never do).
     pub symbol: String,
@@ -347,6 +366,13 @@ pub struct DarkFinding {
 /// advance the marker only when consecutive — a gap refuses so the book
 /// re-snapshots rather than limping on.
 #[derive(Debug)]
+/// One book per [`SymKey`](protopyne_types::SymKey) behind a session-owned
+/// [`SymbolIndex`](protopyne_types::SymbolIndex): the only depth-book home,
+/// never a second instrument index, never global state. Books open on
+/// snapshot, never on a mid-stream delta: a [`MarketEvent::BookDelta`] for
+/// an unknown symbol refuses (the feed must snapshot first), and heartbeats
+/// advance the marker only when consecutive — a gap refuses so the book
+/// re-snapshots rather than limping on.
 pub struct BookManager {
     books: HashMap<SymKey, DepthBook>,
     index: SymbolIndex,

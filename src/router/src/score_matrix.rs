@@ -46,6 +46,13 @@ impl ScoreMatrix {
 /// only these three band-carrying categories are closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Closed set of well-known router routes that carry score bands.
+/// 
+/// The wire format stays the lowercase strings (`"plan"`, `"rigor"`,
+/// `"local"`), so existing JSON configs carrying those names deserialize
+/// byte-identically; new code matches on this enum instead of repeating the
+/// raw literals. Dynamic route names from operator config stay strings —
+/// only these three band-carrying categories are closed.
 pub enum RouterRouteKind {
     Plan,
     Rigor,
@@ -55,6 +62,7 @@ pub enum RouterRouteKind {
 /// Typed rejection for unknown route names: never a silent default.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("unknown router route: {0}")]
+/// Typed rejection for unknown route names: never a silent default.
 pub struct UnknownRouterRoute(pub String);
 
 impl RouterRouteKind {

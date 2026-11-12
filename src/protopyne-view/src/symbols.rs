@@ -12,6 +12,7 @@ use crate::views::SymbolInfoView;
 
 /// Asset class behind the Symbol Selection Modal tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Asset class behind the Symbol Selection Modal tabs.
 pub enum AssetClass {
     /// Equities and equity ETFs.
     Stocks,
@@ -70,6 +71,7 @@ pub const SYMBOL_CATALOG: [(&str, &str, AssetClass); 5] = [
 
 /// The catalog as wire rows, in catalog order.
 #[must_use]
+/// The catalog as wire rows, in catalog order.
 pub fn symbol_catalog() -> Vec<SymbolInfoView> {
     SYMBOL_CATALOG
         .iter()
@@ -85,6 +87,9 @@ pub fn symbol_catalog() -> Vec<SymbolInfoView> {
 /// manifest. `None` fields declare nothing: the caller falls back to the
 /// shipped entry or to the ticker itself, never a guess.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// One ticker's declared identity, from a directory sidecar or an operator
+/// manifest. `None` fields declare nothing: the caller falls back to the
+/// shipped entry or to the ticker itself, never a guess.
 pub struct InstrumentDecl {
     /// Declared display name.
     pub name: Option<String>,
@@ -109,6 +114,14 @@ impl InstrumentDecl {
 /// empty list yields an empty row list; the caller decides whether that
 /// refuses.
 #[must_use]
+/// Wire rows for discovered `tickers`: the shipped entries keep their catalog
+/// order first (so a root holding exactly the shipped tickers serves the
+/// identical wire shape), then unmapped tickers sorted by spelling. The
+/// shipped entry takes precedence over any declaration (the shipped list is
+/// the offline fallback, not a second truth). An unmapped ticker displays as
+/// itself and carries [`AssetClass::Unknown`] — never a guessed class. An
+/// empty list yields an empty row list; the caller decides whether that
+/// refuses.
 pub fn discovered_symbol_rows(
     tickers: &[String],
     declared: impl Fn(&str) -> Option<InstrumentDecl>,
@@ -146,6 +159,10 @@ pub fn discovered_symbol_rows(
 /// — the caller refuses with its own reason. Never a guess: an empty `available`
 /// has no default.
 #[must_use]
+/// The default-symbol rule every default picks applies: `preferred` when it is
+/// present in `available`, else the first spelling in sorted order, else `None`
+/// — the caller refuses with its own reason. Never a guess: an empty `available`
+/// has no default.
 pub fn pick_default_symbol<'a>(
     preferred: &str,
     available: impl IntoIterator<Item = &'a str>,

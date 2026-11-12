@@ -109,27 +109,22 @@ fn strict_refuses_pending_stale_and_dependent_stale() {
     ]
     .into_iter()
     .map(|freshness| {
-        let refused: Result<&str, _> = gate.try_serve(
-            freshness.clone(),
-            || {},
-            || 9,
-            |_| "served",
-        );
+        let refused: Result<&str, _> = gate.try_serve(freshness.clone(), || {}, || 9, |_| "served");
         (freshness, refused)
     }) {
-        assert!(freshness.1.is_err(), "{:?} must refuse under strict", freshness.0);
+        assert!(
+            freshness.1.is_err(),
+            "{:?} must refuse under strict",
+            freshness.0
+        );
     }
 }
 
 #[test]
 fn strict_serves_fresh_and_default_serves_labelled() {
     let strict = FreshnessGate::new(FreshnessMode::Strict);
-    let ok: Result<&str, _> = strict.try_serve(
-        Freshness::Fresh { revision: 7 },
-        || {},
-        || 7,
-        |_| "served",
-    );
+    let ok: Result<&str, _> =
+        strict.try_serve(Freshness::Fresh { revision: 7 }, || {}, || 7, |_| "served");
     assert_eq!(ok, Ok("served"));
     for mode in [
         FreshnessMode::Background,
@@ -155,13 +150,11 @@ fn strict_serves_fresh_and_default_serves_labelled() {
 fn helpers_name_the_axis() {
     assert!(Freshness::Pending { revision: 9 }.is_pending());
     assert!(!Freshness::Fresh { revision: 9 }.is_pending());
-    assert!(
-        Freshness::DependentStale {
-            indexed_revision: 7,
-            dirty_revision: 7,
-        }
-        .is_dependent_stale()
-    );
+    assert!(Freshness::DependentStale {
+        indexed_revision: 7,
+        dirty_revision: 7,
+    }
+    .is_dependent_stale());
     assert!(!Freshness::Fresh { revision: 7 }.is_dependent_stale());
     assert!(Freshness::Fresh { revision: 7 }.is_fresh());
     assert!(!Freshness::Pending { revision: 9 }.is_fresh());

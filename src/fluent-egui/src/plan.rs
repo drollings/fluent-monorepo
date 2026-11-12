@@ -205,6 +205,14 @@ impl Default for PanePlan {
 /// does not claim hash injectivity: FNV-1a-64 can collide, so a key names
 /// the pane and parameters it was built from short of a collision.
 #[must_use]
+/// Cache key for one pane: length-prefixed node name plus the caller's
+/// parameter fingerprint, hashed once through the shared length-framed
+/// builder (the same byte idiom parameter fingerprints use: the `u64`
+/// fingerprint rides as one fixed-width payload). The length prefix removes
+/// framing ambiguity — name/fingerprint splits that concatenate identically
+/// would otherwise key identically — but, like [`series_hash`] below, this
+/// does not claim hash injectivity: FNV-1a-64 can collide, so a key names
+/// the pane and parameters it was built from short of a collision.
 pub fn cache_key(node: &str, fingerprint: u64) -> u64 {
     common_core::hash::fingerprint_framed(&[(node, &fingerprint.to_le_bytes())])
 }
@@ -240,6 +248,7 @@ fn series_hash(values: &[Option<f64>]) -> u64 {
 
 /// One cached series plus the revision bookkeeping that makes backdating work.
 #[derive(Debug, Clone)]
+/// One cached series plus the revision bookkeeping that makes backdating work.
 pub struct CachedSeries {
     /// Per-bar display values with holes preserved.
     pub values: Vec<Option<f64>>,
@@ -364,6 +373,9 @@ impl PaneCache {
 /// mistaken `get_or_load` fails closed instead of synthesizing a value.
 /// Takes the key by reference because `ArcLoadCache::new` dictates the shape.
 #[allow(clippy::trivially_copy_pass_by_ref)]
+/// Write-through load: the frame path only inserts computed series, so a
+/// mistaken `get_or_load` fails closed instead of synthesizing a value.
+/// Takes the key by reference because `ArcLoadCache::new` dictates the shape.
 fn never_load(_key: &u64) -> Result<Arc<CachedSeries>, String> {
     Err("pane cache is write-through; load is never called".to_owned())
 }
@@ -371,6 +383,8 @@ fn never_load(_key: &u64) -> Result<Arc<CachedSeries>, String> {
 /// Shared content-memo revision rule: identical fingerprints keep the
 /// revision, changed content bumps. Returns `(revision, dirty)`.
 #[must_use]
+/// Shared content-memo revision rule: identical fingerprints keep the
+/// revision, changed content bumps. Returns `(revision, dirty)`.
 pub fn content_revision(fingerprint: u64, current: Option<u64>, revision: u64) -> (u64, bool) {
     if current == Some(fingerprint) {
         (revision, false)

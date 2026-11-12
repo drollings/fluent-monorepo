@@ -148,6 +148,11 @@ async fn wait_until_all_ready(store: &ContentNodeStore, id: NodeId) {
 /// the counting seams observe exactly one derivation, and every caller shares
 /// the single installed value.
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+/// **Acceptance 1** — at-most-once under real concurrency: many threads race to
+/// derive the same node (each calling the store's `_for` entry points) *while*
+/// the background worker derives it too. The store's at-most-once install means
+/// the counting seams observe exactly one derivation, and every caller shares
+/// the single installed value.
 async fn at_most_once_under_many_concurrent_requests_plus_worker() {
     let store = seeded_store();
     let llm = Arc::new(CountingBackend::new("A request summary."));
@@ -199,6 +204,10 @@ async fn at_most_once_under_many_concurrent_requests_plus_worker() {
 /// overlay with a *different* value must not change the spacy/embedding
 /// derivations, and the spacy annotation's primary signal must equal LOD0.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+/// **Acceptance 2** — LOD0-derivation-only: each overlay derives from the node's
+/// LOD0 text and never reads another overlay's output. Pre-seeding the LLM
+/// overlay with a *different* value must not change the spacy/embedding
+/// derivations, and the spacy annotation's primary signal must equal LOD0.
 async fn overlays_derive_from_lod0_not_other_overlays() {
     let store = seeded_store();
     store.set_overlay_llm(Arc::new(CountingBackend::new("A request summary.")));
@@ -246,6 +255,9 @@ async fn overlays_derive_from_lod0_not_other_overlays() {
 /// marks only the LLM overlay `failed`; the spacy and embedding overlays still
 /// complete.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+/// **Acceptance 3** — fail-open independently per overlay: a down LLM backend
+/// marks only the LLM overlay `failed`; the spacy and embedding overlays still
+/// complete.
 async fn llm_backend_failure_does_not_block_spacy_or_embedding() {
     let store = seeded_store();
     store.set_overlay_llm(Arc::new(FailingBackend));
@@ -289,6 +301,8 @@ async fn llm_backend_failure_does_not_block_spacy_or_embedding() {
 /// one per derived overlay (success and permanent failure).
 #[ignore = "heavy (~1.1s): per-test NlpPipeline build; overlay audit shape more strongly pinned by ledger_overlay_worker::emits_overlay_audit_records; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+/// **Acceptance 4** — audit records present and correctly `kind = "overlay"`,
+/// one per derived overlay (success and permanent failure).
 async fn audit_records_are_kind_overlay() {
     let capture = crate::test_support::install_global_subscriber();
     // Suffix-scope: node ids restart per store, so only lines appended after
@@ -348,6 +362,8 @@ async fn audit_records_are_kind_overlay() {
 /// **Acceptance 5** — boot backfill idempotent: after a full derivation, running
 /// the backfill again enqueues nothing (no re-derivation).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+/// **Acceptance 5** — boot backfill idempotent: after a full derivation, running
+/// the backfill again enqueues nothing (no re-derivation).
 async fn boot_backfill_is_idempotent() {
     let store = seeded_store();
     let llm = Arc::new(CountingBackend::new("A summary."));
@@ -384,6 +400,9 @@ async fn boot_backfill_is_idempotent() {
 /// with no worker and no seams never derives an overlay, keeps reporting the
 /// node as needing one, and emits no `overlay` audit records.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+/// **Acceptance 6** — config-absent path byte-identical to pre-roadmap: a store
+/// with no worker and no seams never derives an overlay, keeps reporting the
+/// node as needing one, and emits no `overlay` audit records.
 async fn config_absent_path_is_byte_identical() {
     let capture = crate::test_support::install_global_subscriber();
 

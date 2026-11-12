@@ -16,6 +16,7 @@ use common_core::metrics::LatencyHistogram;
 
 /// Event kinds per stage crossing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Event kinds per stage crossing.
 pub enum BenchKind {
     /// Audio entered the stage.
     InputPcm,
@@ -29,6 +30,7 @@ pub enum BenchKind {
 
 /// One timestamped event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One timestamped event.
 pub struct BenchEvent {
     /// Event kind.
     pub kind: BenchKind,
@@ -40,6 +42,7 @@ pub struct BenchEvent {
 
 /// An ordered event log.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// An ordered event log.
 pub struct BenchLog {
     /// Events in emission order.
     pub events: Vec<BenchEvent>,
@@ -89,6 +92,7 @@ impl BenchLog {
 
 /// Per-stage histograms plus the end-to-end total.
 #[derive(Default)]
+/// Per-stage histograms plus the end-to-end total.
 pub struct Stats {
     /// One histogram per stage.
     pub stages: HashMap<String, LatencyHistogram>,
@@ -100,6 +104,9 @@ pub struct Stats {
 /// `SendPcm − InputPcm` durations into the shared histogram; only
 /// closed spans count (open inputs never render).
 #[must_use]
+/// Build histograms from `log`. Each stage feeds its
+/// `SendPcm − InputPcm` durations into the shared histogram; only
+/// closed spans count (open inputs never render).
 pub fn histograms(log: &BenchLog) -> Stats {
     let mut stats = Stats::default();
     let mut open: HashMap<String, u64> = HashMap::new();
@@ -124,6 +131,7 @@ pub fn histograms(log: &BenchLog) -> Stats {
 
 /// Render histograms for humans.
 #[must_use]
+/// Render histograms for humans.
 pub fn render_stats(stats: &Stats) -> String {
     use std::fmt::Write as _;
     let mut out = String::from("orator stats\n");

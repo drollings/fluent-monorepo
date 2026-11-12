@@ -31,6 +31,7 @@ const TITLES: &[&str] = &[
 
 /// One speakable chunk.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One speakable chunk.
 pub struct Chunk {
     /// Chunk text, trimmed.
     pub text: String,
@@ -41,6 +42,7 @@ pub struct Chunk {
 
 /// One streaming cut: byte length into the buffer plus its break kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One streaming cut: byte length into the buffer plus its break kind.
 pub struct Cut {
     /// Byte length of the chunk (leading text through the break).
     pub len: usize,
@@ -51,6 +53,8 @@ pub struct Cut {
 /// Gap after `chunk`: a breath after sentences, a flow after soft breaks,
 /// nothing after the last chunk.
 #[must_use]
+/// Gap after `chunk`: a breath after sentences, a flow after soft breaks,
+/// nothing after the last chunk.
 pub const fn tail_gap_ms(chunk: &Chunk, is_last: bool) -> u32 {
     if is_last {
         0
@@ -106,6 +110,10 @@ fn token_offset(doc: &spacy_rs::Doc, index: usize) -> usize {
 /// present; without tools the scan decides alone. Never cuts at the
 /// buffer end — a trailing candidate waits for more tokens.
 #[must_use]
+/// Find the first streaming cut in `buffer`. `first` marks the opening
+/// chunk (comma fast-path armed). Period cuts consult `tools` when
+/// present; without tools the scan decides alone. Never cuts at the
+/// buffer end — a trailing candidate waits for more tokens.
 pub fn find_cut(buffer: &str, first: bool, tools: Option<&SentenceTools>) -> Option<Cut> {
     let (chunks, _) = scan(buffer, first, tools, false);
     chunks.into_iter().next().map(|(chunk, end)| Cut {
@@ -117,6 +125,8 @@ pub fn find_cut(buffer: &str, first: bool, tools: Option<&SentenceTools>) -> Opt
 /// Split complete text into chunks. The tail always emits whole; chunks
 /// past the cap without any pause fall back to budget-bounded re-chunking.
 #[must_use]
+/// Split complete text into chunks. The tail always emits whole; chunks
+/// past the cap without any pause fall back to budget-bounded re-chunking.
 pub fn split_all(text: &str) -> Vec<Chunk> {
     let (committed, rest) = scan(text, true, None, true);
     let mut chunks: Vec<Chunk> = committed.into_iter().map(|(chunk, _)| chunk).collect();

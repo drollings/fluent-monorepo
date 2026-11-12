@@ -12,6 +12,7 @@ use common_core::constants::default_true;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// ── Filter outcome taxonomy ─────────────────────────────────────────────
 pub enum FilterOutcome {
     #[default]
     HardReject,
@@ -23,6 +24,7 @@ pub enum FilterOutcome {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// ── Control vocabulary ──────────────────────────────────────────────────
 pub enum FilterAction {
     Redact,
     Anonymize,
@@ -54,6 +56,7 @@ pub enum ConfidenceGate {
 // ── Pattern entries ─────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// ── Pattern entries ─────────────────────────────────────────────────────
 pub struct PatternEntry {
     pub name: String,
     #[serde(default)]
@@ -95,6 +98,7 @@ pub struct CommandConfig {
 // ── Mock configuration ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// ── Mock configuration ──────────────────────────────────────────────────
 pub struct MockConfig {
     pub transcript_path: String,
     #[serde(default = "default_true")]

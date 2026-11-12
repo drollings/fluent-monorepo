@@ -29,6 +29,13 @@ use std::sync::Arc;
 /// genuinely cross a serialization boundary (WASM units, network dispatch),
 /// and `WorkContext.metadata` only for genuinely untyped annotations.
 #[derive(Default)]
+/// A typed accumulator for in-process handoff between work units and stages.
+/// 
+/// This is the **primary** inter-unit data channel (see the decision-rule doc
+/// on `WorkContext`): write with [`OutputStore::set`], read with
+/// [`OutputStore::get`]. Use `WorkOutput.data` only for payloads that
+/// genuinely cross a serialization boundary (WASM units, network dispatch),
+/// and `WorkContext.metadata` only for genuinely untyped annotations.
 pub struct OutputStore {
     inner: HashMap<String, Arc<dyn Any + Send + Sync>>,
 }

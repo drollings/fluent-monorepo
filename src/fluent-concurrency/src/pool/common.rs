@@ -37,6 +37,16 @@ pub(crate) struct WrappedJob<T, R, E> {
 /// result pools also reply through the job's oneshot channel. This is the one
 /// worker loop every public pool type parameterizes.
 #[allow(clippy::needless_pass_by_value)]
+/// Spawn `cap` worker tasks running one shared worker core.
+/// 
+/// Each worker loops: `next_job().await` resolves to `Some(job)` when work is
+/// available or `None` when the pool is shutting down, and `handle(job).await`
+/// processes it. `next_job` encapsulates the pool's queue discipline — the
+/// `Queue`-backed pools `select!` between a shutdown notification and `pop`
+/// (so shutdown can preempt a pending pop); the priority pool drains its queue
+/// and then waits on shutdown/notify (drain-then-wait). `handle` runs the job;
+/// result pools also reply through the job's oneshot channel. This is the one
+/// worker loop every public pool type parameterizes.
 pub(crate) fn spawn_workers<J, F, Fut, H, HFut>(
     runtime: Arc<dyn Runtime>,
     cap: usize,

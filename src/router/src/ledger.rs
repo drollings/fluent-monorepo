@@ -85,6 +85,11 @@ pub enum LedgerError {
 /// canonical in-memory form is `fluent_types::ContentNode` (see
 /// `ContentNodeStore::snapshot`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Full-detail ledger entry recorded before any filter runs (§5).
+/// 
+/// Kept as the flat read projection for audit/boundary consumers; the
+/// canonical in-memory form is `fluent_types::ContentNode` (see
+/// `ContentNodeStore::snapshot`).
 pub struct LedgerEntry {
     pub node_id: NodeId,
     pub session_id: String,

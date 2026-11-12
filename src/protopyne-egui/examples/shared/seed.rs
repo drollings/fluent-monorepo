@@ -107,6 +107,8 @@ pub fn load_notice(ticker: &str, load: &TickerLoad) -> Option<Notice> {
 /// A status-line notice: warnings disclose holes in served data, errors
 /// refuse the requested ticker outright.
 #[derive(Debug, Clone, PartialEq)]
+/// A status-line notice: warnings disclose holes in served data, errors
+/// refuse the requested ticker outright.
 pub enum Notice {
     Warning(String),
     Error(String),

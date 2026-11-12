@@ -10,6 +10,7 @@ pub const MAX_DICTATE_SAMPLES: usize = 120 * 48_000;
 
 /// Which capture device `--once` opens.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Which capture device `--once` opens.
 pub enum CaptureChoice {
     /// Default input device.
     Default,
@@ -77,6 +78,11 @@ pub fn finish_turn(
 /// sink). `spoken` carries continuation spacing; `raw` is the fallback
 /// when the outcome holds no text (injected rungs).
 #[must_use]
+/// Single-print policy: the caller prints the returned text exactly
+/// once, never inside the ladder. Real injections echo only with
+/// `--stdout`; the output-only fallback prints always (stdout is the
+/// sink). `spoken` carries continuation spacing; `raw` is the fallback
+/// when the outcome holds no text (injected rungs).
 pub fn print_text_for(
     echo_stdout: bool,
     raw: &str,
@@ -109,6 +115,10 @@ pub fn checked_deadline(
 /// and whether the outer capture loop must break (cap reached — do
 /// not spin to the deadline).
 #[must_use]
+/// Cap accounting for one drain batch: how many of `incoming`
+/// popped samples fit under [`MAX_DICTATE_SAMPLES`], how many drop,
+/// and whether the outer capture loop must break (cap reached — do
+/// not spin to the deadline).
 pub fn apply_cap(current: usize, incoming: usize) -> (usize, usize, bool) {
     if current >= MAX_DICTATE_SAMPLES {
         return (MAX_DICTATE_SAMPLES, incoming, true);
@@ -125,6 +135,8 @@ pub fn apply_cap(current: usize, incoming: usize) -> (usize, usize, bool) {
 /// Reserve bound for `seconds` at `rate` Hz, capped at
 /// [`MAX_DICTATE_SAMPLES`].
 #[must_use]
+/// Reserve bound for `seconds` at `rate` Hz, capped at
+/// [`MAX_DICTATE_SAMPLES`].
 pub fn reserve_for(seconds: u64, rate: u32) -> usize {
     let want = seconds.saturating_mul(u64::from(rate)) as usize;
     want.min(MAX_DICTATE_SAMPLES)

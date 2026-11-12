@@ -96,7 +96,9 @@ async fn queued_followup_merges_latest_run_wins() {
             let release = Arc::clone(&release);
             let ran = Arc::clone(&ran);
             Box::pin(async move {
-                ran.lock().map(|mut guard| guard.push(marker.to_string())).ok();
+                ran.lock()
+                    .map(|mut guard| guard.push(marker.to_string()))
+                    .ok();
                 if block {
                     entered.notify_one();
                     release.notified().await;

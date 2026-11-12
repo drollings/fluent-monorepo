@@ -19,6 +19,18 @@ use super::registry::OrtRegistry;
 /// token, unknown label, or session error, so the ladder falls through to
 /// ArcEager (never a partial mix, never a wrong enum).
 #[cfg(feature = "onnx")]
+/// Build the trained-encoder annotation seam:
+/// an `EncoderFetchSync` closure that runs
+/// the trained-encoder annotation worker over the doc's orth/idx and produces
+/// an `AnnotationSet` aligned by construction (record `text` = spacy orth).
+/// 
+/// `Ok(Some(closure))` when a registered `FillMask` encoder with declared
+/// `annotation_heads` is available; `Ok(None)` when no such encoder is
+/// configured (fail-open — the encoder rung is absent from the ladder, exactly
+/// the pre-M2 behavior). The closure returns `Err` on any `None`-aligned
+/// token, unknown label, or session error, so the ladder falls through to
+/// ArcEager (never a partial mix, never a wrong enum).
+/// No-ort build: the encoder annotation seam is unavailable (fail-open).
 pub fn nlp_encoder_fetch(
     registry: &OrtRegistry,
     encoder_model: &str,
@@ -82,6 +94,15 @@ pub fn nlp_encoder_fetch(
 /// Returns `Err` on any `None`-aligned token or unknown label, so the ladder
 /// falls through to ArcEager — never a partial mix, never a wrong enum.
 #[cfg(feature = "onnx")]
+/// Map `OrtAnnotationWorker` output onto an [`spacy_rs::AnnotationSet`] for
+/// `doc`, aligned **by construction** (record `text` = spacy orth). Pure — no
+/// session. `pos`/`dep` are the label strings; `head` is the F8 relative
+/// offset (`head_abs − i`); a `None` head (special / outside every spacy span)
+/// is decoded as ROOT (`dep="root"`, `head=0`); the lemma comes from the
+/// deterministic rule [`spacy_rs::Lemmatizer`].
+/// 
+/// Returns `Err` on any `None`-aligned token or unknown label, so the ladder
+/// falls through to ArcEager — never a partial mix, never a wrong enum.
 pub(crate) fn map_annotations(
     doc: &spacy_rs::Doc,
     lemmatizer: &spacy_rs::Lemmatizer,
@@ -177,6 +198,9 @@ fn regex_baseline_or_none(
 }
 
 #[cfg(feature = "onnx")]
+/// No-ort build: the ort classifier is unavailable, so the pre-filter is the
+/// deterministic `RegexPiiDetector` when `auto_enqueue` requires one (fail-open).
+/// M6: shares the `regex_baseline_or_none` tail with the onnx definition above.
 pub fn pii_prefilter(
     registry: Option<&OrtRegistry>,
     pii_model: Option<&str>,
@@ -247,6 +271,17 @@ pub fn pii_prefilter(
 /// lookup-time encoding error also degrades to "no candidates" (loud warn) —
 /// never a block, never a drop.
 #[cfg(feature = "onnx")]
+/// Build the ColBERT-backed entity-link scorer:
+/// bakes an [`fluent_onnx::EntitySimilarityIndex`] over the concept
+/// store's labels at boot, then returns an [`EntityLinkScorer`] closure that
+/// encodes a span via the retriever, looks it up against the baked index, and
+/// resolves each hit's canonical → `InterlinguaId` through the store.
+/// 
+/// Fail-open: no model registered / not a `LateInteraction` task / no labels →
+/// an empty scorer (yields no candidates, identical to the pre-M3 stub). A
+/// lookup-time encoding error also degrades to "no candidates" (loud warn) —
+/// never a block, never a drop.
+/// No-ort build: the ColBERT scorer is unavailable — empty scorer (fail-open).
 pub fn colbert_entity_scorer(
     registry: &OrtRegistry,
     model_key: &str,
@@ -311,6 +346,10 @@ pub fn colbert_entity_scorer(
 /// store. Pure (no session) — the encode step is the only model-dependent part
 /// of the entity-link scorer, so the mapping is hermetically testable.
 #[cfg(feature = "onnx")]
+/// Score already-encoded query tokens against a baked [`fluent_onnx::EntitySimilarityIndex`]
+/// and map each above-threshold hit's canonical → `InterlinguaId` through the
+/// store. Pure (no session) — the encode step is the only model-dependent part
+/// of the entity-link scorer, so the mapping is hermetically testable.
 pub(crate) fn score_span(
     query_tokens: &[Vec<f32>],
     index: &fluent_onnx::EntitySimilarityIndex,

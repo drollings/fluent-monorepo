@@ -17,6 +17,8 @@ use crate::tools::tool::{ToolCall, ToolTier};
 /// Where the call idea came from. Ambient speech is untrusted data: it
 /// may be quoted, never executed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Where the call idea came from. Ambient speech is untrusted data: it
+/// may be quoted, never executed.
 pub enum CallOrigin {
     /// The user asked (typed, hotkey, verified voice turn).
     Direct,
@@ -26,6 +28,7 @@ pub enum CallOrigin {
 
 /// What the caller holds when asking.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What the caller holds when asking.
 pub struct PolicyCtx {
     /// Serving session kind.
     pub session: SessionKind,
@@ -39,6 +42,7 @@ pub struct PolicyCtx {
 
 /// Policy verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Policy verdict.
 pub enum Verdict {
     /// Run it.
     Allow,
@@ -51,6 +55,8 @@ pub enum Verdict {
 /// The policy engine. A `Component` so rules stay hot-editable through
 /// the same schema as every other tunable.
 #[derive(Debug, Clone)]
+/// The policy engine. A `Component` so rules stay hot-editable through
+/// the same schema as every other tunable.
 pub struct Policy {
     t1_require_verified: bool,
     disabled_tools: Vec<String>,

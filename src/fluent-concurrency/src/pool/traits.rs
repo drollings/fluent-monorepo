@@ -10,6 +10,7 @@ use super::result::ResultPoolError;
 
 /// Errors returned by `Queue` and `WorkerPool` operations.
 #[derive(Error, Debug, Clone, PartialEq)]
+/// Errors returned by `Queue` and `WorkerPool` operations.
 pub enum PoolError {
     #[error("queue is full")]
     Full,
@@ -33,6 +34,20 @@ pub enum PoolError {
 ///
 /// `submit` enqueues without a per-job response channel (no `oneshot` alloc).
 #[allow(async_fn_in_trait)]
+/// ─── Pool trait family (AFIT) ────────────────────────────────────────────
+/// Native `async fn` in trait (AFIT, stable since 1.75) — no `async_trait`
+/// crate, no hidden `Box`. These are control-plane traits (not hot-loop per-item
+/// dispatch) and are deliberately **not** object-safe; pools are used
+/// monomorphized via generics so the submit path stays zero-cost/inlinable
+/// per `fluent-wvr/SKILL.md:70` "dyn at request boundary, concrete in tight loop".
+/// See `doc/skills/fluent-concurrency/SKILL.md:7.1`.
+/// `async_fn_in_trait` is allowed here — Send bounds are explicit via the
+/// `+ Send + Sync + 'static` bounds on associated types and the `Send` on the
+/// future is implied by the `Send + Sync` receiver; desugaring to
+/// `-> impl Future + Send` would be noisy for no gain in this internal crate.
+/// Fire-and-forget pool — `WorkerPool` and `CreditGatedPool`.
+/// 
+/// `submit` enqueues without a per-job response channel (no `oneshot` alloc).
 pub trait SinkPool {
     type Job: Send + 'static;
     async fn submit(&self, job: Self::Job) -> Result<(), PoolError>;
@@ -42,6 +57,7 @@ pub trait SinkPool {
 
 /// Request/response pool — `ResultPool` (one `oneshot` per submit).
 #[allow(async_fn_in_trait)]
+/// Request/response pool — `ResultPool` (one `oneshot` per submit).
 pub trait RequestPool {
     type Job: Send + Sync + 'static;
     type Output: Send + 'static;
@@ -58,6 +74,7 @@ pub trait RequestPool {
 
 /// Priority-ordered request/response pool — `PriorityResultPool`.
 #[allow(async_fn_in_trait)]
+/// Priority-ordered request/response pool — `PriorityResultPool`.
 pub trait PriorityRequestPool {
     type Job: Send + Sync + 'static;
     type Output: Send + 'static;

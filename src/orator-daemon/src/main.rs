@@ -13,6 +13,8 @@ use orator_daemon::{run_loopback, RootScope};
 /// exercises capture→archive without hardware.
 #[derive(Debug, Parser)]
 #[command(name = "oratord")]
+/// Daemon entry points. The serving path grows here; the loopback flag
+/// exercises capture→archive without hardware.
 struct Args {
     /// Run a synthetic capture→archive loopback into DIR and exit.
     #[arg(long)]

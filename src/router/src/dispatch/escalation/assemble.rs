@@ -58,6 +58,7 @@ pub(super) fn summarize_votes(votes: &[String]) -> String {
 
 /// Wire shape of a classifier slot's approach vote.
 #[derive(serde::Deserialize)]
+/// Wire shape of a classifier slot's approach vote.
 struct ApproachWire {
     #[serde(default)]
     approach: Option<String>,
@@ -72,6 +73,7 @@ pub(super) fn parse_approach(raw: &str) -> Option<String> {
 
 /// Wire shape of the frontier judge verdict.
 #[derive(serde::Deserialize)]
+/// Wire shape of the frontier judge verdict.
 struct JudgeWire {
     #[serde(default)]
     accepted: bool,

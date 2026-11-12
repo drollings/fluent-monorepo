@@ -30,6 +30,7 @@ pub const CATALOG_FILE: &str = "catalog.json";
 
 /// The durable catalog document: every market plus the id allocator.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+/// The durable catalog document: every market plus the id allocator.
 struct CatalogDoc {
     /// Every registered market, in id order.
     #[serde(default)]

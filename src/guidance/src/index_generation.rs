@@ -12,6 +12,7 @@ pub const GENERATION_FILE: &str = "index.generation";
 
 /// Verdict of a generation check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Verdict of a generation check.
 pub enum GenerationVerdict {
     /// Marker matches the sidecar manifest: reads may proceed.
     Current,
@@ -23,7 +24,41 @@ pub enum GenerationVerdict {
 /// first-line headers plus the fragment and sidecar schema versions.
 /// Header-only: bodies never enter the value.
 #[must_use]
+/// Compute the generation over one sidecar directory: sorted
+/// first-line headers plus the fragment and sidecar schema versions.
+/// Header-only: bodies never enter the value.
 pub fn generation_of(sidecar_dir: &Path) -> String {
+    format!(
+        "{}:{}",
+        schema_generation(),
+        content_generation(sidecar_dir)
+    )
+}
+
+/// Schema half of the marker: index and sidecar versions only.
+/// A schema mismatch means stored rows may misread: rebuild fully.
+/// Content drift alone needs only the incremental ingest.
+#[must_use]
+/// Schema half of the marker: index and sidecar versions only.
+/// A schema mismatch means stored rows may misread: rebuild fully.
+/// Content drift alone needs only the incremental ingest.
+pub fn schema_generation() -> String {
+    let mut framed = String::new();
+    framed.push_str("index-schema\0");
+    framed.push_str(&crate::index_pipeline::INDEX_SCHEMA_VERSION.to_string());
+    framed.push('\0');
+    framed.push_str("sidecar-schema\0");
+    framed.push_str(&crate::sync::json_store::SIDECAR_SCHEMA_VERSION.to_string());
+    framed.push('\0');
+    common_core::hash::blake3_hex(framed.as_bytes())
+}
+
+/// Content half of the marker: sorted sidecar header lines.
+/// Drifts on every edit; the incremental ingest reconverges it.
+#[must_use]
+/// Content half of the marker: sorted sidecar header lines.
+/// Drifts on every edit; the incremental ingest reconverges it.
+pub fn content_generation(sidecar_dir: &Path) -> String {
     let mut sidecars = Vec::new();
     crate::walk::walk_files(sidecar_dir, &["json"], |path| {
         sidecars.push(path.to_path_buf());
@@ -36,18 +71,34 @@ pub fn generation_of(sidecar_dir: &Path) -> String {
             framed.push('\0');
         }
     }
-    framed.push_str("index-schema\0");
-    framed.push_str(&crate::index_pipeline::INDEX_SCHEMA_VERSION.to_string());
-    framed.push('\0');
-    framed.push_str("sidecar-schema\0");
-    framed.push_str(&crate::sync::json_store::SIDECAR_SCHEMA_VERSION.to_string());
-    framed.push('\0');
     common_core::hash::blake3_hex(framed.as_bytes())
+}
+
+/// Schema half recorded in a marker, if the marker parses.
+/// Missing, empty, or unstructured markers read as unknown (rebuild),
+/// never as a schema.
+#[must_use]
+/// Schema half recorded in a marker, if the marker parses.
+/// Missing, empty, or unstructured markers read as unknown (rebuild),
+/// never as a schema.
+pub fn stored_schema(index_dir: &Path) -> Option<String> {
+    let text = common_core::io::read_to_string_err(&index_dir.join(GENERATION_FILE)).ok()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (schema, content) = trimmed.split_once(':')?;
+    if schema.is_empty() || content.is_empty() {
+        return None;
+    }
+    Some(schema.to_string())
 }
 
 /// Read the stored marker, if any. Empty or whitespace-only counts as
 /// absent: a half-committed write refuses like a missing one.
 #[must_use]
+/// Read the stored marker, if any. Empty or whitespace-only counts as
+/// absent: a half-committed write refuses like a missing one.
 pub fn read_generation(index_dir: &Path) -> Option<String> {
     let text = common_core::io::read_to_string_err(&index_dir.join(GENERATION_FILE)).ok()?;
     let trimmed = text.trim().to_string();
@@ -66,6 +117,7 @@ pub fn write_generation(index_dir: &Path, value: &str) -> std::io::Result<()> {
 
 /// Check the stored marker against the sidecar manifest.
 #[must_use]
+/// Check the stored marker against the sidecar manifest.
 pub fn verify_generation(index_dir: &Path, sidecar_dir: &Path) -> GenerationVerdict {
     let Some(stored) = read_generation(index_dir) else {
         return GenerationVerdict::Mismatch;

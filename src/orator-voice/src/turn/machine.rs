@@ -13,6 +13,8 @@ use orator::TurnConfig;
 /// Turn states. Session-level modes reuse the same machine with the
 /// `Thinking`, `ToolWait`, and `Speaking` states disabled by configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Turn states. Session-level modes reuse the same machine with the
+/// `Thinking`, `ToolWait`, and `Speaking` states disabled by configuration.
 pub enum TurnState {
     /// Session open, nobody speaking.
     Idle,
@@ -33,6 +35,8 @@ pub enum TurnState {
 /// Driver-reported events. Durations ride along so the machine never needs
 /// a clock.
 #[derive(Debug, Clone, PartialEq)]
+/// Driver-reported events. Durations ride along so the machine never needs
+/// a clock.
 pub enum TurnEvent {
     /// Voice activity started.
     VadStart,
@@ -64,6 +68,8 @@ pub enum TurnEvent {
 /// The pure transition function. Total: every pair yields a state, either
 /// by advancing or by absorbing the event.
 #[must_use]
+/// The pure transition function. Total: every pair yields a state, either
+/// by advancing or by absorbing the event.
 pub const fn transition(state: TurnState, event: &TurnEvent, config: &TurnConfig) -> TurnState {
     match (state, event) {
         // Voice activity opens the floor from any listening state, and a
@@ -95,6 +101,9 @@ pub const fn transition(state: TurnState, event: &TurnEvent, config: &TurnConfig
 /// text looks complete, the ceiling otherwise. Both bounds stay inside the
 /// calibrated band; the machine never invents a third value.
 #[must_use]
+/// Effective hold for one silence report: the configured floor when the
+/// text looks complete, the ceiling otherwise. Both bounds stay inside the
+/// calibrated band; the machine never invents a third value.
 pub const fn effective_hold_ms(config: &TurnConfig, looks_complete: bool) -> u16 {
     if looks_complete {
         config.hold_min_ms
@@ -107,6 +116,9 @@ pub const fn effective_hold_ms(config: &TurnConfig, looks_complete: bool) -> u16
 /// so drivers step events without tracking states themselves. Illegal
 /// events drop with a counter, never an error.
 #[derive(Debug, Clone)]
+/// The stateful machine: current state plus tunables. Wraps [`transition`]
+/// so drivers step events without tracking states themselves. Illegal
+/// events drop with a counter, never an error.
 pub struct TurnMachine {
     state: TurnState,
     config: TurnConfig,

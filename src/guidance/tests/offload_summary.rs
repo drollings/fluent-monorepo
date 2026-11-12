@@ -87,6 +87,63 @@ fn reverted_change_golden() {
 }
 
 #[test]
+fn enriched_packet_carries_handoff_fields() {
+    use crate::offload::AttemptRecord;
+    let report = crate::offload::ApplyReport {
+        file: "src/a.rs".to_string(),
+        tool: "draft",
+        changed: true,
+        verdict: crate::offload::ApplyVerdict::Reverted,
+        attempts_used: 3,
+        gate_output: "P6 diagnostics grew".to_string(),
+        before_hash: "a".to_string(),
+        after_hash: "a".to_string(),
+    };
+    let packet = EscalationPacket::from_report(&report, "gate red on every attempt");
+    assert_eq!(packet.state, "escalated");
+    assert!(packet.remaining.is_empty(), "offload knows no dependents");
+    assert_eq!(packet.owner, "", "owner arrives at claim time, not staging");
+    assert!(packet.needed.contains("revised fix"), "{}", packet.needed);
+    assert_eq!(packet.repro, "guidance verify src/a.rs");
+    assert_eq!(
+        packet.attempts,
+        vec![AttemptRecord {
+            attempt: 3,
+            rejected_by: "gate red on every attempt".to_string(),
+        }],
+        "deciding attempt recorded, history arrives with journal reverts"
+    );
+    let text = packet.render();
+    assert!(text.contains("revised fix"), "{text}");
+    assert!(text.contains("guidance verify src/a.rs"), "{text}");
+}
+
+#[test]
+fn old_packet_json_still_deserializes_with_defaults() {
+    // Backward-compat pin: journals written before enrichment load with
+    // empty new keys, never a parse error. `normalize` then backfills
+    // the actionable sentences from the fields old journals do carry.
+    let legacy = serde_json::json!({
+        "reason": "gate red",
+        "file": "src/a.rs",
+        "tool": "draft",
+        "class": "draft",
+        "attempts_used": 1,
+        "gate_excerpt": "nope",
+        "before_hash": "a",
+        "after_hash": "a",
+        "resume": "retry"
+    });
+    let packet: EscalationPacket = serde_json::from_value(legacy).expect("old journals must load");
+    assert_eq!(packet.owner, "");
+    assert!(packet.attempts.is_empty());
+    let packet = packet.normalize();
+    assert_eq!(packet.state, "escalated");
+    assert!(packet.needed.contains("revised fix"), "{}", packet.needed);
+    assert_eq!(packet.repro, "guidance verify src/a.rs");
+}
+
+#[test]
 fn refused_policy_golden() {
     let packet = EscalationPacket::from_policy(
         "src/tests/target.rs",

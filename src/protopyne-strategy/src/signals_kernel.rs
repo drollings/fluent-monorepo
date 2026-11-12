@@ -37,6 +37,7 @@ use crate::view::MarketView;
 
 /// Which output of a multi-output kernel a line reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Which output of a multi-output kernel a line reads.
 pub enum OutputSelector {
     /// The kernel's primary series.
     Primary,
@@ -46,6 +47,7 @@ pub enum OutputSelector {
 
 /// One line of a signal: a registered kernel output or a raw price column.
 #[derive(Clone)]
+/// One line of a signal: a registered kernel output or a raw price column.
 pub enum SeriesRef {
     /// A kernel output over `source`.
     Indicator {
@@ -102,6 +104,7 @@ impl SeriesRef {
 
 /// Which side of a threshold is `Long`: breakout or mean-reversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which side of a threshold is `Long`: breakout or mean-reversion.
 pub enum Polarity {
     /// Above/positive ⇒ `Long` (breakout, trend).
     Momentum,
@@ -111,6 +114,7 @@ pub enum Polarity {
 
 /// Which crossing a cross rule accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which crossing a cross rule accepts.
 pub enum CrossDir {
     /// Only an upward crossing.
     Above,
@@ -122,6 +126,7 @@ pub enum CrossDir {
 
 /// How a signal turns its lines into a direction.
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// How a signal turns its lines into a direction.
 pub enum DirectionRule {
     /// Zero-cross with a normalizing scale: `line / scale` sets conviction.
     Sign {
@@ -188,6 +193,8 @@ pub enum DirectionRule {
 /// The parts of a kernel signal that do not change per run. Shared by the
 /// stateless signal and every bound instance, so there is one evaluator.
 #[derive(Clone)]
+/// The parts of a kernel signal that do not change per run. Shared by the
+/// stateless signal and every bound instance, so there is one evaluator.
 struct KernelCore {
     lines: Vec<SeriesRef>,
     rule: DirectionRule,

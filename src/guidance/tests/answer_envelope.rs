@@ -58,7 +58,10 @@ fn homonym_members_raise_an_ambiguity_gap() {
         code_stage("src/b.rs", 9, "render"),
     ];
     let envelope = AnswerEnvelope::from_stages(&class, "word_index", stages);
-    assert!(envelope.gaps.iter().any(|gap| gap.contains("ambiguous: 2 candidates")));
+    assert!(envelope
+        .gaps
+        .iter()
+        .any(|gap| gap.contains("ambiguous: 2 candidates")));
     assert!(envelope.is_answerable());
     assert_eq!(envelope.citations.len(), 2);
 }
@@ -67,7 +70,10 @@ fn homonym_members_raise_an_ambiguity_gap() {
 fn missing_symbol_reports_no_results_and_stays_producer_only() {
     let class = classify("noSuchThingAnywhere");
     let envelope = AnswerEnvelope::from_stages(&class, "word_index", Vec::new());
-    assert!(envelope.gaps.iter().any(|gap| gap.starts_with("no results")));
+    assert!(envelope
+        .gaps
+        .iter()
+        .any(|gap| gap.starts_with("no results")));
     assert!(!envelope.is_answerable());
     assert_eq!(envelope.confidence.axis, ConfidenceAxis::ProducerOrderOnly);
     assert!(envelope.citations.is_empty());
@@ -77,7 +83,10 @@ fn missing_symbol_reports_no_results_and_stays_producer_only() {
 fn ungrounded_prose_withholds_synthesis() {
     let class = classify("how does caching work here");
     let envelope = AnswerEnvelope::from_stages(&class, "hybrid", vec![prose_stage("notes")]);
-    assert!(envelope.gaps.iter().any(|gap| gap.starts_with("synthesis withheld")));
+    assert!(envelope
+        .gaps
+        .iter()
+        .any(|gap| gap.starts_with("synthesis withheld")));
     assert!(!envelope.is_answerable());
     assert_eq!(envelope.citations, Vec::<String>::new());
     assert!(citations_of(&[]).is_empty());
@@ -102,4 +111,27 @@ fn budget_fit_preserves_rank_order_and_bounds_tokens() {
     let one = fit_stages_to_budget(&stages, 3);
     assert_eq!(one.len(), 1);
     assert_eq!(one[0].source, "src/a.rs");
+}
+
+#[test]
+fn summary_sourced_stages_cite_source_only() {
+    use crate::query::synthesize::StageTrace;
+    // A hit fused from the summary route still cites its source range:
+    // generated text never enters the citation set.
+    let mut stage = code_stage("src/a.rs", 2, "alpha");
+    stage.trace = Some(StageTrace {
+        matched_by: "summary".to_string(),
+        tier: Some(
+            crate::search_types::RetrievalTier::Model
+                .as_str()
+                .to_string(),
+        ),
+        score: crate::search_types::RrfScore::new(0.05),
+        rank: 1,
+        recall: Vec::new(),
+    });
+    let class = classify("adds");
+    let envelope = AnswerEnvelope::from_stages(&class, "fuse", vec![stage]);
+    assert_eq!(envelope.citations, vec!["src/a.rs:2".to_string()]);
+    assert!(envelope.is_answerable());
 }
