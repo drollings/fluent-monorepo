@@ -74,7 +74,9 @@ Key user-visible rules:
   - `--scan <dir>`: process one subtree.
   - Default: process every source directory from config (`src_dirs`, else the workspace root).
 - Behavior:
+  - Output contract (agent-CLI): quiet by default. Progress lines (`Syncing…`, `Ingested…`, `Generated…`, `Sync complete.`, per-file `gen:`/`skip:`, fix summaries) print only with `--verbose`. What always prints: fatal errors, index/generation failures that no loop fixes, explicitly requested but skipped work (`--summarize` pass skipped), and the escalation handoff below.
   - Fix pre-pass first: stale Rust files are linted, fixed (rustfmt plus mechanical clippy fixes), and formatted before any indexing, so the mirror and the index converge on fixed bytes. After the mechanical rungs, escalated files get up to three local code-model drafts each (skipped when the generative role is disabled or unreachable). The pre-pass is capped at 32 dirty files — beyond that it skips with a pointer to `guidance run`, so cleared trees index swiftly instead of fixing the world. `--autonomy L0` skips the rewrite half but still syncs; `--dry-run` skips it too.
+  - Escalation handoff: files the fix loop and model drafts could not converge print a block naming each file, why the ladder stopped, the requeue fingerprint, and the last draft detail (verify-gate output or transport error). Stuck sidecars keep a truthful stale verdict, so the next sync re-surfaces the same handoff until a human or agent fixes the file.
   - Discovers files by supported extension, skips up-to-date files unless `--force`.
   - Reports totals: files discovered, stale count, files generated.
   - Then, unless `--no-db` or `--dry-run`, syncs the JSON tree into the DB and reports nodes synced.

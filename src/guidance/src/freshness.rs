@@ -555,8 +555,11 @@ pub fn backdate_sidecar(sidecar: &std::path::Path, source: &std::path::Path) -> 
     let Some(source_mtime) = common_core::io::mtime(source) else {
         return false;
     };
+    // Two seconds, not one: the staleness gate treats skews within its
+    // 1-second window as ambiguous (strict `>`), so a 1-second backdate
+    // lands exactly on the edge and an unchanged file reads fresh.
     let target = source_mtime
-        .checked_sub(std::time::Duration::from_secs(1))
+        .checked_sub(std::time::Duration::from_secs(2))
         .unwrap_or(SystemTime::UNIX_EPOCH);
     std::fs::File::options()
         .write(true)

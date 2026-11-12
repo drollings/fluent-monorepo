@@ -105,6 +105,10 @@ pub struct ModelDraftReport {
     pub skipped: usize,
     /// Kept files, for reconciling wave escalations.
     pub kept_files: Vec<String>,
+    /// Per-file failure detail for the handoff: the last verify-gate
+    /// output, the transport error, or the no-progress verdict. This is
+    /// the complete error the orchestrator inherits.
+    pub failures: Vec<(String, String)>,
 }
 
 /// Draft prompt: the whole file fenced as inert data plus the escalation
@@ -171,6 +175,7 @@ pub fn run_model_draft_rung(
             path.to_string_lossy().into_owned(),
         ];
         let mut kept = false;
+        let mut detail = String::from("no green draft in 3 tries");
         for _ in 0..MODEL_DRAFT_ATTEMPTS.max(1) {
             report.attempted += 1;
             let prompt = draft_prompt(&source, reason);
@@ -190,9 +195,13 @@ pub fn run_model_draft_rung(
             });
             let response = match client.chat_complete_with_extras(&messages, &extras) {
                 Ok(text) => text,
-                Err(_) => break,
+                Err(error) => {
+                    detail = format!("model unreachable: {error}");
+                    break;
+                }
             };
             let Some(draft) = parse_draft_fence(&response) else {
+                detail = String::from("model answered without a rust fence");
                 continue;
             };
             match crate::offload::apply_draft(
@@ -211,15 +220,43 @@ pub fn run_model_draft_rung(
                     report.kept_files.push(path.to_string_lossy().into_owned());
                     break;
                 }
-                Ok(_) => break,
-                Err(_) => continue,
+                Ok(applied) if applied.changed => {
+                    detail = capped_gate_output(&applied.gate_output);
+                    continue;
+                }
+                Ok(_) => {
+                    detail = String::from("draft identical to source; no progress");
+                    break;
+                }
+                Err(error) => {
+                    detail = format!("draft refused: {error}");
+                    continue;
+                }
             }
         }
         if !kept {
             report.failed += 1;
+            report
+                .failures
+                .push((path.to_string_lossy().into_owned(), detail));
         }
     }
     report
+}
+
+/// Cap verify-gate output for the handoff: the orchestrator inherits the
+/// complete error, but unbounded compiler spew drowns the verdict.
+fn capped_gate_output(output: &str) -> String {
+    const MAX_HANDOFF_CHARS: usize = 2000;
+    let trimmed = output.trim();
+    if trimmed.len() <= MAX_HANDOFF_CHARS {
+        return trimmed.to_string();
+    }
+    let mut end = MAX_HANDOFF_CHARS;
+    while !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}… [truncated]", trimmed[..end].trim_end())
 }
 
 /// Build the live runner over one clippy context.

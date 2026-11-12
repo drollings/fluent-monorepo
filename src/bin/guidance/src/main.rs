@@ -1004,10 +1004,12 @@ async fn cmd_sync(
         if source_path.is_dir() {
             let engine = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
             let status = engine.status().expect("status");
-            println!(
-                "Generated guidance for directory ({} stale)",
-                status.stale_files
-            );
+            if verbose {
+                println!(
+                    "Generated guidance for directory ({} stale)",
+                    status.stale_files
+                );
+            }
         } else {
             let json_path = guidance_dir.join("src").join(format!(
                 "{}.json",
@@ -1046,16 +1048,26 @@ async fn cmd_sync(
             }
             // Fix pre-pass scoped to the file: lint, fix, and format
             // before member gen and indexing, so both converge on fixed
-            // bytes. L0 and dry runs skip the rewrite half.
+            // bytes. L0 and dry runs skip the rewrite half. Progress
+            // stays quiet unless verbose; only escalations speak, with
+            // the complete error as handoff.
+            let mut fix_escalated: Vec<guidance_core::waves::Escalation> = Vec::new();
+            let mut fix_drafts = guidance_core::waves::ModelDraftReport::default();
             if !dry_run && source_path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
                 let mut policy = cfg.policy.clone();
                 policy.autonomy = autonomy.to_string();
                 if guidance_core::policy::autonomy_allows_fix(&policy) {
                     let _phase = profile::Phase::new("sync.fix");
                     let scope = vec![source_path.to_path_buf()];
-                    let fix =
-                        run_fix_scope(&scope, &guidance_dir, &cfg, &policy, SYNC_FIX_MAX_WAVES);
-                    if fix.waves.fixed > 0 || !fix.waves.escalated.is_empty() {
+                    let fix = run_fix_scope(
+                        &scope,
+                        &guidance_dir,
+                        &cfg,
+                        &policy,
+                        SYNC_FIX_MAX_WAVES,
+                        verbose,
+                    );
+                    if verbose && (fix.waves.fixed > 0 || !fix.waves.escalated.is_empty()) {
                         println!(
                             "fix: {} fixed ({} formatted), {} escalated, drafts kept {}",
                             fix.waves.fixed,
@@ -1064,6 +1076,8 @@ async fn cmd_sync(
                             fix.drafts.kept
                         );
                     }
+                    fix_escalated = fix.waves.escalated;
+                    fix_drafts = fix.drafts;
                 }
             }
             match runtime::ast_pool()
@@ -1078,13 +1092,13 @@ async fn cmd_sync(
                 Ok(doc) => {
                     if verbose {
                         println!("  gen: {path} ({} members)", doc.members.len());
+                        println!("Generated guidance for {path}");
+                        println!(
+                            "  {} members, language: {}",
+                            doc.members.len(),
+                            doc.meta.language
+                        );
                     }
-                    println!("Generated guidance for {path}");
-                    println!(
-                        "  {} members, language: {}",
-                        doc.members.len(),
-                        doc.meta.language
-                    );
                     // Scoped derived-index half: the same ingest plus
                     // sig-gated propagation the full sync runs, limited
                     // to this file (the purge stays root-scoped, so
@@ -1103,6 +1117,16 @@ async fn cmd_sync(
                         )
                         .await;
                     }
+                    print_fix_handoff(&fix_escalated, &fix_drafts);
+                    if !fix_escalated.is_empty() {
+                        let stuck: Vec<String> =
+                            fix_escalated.iter().map(|esc| esc.file.clone()).collect();
+                        let parent = source_path
+                            .parent()
+                            .map(Path::to_path_buf)
+                            .unwrap_or_else(|| PathBuf::from("."));
+                        backdate_stuck(&guidance_dir, &[parent], &stuck);
+                    }
                 }
                 Err(ResultPoolError::Inner(e)) => eprintln!("error generating {path}: {e}"),
                 Err(ResultPoolError::Canceled) => {
@@ -1116,7 +1140,9 @@ async fn cmd_sync(
         ensure_dir_or_panic(&guidance_dir);
         let generated =
             walk_and_gen_async(guidance_dir.clone(), scan_path, force, verbose, &[], None).await;
-        println!("Scanned {scan_dir}: generated {generated} files");
+        if verbose {
+            println!("Scanned {scan_dir}: generated {generated} files");
+        }
     } else {
         let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
 
@@ -1128,16 +1154,20 @@ async fn cmd_sync(
         // rotated receipts and moved files re-enter the stale set.
         {
             let _phase = profile::Phase::new("sync.sweep_rotation");
-            sweep_for_rotation(guidance_dir.as_path(), &src_dirs);
+            sweep_for_rotation(guidance_dir.as_path(), &src_dirs, verbose);
         }
         {
             let _phase = profile::Phase::new("sync.adopt_renames");
-            adopt_renames(guidance_dir.as_path(), &src_dirs);
+            adopt_renames(guidance_dir.as_path(), &src_dirs, verbose);
         }
 
         // Fix pre-pass: lint, fix, and format stale Rust files before
         // member gen and indexing, so the mirror and the index converge
         // on fixed bytes. L0 and dry runs skip the rewrite half.
+        // Progress stays quiet unless verbose; only escalations speak,
+        // with the complete error as handoff.
+        let mut fix_escalated: Vec<guidance_core::waves::Escalation> = Vec::new();
+        let mut fix_drafts = guidance_core::waves::ModelDraftReport::default();
         {
             let mut policy = cfg.policy.clone();
             policy.autonomy = autonomy.to_string();
@@ -1159,22 +1189,34 @@ async fn cmd_sync(
                 dirty.sort();
                 dirty.dedup();
                 if dirty.len() > SYNC_FIX_MAX_FILES {
-                    println!(
-                        "fix: skipped ({} dirty files exceed the {}-file pre-pass budget; run 'guidance run' to converge)",
-                        dirty.len(),
-                        SYNC_FIX_MAX_FILES
-                    );
+                    if verbose {
+                        println!(
+                            "fix: skipped ({} dirty files exceed the {}-file pre-pass budget; run 'guidance run' to converge)",
+                            dirty.len(),
+                            SYNC_FIX_MAX_FILES
+                        );
+                    }
                 } else if !dirty.is_empty() {
                     let _phase = profile::Phase::new("sync.fix");
-                    let fix =
-                        run_fix_scope(&dirty, &guidance_dir, &cfg, &policy, SYNC_FIX_MAX_WAVES);
-                    println!(
-                        "fix: {} fixed ({} formatted), {} escalated, drafts kept {}",
-                        fix.waves.fixed,
-                        fix.waves.formatted,
-                        fix.waves.escalated.len(),
-                        fix.drafts.kept
+                    let fix = run_fix_scope(
+                        &dirty,
+                        &guidance_dir,
+                        &cfg,
+                        &policy,
+                        SYNC_FIX_MAX_WAVES,
+                        verbose,
                     );
+                    if verbose {
+                        println!(
+                            "fix: {} fixed ({} formatted), {} escalated, drafts kept {}",
+                            fix.waves.fixed,
+                            fix.waves.formatted,
+                            fix.waves.escalated.len(),
+                            fix.drafts.kept
+                        );
+                    }
+                    fix_escalated = fix.waves.escalated;
+                    fix_drafts = fix.drafts;
                 }
             }
         }
@@ -1206,7 +1248,9 @@ async fn cmd_sync(
             }
         }
 
-        println!("Syncing {total_files} total files ({stale_files} stale)...");
+        if verbose {
+            println!("Syncing {total_files} total files ({stale_files} stale)...");
+        }
 
         if !no_db && !dry_run {
             generated +=
@@ -1222,15 +1266,17 @@ async fn cmd_sync(
                 .await
             {
                 Ok(report) => {
-                    println!(
-                        "Summarized {} nodes ({} cached) across {} files: {} failed, {} unavailable, {} gaps.",
-                        report.summarized,
-                        report.cached,
-                        report.files,
-                        report.failed,
-                        report.unavailable,
-                        report.gaps,
-                    );
+                    if verbose {
+                        println!(
+                            "Summarized {} nodes ({} cached) across {} files: {} failed, {} unavailable, {} gaps.",
+                            report.summarized,
+                            report.cached,
+                            report.files,
+                            report.failed,
+                            report.unavailable,
+                            report.gaps,
+                        );
+                    }
                     generated += report.summarized;
                 }
                 Err(error) => {
@@ -1238,10 +1284,21 @@ async fn cmd_sync(
                 }
             }
         }
-        if generated > 0 {
-            println!("Generated {generated} files.");
+        // Escalation handoff (always printed): files the fix loop and
+        // model drafts could not converge, with the complete error.
+        // Stuck sidecars keep a truthful stale verdict so the next sync
+        // re-surfaces the same handoff until a human or agent fixes them.
+        print_fix_handoff(&fix_escalated, &fix_drafts);
+        if !fix_escalated.is_empty() {
+            let stuck: Vec<String> = fix_escalated.iter().map(|esc| esc.file.clone()).collect();
+            backdate_stuck(&guidance_dir, &src_dirs, &stuck);
         }
-        println!("Sync complete.");
+        if verbose {
+            if generated > 0 {
+                println!("Generated {generated} files.");
+            }
+            println!("Sync complete.");
+        }
     }
 
     if watch {
@@ -1286,12 +1343,16 @@ async fn refresh_search_index(
         match guidance_core::index_generation::stored_schema(&index_dir) {
             // No marker: first build (or a crash mid-write) rebuilds.
             None => {
-                eprintln!("index generation unknown; rebuilding from sidecars");
+                if verbose {
+                    eprintln!("index generation unknown; rebuilding from sidecars");
+                }
                 let _ = std::fs::remove_file(db_path);
                 full_rebuild = true;
             }
             Some(stored) if stored != schema_now => {
-                eprintln!("index schema rotated; rebuilding from sidecars");
+                if verbose {
+                    eprintln!("index schema rotated; rebuilding from sidecars");
+                }
                 let _ = std::fs::remove_file(db_path);
                 full_rebuild = true;
             }
@@ -1315,10 +1376,12 @@ async fn refresh_search_index(
         &existing_dirs,
     ) {
         Ok(stats) => {
-            println!(
-                "Ingested {} files ({} fragments, {} unchanged skipped, {} images skipped, {} failed) to {db_path}",
-                stats.files, stats.fragments, stats.skipped_unchanged, stats.skipped_images, stats.failed
-            );
+            if verbose {
+                println!(
+                    "Ingested {} files ({} fragments, {} unchanged skipped, {} images skipped, {} failed) to {db_path}",
+                    stats.files, stats.fragments, stats.skipped_unchanged, stats.skipped_images, stats.failed
+                );
+            }
             stats
         }
         Err(e) => {
@@ -1408,6 +1471,9 @@ async fn refresh_search_index(
             let guidance = guidance_dir.to_path_buf();
             // Bound the wave: the pool has finite queue slots, and
             // sequential submits leave its workers idle on a hub change.
+            // Regen failures aggregate below: per-file lines are verbose
+            // detail, the count is the contract.
+            let mut regen_failed = 0usize;
             for chunk in affected.chunks(PROPAGATION_CONCURRENCY) {
                 let mut handles = Vec::new();
                 for path in chunk {
@@ -1434,13 +1500,18 @@ async fn refresh_search_index(
                             &guidance,
                             verbose,
                         )
-                        .await;
+                        .await
                     }));
                     generated += 1;
                 }
                 for handle in handles {
-                    let _ = handle.await;
+                    if !handle.await.unwrap_or(false) {
+                        regen_failed += 1;
+                    }
                 }
+            }
+            if regen_failed > 0 {
+                eprintln!("Warning: {regen_failed} dependents failed to regenerate");
             }
         }
         for prefix in &frag_stats.deleted {
@@ -1481,7 +1552,7 @@ fn src_dirs_from_config_with(workspace_path: &Path, cfg: &config::ProjectConfig)
 /// Component-rotation sweep: one header-only pass per source root
 /// backdates exactly the receipts that consumed a rotated component.
 /// Runs before dirty-set derivation so rotated files re-enter the set.
-fn sweep_for_rotation(guidance_dir: &Path, src_dirs: &[PathBuf]) -> usize {
+fn sweep_for_rotation(guidance_dir: &Path, src_dirs: &[PathBuf], verbose: bool) -> usize {
     use guidance_core::components::ComponentVector;
     use guidance_core::policy::MaintenancePolicy;
     let current = ComponentVector::current(&MaintenancePolicy::default());
@@ -1500,7 +1571,7 @@ fn sweep_for_rotation(guidance_dir: &Path, src_dirs: &[PathBuf]) -> usize {
             }
         }
     }
-    if backdated > 0 {
+    if backdated > 0 && verbose {
         println!("swept components: {backdated} receipts backdated");
     }
     backdated
@@ -1509,7 +1580,7 @@ fn sweep_for_rotation(guidance_dir: &Path, src_dirs: &[PathBuf]) -> usize {
 /// Rename adoption: sources without a sidecar whose bytes match exactly
 /// one orphaned sidecar inherit it instead of reprocessing. Runs before
 /// generation so renames never count as new work.
-fn adopt_renames(guidance_dir: &Path, src_dirs: &[PathBuf]) -> usize {
+fn adopt_renames(guidance_dir: &Path, src_dirs: &[PathBuf], verbose: bool) -> usize {
     use guidance_core::freshness::adopt_renamed_sidecar;
     let sidecar_dir = guidance_dir.join("src");
     let mut adopted = 0usize;
@@ -1544,7 +1615,7 @@ fn adopt_renames(guidance_dir: &Path, src_dirs: &[PathBuf]) -> usize {
             }
         }
     }
-    if adopted > 0 {
+    if adopted > 0 && verbose {
         println!("adopted {adopted} renamed sidecars");
     }
     adopted
@@ -1822,7 +1893,7 @@ async fn regen_single_file(
     workspace_path: &Path,
     guidance_dir: &Path,
     verbose: bool,
-) {
+) -> bool {
     let source_dir =
         find_source_dir(&source_path, src_dirs).unwrap_or_else(|| workspace_path.to_path_buf());
     match submit_ast(
@@ -1845,10 +1916,26 @@ async fn regen_single_file(
                     doc.members.len()
                 );
             }
+            true
         }
-        Err(ResultPoolError::Inner(e)) => eprintln!("  regeneration failed: {e}"),
-        Err(ResultPoolError::Canceled) => eprintln!("  regeneration canceled"),
-        Err(ResultPoolError::Pool(e)) => eprintln!("  regeneration queue error: {e}"),
+        Err(ResultPoolError::Inner(e)) => {
+            if verbose {
+                eprintln!("  regeneration failed: {e}");
+            }
+            false
+        }
+        Err(ResultPoolError::Canceled) => {
+            if verbose {
+                eprintln!("  regeneration canceled");
+            }
+            false
+        }
+        Err(ResultPoolError::Pool(e)) => {
+            if verbose {
+                eprintln!("  regeneration queue error: {e}");
+            }
+            false
+        }
     }
 }
 
@@ -2925,7 +3012,7 @@ fn converge_mirror(
 ) -> bool {
     const MAX_PASSES: u32 = 5;
     let src_dirs = src_dirs_from_config_with(workspace_path, cfg);
-    adopt_renames(guidance_dir, &src_dirs);
+    adopt_renames(guidance_dir, &src_dirs, true);
     for pass in 1..=MAX_PASSES {
         let mut generated = 0usize;
         let mut failed = 0usize;
@@ -2981,6 +3068,7 @@ async fn cmd_run(workspace: &str, json_dir: &str, db: &str, max_waves: usize, au
     sweep_for_rotation(
         &guidance_dir,
         &src_dirs_from_config_with(&workspace_path, &cfg),
+        true,
     );
     // 1b. Dirty set from staleness (make semantics: fresh files
     // carry a verifying receipt and need no work). Rust only: format
@@ -3013,7 +3101,7 @@ async fn cmd_run(workspace: &str, json_dir: &str, db: &str, max_waves: usize, au
         // The index gate still runs with no fix work: generation is
         // verified (and rebuilt on mismatch) on every run, not just
         // on runs that rewrite files.
-        refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, false).await;
+        refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, true).await;
         println!("run: clean (0 stale files)");
         return;
     }
@@ -3021,7 +3109,7 @@ async fn cmd_run(workspace: &str, json_dir: &str, db: &str, max_waves: usize, au
     // Autonomy cap: L0 converges the mirror and the index, never the
     // tree. The queue still records what a higher autonomy would own.
     if !guidance_core::policy::autonomy_allows_fix(&policy) {
-        refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, false).await;
+        refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, true).await;
         println!(
             "run: clean (autonomy L0: index only, {} stale files held)",
             dirty.len()
@@ -3051,7 +3139,7 @@ async fn cmd_run(workspace: &str, json_dir: &str, db: &str, max_waves: usize, au
     // 4. Fix waves plus the model-draft rung (shared with `sync`):
     // mechanical rungs first, then local code-model drafts for whatever
     // the waves could not converge.
-    let fix = run_fix_scope(&dirty, &guidance_dir, &cfg, &policy, max_waves);
+    let fix = run_fix_scope(&dirty, &guidance_dir, &cfg, &policy, max_waves, true);
     let mut report = fix.waves;
     let drafted: std::collections::HashSet<String> = fix.drafts.kept_files.into_iter().collect();
     report
@@ -3088,7 +3176,7 @@ async fn cmd_run(workspace: &str, json_dir: &str, db: &str, max_waves: usize, au
 
     // 6. Reindex what the waves changed so the knowledge base is
     // current when the report lands.
-    refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, false).await;
+    refresh_search_index(&workspace_path, &guidance_dir, db, &src_dirs, true).await;
 
     // 5b. Stuck files keep a truthful stale verdict: backdate escalated
     // sidecars below their sources while the snapshot explains why.
@@ -3133,11 +3221,44 @@ async fn cmd_run(workspace: &str, json_dir: &str, db: &str, max_waves: usize, au
 /// Waves budget for the sync fix pre-pass: one fixing wave plus its
 /// witness. Escalations fall through to the model-draft rung.
 const SYNC_FIX_MAX_WAVES: usize = 2;
-
 /// Pre-pass file budget: beyond this many dirty files the fix loop is
 /// skipped (whole-tree convergence belongs to `run`), so a cleared or
 /// initial tree still indexes swiftly instead of fixing the world.
 const SYNC_FIX_MAX_FILES: usize = 32;
+
+/// Escalation handoff: the only fix-loop output on a quiet run. Names
+/// every file the waves plus model drafts could not converge, with the
+/// reason the ladder stopped and the last draft detail, so the
+/// orchestrating human or agent inherits the complete error. Silent
+/// when nothing escalated.
+fn print_fix_handoff(
+    escalated: &[guidance_core::waves::Escalation],
+    drafts: &guidance_core::waves::ModelDraftReport,
+) {
+    if escalated.is_empty() {
+        return;
+    }
+    let files = escalated.len();
+    println!(
+        "sync: {} {} attention (unfixed after lint, fix, and model-draft tries; drafts kept {})",
+        files,
+        if files == 1 {
+            "file needs"
+        } else {
+            "files need"
+        },
+        drafts.kept
+    );
+    for esc in escalated {
+        println!("  {} ({})", esc.file, esc.reason);
+        println!("    fingerprint: {}", esc.fingerprint);
+        for (file, detail) in &drafts.failures {
+            if file == &esc.file {
+                println!("    model draft: {detail}");
+            }
+        }
+    }
+}
 
 /// Fix-scope outcome: mechanical waves plus the model-draft rung.
 struct FixScopeOutcome {
@@ -3158,6 +3279,7 @@ fn run_fix_scope(
     cfg: &config::ProjectConfig,
     policy: &guidance_core::policy::MaintenancePolicy,
     max_waves: usize,
+    verbose: bool,
 ) -> FixScopeOutcome {
     // Live toolchain driver, the configured decision endpoint, and a
     // dedicated target dir (no lock fights with the user's own cargo).
@@ -3171,7 +3293,9 @@ fn run_fix_scope(
         Ok(raw) => match serde_json::from_str(&raw) {
             Ok(registry) => registry,
             Err(error) => {
-                eprintln!("warning: calibration registry unreadable: {error}");
+                if verbose {
+                    eprintln!("warning: calibration registry unreadable: {error}");
+                }
                 fluent_llm::decision::CalibrationRegistry::empty()
             }
         },
@@ -3481,8 +3605,11 @@ mod tests {
                 .expect("open");
             file.set_modified(now).expect("touch");
         }
-        let backdated =
-            super::sweep_for_rotation(&dir.path().join(".guidance"), std::slice::from_ref(&src));
+        let backdated = super::sweep_for_rotation(
+            &dir.path().join(".guidance"),
+            std::slice::from_ref(&src),
+            false,
+        );
         assert_eq!(backdated, 2, "both receipts rotated");
         for name in ["a.rs.json", "b.rs.json"] {
             let mtime = std::fs::metadata(sidecar_dir.join(name))

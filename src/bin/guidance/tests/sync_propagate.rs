@@ -607,3 +607,64 @@ fn full_sync_scales_past_pool_queue_without_drops() {
         .count();
     assert_eq!(sidecars, 256, "every file lands a sidecar");
 }
+
+#[test]
+fn sync_quiet_by_default_on_clean_tree() {
+    // Agent-CLI contract: a converged sync prints nothing on stdout.
+    // Progress lines are a `--verbose` surface; only unfixed errors
+    // speak by default.
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+    let text = sync(root, ".sync.db", false);
+    assert!(
+        text.trim().is_empty(),
+        "clean sync must be quiet, got: {text:?}"
+    );
+}
+
+#[test]
+fn sync_escalation_handoff_prints_complete_error() {
+    // Unfixable files are never silent: the handoff names the file, the
+    // reason the loop stopped, and the draft failure detail. Exit stays
+    // 0 (the index converged); the stuck verdict re-surfaces the same
+    // handoff on the next sync until a human or agent fixes the file.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    // Draft rung disabled: hermetic (no dialing); waves alone own this.
+    std::fs::create_dir_all(root.join(".guidance")).expect("mkdir");
+    std::fs::write(
+        root.join(".guidance").join("guidance-config.json"),
+        r#"{"generative": {"enabled": false}}"#,
+    )
+    .expect("write");
+    std::fs::write(root.join("broken.rs"), "fn broken( {\n").expect("write");
+    let out = sync_file(root, ".sync.db", &root.join("broken.rs"), false);
+    assert!(out.contains("attention"), "{out}");
+    assert!(out.contains("broken.rs"), "{out}");
+    assert!(!out.contains("Sync complete"), "{out}");
+    let again = sync_file(root, ".sync.db", &root.join("broken.rs"), false);
+    assert!(
+        again.contains("attention"),
+        "stuck verdict must re-surface: {again}"
+    );
+    assert!(again.contains("broken.rs"), "{again}");
+}
+
+#[test]
+fn sync_draft_failure_detail_reaches_handoff() {
+    // Unreachable local model: the draft rung burns its tries and the
+    // handoff carries the transport error, not just the counts.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join(".guidance")).expect("mkdir");
+    std::fs::write(
+        root.join(".guidance").join("guidance-config.json"),
+        r#"{"generative": {"enabled": true, "base_url": "http://127.0.0.1:1", "model": "code", "timeout_ms": 1000}}"#,
+    )
+    .expect("write");
+    std::fs::write(root.join("broken.rs"), "fn broken( {\n").expect("write");
+    let out = sync_file(root, ".sync.db", &root.join("broken.rs"), false);
+    assert!(out.contains("attention"), "{out}");
+    assert!(out.contains("model unreachable"), "{out}");
+}

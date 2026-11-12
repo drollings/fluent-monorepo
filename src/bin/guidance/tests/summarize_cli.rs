@@ -111,6 +111,8 @@ fn sync_summarize_flag_skips_cleanly_without_model() {
     );
     assert!(out.status.success(), "sync with skipped summaries: {out:?}");
     let combined = stdout(&out) + String::from_utf8_lossy(&out.stderr).as_ref();
-    assert!(combined.contains("Sync complete."), "{combined}");
+    // Requested-but-skipped work stays visible on a quiet run; progress
+    // chatter ("Sync complete.") is a --verbose surface.
+    assert!(!combined.contains("Sync complete."), "{combined}");
     assert!(combined.contains("summary pass skipped"), "{combined}");
 }

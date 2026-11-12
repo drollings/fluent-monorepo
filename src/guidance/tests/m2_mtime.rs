@@ -248,3 +248,29 @@ fn sweep_leaves_source_untouched() {
     );
     assert_eq!(std::fs::read(&source).expect("read"), before);
 }
+
+#[test]
+fn backdated_sidecar_reads_stale_despite_identical_bytes() {
+    // The stuck verdict must clear the ambiguity window: a backdated
+    // sidecar over unchanged content still forces regeneration, or
+    // escalations would show once and go silently stale.
+    let dir = tempdir();
+    let source = dir.path().join("a.rs");
+    std::fs::write(&source, "fn a() {}\n").expect("write");
+    let sidecars = dir.path().join("sidecars");
+    std::fs::create_dir_all(&sidecars).expect("mkdir");
+    let sidecar = sidecars.join("a.rs.json");
+    let body = common_core::hash::sha256_hex(b"fn a() {}\n");
+    json_store::save_guidance(&sidecar, &test_doc(), &receipt(&[], Some(&body))).expect("save");
+    assert!(crate::freshness::backdate_sidecar(&sidecar, &source));
+    let current = common_core::hash::sha256_hex(b"fn a() {}\n");
+    assert!(
+        crate::sync::staleness::should_generate_with_stored(
+            &sidecar,
+            &source,
+            Some(&current),
+            || Some(current.clone())
+        ),
+        "backdated sidecar must read stale"
+    );
+}

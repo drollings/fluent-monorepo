@@ -42,6 +42,7 @@ fn index_search_refresh_status_rg_full_flow() {
     assert!(out.status.success(), "status: {out:?}");
 
     // sync: member docs flow into the node index; sync completes.
+    // Progress lines are a --verbose surface; quiet by default.
     let out = run(
         dir.path(),
         &[
@@ -52,6 +53,7 @@ fn index_search_refresh_status_rg_full_flow() {
             &json_dir,
             "--db",
             &db,
+            "--verbose",
         ],
     );
     assert!(out.status.success(), "sync: {out:?}");
