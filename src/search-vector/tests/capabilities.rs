@@ -49,6 +49,25 @@ fn capability_rows_round_trip_with_provenance() {
 }
 
 #[test]
+fn capability_ready_count_covers_only_ready_rows() {
+    // The tier-honesty read: `held` and `gap` rows persist for retry but
+    // never count toward the available tier.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    assert_eq!(db.capability_ready_count().expect("count"), 0);
+    let mut held = row("b#held", "Brief the model could not serve.");
+    held.status = "held".to_string();
+    let mut gap = row("c#gap", "Brief that failed validation.");
+    gap.status = "gap".to_string();
+    db.replace_capabilities(&[
+        row("a#index", "Indexes fragments for recall."),
+        held,
+        gap,
+    ])
+    .expect("replace");
+    assert_eq!(db.capability_ready_count().expect("count"), 1);
+}
+
+#[test]
 fn capability_fts_finds_brief_terms_only() {
     // Brief text and the SVO predicate are lexically reachable;
     // source-file terms outside briefs must not match this route.

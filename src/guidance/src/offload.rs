@@ -728,7 +728,10 @@ fn excerpt(output: &str) -> String {
     if output.len() <= GATE_EXCERPT_LIMIT {
         return output.to_string();
     }
-    format!("{}…[truncated]", &output[..GATE_EXCERPT_LIMIT])
+    format!(
+        "{}[truncated]",
+        common_core::string::truncate_utf8(output, GATE_EXCERPT_LIMIT)
+    )
 }
 
 #[cfg(test)]

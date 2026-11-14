@@ -2,7 +2,6 @@ use super::identifier;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QueryIntent {
-    IdentifierLookup,
     SingleIdentifier,
     CapabilityQuery,
     FilePath,
@@ -15,7 +14,7 @@ pub enum QueryIntent {
 impl QueryIntent {
     pub fn priority(&self) -> u8 {
         match self {
-            Self::IdentifierLookup | Self::SingleIdentifier => 0,
+            Self::SingleIdentifier => 0,
             Self::FilePath => 1,
             Self::CapabilityQuery => 2,
             Self::HowTo | Self::Conceptual => 4,
@@ -171,7 +170,7 @@ impl FsmEngine {
     /// Route classifier — determines which search primitive to use
     pub fn route(&self, qc: &QueryClass) -> &'static str {
         match qc.intent {
-            QueryIntent::SingleIdentifier | QueryIntent::IdentifierLookup => "word_index",
+            QueryIntent::SingleIdentifier => "word_index",
             QueryIntent::FilePath => "anchor_lookup",
             QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword => "fts",
             QueryIntent::HowTo => "hybrid",
@@ -305,7 +304,6 @@ mod tests {
 
     #[test]
     fn test_priority_order() {
-        assert!(QueryIntent::IdentifierLookup.priority() < QueryIntent::CapabilityQuery.priority());
         assert!(QueryIntent::CapabilityQuery.priority() < QueryIntent::Conceptual.priority());
     }
 

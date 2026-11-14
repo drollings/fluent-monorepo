@@ -59,7 +59,7 @@ pub fn intent_spec() -> QuestionSpec {
         INTENT_VERSION,
         "choice",
         "Classify the query by what the asker wants.",
-        "IdentifierLookup,SingleIdentifier,CapabilityQuery,FilePath,HowTo,Conceptual,MultiKeyword,GeneralSearch",
+        "SingleIdentifier,CapabilityQuery,FilePath,HowTo,Conceptual,MultiKeyword,GeneralSearch",
         0.9,
         0.7,
         2000,
@@ -264,7 +264,6 @@ pub fn shadow_thresholds(spec: &QuestionSpec) -> ThresholdSet {
 pub fn intent_label_to_intent(label: &str) -> Option<super::strategy::QueryIntent> {
     use super::strategy::QueryIntent;
     match label {
-        "IdentifierLookup" => Some(QueryIntent::IdentifierLookup),
         "SingleIdentifier" => Some(QueryIntent::SingleIdentifier),
         "CapabilityQuery" => Some(QueryIntent::CapabilityQuery),
         "FilePath" => Some(QueryIntent::FilePath),

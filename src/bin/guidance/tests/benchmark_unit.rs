@@ -77,6 +77,24 @@ fn tasks_file_parses_golden_shape_with_extras_ignored() {
 }
 
 #[test]
+fn orientation_tasks_file_parses_with_golden_relevant_sets() {
+    // The checked-in orientation battery: six maintainer questions with
+    // golden relevant-file sets. Guards the M9 ratchet input — a malformed
+    // task file must fail here, not mid-benchmark.
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../guidance/corpora/benchmark_tasks.jsonl"
+    ))
+    .expect("orientation tasks read");
+    let tasks = parse_tasks_file(&text).expect("orientation tasks parse");
+    assert_eq!(tasks.len(), 6, "six orientation questions");
+    for task in &tasks {
+        assert!(!task.query.is_empty(), "{:?}", task.id);
+        assert!(!task.relevant.is_empty(), "{:?} carries goldens", task.id);
+    }
+}
+
+#[test]
 fn tasks_file_rejects_missing_query() {
     assert!(parse_tasks_file("{\"id\": \"x\"}\n").is_err());
     assert!(parse_tasks_file("").expect("empty").is_empty());

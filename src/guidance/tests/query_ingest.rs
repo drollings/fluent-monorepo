@@ -49,6 +49,23 @@ fn untouched_holder_builds_nothing() {
     assert_eq!(builds.load(Ordering::SeqCst), 0);
 }
 
+// --- holder independence: no shared global pipeline state ---------------
+// Two holders build independently: there is no process-global pipeline
+// cell for hermetic tests to leak through. Rotation-style invalidation
+// is vacuous here by construction — the held pipeline is model-free
+// rules with no fingerprint identity to rotate; identity-keyed
+// invalidation belongs to the model-backed filters, not this holder.
+
+#[test]
+fn holders_are_independent_no_shared_state() {
+    let first = LazyNlp::new();
+    let second = LazyNlp::new();
+    let builds = AtomicUsize::new(0);
+    assert!(first.get_with(counting_factory(&builds)).is_none());
+    assert!(second.get_with(counting_factory(&builds)).is_none());
+    assert_eq!(builds.load(Ordering::SeqCst), 2);
+}
+
 // --- M14.1: no-NLP fail-open characterization -------------------------------
 // `query_lemmas(None, …)` is the pipeline-absent path: deterministic
 // lowercase alphanumeric tokens, order-preserving dedup. Old rows carry

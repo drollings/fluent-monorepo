@@ -1,6 +1,6 @@
 //! Capability-route matching over funneled query terms: SVO signals
 //! extracted from the funnel vocabulary plus a pure SVO-overlap
-//! rank. Pure addition — no existing route calls it yet.
+//! rank. Wired: `recall_capability_briefs` ranks every branch-1 pool through it.
 //!
 //! The query side never sees raw text: extraction runs on the
 //! alias-expanded terms, so predicate/role lemmas share the funnel

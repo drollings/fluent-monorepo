@@ -201,7 +201,7 @@ crates never import from `guidance` (or the other tool crates).
 
 ## Doc map
 
-`VISION.md` (goals), `OVERVIEW.md` (feature tour),
+`VISION.md` (goals), `ARCHITECTURE.md` (implementation map),
 `MODEL_ROLES.md` (serving topology + config example),
 `CALIBRATION.md` (live commands + promotion),
 `MODEL_OFFLOAD.md` (automation guardrails),

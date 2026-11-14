@@ -697,6 +697,20 @@ impl McpServer {
             Coverage::RankedSample,
             note.as_deref(),
         );
+        // Additive machine handoff: intent, route, gaps, and confidence
+        // axis over the merged hits. Pure classification plus the shared
+        // stage conversion — no model, no storage, no shape change to
+        // the text content beside this new field.
+        let mut explain_fsm = guidance_core::query::strategy::FsmEngine::new();
+        let explain_class = explain_fsm.run(&params.queries.join(" "));
+        let explain_route = explain_fsm.route(&explain_class).to_string();
+        let explain_stages = guidance_core::query::hybrid::stages_from_hits(&merged);
+        let explain_envelope =
+            guidance_core::query::envelope::AnswerEnvelope::from_stages(
+                &explain_class,
+                &explain_route,
+                explain_stages,
+            );
         // Optional graph context through the shared context assembly
         // (same builder the CLI explain uses): anchors from the merged
         // hits, provenance lines verbatim, no fabricated hits, no score
@@ -708,6 +722,7 @@ impl McpServer {
                 "text": text
             }]
         });
+        result["envelope"] = crate::search::envelope_json(&explain_envelope);
         if params.context {
             let lines = match self.workspace.as_ref() {
                 Some(workspace) => crate::search::context_lines_for_hits(

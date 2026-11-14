@@ -82,10 +82,6 @@ fn legacy_fallback_labels_by_intent() {
         tier_for_intent(QueryIntent::SingleIdentifier),
         RetrievalTier::Exact
     );
-    assert_eq!(
-        tier_for_intent(QueryIntent::IdentifierLookup),
-        RetrievalTier::Exact
-    );
     assert_eq!(tier_for_intent(QueryIntent::FilePath), RetrievalTier::Exact);
     assert_eq!(
         tier_for_intent(QueryIntent::CapabilityQuery),

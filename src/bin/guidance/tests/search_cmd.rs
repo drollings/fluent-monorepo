@@ -1036,10 +1036,11 @@ impl fluent_llm::client::ChatBackend for FakeBackend {
 #[test]
 fn docs_judge_keeps_passing_scores() {
     // Each paragraph passes through the decision model; only items at
-    // or above the floor survive, best score first.
-    assert_eq!(EXPLAIN_DOC_MIN_SCORE, 60);
+    // or above the floor survive, best score first. Floor 70 is locked
+    // by the doc-judge calibration: a 65-scoring near-miss drops here.
+    assert_eq!(EXPLAIN_DOC_MIN_SCORE, 70);
     let backend = FakeBackend {
-        text: r#"{"1": 90, "2": 10}"#.to_string(),
+        text: r#"{"1": 90, "2": 65}"#.to_string(),
         fail: false,
     };
     let docs = vec![
@@ -1988,7 +1989,7 @@ fn dual_indexed_db_rows_fuse_to_single_hit() {
     )
     .expect("upsert b");
     let plan = build_search_plan("zephyr quark", SearchMode::Fuse, 10, false, false, &[], &[]);
-    let hits = recall_on_index(&ws, db_path.to_str().unwrap(), &plan).expect("recall");
+    let hits = recall_on_index(&ws, db_path.to_str().unwrap(), &plan, &LazyNlp::new(), guidance_core::query::recall::RecallPolicy::default()).expect("recall");
     assert_eq!(hits.len(), 1, "dual rows fuse to one: {hits:?}");
     assert_eq!(hits[0].rank, 1);
 }
@@ -2234,9 +2235,23 @@ fn branch_gate_relaxed_needs_one_token() {
 
 #[test]
 fn brief_opens_traversal_only_for_rank_one() {
-    assert!(brief_opens_traversal(1));
-    assert!(!brief_opens_traversal(2));
-    assert!(!brief_opens_traversal(3));
+    // Rank 1 is necessary but not sufficient: judged `Considered` never
+    // traverses, judged `Strong` and unjudged rank-1 do.
+    assert!(brief_opens_traversal(1, BriefStanding::Unjudged));
+    assert!(brief_opens_traversal(
+        1,
+        BriefStanding::Judged(CapabilityTier::Strong)
+    ));
+    assert!(!brief_opens_traversal(
+        1,
+        BriefStanding::Judged(CapabilityTier::Considered)
+    ));
+    assert!(!brief_opens_traversal(2, BriefStanding::Unjudged));
+    assert!(!brief_opens_traversal(
+        2,
+        BriefStanding::Judged(CapabilityTier::Strong)
+    ));
+    assert!(!brief_opens_traversal(3, BriefStanding::Unjudged));
 }
 
 #[test]
@@ -2499,26 +2514,53 @@ fn recall_briefs_falls_back_to_fts_without_nlp() {
     assert_eq!(briefs[0].id, "doc/router/guide.md#guide");
 }
 
+
+fn phased_branch(
+    query: &str,
+    ws: &str,
+    db_path: &str,
+    hits: &[SearchHit],
+    standings: &std::collections::HashMap<String, BriefStanding>,
+) -> (Vec<guidance_core::query::capability_match::RankedBrief>, Vec<BranchPull>)
+{
+    let nlp = LazyNlp::new();
+    let briefs = recall_capability_briefs_for(query, db_path, hits, &nlp).briefs;
+    let tokens = significant_query_tokens(query);
+    let pulls = capability_branch_pulls(
+        &briefs,
+        standings,
+        ws,
+        db_path,
+        &tokens,
+        &nlp,
+        guidance_core::query::recall::RecallPolicy::default(),
+    );
+    (briefs, pulls)
+}
+
 #[test]
 fn capability_branch_pulls_rank_one_only() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (ws, _db) = seed_capability_db(&dir);
     let db_path = dir.path().join("cap.db").to_str().unwrap().to_string();
-    let branch = capability_branch("zxqy flux wobble", &ws, &db_path, &[]);
-    assert!(!branch.briefs.is_empty(), "triggered branch ranks briefs");
-    assert_eq!(branch.briefs[0].rank, 1);
-    assert_eq!(branch.pulls.len(), 1, "exactly one scoped pull: {branch:?}");
-    assert_eq!(branch.pulls[0].crate_name, "fluent-router");
-    assert!(
-        !branch.pulls[0].hits.is_empty(),
-        "scoped pull finds code: {branch:?}"
+    let (briefs, pulls) = phased_branch(
+        "zxqy flux wobble",
+        &ws,
+        &db_path,
+        &[],
+        &std::collections::HashMap::new(),
     );
+    assert!(!briefs.is_empty(), "triggered branch ranks briefs");
+    assert_eq!(briefs[0].rank, 1);
+    assert_eq!(pulls.len(), 1, "exactly one scoped pull");
+    assert_eq!(pulls[0].crate_name, "fluent-router");
+    assert!(!pulls[0].hits.is_empty(), "scoped pull finds code");
     assert!(
-        branch.pulls[0]
+        pulls[0]
             .hits
             .iter()
             .all(|hit| hit.file.relative_path.starts_with("src/router")),
-        "pull stays in scope: {branch:?}"
+        "pull stays in scope"
     );
 }
 
@@ -2530,12 +2572,15 @@ fn capability_branch_skips_unknown_crate_scope() {
     held.crate_name = "unknown".to_string();
     db.replace_capabilities(&[held]).expect("replace");
     let db_path = dir.path().join("cap.db").to_str().unwrap().to_string();
-    let branch = capability_branch("unrelated prose here", &ws, &db_path, &[]);
-    assert!(!branch.briefs.is_empty(), "unknown-crate brief still ranks");
-    assert!(
-        branch.pulls.is_empty(),
-        "no scope means no pull: {branch:?}"
+    let (briefs, pulls) = phased_branch(
+        "unrelated prose here",
+        &ws,
+        &db_path,
+        &[],
+        &std::collections::HashMap::new(),
     );
+    assert!(!briefs.is_empty(), "unknown-crate brief still ranks");
+    assert!(pulls.is_empty(), "no scope means no pull");
 }
 
 #[test]
@@ -2552,13 +2597,19 @@ fn capability_branch_stays_shut_on_strong_code_recall() {
         &[],
         &[],
     );
-    let hits = recall_on_index(&ws, &db_path, &plan).expect("recall");
+    let hits = recall_on_index(&ws, &db_path, &plan, &LazyNlp::new(), guidance_core::query::recall::RecallPolicy::default()).expect("recall");
     assert!(
         !capability_trigger(&hits),
         "test guards the shut branch: {hits:?}"
     );
-    let branch = capability_branch("calibrate drive", &ws, &db_path, &hits);
-    assert!(branch.briefs.is_empty() && branch.pulls.is_empty());
+    let (briefs, pulls) = phased_branch(
+        "calibrate drive",
+        &ws,
+        &db_path,
+        &hits,
+        &std::collections::HashMap::new(),
+    );
+    assert!(briefs.is_empty() && pulls.is_empty());
 }
 
 fn ranked_brief(
@@ -2844,4 +2895,191 @@ fn scored_brief_json_marks_unjudged_considered() {
     assert_eq!(value["tier"], serde_json::json!("considered"));
     assert!(value["score"].is_null(), "{value}");
     assert_eq!(value["rank"], serde_json::json!(2));
+}
+
+#[test]
+fn judged_considered_rank_one_never_traverses() {
+    // Task-value gate: a judged-weak rank-1 brief pulls nothing, where
+    // the unjudged pre-calibration exception would still pull.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (ws, _db) = seed_capability_db(&dir);
+    let db_path = dir.path().join("cap.db").to_str().unwrap().to_string();
+    let nlp = LazyNlp::new();
+    let briefs = recall_capability_briefs_for("zxqy flux wobble", &db_path, &[], &nlp).briefs;
+    assert!(!briefs.is_empty() && briefs[0].rank == 1);
+    let tokens = significant_query_tokens("zxqy flux wobble");
+    let judged_weak: std::collections::HashMap<String, BriefStanding> = briefs
+        .iter()
+        .map(|brief| (brief.id.clone(), BriefStanding::Judged(CapabilityTier::Considered)))
+        .collect();
+    let pulls = capability_branch_pulls(
+        &briefs,
+        &judged_weak,
+        &ws,
+        &db_path,
+        &tokens,
+        &nlp,
+        guidance_core::query::recall::RecallPolicy::default(),
+    );
+    assert!(pulls.is_empty(), "judged weak never traverses: {pulls:?}");
+    let judged_strong: std::collections::HashMap<String, BriefStanding> = briefs
+        .iter()
+        .map(|brief| (brief.id.clone(), BriefStanding::Judged(CapabilityTier::Strong)))
+        .collect();
+    let pulls = capability_branch_pulls(
+        &briefs,
+        &judged_strong,
+        &ws,
+        &db_path,
+        &tokens,
+        &nlp,
+        guidance_core::query::recall::RecallPolicy::default(),
+    );
+    assert_eq!(pulls.len(), 1, "judged strong still traverses");
+    let unjudged = std::collections::HashMap::new();
+    let pulls = capability_branch_pulls(
+        &briefs,
+        &unjudged,
+        &ws,
+        &db_path,
+        &tokens,
+        &nlp,
+        guidance_core::query::recall::RecallPolicy::default(),
+    );
+    assert_eq!(
+        pulls.len(),
+        1,
+        "unjudged rank-1 keeps the labelled pre-calibration exception"
+    );
+    let mut lower_only: std::collections::HashMap<String, BriefStanding> =
+        std::collections::HashMap::new();
+    lower_only.insert(briefs[0].id.clone(), BriefStanding::Unjudged);
+    assert!(
+        !brief_opens_traversal(2, BriefStanding::Unjudged)
+            && !brief_opens_traversal(2, BriefStanding::Judged(CapabilityTier::Strong)),
+        "rank bound holds for every standing"
+    );
+}
+
+#[test]
+fn one_holder_serves_fused_and_branch_with_single_build() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (ws, _db) = seed_capability_db(&dir);
+    let db_path = dir.path().join("cap.db").to_str().unwrap().to_string();
+    let builds = AtomicUsize::new(0);
+    let holder = LazyNlp::new();
+    holder.get_with(|| {
+        builds.fetch_add(1, Ordering::SeqCst);
+        guidance_core::query::ingest::default_en_pipeline()
+    });
+    let plan = build_search_plan(
+        "zxqy flux wobble",
+        SearchMode::Fuse,
+        10,
+        false,
+        false,
+        &[],
+        &[],
+    );
+    let _ = recall_on_index(&ws, &db_path, &plan, &holder, guidance_core::query::recall::RecallPolicy::default());
+    let holder_briefs =
+        recall_capability_briefs_for("zxqy flux wobble", &db_path, &[], &holder).briefs;
+    let _ = capability_branch_pulls(
+        &holder_briefs,
+        &std::collections::HashMap::new(),
+        &ws,
+        &db_path,
+        &significant_query_tokens("zxqy flux wobble"),
+        &holder,
+        guidance_core::query::recall::RecallPolicy::default(),
+    );
+    assert_eq!(
+        builds.load(Ordering::SeqCst),
+        1,
+        "fused recall and the capability branch share one pipeline build"
+    );
+}
+
+#[test]
+fn explain_adapter_symbol_query_records_intent_and_route() {
+    use search_vector::db::{FileRecord, FragmentRecord};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ws = dir.path().to_str().unwrap().to_string();
+    let db_path = dir.path().join("adapter.db");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open db");
+    db.upsert_fragments(
+        &FileRecord {
+            id: "file-a".to_string(),
+            absolute_path: format!("{ws}/a.rs"),
+            relative_path: "a.rs".to_string(),
+            root_path: ws.clone(),
+            size_bytes: 64,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[FragmentRecord {
+            id: "frag-a".to_string(),
+            group: None,
+            file_id: "file-a".to_string(),
+            range_json: "{\"kind\":\"file\"}".to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("pub fn zephyr_quark() {}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("zephyr_quark".to_string()),
+            scope: None,
+            signature: Some("function zephyr_quark()".to_string()),
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("upsert a");
+    let adaptation = explain_adapter(
+        "zephyr_quark",
+        &ws,
+        db_path.to_str().unwrap(),
+        10,
+        &LazyNlp::new(),
+        guidance_core::query::recall::RecallPolicy::default(),
+        None,
+    );
+    assert!(!adaptation.hits.is_empty(), "symbol query recalls");
+    let envelope = envelope_for_hits(&adaptation.class, &adaptation.route, &adaptation.hits);
+    assert_eq!(format!("{:?}", envelope.intent), "SingleIdentifier");
+    assert_eq!(envelope.route, "word_index");
+}
+
+#[test]
+fn explain_adapter_orientation_query_is_honest_when_empty() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ws = dir.path().to_str().unwrap().to_string();
+    let db_path = dir.path().join("empty.db");
+    let _db = search_vector::GuidanceDb::open(&db_path).expect("open db");
+    let adaptation = explain_adapter(
+        "what owns calibration",
+        &ws,
+        db_path.to_str().unwrap(),
+        10,
+        &LazyNlp::new(),
+        guidance_core::query::recall::RecallPolicy::default(),
+        None,
+    );
+    let envelope = envelope_for_hits(&adaptation.class, &adaptation.route, &adaptation.hits);
+    assert!(!envelope.route.is_empty(), "route recorded");
+    assert!(!envelope.gaps.is_empty(), "no confabulation: gaps listed");
+    assert!(
+        format!("{:?}", envelope.confidence.axis).contains("ProducerOrderOnly"),
+        "ungrounded confidence never certifies: {:?}",
+        envelope.confidence
+    );
 }

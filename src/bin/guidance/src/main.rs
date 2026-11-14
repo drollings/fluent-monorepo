@@ -8,6 +8,7 @@ use common_core::ensure_dir_or_panic;
 use common_core::shell::run_command;
 use fluent_concurrency::pool::ResultPoolError;
 use guidance_core::config;
+use guidance_core::query::ingest::LazyNlp;
 use guidance_core::runtime;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_core::walk;
@@ -867,13 +868,29 @@ async fn cmd_explain(
     };
     let guidance_dir = guidance_path.to_string_lossy().into_owned();
     let _total = profile::Phase::new("explain.total");
+    // One holder per command: fused recall, branch-1 recall, and
+    // branch-2 pulls share a single pipeline build, on first lemma need.
+    let nlp = LazyNlp::new();
+    let jumps_holder = search::LazyJumps::new();
+    let workspace_root = PathBuf::from(workspace);
+    let cfg = load_project_config(&workspace_root);
+    let calibration_registry = fluent_llm::decision::CalibrationRegistry::load(
+        &PathBuf::from(&guidance_dir)
+            .join("state")
+            .join("calibration.json"),
+    )
+    .unwrap_or_else(|_| fluent_llm::decision::CalibrationRegistry::empty());
+    // Recall policy: `Act` only with a passing summary-index entry for the
+    // generating model, `Disabled` otherwise (byte-identical recall).
+    // Every recall entry below inherits the same gate.
+    let recall_policy = search::recall_policy_for(&calibration_registry, &cfg.generative.model);
     // `callers of <symbol>` resolves through persisted call edges
     // (hydrated graph, no re-parse), never keyword search: graph hits
     // bypass the relevance gate (its prose-token bar does not apply to
     // edge answers). Unknown symbols stay honestly empty.
     let callers_symbol = search::parse_callers_query(query);
     let recall_phase = profile::Phase::new("explain.recall");
-    let (hits, recall_empty, branch, hit_tags, dual_tags) = match callers_symbol {
+    let (hits, briefs, class, route, capability_ready) = match callers_symbol {
         Some(symbol) => {
             let db_file = PathBuf::from(db_path);
             let graph_hits = if !db_file.exists() {
@@ -895,29 +912,54 @@ async fn cmd_explain(
             };
             drop(recall_phase);
             if graph_hits.is_empty() {
-                print!("## Explain: {query}\n\nNo results found.\n");
+                print!("{}", search::render_empty_explain(query));
                 return;
             }
-            let tags = vec![None; graph_hits.len()];
+            let mut fsm = guidance_core::query::strategy::FsmEngine::new();
+            let class = fsm.run(query);
+            let route = fsm.route(&class).to_string();
             (
                 graph_hits,
-                false,
-                search::CapabilityBranch::default(),
-                tags,
                 Vec::new(),
+                class,
+                route,
+                0,
             )
         }
         None => {
-            // Fused recall reads the same fused index as `search --fuse`. Any
-            // recall failure degrades to empty, never a hard error — the empty
-            // state below is the stable contract.
-            let hits = match search::fused_hits(query, workspace, db_path, limit) {
-                Ok(hits) => hits,
-                Err(error) => {
-                    eprintln!("Warning: explain recall failed ({error})");
-                    Vec::new()
-                }
-            };
+            // Intent-routed fused recall through the explain adapter: the
+            // library classifies (intent + route) and envelops the fused
+            // hits; the CLI keeps its relevance gate, capability branch,
+            // and renderers below. Any recall failure degrades to empty,
+            // never a hard error — the empty state below is the stable
+            // contract. One holder serves fused recall and the capability
+            // branch: the pipeline builds at most once per command, on
+            // first lemma need.
+            let adaptation = search::explain_adapter(
+                query,
+                workspace,
+                db_path,
+                limit,
+                &nlp,
+                recall_policy,
+                jumps_holder
+                    .get(
+                        std::path::Path::new(workspace),
+                        std::path::Path::new(guidance_dir.as_str()),
+                    )
+                    .as_ref(),
+            );
+            if adaptation.hits.is_empty()
+                && !std::path::Path::new(db_path).is_file()
+            {
+                eprintln!("Warning: explain recall failed (index not found at {db_path})");
+            }
+            let search::ExplainAdaptation {
+                hits,
+                class,
+                route,
+                ..
+            } = adaptation;
             drop(recall_phase);
 
             // Relevance gate: a hit survives on a structural match (query token
@@ -929,31 +971,145 @@ async fn cmd_explain(
             // answer to confabulate from. Deterministic: --no-llm behaves
             // identically, and hermetic tests pin the narrow path byte-for-byte.
             let gate_phase = profile::Phase::new("explain.relevance_gate");
-            let recall_empty = hits.is_empty();
             let tokens = search::significant_query_tokens(query);
             let hits = search::filter_relevant_hits(&hits, &tokens);
             drop(gate_phase);
-            // Capability branch beside fused recall: code-thin relevant
-            // hits open SVO-ranked briefs (branch 1) plus one scoped
-            // code pull through the relaxed gate (branch 2); the merge
-            // keeps files rendering once with both provenances.
+            // Advisory finding filter (measure, never steer): per-finding
+            // verdicts from the gate-plus-overlay signals above, applied
+            // under the sufficiency point. Live authorization is
+            // ShadowOnly, so the kept set is the input set in input
+            // order — the seam is live and pinned, steering waits on
+            // calibration.
+            let finding_auth =
+                guidance_core::query::decision_points::authorize_point_with(
+                    &calibration_registry,
+                    guidance_core::query::decision_points::SUFFICIENCY_POINT,
+                    &cfg.decision.model,
+                    guidance_core::query::decision_points::SUFFICIENCY_VERSION,
+                );
+            let findings = search::findings_for_hits(&hits);
+            let verdicts = search::deterministic_finding_verdicts(&findings, &tokens);
+            let outcome =
+                search::advisory_filter_findings(findings, &verdicts, &finding_auth);
+            debug_assert!(
+                outcome.kept.len() == hits.len(),
+                "shadow-regime filter must not drop findings"
+            );
+            // Capability branch phase 1 (no model): code-thin relevant
+            // hits open SVO-ranked briefs. Pulls wait for judging below;
+            // the merge after pulls keeps files rendering once.
             // Untriggered queries skip the branch entirely.
             let branch_phase = profile::Phase::new("explain.capability");
-            let branch = search::capability_branch(query, workspace, db_path, &hits);
+            let branch = search::recall_capability_briefs_for(query, db_path, &hits, &nlp);
             drop(branch_phase);
-            let (hits, hit_tags, dual_tags) =
-                search::merge_branch_hits(hits, &branch.pulls, Path::new(workspace));
-            (hits, recall_empty, branch, hit_tags, dual_tags)
+            let (hits, briefs, capability_ready) = (hits, branch.briefs, branch.ready);
+            (hits, briefs, class, route, capability_ready)
         }
     };
-    if hits.is_empty() && branch.briefs.is_empty() {
-        if recall_empty {
-            print!("## Explain: {query}\n\nNo results found.\n");
-        } else {
-            print!("## Explain: {query}\n\nNo relevant results found.\n");
-        }
+    if hits.is_empty() && briefs.is_empty() {
+        print!("{}", search::render_empty_explain(query));
         return;
     }
+
+    // Capability judge (shadow): the uncalibrated decision model scores
+    // each brief 0-100; scores tier the render but never filter or
+    // reorder it. Unjudged briefs (no model, transport failure,
+    // unparseable) render as `considered` in deterministic SVO order.
+    // Every score logs a shadow record for the judge corpus.
+    //
+    // Fail-closed tiers: the scored tiers render at most `Considered`
+    // until the capability point carries a passing calibration entry.
+    // The judge is measured, never obeyed, on the live path — scores
+    // still log shadow records, and `Strong` unlocks only when
+    // `calibrate` authorizes the point (measure-only today, so the cap
+    // holds until then).
+    let capability_authorized = guidance_core::query::decision_points::authorize_point_with(
+        &calibration_registry,
+        guidance_core::capability::CAPABILITY_POINT,
+        &cfg.decision.model,
+        search::CAPABILITY_JUDGE_VERSION,
+    )
+    .is_calibrated();
+    let mut scored_briefs: Vec<search::ScoredBrief> = briefs
+        .iter()
+        .map(|brief| search::ScoredBrief {
+            brief: brief.clone(),
+            score: None,
+        })
+        .collect();
+    if !no_llm && cfg.decision.enabled && !briefs.is_empty() {
+        let mut client =
+            fluent_llm::client::LlmClient::new(&cfg.decision.base_url, &cfg.decision.model);
+        client.config.timeout_ms = cfg.decision.timeout_ms;
+        let judge_phase = profile::Phase::new("explain.capability_judge");
+        scored_briefs = search::judge_capability_briefs(query, &briefs, &client);
+        drop(judge_phase);
+        for scored in &scored_briefs {
+            if let Some(score) = scored.score {
+                let tier = search::capability_tier_label(search::capability_tier(Some(score)));
+                let record = guidance_core::query::shadow::capability_judge_shadow(
+                    &scored.brief.id,
+                    score,
+                    tier,
+                    scored.brief.rank,
+                );
+                tracing::info!(
+                    target: "capability_shadow",
+                    point = record.point.as_str(),
+                    brief = scored.brief.id.as_str(),
+                    score = score,
+                    tier = tier,
+                    rank = scored.brief.rank,
+                    verdict = record.verdict.as_str(),
+                    would_have_acted = record.would_have_acted,
+                    brief_json = %search::scored_brief_json(scored),
+                    "capability judge shadow",
+                );
+            }
+        }
+    }
+
+
+
+    let display_tier = |scored: &search::ScoredBrief| -> search::CapabilityTier {
+        let tier = search::capability_tier(scored.score);
+        if capability_authorized || tier != search::CapabilityTier::Strong {
+            tier
+        } else {
+            search::CapabilityTier::Considered
+        }
+    };
+    // Phase 2 (no model): judged standings gate traversal, then merge.
+    // Runs after judging (needs tiers) but before rows and citations
+    // (pulls render). Note the ordering consequence: with briefs present
+    // the judge model call precedes `--strict` refusal; without briefs
+    // nothing model-touched runs before strict, as before. Judged
+    // `Considered` never pulls; unjudged rank-1 keeps the labelled
+    // pre-calibration exception.
+    let judged = !no_llm && cfg.decision.enabled && !briefs.is_empty();
+    let mut standings: std::collections::HashMap<String, search::BriefStanding> =
+        std::collections::HashMap::new();
+    for scored in &scored_briefs {
+        standings.insert(
+            scored.brief.id.clone(),
+            if judged {
+                search::BriefStanding::Judged(display_tier(scored))
+            } else {
+                search::BriefStanding::Unjudged
+            },
+        );
+    }
+    let pulls = search::capability_branch_pulls(
+        &briefs,
+        &standings,
+        workspace,
+        db_path,
+        &search::significant_query_tokens(query),
+        &nlp,
+        recall_policy,
+    );
+    let (hits, hit_tags, dual_tags) =
+        search::merge_branch_hits(hits, &pulls, Path::new(workspace));
 
     let cite_phase = profile::Phase::new("explain.citations");
     let cites = search::cite_hits(&hits, workspace);
@@ -991,13 +1147,6 @@ async fn cmd_explain(
         }
     }
 
-    if rows.is_empty() && branch.briefs.is_empty() {
-        print!("## Explain: {query}\n\nNo results found.\n");
-        return;
-    }
-    let workspace_root = PathBuf::from(workspace);
-    let cfg = load_project_config(&workspace_root);
-
     // Top-match snippets with live bounds, byte-identical duplicates
     // removed. Tree-sitter positions resolve on the fly, so an edit
     // after indexing moves the lines instead of serving stale ones.
@@ -1008,9 +1157,15 @@ async fn cmd_explain(
     // repo-root orientation files (`README.md`, `AGENTS.md`, enabled
     // by the `root_docs` config, on by default), ranked by query-term
     // overlap at query time (no index writes), then gated by the local
-    // decision model: only items at or above the floor are cited. No
-    // model call under --no-llm, so no docs either.
+    // decision model: only items at or above the floor are cited as
+    // judged. Ranked-but-unjudged paragraphs (backend disabled,
+    // unreachable, or unparseable) render labelled `[unjudged]` instead
+    // of vanishing — producer overlap is shown, never trusted. Unjudged
+    // prose never enters synthesis (the answer builder takes snippets
+    // and Strong briefs only). No model call under --no-llm, so no
+    // docs either.
     let mut docs = Vec::new();
+    let mut docs_judged = false;
     if !no_llm {
         let docs_dir = if cfg.docs_dir.is_absolute() {
             cfg.docs_dir.clone()
@@ -1050,56 +1205,22 @@ async fn cmd_explain(
                     fluent_llm::client::LlmClient::new(&cfg.decision.base_url, &cfg.decision.model);
                 client.config.timeout_ms = cfg.decision.timeout_ms;
                 let judge_phase = profile::Phase::new("explain.docs_judge");
-                docs = search::judge_doc_paragraphs(query, &ranked, &client)
+                let judged: Vec<(String, String)> = search::judge_doc_paragraphs(query, &ranked, &client)
                     .into_iter()
                     .take(search::EXPLAIN_DOC_TOP_K)
                     .collect();
                 drop(judge_phase);
+                if !judged.is_empty() {
+                    docs = judged;
+                    docs_judged = true;
+                }
             }
-        }
-    }
-
-    // Capability judge (shadow): the uncalibrated decision model scores
-    // each brief 0-100; scores tier the render but never filter or
-    // reorder it. Unjudged briefs (no model, transport failure,
-    // unparseable) render as `considered` in deterministic SVO order.
-    // Every score logs a shadow record for the judge corpus.
-    let mut scored_briefs: Vec<search::ScoredBrief> = branch
-        .briefs
-        .iter()
-        .map(|brief| search::ScoredBrief {
-            brief: brief.clone(),
-            score: None,
-        })
-        .collect();
-    if !no_llm && cfg.decision.enabled && !branch.briefs.is_empty() {
-        let mut client =
-            fluent_llm::client::LlmClient::new(&cfg.decision.base_url, &cfg.decision.model);
-        client.config.timeout_ms = cfg.decision.timeout_ms;
-        let judge_phase = profile::Phase::new("explain.capability_judge");
-        scored_briefs = search::judge_capability_briefs(query, &branch.briefs, &client);
-        drop(judge_phase);
-        for scored in &scored_briefs {
-            if let Some(score) = scored.score {
-                let tier = search::capability_tier_label(search::capability_tier(Some(score)));
-                let record = guidance_core::query::shadow::capability_judge_shadow(
-                    &scored.brief.id,
-                    score,
-                    tier,
-                    scored.brief.rank,
-                );
-                tracing::info!(
-                    target: "capability_shadow",
-                    point = record.point.as_str(),
-                    brief = scored.brief.id.as_str(),
-                    score = score,
-                    tier = tier,
-                    rank = scored.brief.rank,
-                    verdict = record.verdict.as_str(),
-                    would_have_acted = record.would_have_acted,
-                    brief_json = %search::scored_brief_json(scored),
-                    "capability judge shadow",
-                );
+            if !ranked.is_empty() && !docs_judged {
+                docs = ranked
+                    .into_iter()
+                    .take(search::EXPLAIN_DOC_TOP_K)
+                    .map(|(path, excerpt)| (format!("[unjudged] {path}"), excerpt))
+                    .collect();
             }
         }
     }
@@ -1111,7 +1232,7 @@ async fn cmd_explain(
     // synthesis context; considered briefs render without feeding it.
     let strong_briefs: Vec<String> = scored_briefs
         .iter()
-        .filter(|scored| search::capability_tier(scored.score) == search::CapabilityTier::Strong)
+        .filter(|scored| display_tier(scored) == search::CapabilityTier::Strong)
         .map(|scored| scored.brief.purpose.clone())
         .collect();
     let mut answer: Option<String> = None;
@@ -1127,13 +1248,20 @@ async fn cmd_explain(
                 &client,
                 &role.model,
             ) {
-                Ok(Some(text)) => answer = Some(text),
+                // Structural enforcement outside the model: every cited
+                // path:line must resolve to shown evidence, else the
+                // abstain-with-evidence template replaces the draft.
+                Ok(Some(text)) => {
+                    answer = Some(search::constrain_answer_to_evidence(&text, &snippets));
+                }
                 Ok(None) => answer = Some("(unavailable: empty answer)".to_string()),
                 Err(error) => {
-                    let mut detail = error.trim().to_string();
-                    if detail.len() > 200 {
-                        detail.truncate(200);
-                    }
+                    let detail = error.trim().to_string();
+                    let detail = if detail.len() > 200 {
+                        common_core::string::truncate_utf8(&detail, 200)
+                    } else {
+                        detail
+                    };
                     answer = Some(format!("(unavailable: {detail})"));
                 }
             }
@@ -1149,7 +1277,7 @@ async fn cmd_explain(
     let capabilities: Vec<(String, String)> = scored_briefs
         .iter()
         .map(|scored| {
-            let tier = search::capability_tier_label(search::capability_tier(scored.score));
+            let tier = search::capability_tier_label(display_tier(scored));
             (
                 format!(
                     "[{tier}] {}/{} ({}#{})",
@@ -1172,8 +1300,29 @@ async fn cmd_explain(
         }
     }
     let snippet_tags = search::tag_snippets_by_file(&snippets, &file_tags);
+    // Tier honesty: the capabilities table holds zero ready briefs, so
+    // the branch above could not fire for lack of data — say so in one
+    // line rather than rendering a section that is always absent. A
+    // populated table with no ranked match stays silent (tier available,
+    // nothing relevant); only the empty tier is labelled. The count
+    // travels with the branch result — no second index open.
+    let capability_tier_note = match capability_ready {
+        0 if briefs.is_empty() => {
+            "\n> capability briefs: none indexed — run is unaffected\n"
+        }
+        _ => "",
+    };
+    // Machine handoff beside the human rendering: the library envelope
+    // rebuilt over the final post-gate hits, so intent, route, gaps, and
+    // the confidence axis describe what actually rendered. Additive —
+    // parsers that stop at the suggestions block are unaffected.
+    let envelope = search::envelope_for_hits(&class, &route, &hits);
+    let envelope_block = match serde_json::to_string_pretty(&search::envelope_json(&envelope)) {
+        Ok(json) => format!("\n### Envelope\n```json\n{json}\n```\n"),
+        Err(_) => String::new(),
+    };
     print!(
-        "{}",
+        "{}{}{}",
         search::render_explain_full(
             query,
             &rows,
@@ -1184,7 +1333,9 @@ async fn cmd_explain(
             &suggestions,
             &capabilities,
             &snippet_tags,
-        )
+        ),
+        capability_tier_note,
+        envelope_block
     );
 }
 
@@ -1590,6 +1741,29 @@ async fn cmd_sync(
             generated +=
                 refresh_search_index(&workspace_path, &guidance_dir, db_path, &src_dirs, verbose)
                     .await;
+        }
+        // Doc→code jump funnel: derived after the index rebuilds, gated
+        // on manifest staleness so converged trees pay one stat sweep
+        // and no rewrite. Respects dry runs (no writes, no report).
+        if !dry_run {
+            match guidance_core::jumps::sync_jumps(&workspace_path, &guidance_dir) {
+                Ok(report) => {
+                    if verbose || report.rederived {
+                        println!(
+                            "Jumps: {} chunks ({})",
+                            report.chunks,
+                            if report.rederived {
+                                "rederived"
+                            } else {
+                                "fresh"
+                            }
+                        );
+                    }
+                }
+                Err(error) => {
+                    eprintln!("Warning: jumps not synced: {error}");
+                }
+            }
         }
         if summarize && !dry_run {
             // Opt-in summary pass after the index rebuilds: node sync is

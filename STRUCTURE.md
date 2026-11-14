@@ -105,7 +105,6 @@ Then you you must read
 │   │   └── VISION.md  # # fluent-wvr — Vision
 │   ├── guidance/
 │   │   ├── ARCHITECTURE.md  # # guidance — Architecture
-│   │   ├── OVERVIEW.md  # # guidance — Reverse-Engineering Re...
 │   │   ├── VISION.md  # # guidance — Vision
 │   │   └── schemas/
 │   │       └── guidance.schema.json

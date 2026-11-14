@@ -1,7 +1,7 @@
 //! Pure term funnel: significant tokens → alias expansion →
 //! concept normalization → symbol names. One home for the
-//! vocabulary pipeline the capability route and traversal consume;
-//! no callers wired yet (pure addition). Every stage is total and
+//! vocabulary pipeline the capability route and traversal consume
+//! (wired: `recall_capability_briefs` funnels every query). Every stage is total and
 //! deterministic; the concept stage keeps unknowns (fail-open, the
 //! member-groundedness discipline) instead of filtering them.
 

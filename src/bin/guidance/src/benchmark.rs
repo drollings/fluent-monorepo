@@ -63,6 +63,11 @@ pub struct ArmResult {
     pub tokens: usize,
     /// Surfaced files (basenames, sorted, deduped).
     pub files: Vec<String>,
+    /// Surfaced files in rank order (basenames, deduped, first wins).
+    /// Scoring reads `files`; this preserves the ordinal the reorder
+    /// work moves, so rank effects stay measurable after future
+    /// ranking changes. Grep/wholesale arms mirror `files` (no order).
+    pub order: Vec<String>,
     /// Fraction of the relevant set surfaced (controls: 1.0 when empty).
     pub recall: f64,
     /// Fraction of surfaced files that are relevant (controls: 1.0/0.0).
@@ -195,12 +200,12 @@ pub fn parse_tasks_file(text: &str) -> Result<Vec<BenchTask>, String> {
             serde_json::from_str(line).map_err(|error| format!("line {}: {error}", index + 1))?;
         let id = value
             .get("id")
-            .and_then(|id| id.as_str())
-            .unwrap_or_else(|| "task")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("task")
             .to_string();
         let query = value
             .get("query")
-            .and_then(|query| query.as_str())
+            .and_then(serde_json::Value::as_str)
             .ok_or_else(|| format!("line {}: missing `query`", index + 1))?;
         let relevant = value
             .get("relevant")
@@ -379,10 +384,12 @@ pub fn grep_arm(
                 continue;
             }
             matched = true;
-            let mut excerpt = line.trim().to_string();
-            if excerpt.len() > GREP_EXCERPT_CHARS {
-                excerpt.truncate(GREP_EXCERPT_CHARS);
-            }
+            let excerpt = line.trim().to_string();
+            let excerpt = if excerpt.len() > GREP_EXCERPT_CHARS {
+                common_core::string::truncate_utf8(&excerpt, GREP_EXCERPT_CHARS)
+            } else {
+                excerpt
+            };
             out.push_str(&format!("{}:{}:{excerpt}\n", rel, index + 1));
         }
         if matched {
@@ -407,11 +414,11 @@ pub fn explain_arm(
     workspace: &str,
     db_path: &str,
     limit: usize,
-) -> (String, Vec<String>) {
-    let hits = match search::fused_hits(query, workspace, db_path, limit) {
-        Ok(hits) => hits,
-        Err(_) => Vec::new(),
-    };
+    jumps: Option<&guidance_core::jumps::JumpIndex>,
+) -> (String, Vec<String>, Vec<String>) {
+    // One holder per benchmarked query, shared across the arm's recall.
+    let nlp = guidance_core::query::ingest::LazyNlp::new();
+    let hits = search::fused_hits(query, workspace, db_path, limit, &nlp, guidance_core::query::recall::RecallPolicy::default(), jumps).unwrap_or_default();
     let cites = search::cite_hits(&hits, workspace);
     let rows = search::build_explain_rows(&hits, &cites);
     let workspace_root = PathBuf::from(workspace);
@@ -427,6 +434,15 @@ pub fn explain_arm(
                 .unwrap_or_else(|| row.source.clone())
         })
         .collect();
+    // Rank order before the sorted/deduped scoring set below: rows
+    // preserve fused rank, so first occurrence wins here.
+    let mut seen_order = std::collections::HashSet::new();
+    let mut order = Vec::new();
+    for file in &files {
+        if seen_order.insert(file.clone()) {
+            order.push(file.clone());
+        }
+    }
     files.sort();
     files.dedup();
     let rendered = search::render_explain_full(
@@ -440,7 +456,7 @@ pub fn explain_arm(
         &[],
         &[],
     );
-    (rendered, files)
+    (rendered, files, order)
 }
 
 /// Run every task through all three arms and aggregate. The wholesale
@@ -481,10 +497,19 @@ pub fn run_benchmark(
         wall_ms: corpus_started.elapsed().as_millis(),
     };
     let mut queries = Vec::with_capacity(tasks.len());
+    // Jump terms load once per session beside the corpus walk: the
+    // manifest is derivation-gated upstream, so a session sees one
+    // parsed index, never per-query I/O.
+    let jumps_holder = search::LazyJumps::new();
+    let jumps = jumps_holder.get(
+        std::path::Path::new(workspace),
+        &std::path::Path::new(workspace).join(".guidance"),
+    );
     for task in tasks {
         let relevant: BTreeSet<String> = task.relevant.iter().cloned().collect();
         let explain_started = Instant::now();
-        let (explain_text, explain_files) = explain_arm(&task.query, workspace, db_path, limit);
+        let (explain_text, explain_files, explain_order) =
+            explain_arm(&task.query, workspace, db_path, limit, jumps.as_ref());
         let explain_wall = explain_started.elapsed().as_millis();
         let (explain_recall, explain_precision) = score_arm(&explain_files, &relevant);
         let grep_started = Instant::now();
@@ -522,6 +547,7 @@ pub fn run_benchmark(
                 chars: explain_text.len(),
                 tokens: estimate_tokens(explain_text.len()),
                 files: explain_files,
+                order: explain_order,
                 recall: explain_recall,
                 precision: explain_precision,
             },
@@ -529,7 +555,8 @@ pub fn run_benchmark(
                 wall_ms: grep_wall,
                 chars: grep_text.len(),
                 tokens: estimate_tokens(grep_text.len()),
-                files: grep_files,
+                files: grep_files.clone(),
+                order: grep_files,
                 recall: grep_recall,
                 precision: grep_precision,
             },
@@ -537,7 +564,8 @@ pub fn run_benchmark(
                 wall_ms: corpus.wall_ms,
                 chars: corpus.chars,
                 tokens: corpus.tokens,
-                files: covered,
+                files: covered.clone(),
+                order: covered,
                 recall: wholesale_recall,
                 precision: wholesale_precision,
             },
@@ -639,7 +667,7 @@ pub fn render_human(report: &BenchReport) -> String {
             ("grep", &query.grep),
             ("wholesale", &query.wholesale),
         ] {
-            let top: Vec<String> = arm.files.iter().take(5).cloned().collect();
+            let top: Vec<String> = arm.order.iter().take(5).cloned().collect();
             out.push_str(&format!(
                 "  {name:9} {:>6}ms ~{:>7} tok files {:>3} recall {:.2} precision {:.2} top [{}]\n",
                 arm.wall_ms,

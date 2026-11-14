@@ -79,7 +79,7 @@ impl SearchBackend for IdentifierBackend {
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(
             intent,
-            QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier
+            QueryIntent::SingleIdentifier
         )
     }
 
@@ -401,7 +401,6 @@ mod tests {
 
     #[test]
     fn identifier_backend_matches_intents() {
-        assert!(IdentifierBackend.matches(QueryIntent::IdentifierLookup));
         assert!(IdentifierBackend.matches(QueryIntent::SingleIdentifier));
         assert!(!IdentifierBackend.matches(QueryIntent::FilePath));
     }
@@ -940,7 +939,7 @@ mod tests {
         let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(IdentifierBackend);
         let native = fluent_wvr::component_downcast_ref::<IdentifierBackend>(handle.as_ref())
             .expect("downcast");
-        assert!(native.matches(QueryIntent::IdentifierLookup));
+        assert!(native.matches(QueryIntent::SingleIdentifier));
         let stages = native
             .search(
                 "helloWorld",

@@ -1,0 +1,6 @@
+{"id": "q1-components", "query": "What are the major components of this codebase?", "relevant": ["README.md", "Cargo.toml"]}
+{"id": "q2-calibration", "query": "Which crate owns calibration, and how is a decision point promoted?", "relevant": ["doc/guidance/CALIBRATION.md", "src/guidance/src/query/decision_points.rs", "src/llm/src/decision/registry.rs"]}
+{"id": "q3-sync", "query": "How does guidance sync decide what to reprocess after an edit?", "relevant": ["src/guidance/src/sync_engine.rs", "src/guidance/src/sync/staleness.rs"]}
+{"id": "q4-capabilities", "query": "Where do capability briefs come from and what consumes them?", "relevant": ["doc/guidance/CAPABILITY_SUMMARIES.md", "src/search-vector/src/db/capabilities.rs", "src/bin/guidance/src/search.rs", "src/guidance/src/query/capability_match.rs"]}
+{"id": "q5-clean", "query": "What owns the build cache under .guidance/target, and is clean safe?", "relevant": ["src/bin/guidance/src/main.rs"]}
+{"id": "q6-ranking", "query": "How does the query pipeline rank code hits vs capability briefs?", "relevant": ["src/bin/guidance/src/search.rs", "src/guidance/src/query/plan.rs", "src/guidance/src/search_types.rs"]}

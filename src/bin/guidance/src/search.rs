@@ -11,9 +11,9 @@ use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily, R
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::{plan_from_query, stages_from_hits};
 use guidance_core::query::ingest::LazyNlp;
-use guidance_core::query::recall::run_recall;
+use guidance_core::query::recall::{run_recall, run_recall_with_policy};
 use guidance_core::query::rg_backend::{RgBackend, RgHit, RgOptions};
-use guidance_core::query::strategy::FsmEngine;
+use guidance_core::query::strategy::{FsmEngine, QueryClass};
 use guidance_core::query_engine::{OutputFormat, QueryEngine};
 use guidance_core::search_types::{
     CodeSymbolType, SearchHit, SearchPlan, SearchPlanRoute, SearchPlanRouteMode,
@@ -90,9 +90,45 @@ pub fn parse_symbol_type(value: &str) -> Result<CodeSymbolType, String> {
     }
 }
 
-/// Build the recall plan for a fused or single-route search. Pure.
+/// Normalize user-supplied selection globs to the indexed root-relative
+/// normal form for one workspace: a leading segment naming an indexing
+/// root (`src_dirs` entry) is stripped once via
+/// `query::glob::normalize_selection_glob`, so workspace-relative
+/// `src/<crate>/**` and index-relative `<crate>/**` select the same
+/// files. Matching itself (`matches_file_selection`) runs only against
+/// `file.relative_path`; this is the single boundary where the
+/// workspace-relative spelling is converted, never a second matcher.
 #[must_use]
-/// Build the recall plan for a fused or single-route search. Pure.
+/// Normalize user-supplied selection globs to the indexed root-relative
+/// normal form for one workspace: a leading segment naming an indexing
+/// root (`src_dirs` entry) is stripped once via
+/// `query::glob::normalize_selection_glob`, so workspace-relative
+/// `src/<crate>/**` and index-relative `<crate>/**` select the same
+/// files. Matching itself (`matches_file_selection`) runs only against
+/// `file.relative_path`; this is the single boundary where the
+/// workspace-relative spelling is converted, never a second matcher.
+pub fn normalize_globs_for_workspace(globs: &[String], workspace: &str) -> Vec<String> {
+    let cfg = guidance_core::config::load_config(std::path::Path::new(workspace))
+        .unwrap_or_default();
+    if cfg.src_dirs.is_empty() {
+        return globs.to_vec();
+    }
+    let names: Vec<&str> = cfg
+        .src_dirs
+        .iter()
+        .filter_map(|dir| dir.file_name().and_then(|name| name.to_str()))
+        .collect();
+    globs
+        .iter()
+        .map(|glob| guidance_core::query::glob::normalize_selection_glob(glob, &names))
+        .collect()
+}
+
+/// Build a caller plan for one recall mode. `globs` are selection globs in
+/// either workspace-relative (`src/<crate>/**`) or index-relative
+/// (`<crate>/**`) spelling; both recall entries normalize them to the
+/// indexed root-relative normal form before matching, so the two spellings
+/// select the same files.
 pub fn build_search_plan(
     query: &str,
     mode: SearchMode,
@@ -351,8 +387,11 @@ pub fn run_search(
     );
     // The Fuse route runs the shared recall assembly below; single-route
     // modes keep their explicit embedder wiring (Fts: none, Vector: required).
+    // One holder per command: Fuse, single-route, and capability-branch
+    // recall share a single pipeline build, on first lemma need.
+    let nlp_holder = LazyNlp::new();
     if mode == SearchMode::Fuse {
-        return match recall_on_index(workspace, db_path, &plan) {
+        return match recall_on_index(workspace, db_path, &plan, &nlp_holder, guidance_core::query::recall::RecallPolicy::default()) {
             Ok(hits) => {
                 if hits.is_empty() {
                     return Ok("No results found.\n".to_string());
@@ -391,20 +430,22 @@ pub fn run_search(
         Err(error) => return Err(format!("cannot open index at {db_path}: {error}")),
     };
     let storage = GuidanceDbStorage::new(&db);
+    let normalized_globs = normalize_globs_for_workspace(globs, workspace);
     let plan = build_search_plan(
         query,
         mode,
         limit,
         trace,
         prefer_symbol,
-        globs,
+        &normalized_globs,
         &symbol_types,
     );
     // Rule-lemmatizer pipeline (no model): the L2 route collapses
     // inflections at zero embedding cost; `None` degrades to L1-only.
     // Built lazily on lemma need — recall always needs it here.
-    let nlp = LazyNlp::new();
-    match run_recall(&plan, &storage, embedder.as_deref(), nlp.get()) {
+    // Shares the command holder created above.
+    let nlp = nlp_holder.get();
+    match run_recall(&plan, &storage, embedder.as_deref(), nlp) {
         Ok(output) => {
             if output.hits.is_empty() {
                 return Ok("No results found.\n".to_string());
@@ -490,10 +531,45 @@ pub fn dedupe_dual_hits(hits: Vec<SearchHit>, workspace: &std::path::Path) -> Ve
 /// [`run_recall`]. Both `run_search` (Fuse path) and [`fused_hits`] enter
 /// here — one assembly, one set of error strings — while plan construction
 /// and rendering stay with the caller.
+/// Resolve the recall policy for one command: `Act` only when the
+/// summary-index point carries a passing calibration entry for the
+/// generating model, `Disabled` otherwise. Single home for the gate —
+/// it delegates to `QueryEngine::summary_mode`, never re-implements
+/// the triple-key check — so authorization stays fail-closed in one
+/// place and every recall entry inherits it.
+#[must_use]
+/// Shared Fuse recall assembly: open the index at `db_path`, resolve the
+/// embedder from the workspace config, and run a caller-built plan through
+/// [`run_recall`]. Both `run_search` (Fuse path) and [`fused_hits`] enter
+/// here — one assembly, one set of error strings — while plan construction
+/// and rendering stay with the caller.
+/// Resolve the recall policy for one command: `Act` only when the
+/// summary-index point carries a passing calibration entry for the
+/// generating model, `Disabled` otherwise. Single home for the gate —
+/// it delegates to `QueryEngine::summary_mode`, never re-implements
+/// the triple-key check — so authorization stays fail-closed in one
+/// place and every recall entry inherits it.
+pub fn recall_policy_for(
+    registry: &fluent_llm::decision::CalibrationRegistry,
+    model: &str,
+) -> guidance_core::query::recall::RecallPolicy {
+    let engine =
+        guidance_core::query_engine::QueryEngine::new().with_calibration(registry.clone());
+    if engine.summary_mode(model) == guidance_core::query::recall::SummaryMode::Act {
+        guidance_core::query::recall::RecallPolicy {
+            summary: guidance_core::query::recall::SummaryMode::Act,
+        }
+    } else {
+        guidance_core::query::recall::RecallPolicy::default()
+    }
+}
+
 fn recall_on_index(
     workspace: &str,
     db_path: &str,
     plan: &SearchPlan,
+    nlp: &LazyNlp,
+    policy: guidance_core::query::recall::RecallPolicy,
 ) -> Result<Vec<SearchHit>, String> {
     let db_file = PathBuf::from(db_path);
     if !db_file.exists() {
@@ -516,15 +592,27 @@ fn recall_on_index(
     let embedder = crate::embed::embedder_from_config(&cfg);
     drop(cfg_phase);
     let storage = GuidanceDbStorage::new(&db);
+    // Selection globs arrive in workspace-relative spelling; the fragment
+    // index matches root-relative paths, so normalize once here — the
+    // single workspace-aware boundary, never a second matcher.
+    let mut plan = plan.clone();
+    plan.globs = plan
+        .globs
+        .map(|globs| normalize_globs_for_workspace(&globs, workspace));
+    plan.insensitive_globs = plan
+        .insensitive_globs
+        .map(|globs| normalize_globs_for_workspace(&globs, workspace));
     // Rule-lemmatizer pipeline (no model): the L2 route collapses
     // inflections at zero embedding cost; `None` degrades to L1-only.
-    // Built lazily on lemma need — recall always needs it here.
+    // Built lazily on lemma need by the caller's holder — recall always
+    // needs it here. The holder is owned by the command entry so fused
+    // recall, single-route recall, and the capability branch share one
+    // pipeline build per command.
     let nlp_phase = crate::profile::Phase::new("recall.nlp_build");
-    let nlp = LazyNlp::new();
     let nlp_ref = nlp.get();
     drop(nlp_phase);
     let _recall_phase = crate::profile::Phase::new("recall.run");
-    match run_recall(plan, &storage, embedder.as_deref(), nlp_ref) {
+    match run_recall_with_policy(&plan, &storage, embedder.as_deref(), nlp_ref, policy) {
         Ok(output) => Ok(dedupe_dual_hits(
             output.hits,
             std::path::Path::new(workspace),
@@ -536,18 +624,292 @@ fn recall_on_index(
 /// Fused recall hits for programmatic consumers (the explain port):
 /// the caller-default plan through the shared [`recall_on_index`]
 /// assembly, no rendering.
+/// Explain adapter: intent-routed fragment-index recall with a
+/// library-built envelope. Classification runs on the shared `FsmEngine`,
+/// recall runs the shared fused assembly, hits convert through the shared
+/// `stages_from_hits`, and the envelope builds through the pure
+/// `AnswerEnvelope::from_stages` constructor — the same pieces
+/// `QueryEngine::hybrid_explain_with_policy` composes, minus the
+/// policy gate (the CLI owns `--glob`/prefer-symbol plans the engine
+/// method does not take).
+///
+/// `QueryEngine::answer` is deliberately NOT called here: it serves the
+/// single in-memory `GuidanceDoc` corpus (doc members), not the fragment
+/// index. Routing workspace-code queries through it would trade the
+/// indexed corpus for the wrong one — a swap that degrades recall to
+/// doc-keyword matching. The adapter keeps the fragment-index corpus and
+/// gains intent, route, and envelope from the library core.
+pub struct ExplainAdaptation {
+    /// Fused hits in rank order (pre-gate; the caller applies the
+    /// relevance gate, capability branch, and staleness labelling).
+    pub hits: Vec<SearchHit>,
+    /// Classified intent, kept so the caller envelops post-gate hits.
+    pub class: QueryClass,
+    /// Recorded route, kept with the class.
+    pub route: String,
+}
+
+/// Rebuild the library envelope over post-gate hits: same class and route
+/// the adapter recorded, stages converted from the final hit list. Keeps
+/// the machine handoff honest about what the human sections render.
+#[must_use]
+/// Rebuild the library envelope over post-gate hits: same class and route
+/// the adapter recorded, stages converted from the final hit list. Keeps
+/// the machine handoff honest about what the human sections render.
+pub fn envelope_for_hits(
+    class: &QueryClass,
+    route: &str,
+    hits: &[SearchHit],
+) -> guidance_core::query::envelope::AnswerEnvelope {
+    let stages = stages_from_hits(hits);
+    guidance_core::query::envelope::AnswerEnvelope::from_stages(class, route, stages)
+}
+
+/// Run the explain adapter: classify, recall, convert, envelop.
+/// Recall failure degrades to empty hits with an honest gap-filled
+/// envelope, never a hard error — the empty state stays the contract.
+pub fn explain_adapter(
+    query: &str,
+    workspace: &str,
+    db_path: &str,
+    limit: usize,
+    nlp: &LazyNlp,
+    policy: guidance_core::query::recall::RecallPolicy,
+    jumps: Option<&guidance_core::jumps::JumpIndex>,
+) -> ExplainAdaptation {
+    let mut fsm = FsmEngine::new();
+    let class = fsm.run(query);
+    let route = fsm.route(&class).to_string();
+    let hits =
+        fused_hits(query, workspace, db_path, limit, nlp, policy, jumps).unwrap_or_default();
+    ExplainAdaptation { hits, class, route }
+}
+
+/// Machine-readable envelope handoff for orchestrators: schema version,
+/// intent, route, resolution, confidence with its axis, gaps, and
+/// citations. Additive — the human sections render unchanged beside it.
+#[must_use]
+/// Machine-readable envelope handoff for orchestrators: schema version,
+/// intent, route, resolution, confidence with its axis, gaps, and
+/// citations. Additive — the human sections render unchanged beside it.
+pub fn envelope_json(
+    envelope: &guidance_core::query::envelope::AnswerEnvelope,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schema_version": envelope.schema_version,
+        "intent": format!("{:?}", envelope.intent),
+        "route": envelope.route,
+        "resolution": envelope.resolution,
+        "confidence": {
+            "value": envelope.confidence.value,
+            "axis": format!("{:?}", envelope.confidence.axis),
+        },
+        "gaps": envelope.gaps,
+        "citations": envelope.citations,
+    })
+}
+
+/// Owning package and component for one index-relative row, trying
+/// the given spelling then the `src/`-prefixed form so workspace- and
+/// index-relative rows resolve through one rule. Single home for the
+/// overlay vocabulary and the finding verdict source below.
+fn owner_gate(relative_path: &str) -> (String, Option<String>) {
+    let mut gate = guidance_core::component_map::component_gate_for_path(relative_path);
+    if gate.package.is_empty() && !relative_path.starts_with("src/") {
+        gate =
+            guidance_core::component_map::component_gate_for_path(&format!("src/{relative_path}"));
+    }
+    (gate.package, gate.component)
+}
+
+/// Owning package for one row (empty when unmapped).
+#[must_use]
+/// Owning package for one row (empty when unmapped).
+pub fn owner_package(relative_path: &str) -> String {
+    owner_gate(relative_path).0
+}
+
+/// Findings behind post-gate hits for the advisory filter: file
+/// identity, symbol, and owning package per hit, rank order.
+#[must_use]
+/// Findings behind post-gate hits for the advisory filter: file
+/// identity, symbol, and owning package per hit, rank order.
+pub fn findings_for_hits(hits: &[SearchHit]) -> Vec<Finding> {
+    hits.iter()
+        .map(|hit| Finding {
+            id: hit.file.relative_path.clone(),
+            symbol: hit_symbol(hit).map(|(name, _)| name),
+            package: owner_package(&hit.file.relative_path),
+        })
+        .collect()
+}
+
+/// Memoized jump-index holder: at most one parsed manifest plus the
+/// guidance dir it came from, guarded for the single command owner.
+type JumpsMemo = (
+    Option<PathBuf>,
+    Option<(std::time::SystemTime, guidance_core::jumps::JumpIndex)>,
+);
+
+/// Per-command jump-index holder: parses the derived manifest at
+/// most once per manifest mtime, like `LazyNlp` for the pipeline.
+/// Fail-open: absent or stale manifests yield `None`, never an error.
+pub struct LazyJumps {
+    state: std::sync::Mutex<JumpsMemo>,
+}
+
+impl LazyJumps {
+    /// Empty holder: reads nothing until asked.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new((None, None)),
+        }
+    }
+
+    /// Borrow the jump index for one workspace, rebuilding only when
+    /// the manifest changed under the holder.
+    pub fn get(
+        &self,
+        workspace: &std::path::Path,
+        guidance_dir: &std::path::Path,
+    ) -> Option<guidance_core::jumps::JumpIndex> {
+        let manifest = guidance_core::jumps::manifest_path(guidance_dir);
+        let mtime = std::fs::metadata(&manifest)
+            .and_then(|meta| meta.modified())
+            .ok()?;
+        let mut state = self.state.lock().ok()?;
+        if let (Some(dir), Some((cached_mtime, _))) = (&state.0, &state.1) {
+            if dir == guidance_dir && *cached_mtime == mtime {
+                return state.1.as_ref().map(|(_, index)| index.clone());
+            }
+        }
+        let index = guidance_core::jumps::load_jump_index(workspace, guidance_dir)?;
+        *state = (
+            Some(guidance_dir.to_path_buf()),
+            Some((mtime, index.clone())),
+        );
+        Some(index)
+    }
+}
+
+impl Default for LazyJumps {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Crate/domain ownership overlay: stable re-partition of fused hits
+/// so query-signalled owners sort first. Rerank, never filter —
+/// membership and within-partition order are preserved, so recall is
+/// structurally non-decreasing and only the ordinal changes. Ownership
+/// vocabulary is package plus component name parts from the shared
+/// `component_map` table (never hard-coded); path spelling tries the
+/// given form then the `src/`-prefixed form, covering workspace- and
+/// index-relative rows with one resolver. Single-token queries pass
+/// through untouched, mirroring the relevance gate's narrow-intent rule.
+#[must_use]
+/// Crate/domain ownership overlay: stable re-partition of fused hits
+/// so query-signalled owners sort first. Rerank, never filter —
+/// membership and within-partition order are preserved, so recall is
+/// structurally non-decreasing and only the ordinal changes. Ownership
+/// vocabulary is package plus component name parts from the shared
+/// `component_map` table (never hard-coded); path spelling tries the
+/// given form then the `src/`-prefixed form, covering workspace- and
+/// index-relative rows with one resolver. Single-token queries pass
+/// through untouched, mirroring the relevance gate's narrow-intent rule.
+pub fn apply_crate_overlay(
+    hits: Vec<SearchHit>,
+    query: &str,
+    jumps: Option<&guidance_core::jumps::JumpIndex>,
+) -> Vec<SearchHit> {
+    apply_crate_overlay_to_tokens(hits, &significant_query_tokens(query), jumps)
+}
+
+/// Token-core behind the overlay: the same stable re-partition over a
+/// precomputed token list, for callers that already hold gate tokens
+/// (branch-2 pulls). Single entry for the rule — the query-string form
+/// above delegates here, never a second implementation.
+#[must_use]
+/// Token-core behind the overlay: the same stable re-partition over a
+/// precomputed token list, for callers that already hold gate tokens
+/// (branch-2 pulls). Single entry for the rule — the query-string form
+/// above delegates here, never a second implementation.
+pub fn apply_crate_overlay_to_tokens(
+    hits: Vec<SearchHit>,
+    tokens: &[String],
+    jumps: Option<&guidance_core::jumps::JumpIndex>,
+) -> Vec<SearchHit> {
+    fn vocab_parts(text: &str) -> Vec<String> {
+        text.split(|cell: char| !cell.is_ascii_alphanumeric())
+            .filter(|part| part.len() >= 2)
+            .map(str::to_lowercase)
+            .collect()
+    }
+    fn owner_vocab(
+        relative_path: &str,
+        jumps: Option<&guidance_core::jumps::JumpIndex>,
+    ) -> Vec<String> {
+        let (package, component) = owner_gate(relative_path);
+        let mut vocab = vocab_parts(&package);
+        if let Some(component) = component {
+            vocab.extend(vocab_parts(&component));
+        }
+        // Jump terms for the owning crate: doc-vocabulary funnel into
+        // code ranking. Fail-open — no manifest, no terms, package-only
+        // behavior byte-identical to before.
+        if let Some(index) = jumps {
+            vocab.extend(
+                index
+                    .terms_for_crate(&package)
+                    .iter()
+                    .map(String::as_str)
+                    .map(str::to_lowercase),
+            );
+        }
+        vocab
+    }
+    if tokens.len() <= 1 {
+        return hits;
+    }
+    let mut signaled = Vec::new();
+    let mut rest = Vec::new();
+    for hit in hits {
+        let vocab = owner_vocab(&hit.file.relative_path, jumps);
+        let score = tokens
+            .iter()
+            .filter(|token| vocab.iter().any(|word| word == token.as_str()))
+            .count();
+        if score > 0 {
+            signaled.push(hit);
+        } else {
+            rest.push(hit);
+        }
+    }
+    signaled.extend(rest);
+    signaled
+}
+
 pub fn fused_hits(
     query: &str,
     workspace: &str,
     db_path: &str,
     limit: usize,
+    nlp: &LazyNlp,
+    policy: guidance_core::query::recall::RecallPolicy,
+    jumps: Option<&guidance_core::jumps::JumpIndex>,
 ) -> Result<Vec<SearchHit>, String> {
     // Identifier-extracting routes ride along: queries naming a symbol
     // get symbol-filtered candidates fused into rank, so the defining
     // file surfaces instead of drowning in prose matches. Queries
     // without identifiers build byte-identical plans.
+    // Crate/domain overlay: query-signalled owners first, stable,
+    // membership preserved. The benchmark arm measures this assembly.
     let plan = build_search_plan(query, SearchMode::Fuse, limit, false, true, &[], &[]);
-    recall_on_index(workspace, db_path, &plan)
+    match recall_on_index(workspace, db_path, &plan, nlp, policy) {
+        Ok(hits) => Ok(apply_crate_overlay(hits, query, jumps)),
+        Err(error) => Err(error),
+    }
 }
 
 /// Context lines for programmatic consumers of fused hits (the
@@ -976,7 +1338,14 @@ pub fn cite_live(hit: &SearchHit, workspace: &std::path::Path) -> String {
         }
     }
     match stored_hit_lines(hit).filter(|_| std::path::Path::new(&abs).exists()) {
-        Some((start, end)) => format!("- {abs} : lines {start}-{end}"),
+        Some((start, end)) => {
+            match live_line_count(std::path::Path::new(&abs))
+                .and_then(|live| clamp_range_to_live(start, end, live))
+            {
+                Some((start, end)) => format!("- {abs} : lines {start}-{end}"),
+                None => format!("- {abs} : unverified"),
+            }
+        }
         None => format!("- {abs} : unverified"),
     }
 }
@@ -1257,7 +1626,12 @@ pub fn graph_callers_hits(
 }
 
 /// Minimum decision score (0-100) for a doc paragraph to be cited.
-pub const EXPLAIN_DOC_MIN_SCORE: u32 = 60;
+/// Locked by the `doc_judge_goldens` calibration (measured P/R at
+/// 50/60/70 with a must-not-fire control group; judging model
+/// `lamarck-14b`): 70 is the only candidate with zero control fires —
+/// relevant paragraphs scored 75..85, the hottest control scored 60.
+/// Model-bound: re-measure if the judge model changes.
+pub const EXPLAIN_DOC_MIN_SCORE: u32 = 70;
 
 /// Doc paragraphs judged per call: bounds decision cost.
 pub const EXPLAIN_DOC_JUDGE_K: usize = 5;
@@ -1266,13 +1640,28 @@ pub const EXPLAIN_DOC_JUDGE_K: usize = 5;
 /// candidate 0-100 and only items at or above the floor survive, best
 /// score first. Unparseable or failed judgments omit everything —
 /// never a cited paragraph the judge did not pass.
-pub fn judge_doc_paragraphs(
+/// Fetch raw relevance scores for ranked doc paragraphs: prompt, chat,
+/// strip think wrappers, parse the first balanced JSON value. Pure
+/// transport plus parsing — no floor, no ordering. Transport failure or
+/// unparseable output yields an empty map (the caller renders unjudged
+/// rather than trusting nothing).
+#[must_use]
+/// Decision-gated doc paragraphs: the local decision model scores each
+/// candidate 0-100 and only items at or above the floor survive, best
+/// score first. Unparseable or failed judgments omit everything —
+/// never a cited paragraph the judge did not pass.
+/// Fetch raw relevance scores for ranked doc paragraphs: prompt, chat,
+/// strip think wrappers, parse the first balanced JSON value. Pure
+/// transport plus parsing — no floor, no ordering. Transport failure or
+/// unparseable output yields an empty map (the caller renders unjudged
+/// rather than trusting nothing).
+pub fn doc_judge_scores(
     query: &str,
     docs: &[(String, String)],
     backend: &dyn fluent_llm::client::ChatBackend,
-) -> Vec<(String, String)> {
+) -> std::collections::BTreeMap<String, u64> {
     if docs.is_empty() {
-        return Vec::new();
+        return std::collections::BTreeMap::new();
     }
     let mut body = format!("Question: {query}\n\nParagraphs:\n");
     for (index, (path, excerpt)) in docs.iter().enumerate() {
@@ -1294,7 +1683,7 @@ pub fn judge_doc_paragraphs(
     });
     let text = match backend.chat_complete_with_extras(&messages, &extras) {
         Ok(text) => text,
-        Err(_) => return Vec::new(),
+        Err(_) => return std::collections::BTreeMap::new(),
     };
     // Think-wrapped or prose-wrapped bodies never survive whole-body
     // parsing; extract the first balanced value first (fail-closed
@@ -1304,22 +1693,57 @@ pub fn judge_doc_paragraphs(
         guidance_core::model_text::extract_json_value(stripped.trim())
             .and_then(|json| serde_json::from_str(json).ok())
             .unwrap_or_default();
+    scores
+        .iter()
+        .filter_map(|(key, value)| {
+            let one_based = key.parse::<usize>().ok()?;
+            let score = value.as_u64()?;
+            Some((one_based.to_string(), score))
+        })
+        .collect()
+}
+
+/// Apply the relevance floor to fetched judge scores: keep paragraphs at
+/// or above `floor`, best-first, capped at `top_k`. Pure task-value gate —
+/// the floor constant is locked by the golden calibration set, never
+/// tuned by hand.
+#[must_use]
+/// Apply the relevance floor to fetched judge scores: keep paragraphs at
+/// or above `floor`, best-first, capped at `top_k`. Pure task-value gate —
+/// the floor constant is locked by the golden calibration set, never
+/// tuned by hand.
+pub fn select_judged_docs(
+    docs: &[(String, String)],
+    scores: &std::collections::BTreeMap<String, u64>,
+    floor: u32,
+    top_k: usize,
+) -> Vec<(String, String)> {
     let mut kept: Vec<(u64, usize)> = Vec::new();
-    for (key, value) in &scores {
+    for (key, score) in scores {
         let Ok(one_based) = key.parse::<usize>() else {
             continue;
         };
-        let Some(score) = value.as_u64() else {
-            continue;
-        };
-        if one_based >= 1 && one_based <= docs.len() && score >= u64::from(EXPLAIN_DOC_MIN_SCORE) {
-            kept.push((score, one_based - 1));
+        if one_based >= 1 && one_based <= docs.len() && *score >= u64::from(floor) {
+            kept.push((*score, one_based - 1));
         }
     }
-    kept.sort_by(|a, b| b.0.cmp(&a.0));
+    kept.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
     kept.into_iter()
+        .take(top_k)
         .map(|(_, index)| docs[index].clone())
         .collect()
+}
+
+pub fn judge_doc_paragraphs(
+    query: &str,
+    docs: &[(String, String)],
+    backend: &dyn fluent_llm::client::ChatBackend,
+) -> Vec<(String, String)> {
+    if docs.is_empty() {
+        return Vec::new();
+    }
+    let scores = doc_judge_scores(query, docs, backend);
+    select_judged_docs(docs, &scores, EXPLAIN_DOC_MIN_SCORE, EXPLAIN_DOC_TOP_K)
 }
 
 /// Minimum decision score (0-100) for a capability brief to tier
@@ -2051,6 +2475,330 @@ pub fn answer_with_backend(
     Ok(Some(cleaned))
 }
 
+/// Clamp a stored line range to live lines: the Q2 skew class (an
+/// index range past end-of-file) renders clamped, never invented.
+/// `None` when even the start line no longer exists.
+#[must_use]
+/// Clamp a stored line range to live lines: the Q2 skew class (an
+/// index range past end-of-file) renders clamped, never invented.
+/// `None` when even the start line no longer exists.
+pub fn clamp_range_to_live(start: u32, end: u32, live_lines: usize) -> Option<(u32, u32)> {
+    if live_lines == 0 {
+        return None;
+    }
+    let live = live_lines as u32;
+    let start = start.max(1);
+    if start > live {
+        return None;
+    }
+    Some((start, end.clamp(start, live)))
+}
+
+fn live_line_count(path: &std::path::Path) -> Option<usize> {
+    std::fs::read(path)
+        .ok()
+        .map(|bytes| String::from_utf8_lossy(&bytes).lines().count())
+}
+
+/// Constrain a model answer to the displayed evidence: every
+/// `path:line` citation must name a shown snippet file with the line
+/// inside a shown range. Violations (unknown file, line outside every
+/// shown range) fall back to an abstain-with-evidence template that
+/// lists the shown ranges instead of echoing unverified claims.
+/// Citation-free prose passes through: with no extractable claim the
+/// model's own "say so" stands.
+#[must_use]
+/// Constrain a model answer to the displayed evidence: every
+/// `path:line` citation must name a shown snippet file with the line
+/// inside a shown range. Violations (unknown file, line outside every
+/// shown range) fall back to an abstain-with-evidence template that
+/// lists the shown ranges instead of echoing unverified claims.
+/// Citation-free prose passes through: with no extractable claim the
+/// model's own "say so" stands.
+pub fn constrain_answer_to_evidence(
+    answer: &str,
+    snippets: &[(String, String, u32, u32, String)],
+) -> String {
+    fn suffixes(path: &str) -> Vec<&str> {
+        let mut out = vec![path];
+        let mut rest = path;
+        while let Some(index) = rest.find('/') {
+            rest = &rest[index + 1..];
+            out.push(rest);
+        }
+        out
+    }
+    fn parse_line_spec(spec: &str) -> Option<(u32, u32)> {
+        let (first, second) = match spec.split_once('-') {
+            Some((first, second)) => (first, second.split_whitespace().next().unwrap_or("")),
+            None => (spec, ""),
+        };
+        let start: u32 = first.parse().ok()?;
+        if second.is_empty() {
+            return Some((start, start));
+        }
+        let end: u32 = second.parse().ok()?;
+        Some((start.min(end), start.max(end)))
+    }
+    fn cited_spans(answer: &str) -> Vec<(String, u32, u32)> {
+        let bytes = answer.as_bytes();
+        let mut spans = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b':' {
+                let mut head = i;
+                while head > 0 {
+                    let cell = bytes[head - 1];
+                    if cell.is_ascii_alphanumeric() || matches!(cell, b'.' | b'_' | b'-' | b'/') {
+                        head -= 1;
+                    } else {
+                        break;
+                    }
+                }
+                let mut tail = i + 1;
+                while tail < bytes.len() && bytes[tail].is_ascii_digit() {
+                    tail += 1;
+                }
+                let mut tail_end = tail;
+                if tail < bytes.len() && bytes[tail] == b'-' {
+                    let mut digits = tail + 1;
+                    while digits < bytes.len() && bytes[digits].is_ascii_digit() {
+                        digits += 1;
+                    }
+                    if digits > tail + 1 {
+                        tail_end = digits;
+                    }
+                }
+                if head < i && tail > i + 1 {
+                    let path = &answer[head..i];
+                    let has_ext = path
+                        .rsplit('/')
+                        .next()
+                        .is_some_and(|base| base.contains('.'));
+                    if has_ext {
+                        if let Some((start, end)) = parse_line_spec(&answer[i + 1..tail_end]) {
+                            spans.push((path.to_string(), start, end));
+                        }
+                    }
+                }
+                i = tail_end.max(i + 1);
+            } else {
+                i += 1;
+            }
+        }
+        spans
+    }
+    let mut violated = false;
+    for (path, start, end) in cited_spans(answer) {
+        let known = snippets.iter().any(|(_, file, _, _, _)| {
+            suffixes(file).iter().any(|suffix| *suffix == path)
+        });
+        if !known {
+            violated = true;
+            break;
+        }
+        let covered = snippets.iter().any(|(_, file, shown_start, shown_end, _)| {
+            suffixes(file).iter().any(|suffix| *suffix == path)
+                && start <= *shown_end
+                && end >= *shown_start
+        });
+        if !covered {
+            violated = true;
+            break;
+        }
+    }
+    if !violated {
+        return answer.to_string();
+    }
+    let mut out = String::from(
+        "The excerpts do not support a verified answer to this question. Shown evidence:\n",
+    );
+    for (_, file, start, end, _) in snippets {
+        out.push_str(&format!("- {file}:{start}-{end}\n"));
+    }
+    out
+}
+
+/// Advisory finding filter: per-finding include/flag/exclude over
+/// provenance-tagged findings, gated by decision-point authorization.
+/// Producer self-doubt (`CalibrationStatus`) never substitutes for
+/// task-value: ShadowOnly records every verdict without applying any;
+/// Advisory applies Include/Flag to ordering annotation but never
+/// excludes; only Calibrated excludes, with reasons. L0 stays
+/// byte-identical because live authorization is ShadowOnly until a
+/// calibration entry passes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// One finding entering the advisory filter: file identity, symbol,
+/// and owning package for the deterministic verdict source.
+pub struct Finding {
+    /// Workspace-relative file path (finding identity).
+    pub id: String,
+    /// Symbol behind the finding, when known.
+    pub symbol: Option<String>,
+    /// Owning package from the shared component table.
+    pub package: String,
+}
+
+/// Advisory standing for one finding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Advisory standing for one finding.
+pub enum FindingStanding {
+    /// Keep, unmarked.
+    Include,
+    /// Keep, annotated with the reason.
+    Flag,
+    /// Drop with the reason (Calibrated authorization only). Constructed
+    /// by the post-calibration model verdict source and by tests; the
+    /// deterministic source above never emits it.
+    #[allow(dead_code)]
+    Exclude,
+}
+
+/// One verdict over one finding, with its reason.
+#[derive(Debug, Clone)]
+/// One verdict over one finding, with its reason.
+pub struct FindingVerdict {
+    /// Advisory standing.
+    pub standing: FindingStanding,
+    /// Human-readable rule that produced the standing.
+    pub reason: String,
+}
+
+/// Outcome of one advisory filter pass: membership by authorization,
+/// order always following the input findings.
+#[derive(Debug, Clone, Default)]
+/// Outcome of one advisory filter pass.
+pub struct FilterOutcome {
+    /// Findings surviving the pass, input order.
+    pub kept: Vec<Finding>,
+    /// Kept-but-annotated `(id, reason)` pairs.
+    pub flagged: Vec<(String, String)>,
+    /// Dropped `(id, reason)` pairs (Calibrated only).
+    pub excluded: Vec<(String, String)>,
+    /// Verdicts recorded without application `(id, reason)`.
+    pub noted: Vec<(String, String)>,
+}
+
+/// Deterministic verdict source: the relevance gate plus the crate
+/// overlay already computed upstream, expressed as verdicts. Structural
+/// symbol match or owner signal includes; anything else flags as
+/// relevant-but-owner-unsigned. No model in this source — model
+/// verdicts plug into the same verdict map once calibrated.
+#[must_use]
+/// Deterministic verdict source: the relevance gate plus the crate
+/// overlay already computed upstream, expressed as verdicts. Structural
+/// symbol match or owner signal includes; anything else flags as
+/// relevant-but-owner-unsigned. No model in this source — model
+/// verdicts plug into the same verdict map once calibrated.
+pub fn deterministic_finding_verdicts(
+    findings: &[Finding],
+    tokens: &[String],
+) -> std::collections::HashMap<String, FindingVerdict> {
+    let mut verdicts = std::collections::HashMap::new();
+    for finding in findings {
+        let structural = finding.symbol.as_ref().is_some_and(|symbol| {
+            let lowered = symbol.to_lowercase();
+            tokens.iter().any(|token| lowered.contains(token.as_str()))
+        });
+        if structural {
+            verdicts.insert(
+                finding.id.clone(),
+                FindingVerdict {
+                    standing: FindingStanding::Include,
+                    reason: format!(
+                        "structural: symbol names a query token ({})",
+                        finding.symbol.clone().unwrap_or_default()
+                    ),
+                },
+            );
+            continue;
+        }
+        let owned = finding
+            .package
+            .split(|cell: char| !cell.is_ascii_alphanumeric())
+            .filter(|part| part.len() >= 2)
+            .any(|part| tokens.iter().any(|token| token == part));
+        if owned {
+            verdicts.insert(
+                finding.id.clone(),
+                FindingVerdict {
+                    standing: FindingStanding::Include,
+                    reason: format!("owner-signalled: {}", finding.package),
+                },
+            );
+        } else {
+            verdicts.insert(
+                finding.id.clone(),
+                FindingVerdict {
+                    standing: FindingStanding::Flag,
+                    reason: "relevant but owner-unsigned".to_string(),
+                },
+            );
+        }
+    }
+    verdicts
+}
+
+/// Apply one verdict map under one authorization. Order always follows
+/// the input findings; verdict lookup is by finding id, so finding
+/// permutation never changes the verdict set.
+#[must_use]
+/// Apply one verdict map under one authorization. Order always follows
+/// the input findings; verdict lookup is by finding id, so finding
+/// permutation never changes the verdict set.
+pub fn advisory_filter_findings(
+    findings: Vec<Finding>,
+    verdicts: &std::collections::HashMap<String, FindingVerdict>,
+    authorization: &fluent_llm::decision::CalibrationStatus,
+) -> FilterOutcome {
+    use fluent_llm::decision::CalibrationStatus;
+    let mut outcome = FilterOutcome::default();
+    for finding in findings {
+        let Some(verdict) = verdicts.get(&finding.id) else {
+            outcome.kept.push(finding);
+            continue;
+        };
+        match authorization {
+            CalibrationStatus::ShadowOnly { .. } => {
+                outcome
+                    .noted
+                    .push((finding.id.clone(), verdict.reason.clone()));
+                outcome.kept.push(finding);
+            }
+            CalibrationStatus::Advisory(_) => match verdict.standing {
+                FindingStanding::Exclude => {
+                    outcome
+                        .noted
+                        .push((finding.id.clone(), verdict.reason.clone()));
+                    outcome.kept.push(finding);
+                }
+                FindingStanding::Flag => {
+                    outcome
+                        .flagged
+                        .push((finding.id.clone(), verdict.reason.clone()));
+                    outcome.kept.push(finding);
+                }
+                FindingStanding::Include => outcome.kept.push(finding),
+            },
+            CalibrationStatus::Calibrated(_) => match verdict.standing {
+                FindingStanding::Flag => {
+                    outcome
+                        .flagged
+                        .push((finding.id.clone(), verdict.reason.clone()));
+                    outcome.kept.push(finding);
+                }
+                FindingStanding::Exclude => {
+                    outcome
+                        .excluded
+                        .push((finding.id.clone(), verdict.reason.clone()));
+                }
+                FindingStanding::Include => outcome.kept.push(finding),
+            },
+        }
+    }
+    outcome
+}
+
 /// Top snippets for fused hits, rank order, byte-identical duplicates
 /// removed: the first occurrence of one file plus live bounds wins, the
 /// rest add no new evidence. Headers reuse the row titles so citations
@@ -2070,12 +2818,15 @@ pub fn top_snippets(
             break;
         }
         // Display bounds once per hit: live tree-sitter positions for
-        // real symbols, stored bounds otherwise.
+        // real symbols, stored bounds clamped to live lines otherwise.
         let bounds = match hit_symbol(hit) {
             Some((_, symbol)) if member_type_for_symbol(symbol).is_some() => {
                 live_hit_lines(hit, workspace)
             }
-            _ => stored_hit_lines(hit),
+            _ => stored_hit_lines(hit).and_then(|(start, end)| {
+                let live = live_line_count(std::path::Path::new(&hit.file.absolute_path))?;
+                clamp_range_to_live(start, end, live)
+            }),
         };
         let Some((start, end)) = bounds else {
             continue;
@@ -2250,20 +3001,6 @@ pub struct BranchPull {
     pub hits: Vec<SearchHit>,
 }
 
-/// Branch outcome: the ranked briefs plus the branch-2 pulls (at most
-/// one — the rank-1 pre-calibration pull). An untriggered query reads
-/// as empty briefs and pulls.
-#[derive(Debug, Clone, Default)]
-/// Branch outcome: the ranked briefs plus the branch-2 pulls (at most
-/// one — the rank-1 pre-calibration pull). An untriggered query reads
-/// as empty briefs and pulls.
-pub struct CapabilityBranch {
-    /// Ranked briefs, capped by the shared ranker.
-    pub briefs: Vec<guidance_core::query::capability_match::RankedBrief>,
-    /// Scoped code pulls (rank-1 brief only, pre-calibration).
-    pub pulls: Vec<BranchPull>,
-}
-
 /// Whether code-thin recall opens the capability branch: fewer
 /// relevant hits than the bar, or a top fused score with no
 /// multi-route agreement. Pure; the caller decides what fires.
@@ -2279,26 +3016,61 @@ pub fn capability_trigger(hits: &[SearchHit]) -> bool {
         .is_some_and(|hit| hit.score.value() < CAPABILITY_TOP_SCORE_FLOOR)
 }
 
-/// Whether a ranked brief opens branch-2 traversal: the rank-1 brief
-/// only (pre-calibration exception — unjudged briefs count as weak,
-/// and the single best guess keeps the tree functional before any
-/// judge is calibrated).
+/// Standing of one brief before branch-2 traversal: judged tiers steer,
+/// unjudged briefs keep the pre-calibration exception explicitly labelled.
+/// A `Considered` verdict — judged weak — never traverses, however it
+/// ranks: rank alone must not launder a weak brief into scoped evidence
+/// (task-value axis), while the unjudged exception keeps the tree
+/// functional before any judge is calibrated (producer axis, labelled).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Standing of one brief before branch-2 traversal.
+pub enum BriefStanding {
+    /// No judge ran: rank-1 may still traverse (pre-calibration exception).
+    Unjudged,
+    /// Judge ran: only `Strong` traverses.
+    Judged(CapabilityTier),
+}
+
+/// Whether a ranked brief opens branch-2 traversal: rank-1 only, and —
+/// once judged — `Strong` only. Rank bounds the blast radius; the tier
+/// bounds the trust. Unjudged rank-1 keeps the pre-calibration exception.
 #[must_use]
-/// Whether a ranked brief opens branch-2 traversal: the rank-1 brief
-/// only (pre-calibration exception — unjudged briefs count as weak,
-/// and the single best guess keeps the tree functional before any
-/// judge is calibrated).
-pub fn brief_opens_traversal(rank: usize) -> bool {
-    rank == 1
+/// Whether a ranked brief opens branch-2 traversal.
+pub fn brief_opens_traversal(rank: usize, standing: BriefStanding) -> bool {
+    if rank != 1 {
+        return false;
+    }
+    match standing {
+        BriefStanding::Unjudged => true,
+        BriefStanding::Judged(tier) => tier == CapabilityTier::Strong,
+    }
+}
+
+/// Standing lookup for branch-2: explicit entries decide, absent ids read
+/// as `Unjudged` (fail-open to the pre-calibration exception, labelled).
+#[must_use]
+/// Standing lookup for branch-2: explicit entries decide, absent ids read
+/// as `Unjudged` (fail-open to the pre-calibration exception, labelled).
+pub fn standing_for_brief(
+    standings: &std::collections::HashMap<String, BriefStanding>,
+    brief_id: &str,
+) -> BriefStanding {
+    standings.get(brief_id).copied().unwrap_or(BriefStanding::Unjudged)
 }
 
 /// Branch-2 scope for a brief's crate: the package's registered prefix
-/// as a glob. `None` (unknown or unmapped crate) never traverses —
+/// as a glob, in workspace-relative spelling (`src/<crate>/**`). The
+/// recall entries normalize it to the indexed root-relative normal
+/// form (`normalize_selection_glob`), so this function stays in the
+/// `component_map` vocabulary and never hard-codes an index layout.
+/// `None` (unknown or unmapped crate) never traverses —
 /// an unscoped pull is just keyword recall again.
 #[must_use]
 /// Branch-2 scope for a brief's crate: the package's registered prefix
-/// as a glob. `None` (unknown or unmapped crate) never traverses —
-/// an unscoped pull is just keyword recall again.
+/// as a glob, in workspace-relative spelling (`src/<crate>/**`), normalized
+/// to the indexed normal form at the recall entries. `None` (unknown or
+/// unmapped crate) never traverses — an unscoped pull is just keyword
+/// recall again.
 pub fn branch_scope_glob(crate_name: &str) -> Option<String> {
     if crate_name.is_empty() || crate_name == "unknown" {
         return None;
@@ -2453,45 +3225,79 @@ pub fn recall_capability_briefs(
     rank_briefs(&signals, &candidates)
 }
 
-/// The capability branch beside fused recall: code-thin relevant hits
-/// open SVO-ranked briefs (branch 1); the rank-1 brief opens one
-/// scoped code pull through the relaxed gate (branch 2, depth ≤ 2 by
-/// construction — pulls never recurse). Untriggered queries cost
-/// nothing: no DB open, no pipeline build.
+/// Phase 1 of the capability branch (no model): code-thin relevant hits
+/// open SVO-ranked briefs. Untriggered queries, a missing index, or an
+/// empty brief table read as no briefs — never an error. Untriggered
+/// queries cost nothing: no DB open, no pipeline build.
 #[must_use]
-/// The capability branch beside fused recall: code-thin relevant hits
-/// open SVO-ranked briefs (branch 1); the rank-1 brief opens one
-/// scoped code pull through the relaxed gate (branch 2, depth ≤ 2 by
-/// construction — pulls never recurse). Untriggered queries cost
-/// nothing: no DB open, no pipeline build.
-pub fn capability_branch(
+/// Absent-aware capability branch: trigger-gated, then ready-gated.
+/// An empty capabilities table returns before any candidate query runs
+/// (the per-explain cost on unbriefed trees is one open plus one count);
+/// the ready count travels with the briefs so the renderer never
+/// re-opens the index to say the same thing.
+pub struct CapabilityBranch {
+    /// SVO-ranked briefs (empty when untriggered or the table is empty).
+    pub briefs: Vec<guidance_core::query::capability_match::RankedBrief>,
+    /// Ready briefs in the table (0 when absent or unreadable).
+    pub ready: i64,
+}
+
+pub fn recall_capability_briefs_for(
     query: &str,
-    workspace: &str,
     db_path: &str,
     hits: &[SearchHit],
+    nlp: &LazyNlp,
 ) -> CapabilityBranch {
+    let empty = CapabilityBranch {
+        briefs: Vec::new(),
+        ready: 0,
+    };
     if !capability_trigger(hits) {
-        return CapabilityBranch::default();
+        return empty;
     }
     let db_file = PathBuf::from(db_path);
     if !db_file.exists() {
-        return CapabilityBranch::default();
+        return empty;
     }
     let db = match GuidanceDb::open(&db_file) {
         Ok(db) => db,
         Err(error) => {
             eprintln!("Warning: capability branch cannot open index at {db_path}: {error}");
-            return CapabilityBranch::default();
+            return empty;
         }
     };
-    let nlp_holder = LazyNlp::new();
-    let nlp = nlp_holder.get();
-    let briefs = recall_capability_briefs(query, &db, nlp);
-    let tokens = significant_query_tokens(query);
+    let ready = db.capability_ready_count().unwrap_or(0);
+    if ready == 0 {
+        return empty;
+    }
+    CapabilityBranch {
+        briefs: recall_capability_briefs(query, &db, nlp.get()),
+        ready,
+    }
+}
+
+/// Phase 2 of the capability branch (no model): the rank-1 brief opens
+/// one scoped code pull through the relaxed gate, subject to its
+/// standing — judged `Considered` never traverses. Depth ≤ 2 by
+/// construction: pulls never recurse.
+#[must_use]
+/// Phase 2 of the capability branch (no model): the rank-1 brief opens
+/// one scoped code pull through the relaxed gate, subject to its
+/// standing — judged `Considered` never traverses. Depth ≤ 2 by
+/// construction: pulls never recurse.
+pub fn capability_branch_pulls(
+    briefs: &[guidance_core::query::capability_match::RankedBrief],
+    standings: &std::collections::HashMap<String, BriefStanding>,
+    workspace: &str,
+    db_path: &str,
+    tokens: &[String],
+    nlp: &LazyNlp,
+    policy: guidance_core::query::recall::RecallPolicy,
+) -> Vec<BranchPull> {
     let mut pulls = Vec::new();
     for brief in briefs
         .iter()
-        .filter(|brief| brief_opens_traversal(brief.rank))
+        .filter(|brief| brief_opens_traversal(brief.rank, standing_for_brief(standings, &brief.id)))
     {
         let Some(scope) = branch_scope_glob(&brief.crate_name) else {
             continue;
@@ -2505,26 +3311,52 @@ pub fn capability_branch(
             &[scope],
             &[],
         );
-        let mut branch_hits = match recall_on_index(workspace, db_path, &plan) {
+        let mut branch_hits = match recall_on_index(workspace, db_path, &plan, nlp, policy) {
             Ok(branch_hits) => branch_hits,
             Err(error) => {
                 eprintln!("Warning: capability branch-2 recall failed ({error})");
                 Vec::new()
             }
         };
-        branch_hits.retain(|hit| branch_hit_passes_gate(hit, &tokens));
+        branch_hits.retain(|hit| branch_hit_passes_gate(hit, tokens));
+        // Ownership overlay on branch-2 pulls: scoped pulls already fix
+        // the crate, so package vocab is constant here and this is a
+        // stable no-op today — applied explicitly so the contract holds
+        // if the vocabulary ever widens.
+        branch_hits = apply_crate_overlay_to_tokens(branch_hits, tokens, None);
         pulls.push(BranchPull {
             crate_name: brief.crate_name.clone(),
             hits: branch_hits,
         });
     }
-    CapabilityBranch { briefs, pulls }
+    pulls
 }
 
 /// Render the full explain output in reference order: answer, docs,
 /// top snippets (fenced, blank-line separated), table, citations,
 /// drill-down footer. Empty recall keeps the legacy empty state
 /// exactly: no sections on nothing.
+/// The single empty state for `explain`: no relevant results, whether
+/// recall found nothing or the relevance gate dropped everything. One
+/// string, one site — the recall-vs-gated distinction lives in the
+/// envelope gaps (structural, machine-readable), never in a second
+/// human string. "No results found." reads as proof of absence;
+/// "no relevant results" reads as what it is.
+#[must_use]
+/// Render the full explain output in reference order: answer, docs,
+/// top snippets (fenced, blank-line separated), table, citations,
+/// drill-down footer. Empty recall keeps the legacy empty state
+/// exactly: no sections on nothing.
+/// The single empty state for `explain`: no relevant results, whether
+/// recall found nothing or the relevance gate dropped everything. One
+/// string, one site — the recall-vs-gated distinction lives in the
+/// envelope gaps (structural, machine-readable), never in a second
+/// human string. "No results found." reads as proof of absence;
+/// "no relevant results" reads as what it is.
+pub fn render_empty_explain(query: &str) -> String {
+    format!("## Explain: {query}\n\nNo relevant results found.\n")
+}
+
 pub fn render_explain_full(
     query: &str,
     rows: &[ExplainRow],
@@ -2654,3 +3486,11 @@ fn run_rg_search(
 #[cfg(test)]
 #[path = "../tests/search_cmd.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/roadmap_pins.rs"]
+mod roadmap_pins_tests;
+
+#[cfg(test)]
+#[path = "../tests/audit_baseline.rs"]
+mod audit_baseline_tests;

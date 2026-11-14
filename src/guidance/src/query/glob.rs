@@ -61,6 +61,41 @@ pub fn normalize_path_for_match(path: &str) -> String {
     common_core::path::collapse_separators(path)
 }
 
+/// Normalize one selection glob to the indexed root-relative normal form:
+/// a leading segment naming an indexing root (`src_dirs` entry, e.g.
+/// `src`) is stripped once, so workspace-relative `src/<crate>/**` and
+/// index-relative `<crate>/**` select the same files. Absolute patterns,
+/// `**`-led patterns, and bare roots (empty remainder) pass through
+/// unchanged — a bare root matches nothing new rather than everything.
+/// A leading `!` negation is preserved across the strip.
+/// Normal form is defined by `selection::select_files` roots: matching
+/// runs against `file.relative_path`, never the workspace path.
+#[must_use]
+/// Normalize one selection glob to the indexed root-relative normal form.
+pub fn normalize_selection_glob(glob: &str, src_dir_names: &[&str]) -> String {
+    let normalized = normalize_path_pattern(glob);
+    if is_absolute_path_pattern(&normalized) {
+        return normalized;
+    }
+    let negated = normalized.starts_with('!');
+    let body = normalized
+        .strip_prefix('!')
+        .map_or(normalized.as_str(), str::trim);
+    let mut parts = body.split('/');
+    let first = parts.next().unwrap_or("");
+    if !first.is_empty() && src_dir_names.contains(&first) {
+        let rest: String = parts.collect::<Vec<_>>().join("/");
+        if !rest.is_empty() {
+            return if negated {
+                format!("!{rest}")
+            } else {
+                rest
+            };
+        }
+    }
+    normalized
+}
+
 /// Absolute patterns (`/…` or `X:/…`) match from the root. Stays local by
 /// design: unlike `common_core::path::is_absolute_lexical` it rejects
 /// backslash drives (`C:\x`) and non-alpha drives (`1:/x`) — glob-pattern

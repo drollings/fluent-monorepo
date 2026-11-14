@@ -52,7 +52,7 @@ fn explain_not_found_state_is_stable() {
     assert!(out.status.success(), "explain: {out:?}");
     let text = stdout(&out);
     assert!(text.starts_with("## Explain: "), "{text}");
-    assert!(text.contains("No results found."), "{text}");
+    assert!(text.contains("No relevant results found."), "{text}");
     assert!(
         !text.contains('|'),
         "no table rows for empty results: {text}"
@@ -75,7 +75,7 @@ fn explain_missing_db_is_empty_not_error() {
         ],
     );
     assert!(out.status.success(), "explain without db: {out:?}");
-    assert!(stdout(&out).contains("No results found."));
+    assert!(stdout(&out).contains("No relevant results found."));
 }
 
 fn explain_fixture() -> (tempfile::TempDir, String, String, String) {
@@ -259,15 +259,17 @@ fn explain_renders_ordered_sections_with_gated_docs_and_answer() {
 #[test]
 fn explain_omits_docs_when_judge_unreachable() {
     // The fixture points the decision role at a dead port: the judge
-    // call fails, so the docs section is omitted rather than cited
-    // unjudged. The answer degrades to unavailable instead of failing.
+    // call fails, so ranked paragraphs render labelled `[unjudged]`
+    // instead of vanishing. The answer degrades to unavailable instead
+    // of failing, and unjudged prose never feeds synthesis.
     let (temp, ws, json_dir, db) = explain_fixture();
     let dir = temp.path();
     sync(dir, &db, false);
     let out = run(dir, &explain_args(&ws, &json_dir, &db, "adds", &[]));
     assert!(out.status.success(), "explain: {out:?}");
     let text = stdout(&out);
-    assert!(!text.contains("### From the docs"), "{text}");
+    assert!(text.contains("### From the docs"), "{text}");
+    assert!(text.contains("[unjudged]"), "{text}");
     assert!(text.contains("### Answer"), "{text}");
     assert!(text.contains("(unavailable"), "{text}");
     assert!(text.contains("### Citations"), "{text}");
@@ -304,6 +306,43 @@ fn explain_citations_follow_live_edits() {
     assert!(
         !cites.contains(&format!("{abs} : lines 2-4")),
         "stale stored range must not surface in citations: {cites}"
+    );
+}
+
+#[test]
+fn explain_renders_unjudged_docs_when_judge_unavailable() {
+    // Decision backend unreachable (fail-fast stub address): ranked doc
+    // paragraphs still render, labelled unjudged, instead of vanishing.
+    // The label is the honesty marker — unjudged prose never feeds
+    // synthesis (pinned at the messages-builder level).
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(dir, &explain_args(&ws, &json_dir, &db, "alpha helper adds", &[]));
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### From the docs"), "{text}");
+    assert!(text.contains("[unjudged]"), "{text}");
+    assert!(text.contains("notes.md"), "{text}");
+}
+
+#[test]
+fn explain_names_empty_capability_tier() {
+    // The fixture index holds zero ready briefs: the tier line names the
+    // absence instead of rendering an always-empty section. Hermetic
+    // (--no-llm): the note needs no model, only the table count.
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(
+        dir,
+        &explain_args(&ws, &json_dir, &db, "adds", &["--no-llm"]),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(
+        text.contains("capability briefs: none indexed"),
+        "{text}"
     );
 }
 
@@ -750,8 +789,8 @@ fn explain_callers_unknown_stays_empty() {
     assert!(out.status.success(), "explain: {out:?}");
     let text = stdout(&out);
     assert!(
-        text.contains("No results found.") || text.contains("No relevant results found."),
-        "honest empty: {text}"
+        text.contains("No relevant results found."),
+        "honest empty, single unified state: {text}"
     );
     assert!(!text.contains("### Top matches"), "{text}");
 }
@@ -960,4 +999,120 @@ fn explain_capability_branch_stays_shut_on_strong_code_recall() {
     assert!(!text.contains("From the capabilities"), "{text}");
     assert!(!text.contains("via capability"), "{text}");
     assert!(text.contains("### Top matches"), "{text}");
+}
+
+#[test]
+fn crate_overlay_orders_signalled_owner_first_e2e() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("src").join("guidance").join("src")).expect("mkdir");
+    std::fs::create_dir_all(root.join("src").join("router").join("src")).expect("mkdir");
+    std::fs::write(
+        root.join("src")
+            .join("guidance")
+            .join("src")
+            .join("owner.rs"),
+        "/// Target cache size for the guidance build cache.\npub fn target_cache_size() -> u64 {\n    42\n}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("src").join("router").join("src").join("other.rs"),
+        "/// Target cache size for the router fleet.\npub fn target_cache_size() -> u64 {\n    7\n}\n",
+    )
+    .expect("write");
+    let ws = root.to_str().unwrap().to_string();
+    let json_dir = root.join(".guidance").to_str().unwrap().to_string();
+    let db_path = root.join(".overlay.db");
+    let db = db_path.to_str().unwrap().to_string();
+    common::sync(root, ".overlay.db", false);
+    let out = run(
+        root,
+        &[
+            "explain",
+            "guidance target cache size",
+            "--workspace",
+            &ws,
+            "--guidance",
+            &json_dir,
+            "--db",
+            &db,
+            "--no-llm",
+        ],
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    let owner_pos = text.find("src/guidance/src/owner.rs");
+    let other_pos = text.find("src/router/src/other.rs");
+    assert!(
+        owner_pos.is_some() && other_pos.is_some(),
+        "both crates recalled (membership preserved):\n{text}"
+    );
+    assert!(
+        owner_pos.unwrap() < other_pos.unwrap(),
+        "signalled owner first:\n{text}"
+    );
+}
+
+#[test]
+fn jumps_manifest_lifts_doc_signalled_crate_e2e() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("src").join("guidance").join("src")).expect("mkdir");
+    std::fs::create_dir_all(root.join("src").join("router").join("src")).expect("mkdir");
+    std::fs::create_dir_all(root.join("doc").join("guidance")).expect("mkdir doc");
+    // Same symbol in two crates, and the contender sorts first by id
+    // (`aaa` < `zzz`): package vocab alone cannot tell them apart for a
+    // query that never names a package, so recall order wins without
+    // jumps. The guidance file's own text carries no query token — the
+    // signal lives only in its crate's docs.
+    std::fs::write(
+        root.join("src").join("guidance").join("src").join("zzz.rs"),
+        "/// Target.\npub fn decide_target() -> u64 {\n    1\n}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("src").join("router").join("src").join("aaa.rs"),
+        "/// Router decision target.\npub fn decide_target() -> u64 {\n    2\n}\n",
+    )
+    .expect("write");
+    // Doc terms name the owning crate's vocabulary, not its package.
+    std::fs::write(
+        root.join("doc").join("guidance").join("note.md"),
+        "# Note\n\nThe sync decision for reprocessing dirty files lives here.\n",
+    )
+    .expect("write");
+    common::sync(root, ".jumps.db", false);
+    // The full-sync hook derived the manifest beside the sidecars.
+    let manifest = std::fs::read_to_string(root.join(".guidance").join("doc_jumps.json"))
+        .expect("jumps manifest derived by sync");
+    assert!(manifest.contains("guidance-core"), "{manifest}");
+    let ws = root.to_str().unwrap().to_string();
+    let json_dir = root.join(".guidance").to_str().unwrap().to_string();
+    let db = root.join(".jumps.db").to_str().unwrap().to_string();
+    let out = run(
+        root,
+        &[
+            "explain",
+            "sync decide target",
+            "--workspace",
+            &ws,
+            "--guidance",
+            &json_dir,
+            "--db",
+            &db,
+            "--no-llm",
+        ],
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    let owner_pos = text.find("src/guidance/src/zzz.rs");
+    let other_pos = text.find("src/router/src/aaa.rs");
+    assert!(
+        owner_pos.is_some() && other_pos.is_some(),
+        "both crates recalled:\n{text}"
+    );
+    assert!(
+        owner_pos.unwrap() < other_pos.unwrap(),
+        "doc-signalled crate first:\n{text}"
+    );
 }

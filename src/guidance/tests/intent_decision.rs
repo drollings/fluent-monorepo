@@ -65,7 +65,7 @@ fn intent_labels_round_trip_through_spec_options() {
         assert!(!mapped.contains(&intent), "distinct intents");
         mapped.push(intent);
     }
-    assert_eq!(mapped.len(), 8);
+    assert_eq!(mapped.len(), 7);
     assert!(intent_label_to_intent("Nope").is_none());
     assert!(intent_label_to_intent("").is_none());
 }
@@ -121,5 +121,5 @@ fn seed_corpus_passes_gate_at_point_threshold() {
         report.fpr
     );
     // The 8 intents stay routable: every spec option maps somewhere.
-    assert_eq!(QueryIntent::IdentifierLookup.priority(), 0);
+    assert_eq!(QueryIntent::SingleIdentifier.priority(), 0);
 }

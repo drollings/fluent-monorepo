@@ -259,7 +259,6 @@ impl QueryEngine {
         let short_circuit = super::query::envelope::should_short_circuit(&class);
         for intent in [
             QueryIntent::SingleIdentifier,
-            QueryIntent::IdentifierLookup,
             QueryIntent::FilePath,
             QueryIntent::CapabilityQuery,
             QueryIntent::HowTo,
@@ -906,7 +905,6 @@ mod tests {
             ("general", Box::new(GeneralBackend)),
         ];
         let intents = [
-            QueryIntent::IdentifierLookup,
             QueryIntent::SingleIdentifier,
             QueryIntent::CapabilityQuery,
             QueryIntent::FilePath,
@@ -925,7 +923,6 @@ mod tests {
                     .collect();
                 (
                     match intent {
-                        QueryIntent::IdentifierLookup => "IdentifierLookup",
                         QueryIntent::SingleIdentifier => "SingleIdentifier",
                         QueryIntent::CapabilityQuery => "CapabilityQuery",
                         QueryIntent::FilePath => "FilePath",
@@ -941,7 +938,6 @@ mod tests {
         assert_eq!(
             table,
             vec![
-                ("IdentifierLookup", vec!["identifier"]),
                 ("SingleIdentifier", vec!["identifier"]),
                 ("CapabilityQuery", vec!["keyword"]),
                 ("FilePath", vec!["filepath"]),
@@ -960,7 +956,6 @@ mod tests {
         let engine = QueryEngine::new();
         assert_eq!(engine.backends.len(), 5);
         let intents = [
-            QueryIntent::IdentifierLookup,
             QueryIntent::SingleIdentifier,
             QueryIntent::CapabilityQuery,
             QueryIntent::FilePath,

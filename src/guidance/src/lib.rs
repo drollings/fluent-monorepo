@@ -45,6 +45,7 @@ pub mod index_pipeline;
 pub mod invalidation;
 pub mod item_hashes;
 pub mod journal;
+pub mod jumps;
 pub mod maintenance;
 pub mod model_lanes;
 pub mod model_text;

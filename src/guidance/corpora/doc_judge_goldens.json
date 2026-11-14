@@ -1,0 +1,84 @@
+{
+  "cases": [
+    {
+      "control": false,
+      "expected_keep": [
+        0,
+        1
+      ],
+      "id": "cal-ownership",
+      "paragraphs": [
+        {
+          "excerpt": "All decision points ship shadow-only: the default model has no calibration entry, so `authorize` fails closed. Promotion needs a passing entry on all three keys (point, model fingerprint, question version).",
+          "path": "doc/guidance/CALIBRATION.md"
+        },
+        {
+          "excerpt": "Stamp the corpus copy with the probed fingerprint. `RegistryEntry::calibrate` over the corpus records the gate measurement truthfully; `gate.passed` may be false, in which case `authorize` still fails closed.",
+          "path": "doc/guidance/CALIBRATION.md"
+        },
+        {
+          "excerpt": "The ladder runs deterministic filter, fast classifier, local model, then frontier. A request only reaches a rung after the previous one failed to resolve it.",
+          "path": "doc/router/VISION.md"
+        },
+        {
+          "excerpt": "The triage scorecard reports macro precision 0.69 and recall 0.639 on the golden set; the decision histogram tracks per-point latency.",
+          "path": "doc/guidance/scorecard.json"
+        }
+      ],
+      "query": "Which crate owns calibration, and how is a decision point promoted?"
+    },
+    {
+      "control": false,
+      "expected_keep": [
+        0,
+        1
+      ],
+      "id": "sync-reprocess",
+      "paragraphs": [
+        {
+          "excerpt": "A file is complete exactly when its sidecar's modification time is strictly newer than its source's. A missing sidecar means incomplete.",
+          "path": "doc/guidance/VISION.md"
+        },
+        {
+          "excerpt": "The sync engine regenerates a file when its sidecar is missing, stuck, or older than the source, or when a stored content hash disagrees with live bytes.",
+          "path": "src/guidance/src/sync_engine.rs"
+        },
+        {
+          "excerpt": "The maintenance loop reprocesses dirty files through the cheapest sufficient tier: deterministic fixers, then indexed recipes, then triage.",
+          "path": "doc/guidance/VISION.md"
+        }
+      ],
+      "query": "How does guidance sync decide what to reprocess after an edit?"
+    },
+    {
+      "control": false,
+      "expected_keep": [
+        0
+      ],
+      "id": "major-components",
+      "paragraphs": [
+        {
+          "excerpt": "Member projects: Fluent WVR, Fluent Concurrency, Fluent DAG, shared crates, Coral Router, Coral Context, Guidance, Orator, spacy-rs.",
+          "path": "README.md"
+        },
+        {
+          "excerpt": "Each component presents the same Arc<dyn Component> interface whether it is a native struct, a WASM plugin, or database-driven config.",
+          "path": "README.md"
+        }
+      ],
+      "query": "What are the major components of this codebase?"
+    }
+  ],
+  "control_group": [
+    "cal-ownership/3",
+    "sync-reprocess/2",
+    "major-components/1"
+  ],
+  "note": "Control paragraphs are plausible traps: they share query tokens (calibration, reprocess, component) but do not answer the query. They must NOT pass the locked floor. Labels are human judgments; model output never enters this file.",
+  "provenance": {
+    "date": "2026-11-14",
+    "labeller": "guidance-team",
+    "note": "Hand-authored doc-judgment goldens for the EXPLAIN_DOC_MIN_SCORE calibration. expected_keep lists paragraph indices relevant at floor 60.",
+    "origin": "human"
+  }
+}

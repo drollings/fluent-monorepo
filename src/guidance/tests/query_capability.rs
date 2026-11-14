@@ -686,3 +686,20 @@ async fn workspace_map_major_components_recall_with_unrelated_control() {
         "unrelated query must not promote map: {control:?}"
     );
 }
+
+#[test]
+fn capability_trigger_bars_hold_on_seed_corpus() {
+    // M5-cal gate: branch-1 rank quality plus zero control fires over
+    // the checked-in seed corpus. Bars lock here — on failure the
+    // ranker or the corpus changes, never the bar.
+    let nlp = rule_pipeline();
+    let report = calibrate_capability_corpus(&seed_corpus_path(), Some(&nlp)).expect("dry run");
+    assert!(
+        report.passed,
+        "recall@1={:.3} control_fires={}/{}",
+        report.recall_at_1,
+        report.control_fires,
+        report.control_total
+    );
+    assert_eq!(report.control_fires, 0);
+}

@@ -33,7 +33,7 @@ pub fn plan_from_query(query: &str, intent: QueryIntent, limit: usize) -> Search
         trace: true,
         prefer_symbol: Some(matches!(
             intent,
-            QueryIntent::SingleIdentifier | QueryIntent::IdentifierLookup
+            QueryIntent::SingleIdentifier
         )),
         ..Default::default()
     }

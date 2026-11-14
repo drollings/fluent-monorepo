@@ -193,6 +193,23 @@ impl super::GuidanceDb {
             .map_err(VectorDbError::from)
     }
 
+    /// Ready brief count (the branch-1 candidate pool size). The read
+    /// path uses it to distinguish "tier unavailable" (zero rows) from
+    /// "no match" (rows exist, none ranked) — an explicit absence, never
+    /// a silent skip. Same `status = 'ready'` predicate the branch
+    /// recalls, so the count and the recall can never disagree.
+    pub fn capability_ready_count(&self) -> Result<i64, VectorDbError> {
+        let count = self
+            .store
+            .query_row(
+                "SELECT COUNT(*) FROM capabilities WHERE status = 'ready'",
+                &[],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(VectorDbError::from)?;
+        Ok(count.unwrap_or(0))
+    }
+
     /// Ranked lexical recall over the brief index. Scores are `-bm25`
     /// (higher is better). Only `ready` rows participate: held or gap
     /// rows never fire, however they read. An unindexable query yields
