@@ -42,7 +42,7 @@ pub use fluent_concept::{
 /// plausible; the per-triple score is `1.0` (both), `0.5` (one), `0.0`
 /// (neither). The sentence-level plausibility is the mean over triples;
 /// `None` when there are no triples.
-/// 
+///
 /// When `store` is in `Loading` state the call returns `None` (provisional —
 /// taxonomy not yet ready, mirrors `FrameKey` provisional gating).
 pub fn score_plausibility(triples: &[PlausibilityTriple], store: &dyn ConceptStore) -> Option<f64> {

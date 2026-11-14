@@ -9,7 +9,7 @@
 /// workspace file set).
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Graph recall rows: persisted import edges and symbol call sites.
-/// 
+///
 /// Moved verbatim from `db.rs` (M6 split): row shapes and `from_row`
 /// constructors (crate-visible for the `GuidanceDb` recall queries). No SQL
 /// text changed.

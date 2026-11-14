@@ -430,13 +430,17 @@ pub fn summarize_file_with_backend(
 
 /// Strict response validation: JSON object, no unknown ids, every requested
 /// id present with non-empty text. Unknown ids reject the packet; a missing
-/// or empty entry fails only its node.
+/// or empty entry fails only its node. Think/prose wrapping is stripped
+/// and unwrapped first; unparseable still fails every node as malformed.
 fn validate_summary_response(
     response: &str,
     requests: &[SummaryRequest],
 ) -> Vec<(String, SummaryOutcome)> {
-    let parsed: Result<BTreeMap<String, String>, _> = serde_json::from_str(response);
-    let Ok(map) = parsed else {
+    let stripped = crate::model_text::strip_think_tags(response);
+    let map: Option<BTreeMap<String, String>> =
+        crate::model_text::extract_json_value(stripped.trim())
+            .and_then(|json| serde_json::from_str(json).ok());
+    let Some(map) = map else {
         return requests
             .iter()
             .map(|request| {
@@ -748,8 +752,9 @@ impl<'a> SummaryPass<'a> {
 }
 
 /// Project fresh summaries into the derived table, joining node keys to
-/// owning fragment ids through the committed symbol rows. Unmapped nodes
-/// become labelled gaps, never silent drops.
+/// owning fragments through the committed symbol rows (existence) plus
+/// a fragment lookup by (file, name, scope): symbol ids are no longer
+/// fragment ids. Unmapped nodes become labelled gaps, never silent drops.
 fn project_summaries(
     db: &search_vector::db::GuidanceDb,
     file_id: &str,
@@ -767,13 +772,18 @@ fn project_summaries(
                 Some((scope, name)) => (scope, name),
                 None => ("", node_key.as_str()),
             };
-            symbols
-                .iter()
-                .find(|symbol| {
-                    symbol.name.as_deref() == Some(name)
-                        && symbol.scope.as_deref().unwrap_or("") == scope
-                })
-                .map(|symbol| symbol.symbol_id.clone())
+            let known = symbols.iter().any(|symbol| {
+                symbol.name.as_deref() == Some(name)
+                    && symbol.scope.as_deref().unwrap_or("") == scope
+            });
+            if !known {
+                None
+            } else {
+                match db.symbol_fragment(file_id, name, Some(scope)) {
+                    Ok(Some((id, _))) => Some(id),
+                    _ => None,
+                }
+            }
         };
         let Some(fragment_id) = fragment_id else {
             gaps.push(SummaryGap {
@@ -820,7 +830,7 @@ fn project_summaries(
 }
 
 /// Current time in milliseconds since the Unix epoch.
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)

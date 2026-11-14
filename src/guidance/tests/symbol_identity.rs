@@ -1,6 +1,6 @@
 //! Symbol identity: body edits keep the interface hash, signature edits move it.
 
-use super::{content_hash_for_entity, interface_hash_for_entity, symbol_record};
+use super::{content_hash_for_entity, interface_hash_for_entity, stable_symbol_id, symbol_record};
 use crate::search_types::{
     CodeSymbolType, EntityFragment, EntityMetadata, FragmentContent, FragmentSpan,
 };
@@ -86,4 +86,57 @@ fn symbols_round_trip_through_replace_symbols() {
         .expect("write symbols");
     let stored = db.symbols_for_file("file-a").expect("read symbols");
     assert_eq!(stored, vec![row]);
+}
+
+#[test]
+fn stable_ids_ignore_positional_index() {
+    let first = stable_symbol_id("file-a", Some("render"), Some("module"));
+    let second = stable_symbol_id("file-a", Some("render"), Some("module"));
+    assert_eq!(first, second);
+    assert_eq!(first, "file-a#module::render");
+    assert_eq!(stable_symbol_id("f", Some("render"), None), "f#render");
+}
+
+#[test]
+fn stable_ids_separate_scope_and_name() {
+    let scoped = stable_symbol_id("f", Some("render"), Some("module"));
+    let top = stable_symbol_id("f", Some("render"), None);
+    let other = stable_symbol_id("f", Some("other"), Some("module"));
+    assert_ne!(scoped, top);
+    assert_ne!(scoped, other);
+    assert_ne!(top, other);
+}
+
+#[test]
+fn stable_ids_cover_unnamed_and_markdown_shapes() {
+    let anon = stable_symbol_id("f", None, None);
+    let headed = stable_symbol_id("f", Some("Guide"), None);
+    assert_ne!(anon, headed);
+    assert_eq!(stable_symbol_id("f", None, None), anon);
+    let scoped_headed = stable_symbol_id("f", Some("Body"), Some("Guide"));
+    assert_ne!(scoped_headed, headed);
+}
+
+#[test]
+fn reordered_and_windowed_harvests_keep_stable_ids() {
+    // Reorder and window-count edits move positional ids but never
+    // the (file, symbol, scope) triple: the stable id is invariant.
+    fn named(id: &str, name: &str) -> EntityFragment {
+        let mut entity = code_entity(id, "fn f()", "fn f() { 1 }");
+        if let Some(EntityMetadata::Code { symbol_name, .. }) = entity.metadata.as_mut() {
+            *symbol_name = Some(name.to_string());
+        }
+        entity
+    }
+    let v1_alpha = symbol_record(&named("file-a#0", "alpha")).expect("row");
+    let v1_beta = symbol_record(&named("file-a#1", "beta")).expect("row");
+    // Reordered harvest: positional ids swap, stable ids do not.
+    let v2_alpha = symbol_record(&named("file-a#1", "alpha")).expect("row");
+    let v2_beta = symbol_record(&named("file-a#0", "beta")).expect("row");
+    assert_eq!(v1_alpha.symbol_id, v2_alpha.symbol_id);
+    assert_eq!(v1_beta.symbol_id, v2_beta.symbol_id);
+    assert_ne!(v1_alpha.symbol_id, v1_beta.symbol_id);
+    // Windowed harvest: extra same-symbol chunks reuse the id.
+    let v3_alpha_window = symbol_record(&named("file-a#7", "alpha")).expect("row");
+    assert_eq!(v1_alpha.symbol_id, v3_alpha_window.symbol_id);
 }

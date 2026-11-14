@@ -1,6 +1,6 @@
 use super::*;
-use crate::db::GuidanceDb;
 use crate::db::fragments::{FileRecord, FragmentRecord};
+use crate::db::GuidanceDb;
 
 fn file_a() -> FileRecord {
     FileRecord {
@@ -86,15 +86,11 @@ fn summary_fts_finds_generated_terms_only() {
     seed_file(&db);
     db.replace_summaries(&[summary("entity-a", "Adds one to the total.")])
         .expect("replace");
-    let hits = db
-        .search_summaries("total", 10)
-        .expect("search");
+    let hits = db.search_summaries("total", 10).expect("search");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].id, "entity-a");
     assert_eq!(hits[0].file_id, "file-a");
-    let hits = db
-        .search_summaries("alpha", 10)
-        .expect("search");
+    let hits = db.search_summaries("alpha", 10).expect("search");
     assert!(
         hits.is_empty(),
         "source-only terms stay out of the summary index: {hits:?}"
@@ -111,9 +107,7 @@ fn summary_replace_updates_fts_rows() {
     second.comment_hash = "hash-a2".to_string();
     db.replace_summaries(&[second]).expect("replace");
     assert!(
-        db.search_summaries("total", 10)
-            .expect("search")
-            .is_empty(),
+        db.search_summaries("total", 10).expect("search").is_empty(),
         "stale summary text must leave the index"
     );
     let hits = db.search_summaries("removes", 10).expect("search");
@@ -129,9 +123,7 @@ fn summary_search_skips_fragments_without_rows() {
     db.replace_summaries(&[summary("missing-fragment", "Adds one to the total.")])
         .expect("replace");
     assert!(
-        db.search_summaries("total", 10)
-            .expect("search")
-            .is_empty(),
+        db.search_summaries("total", 10).expect("search").is_empty(),
         "orphan summaries must not recall"
     );
 }
@@ -144,9 +136,7 @@ fn summary_fts_never_matches_everything() {
         .expect("replace");
     for query in ["", "   ", "!!!"] {
         assert!(
-            db.search_summaries(query, 10)
-                .expect("search")
-                .is_empty(),
+            db.search_summaries(query, 10).expect("search").is_empty(),
             "query {query:?} must match nothing"
         );
     }

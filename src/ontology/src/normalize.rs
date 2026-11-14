@@ -59,7 +59,7 @@ pub fn normalize_extracted_name(name: &str) -> String {
 /// `yago:Adult_Video_Game_Q3362070` → `adult video game`.
 #[must_use]
 /// Normalize a YaGO IRI local name for lexicon matching.
-/// 
+///
 /// Extracts the local part (after the last `/`, `#`, or `:`) and runs the
 /// [`normalize_extracted_name`] pipeline.
 /// `yago:Adult_Video_Game_Q3362070` → `adult video game`.

@@ -83,7 +83,7 @@ impl FromStr for CuriePrefix {
 #[must_use]
 /// Split a CURIE at the first `:` into its prefix and remainder without
 /// allocating the remainder.
-/// 
+///
 /// Returns `None` when the input contains no `:`. The prefix half is mapped
 /// through the closed set (`yago`/`schema`, case-insensitive); anything else
 /// becomes the open fallback carrying the lowercased prefix text.

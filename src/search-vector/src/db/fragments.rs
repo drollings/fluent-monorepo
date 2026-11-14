@@ -98,7 +98,7 @@ pub struct FragmentFreshness {
 /// skipped. Same risk class as all mtime discipline here: a delete+add
 /// pair that keeps the count with an older-or-equal max mtime reads as
 /// fresh (change detection, not content addressing).
-/// 
+///
 /// `gen` is the disposable-index marker: a hash over the sidecar header
 /// manifest (one first line per file, so the gate never pays for bodies)
 /// that refuses a mismatched index and rebuilds. Headerless legacy files
@@ -200,13 +200,17 @@ pub struct FragmentLemma {
     pub confidence: f64,
 }
 
-/// Identity row for one definition: the stable symbol key plus the two
-/// fingerprints that separate interface edits from body edits.
+/// Identity row for one definition: the content-stable symbol key
+/// plus the interface fingerprint that separates interface edits
+/// from body edits. One row per (file, symbol, scope); window
+/// chunks of one entity share the row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Identity row for one definition: the stable symbol key plus the two
-/// fingerprints that separate interface edits from body edits.
+/// Identity row for one definition: the content-stable symbol key
+/// plus the interface fingerprint that separates interface edits
+/// from body edits. One row per (file, symbol, scope); window
+/// chunks of one entity share the row.
 pub struct SymbolRecord {
-    /// Stable symbol id (fragment id of the defining chunk).
+    /// Stable symbol id (`file#scope::name`, no positional index).
     pub symbol_id: String,
     /// Owning file id.
     pub file_id: String,
@@ -214,14 +218,8 @@ pub struct SymbolRecord {
     pub name: Option<String>,
     /// Lexical scope breadcrumb.
     pub scope: Option<String>,
-    /// One-line signature.
-    pub signature: Option<String>,
     /// Hash of the interface (name, type, scope, signature).
     pub interface_hash: String,
-    /// Hash of the full fragment text.
-    pub content_hash: String,
-    /// Serialized range.
-    pub range_json: String,
 }
 
 impl SymbolRecord {
@@ -231,10 +229,7 @@ impl SymbolRecord {
             file_id: row.get(1)?,
             name: row.get(2)?,
             scope: row.get(3)?,
-            signature: row.get(4)?,
-            interface_hash: row.get(5)?,
-            content_hash: row.get(6)?,
-            range_json: row.get(7)?,
+            interface_hash: row.get(4)?,
         })
     }
 }

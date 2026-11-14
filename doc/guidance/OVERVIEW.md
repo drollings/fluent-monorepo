@@ -137,13 +137,16 @@ Key user-visible rules:
 - Purpose: inspect the search DB.
 - Behavior: open the DB at `--db` and print node and embedding counts (telemetry) or cache statistics (cache-stats). When the DB is missing, print a "no database found" notice; when queries fail, print a per-metric notice rather than crashing. `telemetry --reset` is accepted.
 
-### 3.11 `guidance benchmark [QUERY]`
+### 3.11 `guidance benchmark`
 
-- Purpose: measure search-answer quality, optionally with model-judged scoring.
-- Inputs: optional query filter, `--num` query cap, `--no-llm`, `--verbose`, `--api-url` / `--model` overrides, `--timeout` (default 300 s), `--concurrency` (default 2).
+- Purpose: measure the time and token cost an orchestrator would spend on initial exploration via indexed `explain` versus manual grepping or wholesale file loading.
+- Inputs: `--workspace`; `--db` (default `.guidance.db`); `--tasks <file.jsonl>` (one `{id, query, relevant[]}` object per line, basenames compared; extra fields ignored) or, when absent, synthesized `where is <symbol> defined` tasks from the index's own graph rows; `--num` task cap (default 10); `--limit` fused-recall limit behind the explain arm (default 10); `--format human|json` (json is the agent handoff).
 - Behavior:
-  - Loads scoring tasks from `.guidance/benchmarks.md` (section headings group tasks; each task is query text plus a `Rubric` expectation block terminated by `---`), or synthesizes fallback tasks from module comments when the file is absent.
-  - Runs each task through the same search path as `explain`, optionally re-ranks and summarizes with the model under a concurrency cap, scores accuracy / relevance / completeness / navigation against the rubric, and prints per-query timings plus aggregate latency percentiles.
+  - Runs each task through three arms: `explain` (the same structural output as `explain --no-llm`, no model call on any path), literal case-insensitive identifier grep over the indexed file scope (capped file budget, reported), and wholesale corpus load (walked and read once per session; per-query rows carry the shared cost plus the relevant files covered).
+  - Records per arm per query: wall milliseconds, rendered/read characters, estimated tokens (chars/4, labelled as an estimate), surfaced files, and file-level recall/precision against the golden relevant set (empty relevant sets are controls that must stay silent).
+  - Human output prints per-query arm rows, session totals, and whole-session token ratios (`explain_tokens_per_wholesale`, `grep_tokens_per_wholesale`); JSON output carries the full report object with stable keys.
+  - Model synthesis cost is out of scope by design (identical across arms once context is chosen); exit code is 0 on a completed measurement, nonzero only on hard errors (missing index, unreadable tasks file).
+  - Hermetic: needs no model endpoint and no external binaries.
 
 ### 3.12 `guidance commit`
 

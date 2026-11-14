@@ -701,16 +701,22 @@ impl Tokenizer {
             })
             .collect();
         let has_space = key.contains(' ');
-        let has_affix = self.find_prefix(key)? != 0
-            || self.find_infix(key)?.is_some_and(|v| !v.is_empty())
-            || self.find_suffix(key)? != 0;
+        let has_affix = self.key_has_affix(key)?;
         let in_matcher = !self.faster_heuristics || has_space || has_affix;
         let phrase = if in_matcher {
-            self.tokenize_affixes(key, SpecialCaseMode::Disabled)?
-                .tokens()
-                .iter()
-                .map(|t| t.lexeme.orth)
-                .collect()
+            if !has_space && !has_affix {
+                // No spaces and no affixes: affix tokenization is the
+                // identity (one token, the key itself) — skip the peel
+                // loop, Doc build, and cache churn. Same orth out as
+                // the full path (single unsplit span interns once).
+                vec![self.lex(key).orth]
+            } else {
+                self.tokenize_affixes(key, SpecialCaseMode::Disabled)?
+                    .tokens()
+                    .iter()
+                    .map(|t| t.lexeme.orth)
+                    .collect()
+            }
         } else {
             Vec::new()
         };
@@ -724,10 +730,36 @@ impl Tokenizer {
         if in_matcher {
             common_core::sync::lock(&self.staged_matcher).push(rule);
         }
-        for shard in &self.cache {
-            common_core::sync::lock(shard).clear();
-        }
+        // No per-rule cache clear: cached spans are deterministic
+        // memos of (regexes, interned lexemes), so cross-rule reuse
+        // recomputes nothing observable — clearing only
+        // re-burns shared spans on the next rule.
         Ok(())
+    }
+
+    /// Build-only affix probe: the full-regex decision behind a
+    /// cheap ASCII-alphanumeric bypass. A pure `[0-9A-Za-z]+` key can
+    /// match no affix branch (every prefix/suffix/infix alternative
+    /// consumes a non-alphanumeric anchor). The bypass only ever runs
+    /// on rule keys; agreement with the full check is pinned
+    /// exhaustively over the frozen `RULES` set, and infix collection
+    /// short-circuits on the first match (only emptiness is asked).
+    fn key_has_affix(&self, key: &str) -> Result<bool, SpacyError> {
+        if !key.is_empty() && key.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Ok(false);
+        }
+        if self.find_prefix(key)? != 0 {
+            return Ok(true);
+        }
+        if let Some(re) = &self.infixes {
+            if re
+                .is_match(key)
+                .map_err(|e| SpacyError::Regex(e.to_string()))?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(self.find_suffix(key)? != 0)
     }
 }
 

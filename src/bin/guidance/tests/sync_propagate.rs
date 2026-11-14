@@ -668,3 +668,190 @@ fn sync_draft_failure_detail_reaches_handoff() {
     assert!(out.contains("attention"), "{out}");
     assert!(out.contains("model unreachable"), "{out}");
 }
+
+#[test]
+fn full_sync_applies_mechanical_clippy_suggestion() {
+    // The D2 rung consumes MachineApplicable suggestions from clippy
+    // diagnostics. Regression: suggestions were harvested from primary
+    // spans only, but rustc/clippy carry them on the child note — so
+    // every mechanical lint escalated ("mechanical without applicable
+    // suggestion") and the clippy-fix half of the loop never fired.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"clipfix\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("manifest");
+    std::fs::create_dir(root.join("src")).expect("mkdir src");
+    std::fs::write(
+        root.join("src").join("main.rs"),
+        "pub fn take_ref(x: &u32) -> u32 {\n    *x + 1\n}\n\npub fn main() {\n    let v = 41u32;\n    let r = &v;\n    println!(\"{}\", take_ref(&r));\n}\n",
+    )
+    .expect("write");
+    let root_str = root.to_str().unwrap().to_string();
+    let json_dir = root.join(".guidance");
+    let json_str = json_dir.to_str().unwrap().to_string();
+    let db = root.join(".sync.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let out = common::run(
+        dir.path(),
+        &[
+            "sync",
+            "--workspace",
+            &root_str,
+            "--json-dir",
+            &json_str,
+            "--db",
+            &db_str,
+            "--verbose",
+        ],
+    );
+    assert!(out.status.success(), "sync converges: {out:?}");
+    let text = common::stdout(&out);
+    assert!(!text.contains("needs attention"), "{text}");
+    let fixed = std::fs::read_to_string(root.join("src").join("main.rs")).expect("read");
+    assert!(
+        fixed.contains("take_ref(r)"),
+        "needless borrow must be fixed: {fixed}"
+    );
+}
+
+fn window_fixture() -> tempfile::TempDir {
+    // Importee with a growable function ahead of the imported one:
+    // growing it past the chunk budget re-windows its fragments and
+    // shifts every later positional id without touching any symbol.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let small = (0..40)
+        .map(|n| format!("    let v{n} = {n} + 1;"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(
+        dir.path().join("importee.rs"),
+        format!("pub fn grower() -> u64 {{\n{small}\n    1\n}}\n\npub fn fee(x: u64) -> u64 {{\n    x + 1\n}}\n"),
+    )
+    .expect("write");
+    std::fs::write(
+        dir.path().join("importer.rs"),
+        "mod importee;\nuse importee::fee;\n/// Calls fee.\npub fn caller(x: u64) -> u64 {\n    fee(x)\n}\n",
+    )
+    .expect("write");
+    dir
+}
+
+#[test]
+fn window_count_growth_reprocesses_only_itself() {
+    // Same symbol set, new chunking: the grown body crosses the
+    // window budget, shifting the imported symbol's chunk position.
+    // Positional identity mistook the shift for new + deleted
+    // symbols and pulled the importer; stable identity must not.
+    let dir = window_fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+
+    let before = fragment_texts(root, "importer.rs");
+    let big = (0..400)
+        .map(|n| format!("    let v{n} = {n} + 1;"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(
+        root.join("importee.rs"),
+        format!("pub fn grower() -> u64 {{\n{big}\n    1\n}}\n\npub fn fee(x: u64) -> u64 {{\n    x + 1\n}}\n"),
+    )
+    .expect("write");
+    let out = sync(root, ".sync.db", true);
+
+    // The seed's own rows must converge on the grown body...
+    assert!(
+        out.contains("Ingested 1 files"),
+        "seed must re-ingest: {out}"
+    );
+    // ...while propagation stays empty: no interface moved.
+    let measured = regenerated(&out);
+    let importer = root.join("importer.rs").to_string_lossy().into_owned();
+    assert!(
+        !measured.contains(&importer),
+        "window-count growth pulls no dependents: {measured:?}"
+    );
+    assert!(
+        measured.is_empty(),
+        "no interface move, no propagation: {measured:?}"
+    );
+    assert_eq!(before, fragment_texts(root, "importer.rs"));
+}
+
+#[test]
+fn sync_file_keeps_nested_sidecar_in_parallel_tree() {
+    // Sidecar layout: `sync --file src/sub/nested.rs` reads and writes
+    // `.guidance/src/sub/nested.rs.json` — the parallel tree to `./src`
+    // under the guidance dir — never a flattened, doubled, or
+    // beside-the-source path. A second pass is a no-op, pinning that
+    // the staleness read agrees with the member-gen write.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    let sub = root.join("src").join("sub");
+    std::fs::create_dir_all(&sub).expect("mkdir");
+    std::fs::write(
+        sub.join("nested.rs"),
+        "pub fn nested() -> u64 {\n    7\n}\n",
+    )
+    .expect("write");
+    let guidance = root.join(".guidance");
+    std::fs::create_dir_all(&guidance).expect("mkdir");
+    std::fs::write(
+        guidance.join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    let file = sub.join("nested.rs");
+    let file_str = file.to_str().unwrap().to_string();
+    let root_str = root.to_str().unwrap().to_string();
+    let json_str = guidance.to_str().unwrap().to_string();
+    let db = root.join(".sync.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let run_file = |verbose: bool| {
+        let mut args = vec![
+            "sync",
+            "--file",
+            file_str.as_str(),
+            "--workspace",
+            root_str.as_str(),
+            "--json-dir",
+            json_str.as_str(),
+            "--db",
+            db_str.as_str(),
+            "--autonomy",
+            "L0",
+        ];
+        if verbose {
+            args.push("--verbose");
+        }
+        let out = common::run(dir.path(), &args);
+        assert!(out.status.success(), "sync --file converges: {out:?}");
+        common::stdout(&out)
+    };
+    let out = run_file(true);
+    assert!(out.contains("gen:"), "first pass generates: {out}");
+    assert!(
+        guidance
+            .join("src")
+            .join("sub")
+            .join("nested.rs.json")
+            .is_file(),
+        "parallel-tree sidecar must exist"
+    );
+    assert!(
+        !guidance.join("src").join("nested.rs.json").exists(),
+        "no flattened sidecar"
+    );
+    assert!(!guidance.join("src").join("src").exists(), "no doubled src");
+    assert!(
+        !sub.join("nested.rs.json").exists(),
+        "sidecars never sit beside sources"
+    );
+    let again = run_file(true);
+    assert!(
+        again.contains("skip (up to date)"),
+        "fresh file skips: {again}"
+    );
+}

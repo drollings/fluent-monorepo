@@ -158,3 +158,76 @@ fn same_engine_parity_direct_vs_rg() {
     assert!(out.status.success());
     assert!(stdout(&out).contains("lib.rs:2:"));
 }
+
+#[test]
+fn clean_removes_build_cache_and_reports_bytes() {
+    // Seeded `.guidance/target` (3072 bytes across two files) is
+    // regenerable cache: `clean` removes it and reports the exact
+    // bytes reclaimed. Fails before the target-cache step exists.
+    let dir = workspace();
+    let target = dir.path().join(".guidance").join("target").join("debug");
+    std::fs::create_dir_all(&target).expect("mkdir target");
+    std::fs::write(target.join("a.rlib"), vec![0u8; 1024]).expect("write");
+    std::fs::write(target.join("b.rlib"), vec![0u8; 2048]).expect("write");
+    let out = run(
+        dir.path(),
+        &["clean", "--json-dir", ".guidance", "--db", ".clean.db"],
+    );
+    assert!(out.status.success(), "clean: {out:?}");
+    let text = stdout(&out);
+    assert!(
+        !dir.path().join(".guidance").join("target").exists(),
+        "build cache must be gone"
+    );
+    assert!(text.contains("3072 bytes"), "bytes reclaimed: {text}");
+    assert!(text.contains("Clean complete."), "{text}");
+}
+
+#[test]
+fn clean_without_build_cache_still_exits_zero() {
+    // Missing cache dir: nothing to remove, still a clean exit and
+    // the legacy lines unchanged.
+    let dir = workspace();
+    assert!(!dir.path().join(".guidance").join("target").exists());
+    let out = run(
+        dir.path(),
+        &["clean", "--json-dir", ".guidance", "--db", ".clean.db"],
+    );
+    assert!(out.status.success(), "clean: {out:?}");
+    let text = stdout(&out);
+    assert!(!text.contains("Removed build cache"), "{text}");
+    assert!(text.contains("Clean complete."), "{text}");
+}
+
+#[test]
+fn clean_skips_build_cache_while_supervised_run_holds_it() {
+    // A held cargo target lock (exactly what a supervised `run` /
+    // `fix` clippy invocation holds mid-build) makes `clean` skip
+    // the cache with a message instead of racing the live build.
+    // Fails before the liveness probe exists (dir would be removed).
+    use fs2::FileExt;
+    let dir = workspace();
+    let target = dir.path().join(".guidance").join("target");
+    std::fs::create_dir_all(&target).expect("mkdir target");
+    std::fs::write(target.join("a.rlib"), vec![0u8; 512]).expect("write");
+    let lock_path = target.join(".cargo-lock");
+    std::fs::write(&lock_path, b"").expect("write lock");
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open lock");
+    held.lock_exclusive().expect("hold lock");
+    let out = run(
+        dir.path(),
+        &["clean", "--json-dir", ".guidance", "--db", ".clean.db"],
+    );
+    assert!(out.status.success(), "clean: {out:?}");
+    let text = stdout(&out);
+    assert!(target.exists(), "held cache must survive: {text}");
+    assert!(
+        text.contains("supervised run"),
+        "skip names the holder: {text}"
+    );
+    held.unlock().expect("release");
+}

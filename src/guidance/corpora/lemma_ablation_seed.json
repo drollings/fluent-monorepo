@@ -1,0 +1,24 @@
+{
+  "fragments": [
+    { "id": "f-configuring", "text": "configuring the request router on startup" },
+    { "id": "f-configured", "text": "configured routes dispatch calls onward" },
+    { "id": "f-configuration", "text": "router configuration lives in the table" },
+    { "id": "f-indexing", "text": "indexing fragments for fast recall" },
+    { "id": "f-indexed", "text": "the indexed fragment store serves reads" },
+    { "id": "f-indexes", "text": "fragment indexes rebuild every night" },
+    { "id": "f-dispatching", "text": "dispatching calls through the handler chain" },
+    { "id": "f-verbatim-tools", "text": "unrelated tooling notes for operators" },
+    { "id": "f-verbatim-bread", "text": "sourdough bread recipe with overnight ferment" },
+    { "id": "f-distract-config", "text": "configuration audits happen quarterly" },
+    { "id": "f-distract-route", "text": "route markers painted yearly" },
+    { "id": "f-distract-index", "text": "index cards filed alphabetically" }
+  ],
+  "cases": [
+    { "query": "how do I configure routing", "relevant": ["f-configuring", "f-configured", "f-configuration"] },
+    { "query": "which fragments are indexed", "relevant": ["f-indexing", "f-indexed", "f-indexes"] },
+    { "query": "where are calls dispatched", "relevant": ["f-dispatching", "f-configured"] },
+    { "query": "unrelated tooling notes", "relevant": ["f-verbatim-tools"], "control": true },
+    { "query": "sourdough bread recipe", "relevant": ["f-verbatim-bread"], "control": true },
+    { "query": "zxqy florp wobble", "relevant": [], "control": true }
+  ]
+}

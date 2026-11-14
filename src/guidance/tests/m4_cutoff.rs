@@ -305,15 +305,19 @@ fn moved_symbol_pulls_dangling_dependent() {
             .map(|row| row.name.unwrap_or_default())
             .collect::<Vec<_>>()
     };
-    assert!(!symbols("a.rs").contains(&"foo".to_string()), "{:?}", symbols("a.rs"));
-    assert!(symbols("b.rs").contains(&"foo".to_string()), "{:?}", symbols("b.rs"));
+    assert!(
+        !symbols("a.rs").contains(&"foo".to_string()),
+        "{:?}",
+        symbols("a.rs")
+    );
+    assert!(
+        symbols("b.rs").contains(&"foo".to_string()),
+        "{:?}",
+        symbols("b.rs")
+    );
     // d.rs rows stay retrievable under the new graph.
     assert!(!db
-        .search_fts(
-            "deep",
-            10,
-            &search_vector::db::FragmentFilter::default()
-        )
+        .search_fts("deep", 10, &search_vector::db::FragmentFilter::default())
         .expect("search")
         .is_empty());
 }

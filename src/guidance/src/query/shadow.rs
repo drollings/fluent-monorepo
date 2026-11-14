@@ -125,6 +125,55 @@ pub fn rerank_shadow(
         .collect()
 }
 
+/// Capability-judge shadow: one record per scored brief for the
+/// judge corpus. The tier is the label; the score is the confidence.
+/// Unjudged briefs (`None`) log nothing — there is no verdict to
+/// shadow, and deterministic order served instead.
+#[must_use]
+/// Capability-judge shadow: one record per scored brief for the
+/// judge corpus. The tier is the label; the score is the confidence.
+/// Unjudged briefs (`None`) log nothing — there is no verdict to
+/// shadow, and deterministic order served instead.
+pub fn capability_judge_shadow(
+    brief_id: &str,
+    score: u8,
+    tier: &str,
+    deterministic_rank: usize,
+) -> ShadowRecord {
+    let confidence = f64::from(score) / 100.0;
+    let counter = if tier == "strong" {
+        "considered"
+    } else {
+        "strong"
+    };
+    // Confidence carries the judge's 0-100 score monotonically, so the
+    // shadow verdict tracks the score until M15 sets measured bars; the
+    // distribution preserves both tiers for audit.
+    let decision = Decision {
+        label: tier.to_string(),
+        distribution: vec![
+            (tier.to_string(), confidence),
+            (counter.to_string(), 1.0 - confidence),
+        ],
+        confidence,
+        margin: (2.0 * confidence - 1.0).abs(),
+        degraded: false,
+        model: "capability-judge".to_string(),
+        question_version: 1,
+        latency_ms: 0,
+        cached: false,
+    };
+    record(
+        "capability",
+        &decision,
+        &ThresholdSet {
+            act: 0.9,
+            review: 0.7,
+        },
+        format!("brief:{brief_id} rank:{deterministic_rank}"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,5 +306,33 @@ pub fn summary_route_shadow(
         verdict: "review".to_string(),
         would_have_acted: !would_add.is_empty(),
         authoritative: format!("{} deterministic candidates", authoritative.len()),
+    }
+}
+
+#[cfg(test)]
+mod capability_judge_shadow_tests {
+    use super::{capability_judge_shadow, ThresholdSet};
+
+    fn thresholds() -> ThresholdSet {
+        ThresholdSet {
+            act: 0.9,
+            review: 0.7,
+        }
+    }
+
+    #[test]
+    fn judge_shadow_pins_tier_confidence_and_rank() {
+        let _ = thresholds();
+        let record = capability_judge_shadow("doc/a.md#guide", 95, "strong", 1);
+        assert_eq!(record.point, "capability");
+        assert_eq!(record.label, "strong");
+        assert!((record.confidence - 0.95).abs() < 1e-9);
+        assert!(record.would_have_acted);
+        assert_eq!(record.verdict, "act");
+        assert_eq!(record.authoritative, "brief:doc/a.md#guide rank:1");
+        let weak = capability_judge_shadow("doc/b.md#x", 10, "considered", 2);
+        assert_eq!(weak.label, "considered");
+        assert!(!weak.would_have_acted);
+        assert_eq!(weak.authoritative, "brief:doc/b.md#x rank:2");
     }
 }

@@ -212,7 +212,7 @@ pub struct ContextEdge {
 
 /// Query-side graph signals: routing-signal lemmas (predicate + roles),
 /// lowercased. Built from `extract_routing_signals` — no new NLP.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 /// Query-side graph signals: routing-signal lemmas (predicate + roles),
 /// lowercased. Built from `extract_routing_signals` — no new NLP.
 pub struct GraphQuerySignals {

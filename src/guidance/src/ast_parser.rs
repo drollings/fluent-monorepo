@@ -1532,16 +1532,25 @@ fn find_member_span(
     None
 }
 
+/// Bare identifier behind a recorded symbol name: the index keeps
+/// type parameters (`Slot<V>`, `LoadCache<K, V, E>`), but tree-sitter
+/// names never carry them. Single normalization point for both
+/// sides of every comparison below.
+fn base_symbol_name(text: &str) -> &str {
+    text.split('<').next().unwrap_or(text).trim_end()
+}
+
 fn try_match_node_span(
     node: &tree_sitter::Node,
     source: &str,
     member_name: &str,
     member_type: MemberType,
 ) -> Option<Span> {
+    let wanted = base_symbol_name(member_name);
     let name_node = node.child_by_field_name("name");
     let node_name = name_node
         .as_ref()
-        .and_then(|n| n.utf8_text(source.as_bytes()).ok())?;
+        .and_then(|n| n.utf8_text(source.as_bytes()).ok());
 
     let matches_type = match node.kind() {
         "function_declaration" | "function_definition" | "function_item" => {
@@ -1567,20 +1576,29 @@ fn try_match_node_span(
         _ => false,
     };
 
-    if matches_type && node_name == member_name {
-        return Some(node_span(node, source));
+    if matches_type {
+        if let Some(node_name) = node_name {
+            if base_symbol_name(node_name) == wanted {
+                return Some(node_span(node, source));
+            }
+        }
     }
 
     if node.kind() == "impl_item" {
-        let type_name = name_node?;
-        let type_text = type_name.utf8_text(source.as_bytes()).ok()?;
-        if type_text == member_name
-            && matches!(
-                member_type,
-                MemberType::Struct | MemberType::FnDecl | MemberType::Method
-            )
-        {
-            return Some(node_span(node, source));
+        // The type lives in the "type" field (same rule as the name
+        // harvester — no second reading): match its bare identifier,
+        // but always descend — the methods live in the children.
+        if let Some(type_node) = node.child_by_field_name("type") {
+            if let Ok(type_text) = type_node.utf8_text(source.as_bytes()) {
+                if base_symbol_name(type_text) == wanted
+                    && matches!(
+                        member_type,
+                        MemberType::Struct | MemberType::FnDecl | MemberType::Method
+                    )
+                {
+                    return Some(node_span(node, source));
+                }
+            }
         }
         let mut child_cursor = node.walk();
         for child in node.children(&mut child_cursor) {
@@ -1591,6 +1609,30 @@ fn try_match_node_span(
     }
 
     if node.kind() == "declaration_list" || node.kind() == "block" {
+        let mut child_cursor = node.walk();
+        for child in node.children(&mut child_cursor) {
+            if let Some(span) = try_match_node_span(&child, source, member_name, member_type) {
+                return Some(span);
+            }
+        }
+    }
+
+    // Module bodies hide their items one level down: a top-level scan
+    // sees only the `mod` itself, so everything nested (test modules
+    // included) reads as moved or removed without this descent.
+    if node.kind() == "mod_item" {
+        let mut child_cursor = node.walk();
+        for child in node.children(&mut child_cursor) {
+            if let Some(span) = try_match_node_span(&child, source, member_name, member_type) {
+                return Some(span);
+            }
+        }
+    }
+
+    // Anonymous const/static value blocks (`const _: () = { ... }`)
+    // wrap real items (usually static assertions): descend the same
+    // way, or their helpers read as moved or removed.
+    if node.kind() == "const_item" || node.kind() == "static_item" {
         let mut child_cursor = node.walk();
         for child in node.children(&mut child_cursor) {
             if let Some(span) = try_match_node_span(&child, source, member_name, member_type) {

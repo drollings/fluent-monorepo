@@ -102,10 +102,7 @@ pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
                     file_id TEXT NOT NULL,
                     name TEXT,
                     scope TEXT,
-                    signature TEXT,
-                    interface_hash TEXT NOT NULL DEFAULT '',
-                    content_hash TEXT NOT NULL DEFAULT '',
-                    range_json TEXT NOT NULL DEFAULT '{}');
+                    interface_hash TEXT NOT NULL DEFAULT '');
                 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_id);
                 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
                 CREATE TABLE IF NOT EXISTS fragment_summaries (
@@ -124,6 +121,34 @@ pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
                     summary,
                     tokenize='unicode61 remove_diacritics 2',
                     content='fragment_summaries', content_rowid='rowid');
+                CREATE TABLE IF NOT EXISTS capabilities (
+                    id TEXT PRIMARY KEY,
+                    project TEXT NOT NULL DEFAULT '',
+                    crate_name TEXT NOT NULL DEFAULT '',
+                    domain TEXT NOT NULL DEFAULT '',
+                    purpose TEXT NOT NULL DEFAULT '',
+                    predicate TEXT NOT NULL DEFAULT '',
+                    roles_json TEXT NOT NULL DEFAULT '[]',
+                    source_path TEXT NOT NULL DEFAULT '',
+                    anchor TEXT NOT NULL DEFAULT '',
+                    content_hash TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL DEFAULT '',
+                    prompt_version INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'ready',
+                    gap_reason TEXT,
+                    generated_at INTEGER NOT NULL DEFAULT 0);
+                CREATE INDEX IF NOT EXISTS idx_capabilities_source ON capabilities(source_path);
+                CREATE VIRTUAL TABLE IF NOT EXISTS capabilities_fts USING fts5(
+                    purpose, predicate,
+                    tokenize='unicode61 remove_diacritics 2',
+                    content='capabilities', content_rowid='rowid');
+                CREATE TABLE IF NOT EXISTS capability_lemmas (
+                    capability_rowid INTEGER NOT NULL,
+                    lemma_id INTEGER NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    PRIMARY KEY (capability_rowid, lemma_id)
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_capability_lemmas_lemma ON capability_lemmas(lemma_id);
                 CREATE TABLE IF NOT EXISTS fragment_embedding_status (
                     fragment_id TEXT PRIMARY KEY,
                     input_hash TEXT NOT NULL,
@@ -218,6 +243,23 @@ fn ensure_fts_triggers(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
              VALUES ('delete', old.rowid, old.summary);
              INSERT INTO fragment_summaries_fts(rowid, summary)
              VALUES (new.rowid, new.summary);
+         END;
+         DROP TRIGGER IF EXISTS capabilities_ai;
+         DROP TRIGGER IF EXISTS capabilities_ad;
+         DROP TRIGGER IF EXISTS capabilities_au;
+         CREATE TRIGGER capabilities_ai AFTER INSERT ON capabilities BEGIN
+             INSERT INTO capabilities_fts(rowid, purpose, predicate)
+             VALUES (new.rowid, new.purpose, new.predicate);
+         END;
+         CREATE TRIGGER capabilities_ad AFTER DELETE ON capabilities BEGIN
+             INSERT INTO capabilities_fts(capabilities_fts, rowid, purpose, predicate)
+             VALUES ('delete', old.rowid, old.purpose, old.predicate);
+         END;
+         CREATE TRIGGER capabilities_au AFTER UPDATE ON capabilities BEGIN
+             INSERT INTO capabilities_fts(capabilities_fts, rowid, purpose, predicate)
+             VALUES ('delete', old.rowid, old.purpose, old.predicate);
+             INSERT INTO capabilities_fts(rowid, purpose, predicate)
+             VALUES (new.rowid, new.purpose, new.predicate);
          END;",
     )
 }

@@ -9,12 +9,17 @@ use fluent_db::vector;
 use rusqlite::params;
 use thiserror::Error;
 
+pub mod capabilities;
+pub mod embedding_status;
 pub mod fragments;
 pub mod graph_rows;
-pub mod summaries;
-pub mod embedding_status;
 pub(crate) mod schema;
+pub mod summaries;
 
+pub use capabilities::{
+    build_capability_fts_match, CapabilityLemma, CapabilityRecord, ScoredCapability,
+};
+pub use embedding_status::EmbeddingStatusRecord;
 use fragments::{
     append_fragment_filter, node_sync_fingerprint, FragmentVectorRow, NodeSyncFingerprint,
 };
@@ -24,7 +29,6 @@ pub use fragments::{
 };
 pub use graph_rows::{GraphEdgeRow, GraphSymbolRow};
 pub use summaries::{build_summary_fts_match, SummaryRecord};
-pub use embedding_status::EmbeddingStatusRecord;
 
 #[derive(Error, Debug)]
 pub enum VectorDbError {
@@ -797,8 +801,10 @@ impl GuidanceDb {
     /// Merge FTS segments left by bulk inserts. Call once per bulk pass;
     /// per-file callers would pay a whole-index merge each time.
     pub fn optimize_fts(&self) -> Result<(), VectorDbError> {
-        self.store
-            .execute("INSERT INTO fragments_fts(fragments_fts) VALUES('optimize')", &[])?;
+        self.store.execute(
+            "INSERT INTO fragments_fts(fragments_fts) VALUES('optimize')",
+            &[],
+        )?;
         Ok(())
     }
 
@@ -1190,7 +1196,8 @@ impl GuidanceDb {
     }
 
     /// Replace one file's identity rows (delete + insert in one
-    /// transaction). Write-only this milestone: readers stay on fragments.
+    /// transaction). One row per (file, symbol, scope); window chunks
+    /// of one entity collapse to the shared stable id.
     pub fn replace_symbols(&self, rows: &[SymbolRecord]) -> Result<usize, VectorDbError> {
         if rows.is_empty() {
             return Ok(0);
@@ -1207,18 +1214,14 @@ impl GuidanceDb {
                     fluent_db::query::execute(
                         tx,
                         "INSERT OR REPLACE INTO symbols
-                         (symbol_id, file_id, name, scope, signature,
-                          interface_hash, content_hash, range_json)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                         (symbol_id, file_id, name, scope, interface_hash)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
                         rusqlite::params![
                             row.symbol_id,
                             row.file_id,
                             row.name,
                             row.scope,
-                            row.signature,
                             row.interface_hash,
-                            row.content_hash,
-                            row.range_json,
                         ],
                     )?;
                 }
@@ -1232,11 +1235,32 @@ impl GuidanceDb {
         use crate::db::fragments::SymbolRecord;
         self.store
             .query_rows(
-                "SELECT symbol_id, file_id, name, scope, signature,
-                        interface_hash, content_hash, range_json
+                "SELECT symbol_id, file_id, name, scope, interface_hash
                  FROM symbols WHERE file_id = ?1 ORDER BY symbol_id",
                 params![file_id],
                 SymbolRecord::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Owning fragment for one symbol: id plus stored range JSON, first
+    /// in harvest order. `scope = None` matches any scope (the callers
+    /// route, where scope is unknown); `Some` matches exactly (the
+    /// summary join). `None` when no fragment declares the symbol.
+    pub fn symbol_fragment(
+        &self,
+        file_id: &str,
+        name: &str,
+        scope: Option<&str>,
+    ) -> Result<Option<(String, String)>, VectorDbError> {
+        self.store
+            .query_row(
+                "SELECT id, range_json FROM fragments
+                 WHERE file_id = ?1 AND symbol_name = ?2
+                 AND (?3 IS NULL OR COALESCE(scope, '') = ?3)
+                 ORDER BY rowid LIMIT 1",
+                rusqlite::params![file_id, name, scope],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(VectorDbError::from)
     }

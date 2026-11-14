@@ -13,6 +13,7 @@ use guidance_core::sync_engine::SyncEngine;
 use guidance_core::walk;
 use search_vector::GuidanceDb;
 
+mod benchmark;
 mod embed;
 mod index_cmd;
 mod mcp;
@@ -82,6 +83,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Answer a question from the index, with live snippets, citations,
+    /// ranked doc paragraphs, and a local-model synthesis unless declined.
+    /// Doc scope is the configured `docs_dir` plus the repo-root
+    /// `README.md`/`AGENTS.md` (`root_docs` in the config, on by
+    /// default; set it to false to restore docs-dir-only scope).
     Explain {
         query: String,
 
@@ -368,6 +374,36 @@ enum Commands {
         #[arg(short = 'w', long, default_value = ".")]
         workspace: String,
     },
+    /// Orchestrator-cost comparison for initial exploration: indexed
+    /// `explain` vs unindexed literal grep vs wholesale file loading.
+    /// Per query it measures wall time and estimated tokens per arm plus
+    /// file-level recall/precision against a golden relevant set, then
+    /// aggregates totals and token ratios. Deterministic, model-free.
+    Benchmark {
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
+
+        /// Tasks file (JSONL: `id`, `query`, `relevant` paths; extra
+        /// fields ignored). Absent: synthesize `where is <symbol>
+        /// defined` tasks from the index.
+        #[arg(long)]
+        tasks: Option<String>,
+
+        /// Task cap (both file and synthesized sources).
+        #[arg(long, default_value_t = 10)]
+        num: usize,
+
+        /// Fused-recall limit behind the explain arm (like `explain`).
+        #[arg(short = 'l', long, default_value_t = 10)]
+        limit: usize,
+
+        /// Output format: human or json (json is the agent handoff).
+        #[arg(long, default_value = "human")]
+        format: String,
+    },
     /// Summarize file and node comments in the background (opt-in;
     /// never on the query path). Writes sidecars plus the DB projection.
     Summarize {
@@ -379,6 +415,11 @@ enum Commands {
 
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
+
+        /// Also brief the doc set into the capabilities table (opt-in;
+        /// never on the query path). Runs instead of the summary pass.
+        #[arg(long, default_value_t = false)]
+        capabilities: bool,
     },
     Impact {
         /// Symbol name or file path whose impact to report.
@@ -484,7 +525,7 @@ enum Commands {
     /// journal negatives; store a calibration entry only when the
     /// precision/recall bars pass. Measurement is never an error.
     Calibrate {
-        /// Decision point (`dp.triage_residual`, `dp.route_query`).
+        /// Decision point (`dp.triage_residual`, `dp.route_query`, `dp.capability`).
         #[arg(long)]
         point: String,
         /// Gold corpus JSON (see `src/guidance/corpora/`).
@@ -680,11 +721,22 @@ async fn main() {
         }
         Some(Commands::ComponentGate { path }) => cmd_component_gate(path),
         Some(Commands::Seal { workspace }) => cmd_seal(workspace),
+        Some(Commands::Benchmark {
+            workspace,
+            db,
+            tasks,
+            num,
+            limit,
+            format,
+        }) => {
+            benchmark::cmd_benchmark(workspace, db, tasks.as_deref(), *num, *limit, format);
+        }
         Some(Commands::Summarize {
             workspace,
             json_dir,
             db,
-        }) => cmd_summarize(workspace, json_dir, db).await,
+            capabilities,
+        }) => cmd_summarize(workspace, json_dir, db, *capabilities).await,
         Some(Commands::Impact { target, workspace }) => cmd_impact(target, workspace),
         Some(Commands::QueuePost {
             id,
@@ -815,37 +867,109 @@ async fn cmd_explain(
     };
     let guidance_dir = guidance_path.to_string_lossy().into_owned();
     let _total = profile::Phase::new("explain.total");
-    // Fused recall reads the same fused index as `search --fuse`. Any
-    // recall failure degrades to empty, never a hard error — the empty
-    // state below is the stable contract.
+    // `callers of <symbol>` resolves through persisted call edges
+    // (hydrated graph, no re-parse), never keyword search: graph hits
+    // bypass the relevance gate (its prose-token bar does not apply to
+    // edge answers). Unknown symbols stay honestly empty.
+    let callers_symbol = search::parse_callers_query(query);
     let recall_phase = profile::Phase::new("explain.recall");
-    let hits = match search::fused_hits(query, workspace, db_path, limit) {
-        Ok(hits) => hits,
-        Err(error) => {
-            eprintln!("Warning: explain recall failed ({error})");
-            Vec::new()
+    let (hits, recall_empty, branch, hit_tags, dual_tags) = match callers_symbol {
+        Some(symbol) => {
+            let db_file = PathBuf::from(db_path);
+            let graph_hits = if !db_file.exists() {
+                Vec::new()
+            } else {
+                match search_vector::GuidanceDb::open(&db_file) {
+                    Ok(db) => match search::graph_callers_hits(&db, workspace, &symbol, limit) {
+                        Ok(hits) => hits,
+                        Err(error) => {
+                            eprintln!("Warning: explain callers failed ({error})");
+                            Vec::new()
+                        }
+                    },
+                    Err(error) => {
+                        eprintln!("Warning: explain recall failed (cannot open index at {db_path}: {error})");
+                        Vec::new()
+                    }
+                }
+            };
+            drop(recall_phase);
+            if graph_hits.is_empty() {
+                print!("## Explain: {query}\n\nNo results found.\n");
+                return;
+            }
+            let tags = vec![None; graph_hits.len()];
+            (
+                graph_hits,
+                false,
+                search::CapabilityBranch::default(),
+                tags,
+                Vec::new(),
+            )
+        }
+        None => {
+            // Fused recall reads the same fused index as `search --fuse`. Any
+            // recall failure degrades to empty, never a hard error — the empty
+            // state below is the stable contract.
+            let hits = match search::fused_hits(query, workspace, db_path, limit) {
+                Ok(hits) => hits,
+                Err(error) => {
+                    eprintln!("Warning: explain recall failed ({error})");
+                    Vec::new()
+                }
+            };
+            drop(recall_phase);
+
+            // Relevance gate: a hit survives on a structural match (query token
+            // in the symbol name) or two distinct query tokens in its text;
+            // prose-only single-token hits never render. File stems alone never
+            // qualify. Single-token queries keep everything (narrow intent). Gated-empty (hits
+            // existed, none relevant) is the honest empty state — no snippets,
+            // no citations, no model calls — instead of rendering junk for the
+            // answer to confabulate from. Deterministic: --no-llm behaves
+            // identically, and hermetic tests pin the narrow path byte-for-byte.
+            let gate_phase = profile::Phase::new("explain.relevance_gate");
+            let recall_empty = hits.is_empty();
+            let tokens = search::significant_query_tokens(query);
+            let hits = search::filter_relevant_hits(&hits, &tokens);
+            drop(gate_phase);
+            // Capability branch beside fused recall: code-thin relevant
+            // hits open SVO-ranked briefs (branch 1) plus one scoped
+            // code pull through the relaxed gate (branch 2); the merge
+            // keeps files rendering once with both provenances.
+            // Untriggered queries skip the branch entirely.
+            let branch_phase = profile::Phase::new("explain.capability");
+            let branch = search::capability_branch(query, workspace, db_path, &hits);
+            drop(branch_phase);
+            let (hits, hit_tags, dual_tags) =
+                search::merge_branch_hits(hits, &branch.pulls, Path::new(workspace));
+            (hits, recall_empty, branch, hit_tags, dual_tags)
         }
     };
-    drop(recall_phase);
+    if hits.is_empty() && branch.briefs.is_empty() {
+        if recall_empty {
+            print!("## Explain: {query}\n\nNo results found.\n");
+        } else {
+            print!("## Explain: {query}\n\nNo relevant results found.\n");
+        }
+        return;
+    }
 
     let cite_phase = profile::Phase::new("explain.citations");
     let cites = search::cite_hits(&hits, workspace);
     let mut rows = search::build_explain_rows(&hits, &cites);
     drop(cite_phase);
     // Freshness is labelled on the row, never hidden: files whose
-    // sidecar is missing or older than the source read stale.
+    // sidecar is missing or older than the source read stale. Row
+    // sources are src-root-relative, so matching resolves against the
+    // workspace plus every src dir (a bare workspace join misses src/
+    // layouts and --strict silently serves stale rows).
     let stale_phase = profile::Phase::new("explain.staleness");
-    let stale = search::stale_hit_sources(
-        &hits,
-        &guidance_dir,
-        &src_dirs_from_config(Path::new(workspace)),
-    );
+    let stale_src_dirs = src_dirs_from_config(Path::new(workspace));
+    let stale = search::stale_hit_sources(&hits, &guidance_dir, &stale_src_dirs);
     drop(stale_phase);
     for row in &mut rows {
-        if stale.iter().any(|path| {
-            row.source == *path
-                || PathBuf::from(workspace).join(&row.source).to_string_lossy() == *path
-        }) {
+        if search::explain_row_is_stale(&row.source, workspace, &stale_src_dirs, &stale) {
             row.cite.push_str(" (stale)");
         }
     }
@@ -867,7 +991,7 @@ async fn cmd_explain(
         }
     }
 
-    if rows.is_empty() {
+    if rows.is_empty() && branch.briefs.is_empty() {
         print!("## Explain: {query}\n\nNo results found.\n");
         return;
     }
@@ -880,10 +1004,12 @@ async fn cmd_explain(
     let snippets = search::top_snippets(&rows, &hits, &workspace_root);
     let citations: Vec<String> = search::cite_hits_live(&hits, &workspace_root);
 
-    // Doc paragraphs from the configured documentation tree, ranked by
-    // query-term overlap at query time (no index writes), then gated by
-    // the local decision model: only items at or above the floor are
-    // cited. No model call under --no-llm, so no docs either.
+    // Doc paragraphs from the configured documentation tree plus the
+    // repo-root orientation files (`README.md`, `AGENTS.md`, enabled
+    // by the `root_docs` config, on by default), ranked by query-term
+    // overlap at query time (no index writes), then gated by the local
+    // decision model: only items at or above the floor are cited. No
+    // model call under --no-llm, so no docs either.
     let mut docs = Vec::new();
     if !no_llm {
         let docs_dir = if cfg.docs_dir.is_absolute() {
@@ -891,21 +1017,89 @@ async fn cmd_explain(
         } else {
             workspace_root.join(&cfg.docs_dir)
         };
-        if docs_dir.is_dir() {
-            let ranked = search::rank_doc_paragraphs(
+        let include_roots = cfg.root_docs;
+        let roots_present = include_roots
+            && (workspace_root.join("README.md").is_file()
+                || workspace_root.join("AGENTS.md").is_file());
+        if docs_dir.is_dir() || roots_present {
+            let docs_opt = docs_dir.is_dir().then(|| docs_dir.clone());
+            let rank_phase = profile::Phase::new("explain.docs_rank");
+            // Ranked paragraphs are a pure function of (query tokens,
+            // doc contents): memoize per tree fingerprint so repeats
+            // skip the walk. Hits return byte-identical lists; a miss
+            // re-ranks and records. Cache file lives beside the index
+            // marker, never under an ingested root.
+            let cache_path = PathBuf::from(&guidance_dir).join(search::DOC_RANK_CACHE_FILE);
+            let mut rank_cache = search::DocRankCache::load(&cache_path);
+            let (ranked, cache_changed) = search::rank_doc_paragraphs_cached(
                 query,
-                &docs_dir,
+                docs_opt.as_deref(),
                 &workspace_root,
                 search::EXPLAIN_DOC_JUDGE_K,
+                include_roots,
+                &mut rank_cache,
             );
+            drop(rank_phase);
+            if cache_changed {
+                if let Err(error) = rank_cache.save(&cache_path) {
+                    eprintln!("Warning: docs rank cache not written: {error}");
+                }
+            }
             if !ranked.is_empty() && cfg.decision.enabled {
                 let mut client =
                     fluent_llm::client::LlmClient::new(&cfg.decision.base_url, &cfg.decision.model);
                 client.config.timeout_ms = cfg.decision.timeout_ms;
+                let judge_phase = profile::Phase::new("explain.docs_judge");
                 docs = search::judge_doc_paragraphs(query, &ranked, &client)
                     .into_iter()
                     .take(search::EXPLAIN_DOC_TOP_K)
                     .collect();
+                drop(judge_phase);
+            }
+        }
+    }
+
+    // Capability judge (shadow): the uncalibrated decision model scores
+    // each brief 0-100; scores tier the render but never filter or
+    // reorder it. Unjudged briefs (no model, transport failure,
+    // unparseable) render as `considered` in deterministic SVO order.
+    // Every score logs a shadow record for the judge corpus.
+    let mut scored_briefs: Vec<search::ScoredBrief> = branch
+        .briefs
+        .iter()
+        .map(|brief| search::ScoredBrief {
+            brief: brief.clone(),
+            score: None,
+        })
+        .collect();
+    if !no_llm && cfg.decision.enabled && !branch.briefs.is_empty() {
+        let mut client =
+            fluent_llm::client::LlmClient::new(&cfg.decision.base_url, &cfg.decision.model);
+        client.config.timeout_ms = cfg.decision.timeout_ms;
+        let judge_phase = profile::Phase::new("explain.capability_judge");
+        scored_briefs = search::judge_capability_briefs(query, &branch.briefs, &client);
+        drop(judge_phase);
+        for scored in &scored_briefs {
+            if let Some(score) = scored.score {
+                let tier = search::capability_tier_label(search::capability_tier(Some(score)));
+                let record = guidance_core::query::shadow::capability_judge_shadow(
+                    &scored.brief.id,
+                    score,
+                    tier,
+                    scored.brief.rank,
+                );
+                tracing::info!(
+                    target: "capability_shadow",
+                    point = record.point.as_str(),
+                    brief = scored.brief.id.as_str(),
+                    score = score,
+                    tier = tier,
+                    rank = scored.brief.rank,
+                    verdict = record.verdict.as_str(),
+                    would_have_acted = record.would_have_acted,
+                    brief_json = %search::scored_brief_json(scored),
+                    "capability judge shadow",
+                );
             }
         }
     }
@@ -913,14 +1107,26 @@ async fn cmd_explain(
     // Concise local-model answer over the snippets, unless declined.
     // No snippets means no evidence: skip the call instead of inviting
     // an invented answer. Transport failure degrades to a labelled
-    // unavailable line, never a hard error.
+    // unavailable line, never a hard error. Strong briefs join the
+    // synthesis context; considered briefs render without feeding it.
+    let strong_briefs: Vec<String> = scored_briefs
+        .iter()
+        .filter(|scored| search::capability_tier(scored.score) == search::CapabilityTier::Strong)
+        .map(|scored| scored.brief.purpose.clone())
+        .collect();
     let mut answer: Option<String> = None;
     if !no_llm && !snippets.is_empty() {
         let role = &cfg.generative;
         if role.enabled {
             let mut client = fluent_llm::client::LlmClient::new(&role.base_url, &role.model);
             client.config.timeout_ms = role.timeout_ms;
-            match search::answer_with_backend(query, &snippets, &client, &role.model) {
+            match search::answer_with_backend(
+                query,
+                &snippets,
+                &strong_briefs,
+                &client,
+                &role.model,
+            ) {
                 Ok(Some(text)) => answer = Some(text),
                 Ok(None) => answer = Some("(unavailable: empty answer)".to_string()),
                 Err(error) => {
@@ -937,6 +1143,35 @@ async fn cmd_explain(
     }
 
     let suggestions = search::suggest_drill_downs(&snippets, 3);
+    // Capability section lines plus per-snippet branch tags: base
+    // snippets read untagged, branch-2 files carry their brief's
+    // crate (dual-provenance files tag the single render).
+    let capabilities: Vec<(String, String)> = scored_briefs
+        .iter()
+        .map(|scored| {
+            let tier = search::capability_tier_label(search::capability_tier(scored.score));
+            (
+                format!(
+                    "[{tier}] {}/{} ({}#{})",
+                    scored.brief.crate_name,
+                    scored.brief.domain,
+                    scored.brief.source_path,
+                    scored.brief.anchor
+                ),
+                scored.brief.purpose.clone(),
+            )
+        })
+        .collect();
+    let mut file_tags: Vec<(String, String)> = dual_tags;
+    for (hit, tag) in hits.iter().zip(hit_tags.iter()) {
+        if let Some(crate_name) = tag {
+            file_tags.push((
+                hit.file.relative_path.clone(),
+                format!("via capability: {crate_name}"),
+            ));
+        }
+    }
+    let snippet_tags = search::tag_snippets_by_file(&snippets, &file_tags);
     print!(
         "{}",
         search::render_explain_full(
@@ -947,6 +1182,8 @@ async fn cmd_explain(
             &docs,
             answer.as_deref(),
             &suggestions,
+            &capabilities,
+            &snippet_tags,
         )
     );
 }
@@ -1001,10 +1238,32 @@ fn cmd_init(dir: &str) {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn cmd_summarize(workspace: &str, json_dir: &str, db_path: &str) {
+async fn cmd_summarize(workspace: &str, json_dir: &str, db_path: &str, capabilities: bool) {
     let workspace_path = PathBuf::from(workspace);
     let guidance_dir = PathBuf::from(json_dir);
     let cfg = load_project_config(&workspace_path);
+    if capabilities {
+        match summarize_cmd::run_capabilities(&guidance_dir, db_path, &workspace_path, &cfg, false)
+            .await
+        {
+            Ok(report) => {
+                println!(
+                    "Briefed {} chunks ({} cached) across {} docs: {} failed, {} unavailable, {} gaps.",
+                    report.briefed,
+                    report.cached,
+                    report.docs,
+                    report.failed,
+                    report.unavailable,
+                    report.gaps,
+                );
+            }
+            Err(error) => {
+                eprintln!("error: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
     match summarize_cmd::run_summarize(&guidance_dir, db_path, &src_dirs, &cfg, false).await {
         Ok(report) => {
@@ -1055,11 +1314,18 @@ async fn cmd_sync(
             eprintln!("error: file not found: {path}");
             std::process::exit(1);
         }
-        let source_dir = if source_path.is_dir() {
-            source_path.to_path_buf()
-        } else {
-            source_path.parent().unwrap_or(Path::new(".")).to_path_buf()
-        };
+        // Sidecars live in a parallel tree under the guidance dir, never
+        // beside their sources: resolve the file against the configured
+        // source roots so the staleness read and member-gen write agree
+        // on one `guidance_dir/src/<rel>.json` path.
+        let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
+        let source_dir = find_source_dir(source_path, &src_dirs).unwrap_or_else(|| {
+            if source_path.is_dir() {
+                source_path.to_path_buf()
+            } else {
+                source_path.parent().unwrap_or(Path::new(".")).to_path_buf()
+            }
+        });
         ensure_dir_or_panic(&guidance_dir);
 
         if source_path.is_dir() {
@@ -1072,13 +1338,10 @@ async fn cmd_sync(
                 );
             }
         } else {
-            let json_path = guidance_dir.join("src").join(format!(
-                "{}.json",
-                source_path
-                    .strip_prefix(&source_dir)
-                    .unwrap_or(source_path)
-                    .display()
-            ));
+            // Single shared mapping: the engine resolves exactly what
+            // the pipeline writes, so this read never disagrees with it.
+            let engine = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
+            let json_path = engine.sidecar_path(source_path);
             // Stored source hashes for the member-JSON clock gate (empty on
             // any failure — the gate then keeps mtime behavior).
             let stored_hash: Option<String> = search_vector::GuidanceDb::open(Path::new(db_path))
@@ -1182,11 +1445,7 @@ async fn cmd_sync(
                     if !fix_escalated.is_empty() {
                         let stuck: Vec<String> =
                             fix_escalated.iter().map(|esc| esc.file.clone()).collect();
-                        let parent = source_path
-                            .parent()
-                            .map(Path::to_path_buf)
-                            .unwrap_or_else(|| PathBuf::from("."));
-                        backdate_stuck(&guidance_dir, &[parent], &stuck);
+                        backdate_stuck(&guidance_dir, &src_dirs, &stuck);
                     }
                 }
                 Err(ResultPoolError::Inner(e)) => eprintln!("error generating {path}: {e}"),
@@ -1199,8 +1458,21 @@ async fn cmd_sync(
     } else if let Some(scan_dir) = scan {
         let scan_path = PathBuf::from(scan_dir);
         ensure_dir_or_panic(&guidance_dir);
-        let generated =
-            walk_and_gen_async(guidance_dir.clone(), scan_path, force, verbose, &[], None).await;
+        // The walk stays scoped to the scan path, but sidecars mirror
+        // their source root: a subdirectory scan still maps against the
+        // containing `src` dir, never against the scan path itself.
+        let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
+        let map_dir = find_source_dir(&scan_path, &src_dirs).unwrap_or_else(|| scan_path.clone());
+        let generated = walk_and_gen_async(
+            guidance_dir.clone(),
+            scan_path,
+            map_dir,
+            force,
+            verbose,
+            &[],
+            None,
+        )
+        .await;
         if verbose {
             println!("Scanned {scan_dir}: generated {generated} files");
         }
@@ -1299,6 +1571,7 @@ async fn cmd_sync(
                 let _phase = profile::Phase::new("sync.walk_and_gen");
                 generated += walk_and_gen_async(
                     guidance_dir.clone(),
+                    src_dir.clone(),
                     src_dir.clone(),
                     force,
                     verbose,
@@ -1452,6 +1725,14 @@ async fn refresh_search_index(
     };
     drop(ingest_phase);
     let _propagation = profile::Phase::new("index.propagation");
+    // Regen roots for sidecar mapping: ingest roots may be file-scoped
+    // (`sync --file`), but sidecars mirror source roots, so file entries
+    // fall back to the configured roots for the regen below.
+    let regen_roots: Vec<PathBuf> = if existing_dirs.iter().all(|dir| dir.is_dir()) {
+        existing_dirs.clone()
+    } else {
+        src_dirs_from_config(workspace_path)
+    };
     // Propagation: seeds (changed + deleted + pre-resolved
     // deleted-dependents) expand through the hydrated dependents
     // closure; affected files re-process via
@@ -1466,7 +1747,7 @@ async fn refresh_search_index(
             || !frag_stats.deleted.is_empty()
             || !frag_stats.deleted_dependents.is_empty())
     {
-        let roots: Vec<String> = existing_dirs
+        let roots: Vec<String> = regen_roots
             .iter()
             .map(|dir| dir.to_string_lossy().into_owned())
             .collect();
@@ -1527,7 +1808,7 @@ async fn refresh_search_index(
             // Shared backpressure with the walk above: regen waves stay
             // bounded however large the affected set is.
             let semaphore = Arc::new(tokio::sync::Semaphore::new(AST_SUBMIT_IN_FLIGHT));
-            let source_dirs = Arc::new(existing_dirs.clone());
+            let source_dirs = Arc::new(regen_roots.clone());
             let workspace = workspace_path.to_path_buf();
             let guidance = guidance_dir.to_path_buf();
             // Bound the wave: the pool has finite queue slots, and
@@ -1690,10 +1971,12 @@ fn backdate_stuck(guidance_dir: &Path, src_dirs: &[PathBuf], files: &[String]) -
     let mut backdated = 0usize;
     for file in files {
         let source = PathBuf::from(file);
-        let Some(src_dir) = src_dirs
-            .iter()
-            .find(|root| source.strip_prefix(root).is_ok())
-        else {
+        // Absolutize for the match: recorded paths may be relative
+        // while the walk that produced them absolutizes elsewhere.
+        let abs = guidance_core::sync_engine::absolute_or(source.clone());
+        let Some(src_dir) = src_dirs.iter().find(|root| {
+            abs.starts_with(&guidance_core::sync_engine::absolute_or((*root).clone()))
+        }) else {
             continue;
         };
         let engine = SyncEngine::new(guidance_dir.to_path_buf(), src_dir.clone());
@@ -1716,7 +1999,8 @@ fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
 
 async fn walk_and_gen_async(
     guidance_dir: PathBuf,
-    source_dir: PathBuf,
+    walk_dir: PathBuf,
+    map_dir: PathBuf,
     force: bool,
     verbose: bool,
     filter_exts: &[&str],
@@ -1729,7 +2013,7 @@ async fn walk_and_gen_async(
     };
     let mut files = Vec::new();
     let walk_phase = profile::Phase::new("sync.walk_and_gen.walk");
-    walk::walk_files(&source_dir, &exts, |p| files.push(p.to_path_buf()));
+    walk::walk_files(&walk_dir, &exts, |p| files.push(p.to_path_buf()));
     drop(walk_phase);
     if files.is_empty() {
         return 0;
@@ -1769,10 +2053,11 @@ async fn walk_and_gen_async(
         if guidance_core::offload::is_test_path(path) {
             continue;
         }
-        let rel = path.strip_prefix(&source_dir).unwrap_or(path);
-        let json_path = guidance_dir
-            .join("src")
-            .join(format!("{}.json", rel.display()));
+        let rel = path.strip_prefix(&map_dir).unwrap_or(path);
+        // Single shared mapping with the pipeline: staleness reads the
+        // same `guidance_dir/src/<rel>.json` the gen step writes.
+        let json_path =
+            guidance_core::sync_engine::guidance_json_path(path, &map_dir, &guidance_dir);
         let should_gen = force
             || match source_hashes
                 .get(path.to_string_lossy().as_ref())
@@ -1795,7 +2080,7 @@ async fn walk_and_gen_async(
 
         let pool = Arc::clone(pool.get_or_insert_with(runtime::ast_pool));
         let source_path = path.clone();
-        let src_dir = source_dir.clone();
+        let src_dir = map_dir.clone();
         let gd = guidance_dir.clone();
         let rel_str = rel.display().to_string();
         let semaphore = Arc::clone(&semaphore);
@@ -2058,6 +2343,7 @@ async fn start_watcher(
                                 generated += walk_and_gen_async(
                                     guidance_dir.clone(),
                                     src_dir.clone(),
+                                    src_dir.clone(),
                                     false,
                                     verbose,
                                     &[],
@@ -2218,13 +2504,16 @@ fn remove_sidecars(guidance_dir: &Path, src_dirs: &[PathBuf], prefix: &Path) {
 }
 
 fn find_source_dir(path: &Path, src_dirs: &[PathBuf]) -> Option<PathBuf> {
+    // Sidecar mapping roots are directories: absolutize both sides so a
+    // relative workspace (`-w .`) still prefixes absolute walks. A file
+    // entry never matches — it scopes an ingest, not a source tree.
+    let abs = guidance_core::sync_engine::absolute_or(path.to_path_buf());
     for dir in src_dirs {
-        if path.starts_with(dir) {
-            // A file entry scopes the sync, not the source tree: sidecar
-            // paths resolve against its parent.
-            if dir.is_file() {
-                return dir.parent().map(Path::to_path_buf);
-            }
+        if !dir.is_dir() {
+            continue;
+        }
+        let root = guidance_core::sync_engine::absolute_or(dir.clone());
+        if abs.starts_with(&root) {
             return Some(dir.clone());
         }
     }
@@ -2692,8 +2981,47 @@ fn cmd_calibrate(
                 std::process::exit(2);
             }
         }
+    } else if point == guidance_core::capability::CAPABILITY_POINT {
+        let nlp = guidance_core::query::ingest::default_en_pipeline();
+        match guidance_core::capability::calibrate_capability_corpus(
+            Path::new(dataset),
+            nlp.as_ref(),
+        ) {
+            Ok(report) => {
+                use guidance_core::capability::MIN_CAPABILITY_RECALL_AT_1;
+                let hits = (report.recall_at_1 * report.support as f64).round() as usize;
+                println!("point: {point}");
+                println!(
+                    "recall@1: {:.3} ({}/{})",
+                    report.recall_at_1, hits, report.support
+                );
+                println!(
+                    "control fires: {}/{}",
+                    report.control_fires, report.control_total
+                );
+                println!("bars: recall@1 >= {MIN_CAPABILITY_RECALL_AT_1:.3}, control fires == 0");
+                // Promotion is a separate explicit human decision (same
+                // rule as scorecard baselines): the command measures and
+                // reports, never stores — rank-only and shadow-only
+                // stand until a human records a promotion with reason.
+                if report.passed {
+                    println!(
+                        "verdict: PASS (bars met; promotion needs explicit human approval — nothing stored)"
+                    );
+                } else {
+                    println!("verdict: HELD (below the bars; nothing stored)");
+                }
+            }
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        }
     } else {
-        eprintln!("calibrate: unknown point {point} ({TRIAGE_POINT}, {ROUTE_POINT})");
+        eprintln!(
+            "calibrate: unknown point {point} ({TRIAGE_POINT}, {ROUTE_POINT}, {})",
+            guidance_core::capability::CAPABILITY_POINT
+        );
         std::process::exit(2);
     }
 }
@@ -2775,10 +3103,13 @@ fn cmd_verify(path: &str, workspace: &str, deep: bool) {
         std::process::exit(2);
     }
     let cfg = load_project_config(&workspace_path);
-    let gdir = workspace_path.join(".guidance");
+    let gdir = workspace_path.join(&cfg.guidance_dir);
     let mut engine_opt = None;
     for src_dir in src_dirs_from_config_with(&workspace_path, &cfg) {
-        if candidate.strip_prefix(&src_dir).is_ok() {
+        // Absolutize for the match: the candidate is absolute while the
+        // configured roots may be workspace-relative.
+        let root = guidance_core::sync_engine::absolute_or(src_dir.clone());
+        if candidate.strip_prefix(&root).is_ok() {
             engine_opt = Some(SyncEngine::new(gdir.clone(), src_dir));
             break;
         }
@@ -2903,7 +3234,99 @@ fn cmd_clean(json_dir: &str, db_path: &str) {
         });
         println!("  Removed generated JSON files");
     }
+    clean_build_cache(Path::new(json_dir));
     println!("Clean complete.");
+}
+
+/// Best-effort byte count under a directory (symlinks never
+/// followed; unreadable entries count zero, never abort the walk).
+fn dir_size_bytes(dir: &Path) -> u64 {
+    let mut bytes = 0u64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && !path.is_symlink() {
+                stack.push(path);
+            } else if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                bytes = bytes.saturating_add(meta.len());
+            }
+        }
+    }
+    bytes
+}
+
+/// Human byte count beside the exact figure (`1.5 KiB (1536 bytes)`).
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: &[&str] = &["bytes", "KiB", "MiB", "GiB", "TiB"];
+    let mut value = bytes as f64;
+    let mut unit = UNITS[0];
+    for next in &UNITS[1..] {
+        if value < 1024.0 {
+            break;
+        }
+        value /= 1024.0;
+        unit = next;
+    }
+    if unit == "bytes" {
+        format!("{bytes} bytes")
+    } else {
+        format!("{value:.1} {unit} ({bytes} bytes)")
+    }
+}
+
+/// Whether a supervised run holds the build cache: cargo serializes
+/// builds on an exclusive flock of `target/.cargo-lock`, which is
+/// exactly what the fix-wave clippy invocations hold mid-build. A
+/// missing lock file means no holder (nothing to contend with); any
+/// other lock error fails open to removal, whose own error path
+/// reports the skip.
+fn target_cache_held(target: &Path) -> bool {
+    let lock_path = target.join(".cargo-lock");
+    let Ok(file) = std::fs::File::open(&lock_path) else {
+        return false;
+    };
+    match fs2::FileExt::try_lock_exclusive(&file) {
+        Ok(()) => {
+            let _ = fs2::FileExt::unlock(&file);
+            false
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => true,
+        Err(_) => false,
+    }
+}
+
+/// Remove the regenerable clippy build cache under the guidance dir,
+/// reporting bytes reclaimed. Refuses with a message while a
+/// supervised run holds it (cargo target lock busy, or removal
+/// itself fails mid-race) — never touches sources, never hard-fails.
+fn clean_build_cache(guidance_dir: &Path) {
+    let target = guidance_dir.join("target");
+    if !target.exists() {
+        return;
+    }
+    if target_cache_held(&target) {
+        println!(
+            "  Skipped build cache {}: held by a supervised run (target lock busy).",
+            target.display()
+        );
+        return;
+    }
+    let bytes = dir_size_bytes(&target);
+    match std::fs::remove_dir_all(&target) {
+        Ok(()) => println!(
+            "  Removed build cache {} ({})",
+            target.display(),
+            format_bytes(bytes)
+        ),
+        Err(error) => println!(
+            "  Skipped build cache {}: {error} (a supervised run may hold it).",
+            target.display()
+        ),
+    }
 }
 
 fn cmd_check(workspace: &str, check_ready: bool, fixpoint: bool) {
@@ -3679,5 +4102,34 @@ mod tests {
                 .expect("mtime");
             assert!(mtime < now, "backdated below the read time");
         }
+    }
+
+    #[test]
+    fn find_source_dir_prefers_source_root_over_parent() {
+        // Sidecars mirror the source root, never the file's parent: a
+        // nested file resolves to `src`, so its sidecar keeps the
+        // parallel `sub/` segment instead of flattening beside sources.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(src.join("sub")).expect("mkdir");
+        let file = src.join("sub").join("nested.rs");
+        std::fs::write(&file, "pub fn nested() {}\n").expect("write");
+        let found = super::find_source_dir(&file, std::slice::from_ref(&src));
+        assert_eq!(found.as_deref(), Some(src.as_path()));
+    }
+
+    #[test]
+    fn find_source_dir_ignores_file_entries_and_misses_outside_roots() {
+        // A file entry scopes an ingest, not a source tree: it never
+        // resolves, and neither does a file outside every root.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).expect("mkdir");
+        let file = src.join("a.rs");
+        std::fs::write(&file, "pub fn a() {}\n").expect("write");
+        assert!(super::find_source_dir(&file, std::slice::from_ref(&file)).is_none());
+        let elsewhere = dir.path().join("other.rs");
+        std::fs::write(&elsewhere, "pub fn o() {}\n").expect("write");
+        assert!(super::find_source_dir(&elsewhere, std::slice::from_ref(&src)).is_none());
     }
 }

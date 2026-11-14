@@ -232,3 +232,38 @@ fn lemma_policy_inflections_collapse_with_pipeline() {
         "fallback must keep the surface form"
     );
 }
+
+fn median_duration(mut samples: Vec<std::time::Duration>) -> std::time::Duration {
+    samples.sort();
+    samples[samples.len() / 2]
+}
+
+#[test]
+fn nlp_build_timing_within_budget() {
+    // M9 timing harness: fixed work (three full pipeline builds),
+    // median reported for the calibration bars, generous budget
+    // assert (never flakes on noise; fails only on a real blowup).
+    // Component splits print for diagnosis; only the total is gated.
+    let mut totals = Vec::new();
+    for _ in 0..3 {
+        let start = std::time::Instant::now();
+        let pipeline = spacy_rs::pipeline::NlpPipeline::en_default().expect("pipeline");
+        totals.push(start.elapsed());
+        drop(pipeline);
+    }
+    let median = median_duration(totals);
+    eprintln!("nlp_build median (3 builds): {median:?}");
+    let vocab_start = std::time::Instant::now();
+    let vocab = std::sync::Arc::new(spacy_rs::vocab::Vocab::new(
+        spacy_rs::lang::en::lexicon_config(),
+    ));
+    let vocab_elapsed = vocab_start.elapsed();
+    let tok_start = std::time::Instant::now();
+    let _tokenizer = spacy_rs::lang::en::tokenizer(vocab).expect("tokenizer");
+    let tok_elapsed = tok_start.elapsed();
+    eprintln!("nlp_build split: vocab={vocab_elapsed:?} tokenizer={tok_elapsed:?}");
+    assert!(
+        median < std::time::Duration::from_secs(10),
+        "pipeline build blew the budget: {median:?}"
+    );
+}

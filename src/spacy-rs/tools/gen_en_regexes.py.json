@@ -1,0 +1,52 @@
+GHDR1 src=src/spacy-rs/tools/gen_en_regexes.py	body=22d1b84a4ee103f90a81c1e66aea94e9bb3ae1b214e230c1c5078ed0603090c1	srchash=9123c52caa500c867dd5ece184593cb8202c7d664cb3c95e38e9081c21414d9c	comp=parser=dd0d357a727fbcefd00167a1eaf4a59bdd464420df60daadcccf14f2d640339e,policy.mechanical=01f3f0758e27dd1f450184bbbbb0b060676c5c442cbb15866230c919dfc65807,policy.scope=d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab,schema=a4b6064b23dbaa408b171b0fed5628afa267ef40a4f5a806ae2405e85fa6f1c4
+{
+  "comment": "!/usr/bin/env python3",
+  "members": [
+    {
+      "is_pub": true,
+      "item_hash": "ddedb52749d107dc52415d87123f93b7c78d41149867440bbfd19f340ac8bd53",
+      "match_hash": "05b849accbb9e4c7401526cb6f6e60d96137fbd961f73ac1f2123c3576d16e5c",
+      "name": "load",
+      "range_hash": "e8f68ecc6a3772caaeab4ef165ae1a80adfe167d87f8691302a5ffc4be3624e8",
+      "signature": "def load()",
+      "span": [
+        955,
+        1172
+      ],
+      "type": "fn_decl"
+    },
+    {
+      "is_pub": true,
+      "item_hash": "5abae22d632ed23189b981e50d8869c5778a142bad90dddb5e6933557a437290",
+      "match_hash": "a5107448c92412c8b5e98ed9472861ed789990986dd0ef812076eefcd08d1577",
+      "name": "translate_to_fancy_regex",
+      "range_hash": "e46c85e7b629d9f5f83aa5b577022a4ea8daac8ce5fd135a39cd25fb22b27db9",
+      "returns": "str",
+      "signature": "def translate_to_fancy_regex() -> str",
+      "span": [
+        1175,
+        2085
+      ],
+      "type": "fn_decl"
+    },
+    {
+      "is_pub": true,
+      "item_hash": "89918fd44130841aeaa0a6966a5d13703461da3a59371e35524974e296add54a",
+      "match_hash": "27201694db1df2ccb24aa7a75e1aed52bdd63265065712a6a093f9e6145ae733",
+      "name": "main",
+      "range_hash": "c53c444f89d985897fbbb190ef83c69ecd44642dc2bcb3efbd4e845df2d0e6fc",
+      "returns": "None",
+      "signature": "def main() -> None",
+      "span": [
+        2088,
+        9156
+      ],
+      "type": "fn_decl"
+    }
+  ],
+  "meta": {
+    "language": "python",
+    "module": ".opt.src.rust.monorepo...src.spacy-rs.tools.gen_en_regexes",
+    "source": "src/spacy-rs/tools/gen_en_regexes.py"
+  }
+}

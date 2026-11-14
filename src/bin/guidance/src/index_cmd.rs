@@ -56,7 +56,44 @@ pub fn run_index(
         return Err(format!("path not found: {}", target.display()));
     }
     common_core::ensure_dir_or_panic(&guidance_dir);
-    let mut engine = SyncEngine::new(guidance_dir, workspace_path);
+    // Sidecars mirror their source root: resolve the target against the
+    // configured source roots, so a workspace-root engine never nests
+    // `src/` twice (`guidance_dir/src/src/...`).
+    let cfg = guidance_core::config::load_config(&workspace_path).unwrap_or_default();
+    let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
+        vec![workspace_path.clone()]
+    } else {
+        cfg.src_dirs
+            .iter()
+            .map(|dir| workspace_path.join(dir))
+            .collect()
+    };
+    if target == workspace_path {
+        let mut generated = 0usize;
+        let mut failed = 0usize;
+        for src_dir in &src_dirs {
+            if !src_dir.is_dir() {
+                continue;
+            }
+            let mut engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
+            let (gen, fail) = engine
+                .gen_scoped(src_dir)
+                .map_err(|error| format!("index failed: {error}"))?;
+            generated += gen;
+            failed += fail;
+        }
+        return Ok((generated, failed));
+    }
+    let root = src_dirs
+        .iter()
+        .find(|dir| {
+            target.starts_with(dir)
+                || guidance_core::sync_engine::absolute_or(target.clone())
+                    .starts_with(guidance_core::sync_engine::absolute_or((*dir).clone()))
+        })
+        .cloned()
+        .unwrap_or_else(|| workspace_path.clone());
+    let mut engine = SyncEngine::new(guidance_dir, root);
     engine
         .gen_scoped(&target)
         .map_err(|error| format!("index failed: {error}"))

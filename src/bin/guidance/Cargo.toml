@@ -61,6 +61,10 @@ path = "tests/truth_cli.rs"
 name = "summarize_cli"
 path = "tests/summarize_cli.rs"
 
+[[test]]
+name = "benchmark_cli"
+path = "tests/benchmark_cli.rs"
+
 [dependencies]
 common-core = { path = "../../common-core" }
 guidance-core = { path = "../../guidance" }
@@ -71,11 +75,13 @@ fluent-concurrency = { path = "../../fluent-concurrency" }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+spacy-rs = { path = "../../spacy-rs" }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros"] }
 tracing = { workspace = true }
 bon = { workspace = true }
 thiserror = { workspace = true }
 notify = { workspace = true }
+fs2 = { workspace = true }
 tracing-subscriber = "0.3"
 time = { workspace = true, features = ["formatting", "parsing"] }
 ptree = "0.5"

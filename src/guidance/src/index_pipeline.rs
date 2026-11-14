@@ -38,7 +38,7 @@ pub const INDEX_WAVE_FILES: usize = 64;
 /// Fragment-index schema version enforced by the `SyncEngine` gate.
 /// v5 stores item chunks from both writers: old whole-file live rows are
 /// refused and rebuilt from sidecars.
-pub const INDEX_SCHEMA_VERSION: u32 = 5;
+pub const INDEX_SCHEMA_VERSION: u32 = 6;
 /// Default cross-file embed packing size.
 pub const INDEX_EMBED_BATCH: usize = 32;
 /// Transient embed retry budget (zvec C.4: 3×500ms).

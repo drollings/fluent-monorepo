@@ -1,0 +1,25 @@
+GHDR1 src=src/spacy-rs/tools/gen_golden_corpus.py	body=6d90d01714024aead18eb12103deb8ed9ea57355800cc41e6351d52d6a2a5c8a	srchash=a9e055b06a0bbe2227acdb09675e2c117cb3f2cdebf64608571a0023b4caec97	comp=parser=dd0d357a727fbcefd00167a1eaf4a59bdd464420df60daadcccf14f2d640339e,policy.mechanical=01f3f0758e27dd1f450184bbbbb0b060676c5c442cbb15866230c919dfc65807,policy.scope=d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab,schema=a4b6064b23dbaa408b171b0fed5628afa267ef40a4f5a806ae2405e85fa6f1c4
+{
+  "comment": "!/usr/bin/env python3",
+  "members": [
+    {
+      "is_pub": true,
+      "item_hash": "0643dcf9d654ff8bfff9f33e9dab3edb9d5c88213ead90d8c01e03e482578643",
+      "match_hash": "27201694db1df2ccb24aa7a75e1aed52bdd63265065712a6a093f9e6145ae733",
+      "name": "main",
+      "range_hash": "105c63c9f9de134337c803975bed6344007e87e237125537bf54b8b0d192501b",
+      "returns": "None",
+      "signature": "def main() -> None",
+      "span": [
+        7570,
+        8250
+      ],
+      "type": "fn_decl"
+    }
+  ],
+  "meta": {
+    "language": "python",
+    "module": ".opt.src.rust.monorepo...src.spacy-rs.tools.gen_golden_corpus",
+    "source": "src/spacy-rs/tools/gen_golden_corpus.py"
+  }
+}

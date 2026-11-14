@@ -135,6 +135,13 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub capabilities_dir: Option<PathBuf>,
 
+    /// Include globs for the capability-brief pass (empty selects the
+    /// built-in doc set: root orientation files, `doc/**/*.md`, crate
+    /// READMEs, manifests).
+    #[serde(default)]
+    #[builder(default)]
+    pub capability_docs: Vec<String>,
+
     #[serde(default)]
     #[builder(default)]
     pub src_dirs: Vec<PathBuf>,
@@ -220,6 +227,12 @@ pub struct ProjectConfig {
     #[serde(default = "default_docs_dir")]
     #[builder(default = default_docs_dir())]
     pub docs_dir: PathBuf,
+
+    /// Include repo-root `README.md` and `AGENTS.md` in explain's doc
+    /// scope alongside `docs_dir`. Opt out with `"root_docs": false`.
+    #[serde(default = "default_root_docs")]
+    #[builder(default = default_root_docs())]
+    pub root_docs: bool,
 }
 
 fn default_guidance_dir() -> PathBuf {
@@ -228,6 +241,10 @@ fn default_guidance_dir() -> PathBuf {
 
 fn default_docs_dir() -> PathBuf {
     PathBuf::from("doc")
+}
+
+fn default_root_docs() -> bool {
+    true
 }
 
 impl Default for ProjectConfig {
@@ -242,6 +259,7 @@ impl Default for ProjectConfig {
             embedding_model: None,
             embedding_dims: None,
             capabilities_dir: None,
+            capability_docs: vec![],
             src_dirs: vec![],
             providers: HashMap::new(),
             model_default: None,
@@ -260,6 +278,7 @@ impl Default for ProjectConfig {
             lanes: crate::model_lanes::LaneConfig::default(),
             policy: crate::policy::MaintenancePolicy::default(),
             docs_dir: default_docs_dir(),
+            root_docs: default_root_docs(),
         }
     }
 }
@@ -358,6 +377,10 @@ pub fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 #[path = "../tests/model_roles.rs"]
 mod model_roles_tests;
+
+#[cfg(test)]
+#[path = "../tests/config_extra.rs"]
+mod config_extra_tests;
 
 #[cfg(test)]
 mod tests {

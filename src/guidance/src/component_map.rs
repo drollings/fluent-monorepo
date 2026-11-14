@@ -280,6 +280,18 @@ pub struct ComponentGate {
     pub gate: String,
 }
 
+/// Longest-registered prefix for one package (branch-2 scope glob
+/// root). `None` when the package maps to nothing.
+#[must_use]
+/// Longest-registered prefix for one package (branch-2 scope glob
+/// root). `None` when the package maps to nothing.
+pub fn prefix_for_package(package: &str) -> Option<&'static str> {
+    ENTRIES
+        .iter()
+        .find(|entry| entry.package == package)
+        .map(|entry| entry.prefix)
+}
+
 /// Resolve `path` (workspace-relative, leading `./` tolerated) to its
 /// narrowest gate by longest boundary-matching prefix.
 #[must_use]

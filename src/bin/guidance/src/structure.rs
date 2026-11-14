@@ -115,7 +115,13 @@ fn annotate_file(rel_path: &str, name: &str, json_dir: &Path, skills: &[String])
     let mut desc = String::new();
     let mut file_skills: Vec<String> = Vec::new();
 
-    let json_path = json_dir.join("src").join(rel_path).with_extension("json");
+    // Sidecars mirror the `./src` tree under the guidance dir: a
+    // workspace-relative `src/<rel>` reads from
+    // `<guidance>/src/<rel>.rs.json`. The suffix is appended, never a
+    // replaced extension — `with_extension` would probe `<stem>.json`,
+    // which the writer never creates.
+    let rel = rel_path.strip_prefix("src/").unwrap_or(rel_path);
+    let json_path = json_dir.join("src").join(format!("{rel}.json"));
     if let Some(doc) = load_guidance(&json_path).ok().flatten() {
         let summary = source_summary(&doc);
         if !summary.is_empty() {
@@ -361,7 +367,8 @@ mod tests {
     }
 
     fn write_doc(json_dir: &Path, rel_path: &str, comment: Option<&str>, skills: &[&str]) {
-        let json_path = json_dir.join("src").join(rel_path).with_extension("json");
+        let rel = rel_path.strip_prefix("src/").unwrap_or(rel_path);
+        let json_path = json_dir.join("src").join(format!("{rel}.json"));
         std::fs::create_dir_all(json_path.parent().expect("parent")).expect("mkdir");
         let skills_json: Vec<serde_json::Value> = skills
             .iter()

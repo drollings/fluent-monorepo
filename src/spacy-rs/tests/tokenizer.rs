@@ -245,3 +245,60 @@ fn faster_heuristics_off_keeps_public_output() {
         );
     }
 }
+
+#[test]
+fn tokenizer_build_timing_split() {
+    use std::time::{Duration, Instant};
+    let mut totals = Vec::new();
+    for _ in 0..3 {
+        let start = Instant::now();
+        let _ = en_tokenizer();
+        totals.push(start.elapsed());
+    }
+    totals.sort();
+    eprintln!("tokenizer build median (3 builds): {:?}", totals[1]);
+    assert!(
+        totals[1] < Duration::from_secs(30),
+        "tokenizer build blew the budget: {:?}",
+        totals[1]
+    );
+}
+
+#[test]
+fn rule_ingest_matches_full_tokenization() {
+    // Build-only fast paths pinned to the full decision: the affix
+    // bypass agrees with the whole-regex check on every frozen rule,
+    // and the identity shortcut yields exactly the full
+    // tokenization's orths. The rule set is frozen, so exhaustive
+    // agreement here is proof for every build.
+    let t = en_tokenizer();
+    let mut bypassed = 0usize;
+    let mut full = 0usize;
+    for (key, _) in crate::lang::en::exceptions::RULES {
+        let guarded = t.key_has_affix(key).expect("guarded probe");
+        let unguarded = t.find_prefix(key).expect("prefix") != 0
+            || t.find_infix(key)
+                .expect("infix")
+                .is_some_and(|v| !v.is_empty())
+            || t.find_suffix(key).expect("suffix") != 0;
+        assert_eq!(guarded, unguarded, "affix decision for rule {key:?}");
+        if !key.contains(' ') && !guarded {
+            full += 1;
+            let orths: Vec<u64> = t
+                .tokenize_affixes(key, crate::tokenizer::SpecialCaseMode::Disabled)
+                .expect("affixes")
+                .tokens()
+                .iter()
+                .map(|tok| tok.lexeme.orth)
+                .collect();
+            assert_eq!(
+                orths,
+                vec![t.lex(key).orth],
+                "identity shortcut for rule {key:?}"
+            );
+        } else {
+            bypassed += 1;
+        }
+    }
+    eprintln!("rule fast paths: {full} identity, {bypassed} full tokenize");
+}

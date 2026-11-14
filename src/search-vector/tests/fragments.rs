@@ -73,17 +73,13 @@ fn fts_finds_comment_only_terms_in_doc() {
     )
     .expect("upsert");
     let filter = FragmentFilter::default();
-    let hits = db
-        .search_fts("total", 10, &filter)
-        .expect("search");
+    let hits = db.search_fts("total", 10, &filter).expect("search");
     assert!(
         hits.iter().any(|h| h.id == "entity-doc"),
         "comment-only term must find the row"
     );
     // Body and symbol queries are unchanged.
-    let hits = db
-        .search_fts("Widget", 10, &filter)
-        .expect("search");
+    let hits = db.search_fts("Widget", 10, &filter).expect("search");
     assert!(hits.iter().any(|h| h.id == "entity-doc"));
 }
 
@@ -94,7 +90,12 @@ fn fts_doc_terms_do_not_leak_across_fragments() {
     db.upsert_fragments(
         &file_a(),
         &[
-            frag_with_doc("entity-doc", "Widget", "pub struct Widget {}", "ZebraStripe note"),
+            frag_with_doc(
+                "entity-doc",
+                "Widget",
+                "pub struct Widget {}",
+                "ZebraStripe note",
+            ),
             frag("entity-plain", None, "Gadget", "pub struct Gadget {}"),
         ],
         &[],
@@ -111,7 +112,12 @@ fn fts_doc_terms_do_not_leak_across_fragments() {
 fn fts_cjk_content_match_survives_doc_column() {
     // The CJK bigram route is unchanged by the `doc` column.
     let db = GuidanceDb::open_in_memory().expect("db");
-    let mut f = frag_with_doc("entity-cjk", "Segment", "日本語の検索テスト", "Chinese comment");
+    let mut f = frag_with_doc(
+        "entity-cjk",
+        "Segment",
+        "日本語の検索テスト",
+        "Chinese comment",
+    );
     f.cjk_text = "日本 本語 語の の検 検索 索テ テス スト".to_string();
     db.upsert_fragments(&file_a(), &[f], &[]).expect("upsert");
     let hits = db
@@ -552,10 +558,12 @@ fn embedding_status_round_trips_per_file() {
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0].fragment_id, "entity-a#1");
     assert_eq!(failed[0].embedder, "model-x:4");
-    assert!(db
-        .files_needing_embed_backfill("model-x:4")
-        .expect("backfill")
-        .is_empty(), "same embedder never backfills");
+    assert!(
+        db.files_needing_embed_backfill("model-x:4")
+            .expect("backfill")
+            .is_empty(),
+        "same embedder never backfills"
+    );
     let uuid = file_b();
     let mut other = frag("entity-b", None, "Beta", "x");
     other.file_id = "file-b".to_string();
@@ -569,7 +577,8 @@ fn embedding_status_round_trips_per_file() {
     }])
     .expect("replace");
     assert_eq!(
-        db.files_needing_embed_backfill("model-x:4").expect("backfill"),
+        db.files_needing_embed_backfill("model-x:4")
+            .expect("backfill"),
         vec!["file-b".to_string()],
         "rotated embedders backfill even when ready"
     );
@@ -588,8 +597,12 @@ fn fragment_counts_cover_embedded_and_plain_rows() {
     assert_eq!(db.fragment_count().expect("count"), 0);
     let mut with_vec = frag("vec-row", None, "VecRow", "vector row");
     with_vec.embedding = Some(vec![0.5, -0.5]);
-    db.upsert_fragments(&file_a(), &[frag("plain-row", None, "Plain", "plain"), with_vec], &[])
-        .expect("upsert");
+    db.upsert_fragments(
+        &file_a(),
+        &[frag("plain-row", None, "Plain", "plain"), with_vec],
+        &[],
+    )
+    .expect("upsert");
     assert_eq!(db.fragment_count().expect("count"), 2);
     assert_eq!(db.embedded_fragment_count().expect("embedded"), 1);
 }
@@ -599,7 +612,12 @@ fn old_lemma_table_migrates_to_dictionary_on_open() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("mig.db");
     let db = GuidanceDb::open(&path).expect("open");
-    db.upsert_fragments(&file_a(), &[frag("entity-a", None, "Alpha", "alpha body")], &[]).expect("upsert");
+    db.upsert_fragments(
+        &file_a(),
+        &[frag("entity-a", None, "Alpha", "alpha body")],
+        &[],
+    )
+    .expect("upsert");
     db.store
         .with_conn(|conn| {
             conn.execute_batch(

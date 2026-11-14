@@ -13,7 +13,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Taxonomy groundedness for concept search (task-value axis, not producer
 /// confidence): whether a member name resolves to a registered concept.
-/// 
+///
 /// Pure string-in/verdict-out over the shared primitives —
 /// `search_vector::tokens::split_tokens` (tokenization, no second splitter),
 /// `guidance_ontology::normalize::{token_variants, lemma_to_curies}` (plural
@@ -91,7 +91,7 @@ pub fn grounded_first(names: Vec<String>, store: &dyn fluent_concept::ConceptSto
 /// `extract_triples` → `build_plausibility_inputs` → `score_plausibility`
 /// chain). Pure evidence — NOT wired into any backend here; any gating use
 /// needs its own calibration first.
-/// 
+///
 /// Fail-open contract: `None` NLP, NLP error, zero triples, and `Loading`
 /// store all yield `None` (today's behavior preserved — absence of evidence
 /// is not evidence). All three inputs are caller-owned parameters (NLP +

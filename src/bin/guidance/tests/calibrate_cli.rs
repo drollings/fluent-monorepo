@@ -99,3 +99,45 @@ fn calibrate_rejects_unknown_points() {
         "unknown point is usage error: {out:?}"
     );
 }
+
+#[test]
+fn calibrate_capability_measures_without_storing() {
+    // M15 dry-run (no endpoint): the golden corpus measures SVO-rank
+    // recall@1 plus out-of-corpus controls. The command reports and
+    // holds — promotion is a separate explicit human decision, so no
+    // entry is ever stored here.
+    let dir = workspace();
+    let corpus = dir.path().join("capability.json");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../guidance/corpora/capability_seed.json"),
+        &corpus,
+    )
+    .expect("stage corpus");
+    let out = run(
+        dir.path(),
+        &[
+            "calibrate",
+            "--point",
+            "dp.capability",
+            "--dataset",
+            corpus.to_str().unwrap(),
+            "--state-dir",
+            dir.path().join("state").to_str().unwrap(),
+            "--journal-dir",
+            dir.path().join("journal").to_str().unwrap(),
+        ],
+    );
+    let text = stdout(&out);
+    assert!(
+        out.status.success(),
+        "measurement is not an error: {out:?}\n{text}"
+    );
+    assert!(text.contains("recall@1"), "{text}");
+    assert!(text.contains("control fires"), "{text}");
+    assert!(text.contains("nothing stored"), "never auto-stores: {text}");
+    assert!(
+        !dir.path().join("state/calibration.json").exists(),
+        "promotion needs human approval: nothing stored"
+    );
+}

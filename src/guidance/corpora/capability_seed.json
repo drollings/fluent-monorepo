@@ -1,0 +1,62 @@
+{
+  "briefs": [
+    {
+      "id": "doc/router/guide.md#guide",
+      "purpose": "Routes requests onward.",
+      "crate": "fluent-router",
+      "domain": "router",
+      "source_path": "doc/router/guide.md",
+      "anchor": "guide"
+    },
+    {
+      "id": "doc/router/dispatch.md#table",
+      "purpose": "Dispatches calls through the table.",
+      "crate": "fluent-router",
+      "domain": "router",
+      "source_path": "doc/router/dispatch.md",
+      "anchor": "table"
+    },
+    {
+      "id": "doc/guidance/recall.md#recall",
+      "purpose": "Indexes fragments for recall.",
+      "crate": "guidance-core",
+      "domain": "guidance",
+      "source_path": "doc/guidance/recall.md",
+      "anchor": "recall"
+    },
+    {
+      "id": "doc/guidance/sync.md#sync",
+      "purpose": "Synchronizes the fragment index.",
+      "crate": "guidance-core",
+      "domain": "guidance",
+      "source_path": "doc/guidance/sync.md",
+      "anchor": "sync"
+    },
+    {
+      "id": "doc/misc/tools.md#tools",
+      "purpose": "Lists helper tooling notes.",
+      "crate": "unknown",
+      "domain": "misc",
+      "source_path": "doc/misc/tools.md",
+      "anchor": "tools"
+    },
+    {
+      "id": "doc/concept/store.md#ground",
+      "purpose": "Grounds names in the store.",
+      "crate": "fluent-concept",
+      "domain": "concept",
+      "source_path": "doc/concept/store.md",
+      "anchor": "ground"
+    }
+  ],
+  "cases": [
+    { "query": "how are requests routed onward", "relevant": ["doc/router/guide.md#guide"] },
+    { "query": "where are calls dispatched", "relevant": ["doc/router/dispatch.md#table"] },
+    { "query": "how are fragments indexed", "relevant": ["doc/guidance/recall.md#recall"] },
+    { "query": "how is the fragment index synchronized", "relevant": ["doc/guidance/sync.md#sync"] },
+    { "query": "what tooling notes exist", "relevant": ["doc/misc/tools.md#tools"] },
+    { "query": "how are names grounded", "relevant": ["doc/concept/store.md#ground"] },
+    { "query": "how do I bake sourdough bread", "relevant": [], "control": true },
+    { "query": "zxqy florp wobble", "relevant": [], "control": true }
+  ]
+}

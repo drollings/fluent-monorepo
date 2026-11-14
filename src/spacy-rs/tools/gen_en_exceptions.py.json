@@ -1,0 +1,9 @@
+GHDR1 src=src/spacy-rs/tools/gen_en_exceptions.py	body=cd2c6d8c8ed67447faaf623567e1273e3446aee579615507d1b3cdcdfb191d71	srchash=3a2c485b238974b5faac859127840f1a27fef129ff9d3f6f83ceceec25ac3fd6	comp=parser=dd0d357a727fbcefd00167a1eaf4a59bdd464420df60daadcccf14f2d640339e,policy.mechanical=01f3f0758e27dd1f450184bbbbb0b060676c5c442cbb15866230c919dfc65807,policy.scope=d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab,schema=a4b6064b23dbaa408b171b0fed5628afa267ef40a4f5a806ae2405e85fa6f1c4
+{
+  "comment": "!/usr/bin/env python3",
+  "meta": {
+    "language": "python",
+    "module": ".opt.src.rust.monorepo...src.spacy-rs.tools.gen_en_exceptions",
+    "source": "src/spacy-rs/tools/gen_en_exceptions.py"
+  }
+}

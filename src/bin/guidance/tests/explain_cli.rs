@@ -286,7 +286,10 @@ fn explain_citations_follow_live_edits() {
         "// header\n// more\n/// Adds one.\npub fn alpha() -> u64 {\n    1\n}\n",
     )
     .expect("edit without re-sync");
-    let out = run(dir, &explain_args(&ws, &json_dir, &db, "adds", &["--no-llm"]));
+    let out = run(
+        dir,
+        &explain_args(&ws, &json_dir, &db, "adds", &["--no-llm"]),
+    );
     assert!(out.status.success(), "explain: {out:?}");
     let text = stdout(&out);
     let cites = text
@@ -311,11 +314,650 @@ fn explain_no_llm_omits_answer_and_docs() {
     let (temp, ws, json_dir, db) = explain_fixture();
     let dir = temp.path();
     sync(dir, &db, false);
-    let out = run(dir, &explain_args(&ws, &json_dir, &db, "adds", &["--no-llm"]));
+    let out = run(
+        dir,
+        &explain_args(&ws, &json_dir, &db, "adds", &["--no-llm"]),
+    );
     assert!(out.status.success(), "explain: {out:?}");
     let text = stdout(&out);
     assert!(!text.contains("### Answer"), "{text}");
     assert!(!text.contains("### From the docs"), "{text}");
     assert!(text.contains("### Top matches"), "{text}");
     assert!(text.contains("### Citations"), "{text}");
+}
+
+/// `src/`-layout fixture: sources live under `src/` with a config naming
+/// it, so stored row sources are src-root-relative (`live.rs`).
+fn src_layout_fixture() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(dir.path().join("src")).expect("mkdir src");
+    std::fs::write(
+        dir.path().join("src").join("live.rs"),
+        "/// Live.\npub fn live_fn() -> u32 {\n    41\n}\n",
+    )
+    .expect("write");
+    std::fs::create_dir(dir.path().join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    dir
+}
+
+#[test]
+fn explain_snippet_serves_live_lines_after_unsynced_edit() {
+    // Stored ranges must never surface as current: inserting comment
+    // lines above the symbol without re-syncing moves the live span to
+    // 5-7 while the stored span stays 2-4. Regression: the snippet
+    // resolver joined the src-root-relative row source to the workspace
+    // root, missed the file, and served the stale stored slice (lines
+    // 2-4 of the live bytes) under the live 5-7 header.
+    let dir = src_layout_fixture();
+    sync(dir.path(), ".explain.db", false);
+    std::fs::write(
+        dir.path().join("src").join("live.rs"),
+        "/// Live.\n// a\n// b\n// c\npub fn live_fn() -> u32 {\n    41\n}\n",
+    )
+    .expect("edit");
+    let root = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance");
+    let json_dir = json_dir.to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db");
+    let db = db.to_str().unwrap().to_string();
+    let out = run(
+        dir.path(),
+        &[
+            "explain",
+            "what does live_fn do",
+            "--workspace",
+            &root,
+            "--guidance",
+            &json_dir,
+            "--db",
+            &db,
+            "--no-llm",
+        ],
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("live.rs:5-7"), "live header: {text}");
+    assert!(
+        text.contains("```rust\npub fn live_fn() -> u32 {\n    41\n}\n```"),
+        "live_fn snippet serves live lines, not the stored slice: {text}"
+    );
+}
+
+#[test]
+fn explain_drops_prose_only_single_token_hits() {
+    // Relevance gate: a hit matching exactly one query token in prose —
+    // no symbol or file-stem match — must not render. Today it fills Top
+    // matches and Citations, and the answer confabulates from it.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(dir.path().join("src")).expect("mkdir src");
+    std::fs::write(
+        dir.path().join("src").join("real.rs"),
+        "pub fn major_unit() -> u64 {\n    1\n}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        dir.path().join("src").join("decoy.rs"),
+        "/// major overhaul planned\npub fn overhaul() -> u64 {\n    2\n}\n",
+    )
+    .expect("write");
+    std::fs::create_dir(dir.path().join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    sync(dir.path(), ".explain.db", false);
+    let root = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance");
+    let json_dir = json_dir.to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db");
+    let db = db.to_str().unwrap().to_string();
+    let out = run(
+        dir.path(),
+        &[
+            "explain",
+            "major components overview",
+            "--workspace",
+            &root,
+            "--guidance",
+            &json_dir,
+            "--db",
+            &db,
+            "--no-llm",
+        ],
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("major_unit"), "structural hit stays: {text}");
+    assert!(
+        !text.contains("overhaul"),
+        "prose-only single-token hit must not render: {text}"
+    );
+    assert!(!text.contains("decoy.rs"), "no decoy citations: {text}");
+}
+
+#[test]
+fn explain_reports_no_relevant_results_when_all_gated() {
+    // Gated-empty is the honest empty state: hits existed, none was
+    // relevant — no snippets, no citations, no model-backed answer.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(dir.path().join("src")).expect("mkdir src");
+    std::fs::write(
+        dir.path().join("src").join("a.rs"),
+        "/// major cleanup\npub fn cleanup() -> u64 {\n    1\n}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        dir.path().join("src").join("b.rs"),
+        "// refactoring notes\npub fn notes() -> u64 {\n    2\n}\n",
+    )
+    .expect("write");
+    std::fs::create_dir(dir.path().join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    sync(dir.path(), ".explain.db", false);
+    let root = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance");
+    let json_dir = json_dir.to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db");
+    let db = db.to_str().unwrap().to_string();
+    let out = run(
+        dir.path(),
+        &[
+            "explain",
+            "major refactoring effort",
+            "--workspace",
+            &root,
+            "--guidance",
+            &json_dir,
+            "--db",
+            &db,
+            "--no-llm",
+        ],
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(
+        text.contains("No relevant results found."),
+        "gated-empty state: {text}"
+    );
+    assert!(!text.contains("### Top matches"), "{text}");
+    assert!(!text.contains("### Citations"), "{text}");
+}
+
+#[test]
+fn explain_renders_docs_for_think_wrapped_judge_scores() {
+    // Reasoning models wrap the verdict in think tags; the scores
+    // inside still gate docs. Fails before the shared-parser
+    // migration (whole-body parse rejects the body, section missing).
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    let stub = stub_model(
+        "<think>scoring each paragraph</think>{\"1\": 95, \"2\": 5}",
+        "Alpha adds one to its input.",
+        8,
+    );
+    std::fs::write(
+        dir.join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    sync(dir, &db, false);
+    let out = run(dir, &explain_args(&ws, &json_dir, &db, "alpha", &[]));
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### From the docs"), "{text}");
+    assert!(text.contains("adds one to every total"), "{text}");
+}
+
+#[test]
+fn explain_renders_docs_for_prose_wrapped_judge_scores() {
+    // Trailing prose around the verdict parses; the scores inside
+    // still gate docs. Fails before the shared-parser migration.
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    let stub = stub_model(
+        "Here are my scores:\n{\"1\": 95, \"2\": 5}\nHope this helps.",
+        "Alpha adds one to its input.",
+        8,
+    );
+    std::fs::write(
+        dir.join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    sync(dir, &db, false);
+    let out = run(dir, &explain_args(&ws, &json_dir, &db, "alpha", &[]));
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### From the docs"), "{text}");
+    assert!(text.contains("adds one to every total"), "{text}");
+}
+
+#[test]
+fn explain_omits_docs_when_query_shares_no_doc_terms() {
+    // M2-cal control group: code hits exist (gamma/delta), but no doc
+    // paragraph shares a query token, so ranking yields nothing and
+    // the section stays absent — without any judge call deciding it.
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    let stub = stub_model(r#"{"1": 95, "2": 5}"#, "Gamma and delta.", 8);
+    std::fs::write(
+        dir.join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    sync(dir, &db, false);
+    let out = run(dir, &explain_args(&ws, &json_dir, &db, "gamma delta", &[]));
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### Top matches"), "{text}");
+    assert!(
+        !text.contains("### From the docs"),
+        "zero overlap means no docs section: {text}"
+    );
+}
+
+#[test]
+fn explain_docs_rank_cache_keeps_output_byte_identical() {
+    // M3 recall-neutrality: the rank cache must not change what renders.
+    // First run populates `.guidance/doc_rank_cache.json`; the second
+    // run serves from it. Identical stdout proves the cache is a pure
+    // memo, not a behavior change. Uses the stub model so the judged
+    // docs section actually renders.
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    let stub = stub_model(r#"{"1": 95, "2": 5}"#, "Alpha adds one.", 8);
+    std::fs::write(
+        dir.join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    sync(dir, &db, false);
+    let args = explain_args(&ws, &json_dir, &db, "alpha", &[]);
+    let first = stdout(&run(dir, &args));
+    assert!(first.contains("### From the docs"), "{first}");
+    let cache = dir.join(".guidance").join("doc_rank_cache.json");
+    assert!(
+        cache.is_file(),
+        "first run records the ranking: {}",
+        cache.display()
+    );
+    let second = stdout(&run(dir, &args));
+    assert_eq!(
+        second, first,
+        "cached rank renders byte-identically to the fresh rank"
+    );
+}
+
+fn root_docs_fixture() -> tempfile::TempDir {
+    // Workspace with a root README overlapping the query, plus code
+    // hits so the relevance gate proceeds to docs.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("README.md"),
+        "# Flux Capacitor\n\nThe flux capacitor regulates widget flow.\n",
+    )
+    .expect("write readme");
+    std::fs::create_dir(dir.path().join("src")).expect("mkdir src");
+    std::fs::write(
+        dir.path().join("src").join("flux.rs"),
+        "/// Regulates flow.\npub fn flux_capacitor() -> u64 {\n    1\n}\n",
+    )
+    .expect("write flux");
+    std::fs::write(
+        dir.path().join("src").join("plain.rs"),
+        "pub fn plain_thing() -> u64 {\n    2\n}\n",
+    )
+    .expect("write plain");
+    std::fs::create_dir(dir.path().join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"], "docs_dir": "doc"}"#,
+    )
+    .expect("write config placeholder");
+    dir
+}
+
+#[test]
+fn explain_renders_root_readme_with_root_relative_cite() {
+    // M4 golden: a root README overlapping the query renders under
+    // From the docs with a root-relative cite. Fails before root
+    // scope (root files were never walked).
+    let dir = root_docs_fixture();
+    let stub = stub_model(r#"{"1": 95}"#, "Flux regulates flow.", 8);
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    let ws = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance").to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db").to_str().unwrap().to_string();
+    sync(dir.path(), &db, false);
+    let out = run(
+        dir.path(),
+        &explain_args(&ws, &json_dir, &db, "flux capacitor", &[]),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### From the docs"), "{text}");
+    assert!(text.contains("regulates widget flow"), "{text}");
+    assert!(text.contains("README.md#"), "root-relative cite: {text}");
+    assert!(
+        !text.contains("doc/README.md"),
+        "cite is workspace-relative, not docs-dir-relative: {text}"
+    );
+}
+
+#[test]
+fn explain_omits_docs_when_query_matches_neither_tree_nor_roots() {
+    // M4-cal control: code hits exist (relevance gate proceeds) but no
+    // doc or root paragraph shares a token, so no docs section.
+    let dir = root_docs_fixture();
+    let stub = stub_model(r#"{"1": 95}"#, "Plain thing.", 8);
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    let ws = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance").to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db").to_str().unwrap().to_string();
+    sync(dir.path(), &db, false);
+    let out = run(
+        dir.path(),
+        &explain_args(&ws, &json_dir, &db, "plain thing", &[]),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### Top matches"), "{text}");
+    assert!(
+        !text.contains("### From the docs"),
+        "zero overlap means no docs section: {text}"
+    );
+}
+
+fn callers_fixture() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(dir.path().join("src")).expect("mkdir src");
+    std::fs::write(
+        dir.path().join("src").join("callee.rs"),
+        "pub fn target_sym() -> u64 {\n    7\n}\n",
+    )
+    .expect("write callee");
+    std::fs::write(
+        dir.path().join("src").join("caller.rs"),
+        "use crate::callee::target_sym;\npub fn caller_fn() -> u64 {\n    target_sym()\n}\n",
+    )
+    .expect("write caller");
+    std::fs::create_dir(dir.path().join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    dir
+}
+
+#[test]
+fn explain_callers_renders_caller_file() {
+    let dir = callers_fixture();
+    sync(dir.path(), ".explain.db", false);
+    let ws = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance").to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db").to_str().unwrap().to_string();
+    let out = run(
+        dir.path(),
+        &explain_args(&ws, &json_dir, &db, "callers of target_sym", &["--no-llm"]),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("caller.rs"), "caller file renders: {text}");
+    assert!(text.contains("### Top matches"), "{text}");
+    let top = text
+        .split("### Top matches")
+        .nth(1)
+        .unwrap_or("")
+        .split("### Citations")
+        .next()
+        .unwrap_or("");
+    assert!(
+        !top.contains("callee.rs"),
+        "definition is not a caller: {top}"
+    );
+}
+
+#[test]
+fn explain_callers_unknown_stays_empty() {
+    let dir = callers_fixture();
+    sync(dir.path(), ".explain.db", false);
+    let ws = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance").to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db").to_str().unwrap().to_string();
+    let out = run(
+        dir.path(),
+        &explain_args(&ws, &json_dir, &db, "callers of absent_sym", &["--no-llm"]),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(
+        text.contains("No results found.") || text.contains("No relevant results found."),
+        "honest empty: {text}"
+    );
+    assert!(!text.contains("### Top matches"), "{text}");
+}
+
+#[test]
+fn explain_renders_both_same_basename_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join("src").join("sub1")).expect("mkdir sub1");
+    std::fs::create_dir_all(dir.path().join("src").join("sub2")).expect("mkdir sub2");
+    std::fs::write(
+        dir.path().join("src").join("sub1").join("same.rs"),
+        "pub fn item_one() -> u64 {\n    1\n}\n",
+    )
+    .expect("write one");
+    std::fs::write(
+        dir.path().join("src").join("sub2").join("same.rs"),
+        "pub fn item_two() -> u64 {\n    2\n}\n",
+    )
+    .expect("write two");
+    std::fs::create_dir(dir.path().join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    sync(dir.path(), ".explain.db", false);
+    let ws = dir.path().to_str().unwrap().to_string();
+    let json_dir = dir.path().join(".guidance").to_str().unwrap().to_string();
+    let db = dir.path().join(".explain.db").to_str().unwrap().to_string();
+    let out = run(
+        dir.path(),
+        &explain_args(&ws, &json_dir, &db, "item", &["--no-llm"]),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### Top matches"), "{text}");
+    let top = text
+        .split("### Top matches")
+        .nth(1)
+        .unwrap_or("")
+        .split("### Citations")
+        .next()
+        .unwrap_or("");
+    assert!(top.contains("sub1/same.rs"), "first file renders: {top}");
+    assert!(top.contains("sub2/same.rs"), "second file renders: {top}");
+}
+
+fn capability_fixture() -> (tempfile::TempDir, String, String, String) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("src").join("router")).expect("mkdir src");
+    std::fs::create_dir_all(root.join("doc").join("router")).expect("mkdir doc");
+    std::fs::write(
+        root.join("src").join("router").join("dispatch.rs"),
+        "/// Routes requests onward through the table.\npub fn dispatch_routes() {}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("src").join("router").join("drive.rs"),
+        "/// Drives the flux regulator.\npub fn regulate_drive() {}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("src").join("router").join("flux.rs"),
+        "/// Calibrates flux output levels.\npub fn calibrate_output() {}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("doc").join("router").join("guide.md"),
+        "# Guide\n\nRoutes requests onward.\n",
+    )
+    .expect("write");
+    std::fs::create_dir_all(root.join(".guidance")).expect("mkdir guidance");
+    let db = root.join(".explain.db").to_str().unwrap().to_string();
+    let json_dir = root.join(".guidance").to_str().unwrap().to_string();
+    let ws = root.to_str().unwrap().to_string();
+    (dir, ws, json_dir, db)
+}
+
+fn narrow_fixture() -> (tempfile::TempDir, String, String, String) {
+    // Overlapping vocabulary: one narrow query matches all three
+    // files on multiple tokens, so the branch stays shut by count
+    // and score even with a matching brief available.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("a.rs"),
+        "/// Alpha beta gamma core.\npub fn alpha_core() {}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("b.rs"),
+        "/// Alpha beta helpers.\npub fn beta_help() {}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("c.rs"),
+        "/// Alpha gamma tools.\npub fn gamma_tools() {}\n",
+    )
+    .expect("write");
+    std::fs::create_dir_all(root.join("doc")).expect("mkdir doc");
+    std::fs::write(
+        root.join("doc").join("guide.md"),
+        "# Guide\n\nAlpha beta gamma overview.\n",
+    )
+    .expect("write");
+    std::fs::create_dir_all(root.join(".guidance")).expect("mkdir guidance");
+    let db = root.join(".explain.db").to_str().unwrap().to_string();
+    let json_dir = root.join(".guidance").to_str().unwrap().to_string();
+    let ws = root.to_str().unwrap().to_string();
+    (dir, ws, json_dir, db)
+}
+
+#[test]
+fn explain_capability_branch_renders_brief_and_tagged_pull() {
+    // Trigger-ON golden (M13-cal): an NL orientation query is
+    // code-thin, so the capability section renders and the rank-1
+    // brief opens one scoped pull tagged with its crate.
+    let (temp, ws, json_dir, db) = capability_fixture();
+    let dir = temp.path();
+    let stub = stub_model(
+        r#"{"doc/router/guide.md#guide": "Routes requests onward."}"#,
+        r#"{"doc/router/guide.md#guide": "Routes requests onward."}"#,
+        4,
+    );
+    std::fs::write(
+        dir.join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    sync(dir, ".explain.db", false);
+    let out = run(
+        dir,
+        &[
+            "summarize",
+            "--capabilities",
+            "--workspace",
+            &ws,
+            "--json-dir",
+            &json_dir,
+            "--db",
+            &db,
+        ],
+    );
+    assert!(out.status.success(), "summarize --capabilities: {out:?}");
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "how are requests routed onward",
+            &["--no-llm"],
+        ),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### From the capabilities"), "{text}");
+    // No model under --no-llm: briefs render unjudged (`considered`)
+    // in deterministic SVO order, never filtered.
+    assert!(text.contains("[considered] fluent-router/router"), "{text}");
+    assert!(text.contains("Routes requests onward."), "{text}");
+    assert!(text.contains("via capability: fluent-router"), "{text}");
+    assert!(text.contains("dispatch.rs"), "{text}");
+}
+
+#[test]
+fn explain_capability_branch_stays_shut_on_strong_code_recall() {
+    // Trigger-OFF golden: a narrow multi-token query with agreeing
+    // code recall renders byte-identically to the pre-branch shape —
+    // no capabilities section, no branch tags — even with a matching
+    // brief available (the trigger, not the brief index, decides).
+    let (temp, ws, json_dir, db) = narrow_fixture();
+    let dir = temp.path();
+    let stub = stub_model(
+        r#"{"doc/guide.md#guide": "Alpha beta gamma overview."}"#,
+        r#"{"doc/guide.md#guide": "Alpha beta gamma overview."}"#,
+        4,
+    );
+    std::fs::write(
+        dir.join(".guidance").join("guidance-config.json"),
+        stub_config(&stub),
+    )
+    .expect("write stub config");
+    sync(dir, ".explain.db", false);
+    let out = run(
+        dir,
+        &[
+            "summarize",
+            "--capabilities",
+            "--workspace",
+            &ws,
+            "--json-dir",
+            &json_dir,
+            "--db",
+            &db,
+        ],
+    );
+    assert!(out.status.success(), "summarize --capabilities: {out:?}");
+    let out = run(
+        dir,
+        &explain_args(&ws, &json_dir, &db, "alpha beta gamma", &["--no-llm"]),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(!text.contains("From the capabilities"), "{text}");
+    assert!(!text.contains("via capability"), "{text}");
+    assert!(text.contains("### Top matches"), "{text}");
 }

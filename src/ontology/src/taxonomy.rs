@@ -100,7 +100,7 @@ pub fn curie_for_iri(iri: &str, prefixes: &BTreeMap<String, String>) -> String {
 /// [`normalize_yago_name`] (Wikidata `_Q\d+` strip, `_UXXXX` decode,
 /// `_`→space, lowercase, WS collapse). Full `<...>` IRIs normalize the
 /// inner IRI the same way.
-/// 
+///
 /// The prefix branch matches on the closed [`crate::prefix::CuriePrefix`]
 /// set; genuinely open prefixes (arbitrary TTL `@prefix` declarations) take
 /// the same formatting path with their carried text, since the open key set

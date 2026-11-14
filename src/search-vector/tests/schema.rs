@@ -30,6 +30,13 @@ fn schema_creates_exact_application_tables() {
     assert_eq!(
         tables,
         [
+            "capabilities",
+            "capabilities_fts",
+            "capabilities_fts_config",
+            "capabilities_fts_data",
+            "capabilities_fts_docsize",
+            "capabilities_fts_idx",
+            "capability_lemmas",
             "embedding_cache",
             "files",
             "fragment_embedding_status",
@@ -54,6 +61,32 @@ fn schema_creates_exact_application_tables() {
             "sync_state",
         ],
         "application table set changed: deliberate migration or split drift"
+    );
+}
+
+#[test]
+fn symbols_table_carries_identity_only() {
+    // One row per (file, symbol, scope): the stable id plus the
+    // interface hash. Signature, content, and range live on the
+    // fragment rows — a second copy here would drift.
+    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let columns: Vec<String> = db
+        .store
+        .with_conn(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT name FROM pragma_table_info('symbols') ORDER BY cid")
+                .expect("prepare");
+            Ok(stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query")
+                .collect::<Result<Vec<_>, rusqlite::Error>>()
+                .expect("rows"))
+        })
+        .expect("with_conn");
+    assert_eq!(
+        columns,
+        ["symbol_id", "file_id", "name", "scope", "interface_hash"],
+        "symbols column set changed: deliberate migration"
     );
 }
 
@@ -98,6 +131,8 @@ fn schema_creates_exact_application_indexes_and_triggers() {
         indexes,
         [
             "idx_cache_query_hash",
+            "idx_capabilities_source",
+            "idx_capability_lemmas_lemma",
             "idx_frag_file",
             "idx_frag_group",
             "idx_frag_symbol",
@@ -118,6 +153,9 @@ fn schema_creates_exact_application_indexes_and_triggers() {
     assert_eq!(
         object_names(&db, "trigger"),
         [
+            "capabilities_ad",
+            "capabilities_ai",
+            "capabilities_au",
             "fragment_summaries_ad",
             "fragment_summaries_ai",
             "fragment_summaries_au",

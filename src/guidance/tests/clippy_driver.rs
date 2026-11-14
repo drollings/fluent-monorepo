@@ -67,3 +67,27 @@ fn argv_carries_target_dir_jobs_and_nice() {
     assert!(!argv.contains(&"--target-dir".to_string()));
     assert!(env.is_empty());
 }
+
+const CHILDREN_FIXTURE: &str = r#"{"reason": "compiler-message", "message": {"message": "this borrow is needless", "code": {"code": "clippy::needless_borrow"}, "level": "warning", "spans": [{"file_name": "src/main.rs", "byte_start": 120, "byte_end": 122, "line_start": 7}], "children": [{"message": "change this to", "level": "note", "spans": [{"file_name": "src/main.rs", "byte_start": 120, "byte_end": 122, "suggested_replacement": "r", "suggestion_applicability": "MachineApplicable"}]}]}}"#;
+
+#[test]
+fn parses_machine_applicable_suggestions_from_children_spans() {
+    // rustc/clippy carry the applicable suggestion on the child note,
+    // not the primary span: ignoring children leaves the D2 rung with
+    // nothing to apply ("mechanical without applicable suggestion").
+    let report = parse_clippy_json(CHILDREN_FIXTURE);
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(
+        report.diagnostics[0].code.as_deref(),
+        Some("clippy::needless_borrow")
+    );
+    assert_eq!(report.diagnostics[0].suggestions.len(), 1);
+    assert_eq!(report.diagnostics[0].suggestions[0].replacement, "r");
+    assert_eq!(
+        (
+            report.diagnostics[0].suggestions[0].start,
+            report.diagnostics[0].suggestions[0].end
+        ),
+        (120, 122)
+    );
+}

@@ -29,6 +29,53 @@ fn index_scopes_to_a_single_file() {
 }
 
 #[test]
+fn index_maps_nested_file_against_configured_src_root() {
+    // Sidecars mirror the `./src` tree under the guidance dir: indexing
+    // `src/nested/inner.rs` writes `.guidance/src/nested/inner.rs.json`
+    // (read and write through one mapping), never a doubled `src/src`
+    // path and never beside the source.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src").join("nested");
+    std::fs::create_dir_all(&src).expect("mkdir");
+    std::fs::write(src.join("inner.rs"), "pub fn inner() {}\n").expect("write");
+    let guidance = dir.path().join(".guidance");
+    std::fs::create_dir_all(&guidance).expect("mkdir");
+    std::fs::write(
+        guidance.join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    let workspace = dir.path().to_str().unwrap().to_string();
+    let json_dir = guidance.to_str().unwrap().to_string();
+    let target = src.join("inner.rs").to_str().unwrap().to_string();
+    let (generated, failed) = run_index(&workspace, &json_dir, Some(&target)).expect("index");
+    assert_eq!((generated, failed), (1, 0), "one file generated");
+    assert!(
+        guidance
+            .join("src")
+            .join("nested")
+            .join("inner.rs.json")
+            .is_file(),
+        "parallel-tree sidecar must exist"
+    );
+    assert!(
+        !guidance.join("src").join("src").exists(),
+        "workspace-root mapping must not double src"
+    );
+    assert!(
+        !src.join("inner.rs.json").exists(),
+        "sidecars never sit beside sources"
+    );
+    // A second pass is a no-op: the staleness read agrees with the write.
+    let (generated, failed) = run_index(&workspace, &json_dir, Some(&target)).expect("index");
+    assert_eq!(
+        (generated, failed),
+        (0, 0),
+        "fresh sidecar reprocesses nothing"
+    );
+}
+
+#[test]
 fn fragment_ingestion_populates_fts_and_skips_image_noise() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("a.rs"), "pub fn ingested_anchor() {}\n").expect("write");

@@ -158,3 +158,81 @@ fn verify_deep_reaches_the_skew_audit() {
     );
     assert!(text.contains("live"), "deep prints live hash: {text}");
 }
+
+/// `src/`-layout fixture: row sources are src-root-relative (`lib.rs`),
+/// so a bare workspace join never matches the absolute stale set.
+fn src_layout_fixture() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(dir.path().join("src")).expect("mkdir src");
+    std::fs::write(
+        dir.path().join("src").join("lib.rs"),
+        "/// Adds one.\npub fn e2e_anchor_fn(x: u64) -> u64 {\n    x + 1\n}\n",
+    )
+    .expect("write");
+    std::fs::create_dir(dir.path().join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        dir.path().join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    dir
+}
+
+#[test]
+fn strict_refuses_mtime_stale_row_in_src_layout() {
+    // Touch without changing bytes: the content-hash gate stays fresh
+    // (mirror-level `strict_refuse` passes by design), but the row's
+    // sidecar predates the source, so `explain --strict` must refuse.
+    // Regression: the row match joined the src-root-relative source to
+    // the workspace root, matched nothing, and served stale rows (exit 0).
+    use std::time::Duration;
+    let dir = src_layout_fixture();
+    common::sync(dir.path(), ".guidance.db", false);
+    let lib = dir.path().join("src").join("lib.rs");
+    let sidecar_mtime =
+        std::fs::metadata(dir.path().join(".guidance").join("src").join("lib.rs.json"))
+            .expect("sidecar stat")
+            .modified()
+            .expect("mtime");
+    std::fs::File::options()
+        .write(true)
+        .open(&lib)
+        .expect("open")
+        .set_modified(sidecar_mtime + Duration::from_secs(5))
+        .expect("touch");
+    let root = root_arg(dir.path());
+    let db = db_arg(dir.path());
+    let out = run(
+        dir.path(),
+        &[
+            "explain",
+            "e2e_anchor_fn",
+            "--workspace",
+            &root,
+            "--db",
+            &db,
+            "--strict",
+            "--no-llm",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(2), "stale row must refuse: {out:?}");
+    assert!(
+        stderr(&out).contains("lib.rs"),
+        "report names files: {}",
+        stderr(&out)
+    );
+    // Without --strict the same tree still serves.
+    let out = run(
+        dir.path(),
+        &[
+            "explain",
+            "e2e_anchor_fn",
+            "--workspace",
+            &root,
+            "--db",
+            &db,
+            "--no-llm",
+        ],
+    );
+    assert!(out.status.success(), "non-strict must serve: {out:?}");
+}

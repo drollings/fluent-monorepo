@@ -1,0 +1,24 @@
+GHDR1 src=src/spacy-rs/tools/gen_en_tag_map.py	body=e5103045c7cb944165fd0ffd1d6715317c19de0eed5d71d8e1fe12302ca410ea	srchash=da91c873af17e639d429acfa027cabec120dc3c36f941b99876f44f0c433fd88	comp=parser=dd0d357a727fbcefd00167a1eaf4a59bdd464420df60daadcccf14f2d640339e,policy.mechanical=01f3f0758e27dd1f450184bbbbb0b060676c5c442cbb15866230c919dfc65807,policy.scope=d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab,schema=a4b6064b23dbaa408b171b0fed5628afa267ef40a4f5a806ae2405e85fa6f1c4
+{
+  "comment": "!/usr/bin/env python3",
+  "members": [
+    {
+      "is_pub": true,
+      "item_hash": "075c310b438361a94bdee91000af91d867b2599329d011c5897e0faee9280e31",
+      "match_hash": "2b2f3fa2de85696b03416646debd3b311de118191d663822bcf6aca6b80f2d3f",
+      "name": "tag_str",
+      "range_hash": "7affec71a7fb4ff03c984e1ed1fcc277c2de349b29b7b424a339d020e1cf8d44",
+      "signature": "def tag_str()",
+      "span": [
+        651,
+        858
+      ],
+      "type": "fn_decl"
+    }
+  ],
+  "meta": {
+    "language": "python",
+    "module": ".opt.src.rust.monorepo...src.spacy-rs.tools.gen_en_tag_map",
+    "source": "src/spacy-rs/tools/gen_en_tag_map.py"
+  }
+}

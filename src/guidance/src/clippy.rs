@@ -164,7 +164,22 @@ pub fn parse_clippy_json(output: &str) -> ClippyReport {
             .unwrap_or_default();
         let mut suggestions = Vec::new();
         let mut file = None;
-        for span in &spans {
+        // Suggestion spans ride the primary spans and the child notes:
+        // rustc/clippy carry the MachineApplicable replacement on the
+        // child note (e.g. "change this to"), never the primary span,
+        // so primary-only harvesting leaves the D2 rung with nothing.
+        let mut span_refs: Vec<&serde_json::Value> = spans.iter().collect();
+        if let Some(children) = message
+            .and_then(|message| message.get("children"))
+            .and_then(|children| children.as_array())
+        {
+            for child in children {
+                if let Some(child_spans) = child.get("spans").and_then(|spans| spans.as_array()) {
+                    span_refs.extend(child_spans.iter());
+                }
+            }
+        }
+        for span in span_refs {
             if file.is_none() {
                 file = span
                     .get("file_name")

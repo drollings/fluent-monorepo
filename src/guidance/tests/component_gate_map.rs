@@ -1,4 +1,15 @@
-use super::{component_gate_for_path, snapshot_components};
+use super::{component_gate_for_path, prefix_for_package, snapshot_components};
+
+#[test]
+fn package_prefixes_resolve_for_scope_globs() {
+    assert_eq!(prefix_for_package("guidance-core"), Some("src/guidance"));
+    assert_eq!(prefix_for_package("fluent-router"), Some("src/router"));
+    assert_eq!(
+        prefix_for_package("search-vector"),
+        Some("src/search-vector")
+    );
+    assert_eq!(prefix_for_package("no-such-package"), None);
+}
 
 // Every matrix component resolves through at least one source prefix,
 // and the narrowest gate is the component's fast gate.

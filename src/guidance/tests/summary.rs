@@ -97,6 +97,22 @@ fn malformed_json_marks_nodes_failed() {
 }
 
 #[test]
+fn think_wrapped_packet_still_validates() {
+    // Reasoning models wrap the packet in think tags; the JSON inside
+    // still validates. Fails before the shared-parser migration.
+    let backend = FakeBackend::ready("<think>drafting</think>{\"alpha\": \"Adds one.\"}");
+    let requests = vec![request("alpha", "Adds one")];
+    let outcomes = summarize_file_with_backend(&backend, "test-model", &requests);
+    assert!(
+        matches!(
+            &outcomes[0].1,
+            SummaryOutcome::Ready { text } if text == "Adds one."
+        ),
+        "{outcomes:?}"
+    );
+}
+
+#[test]
 fn missing_key_marks_only_that_node_failed() {
     let backend = FakeBackend::ready(r#"{"alpha": "Adds one."}"#);
     let requests = vec![request("alpha", "Adds one"), request("beta", "Removes two")];

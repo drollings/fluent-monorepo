@@ -1,0 +1,24 @@
+GHDR1 src=src/spacy-rs/tools/gen_en_lemma_data.py	body=4500fd0c94617c77774c0a5bc1eccdbe5966c8ebb21419b7361c6f7ec0e97956	srchash=151adbc57e2edc1359f0af7581dfd69bf9a1d38b0da318ed869b05f5408dbe22	comp=parser=dd0d357a727fbcefd00167a1eaf4a59bdd464420df60daadcccf14f2d640339e,policy.mechanical=01f3f0758e27dd1f450184bbbbb0b060676c5c442cbb15866230c919dfc65807,policy.scope=d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab,schema=a4b6064b23dbaa408b171b0fed5628afa267ef40a4f5a806ae2405e85fa6f1c4
+{
+  "comment": "!/usr/bin/env python3",
+  "members": [
+    {
+      "is_pub": true,
+      "item_hash": "f791c218e2daec55f5fee8dd82d9b69f9a972bc983b5aff9ef939aedddb37839",
+      "match_hash": "05b849accbb9e4c7401526cb6f6e60d96137fbd961f73ac1f2123c3576d16e5c",
+      "name": "load",
+      "range_hash": "b20321a1872a052ed8cfecb4b535b57b9d89a989c4fd9aac8e8e8ecacef31473",
+      "signature": "def load()",
+      "span": [
+        836,
+        954
+      ],
+      "type": "fn_decl"
+    }
+  ],
+  "meta": {
+    "language": "python",
+    "module": ".opt.src.rust.monorepo...src.spacy-rs.tools.gen_en_lemma_data",
+    "source": "src/spacy-rs/tools/gen_en_lemma_data.py"
+  }
+}

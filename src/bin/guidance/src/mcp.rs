@@ -740,17 +740,49 @@ impl McpServer {
                 Some("no workspace configured".to_string()),
             );
         };
-        let mut engine = SyncEngine::new(json_dir.clone(), workspace.clone());
-        let stale_now = |engine: &SyncEngine| {
-            engine
+        let cfg = guidance_core::config::load_config(workspace).unwrap_or_default();
+        // Sidecars mirror their source root: probe each configured root
+        // with its own engine, so a workspace-root engine never reads
+        // `guidance_dir/src/src/...` while the writer uses `src/...`.
+        let src_dirs: Vec<std::path::PathBuf> = if cfg.src_dirs.is_empty() {
+            vec![workspace.clone()]
+        } else {
+            cfg.src_dirs.iter().map(|dir| workspace.join(dir)).collect()
+        };
+        let mut stale = 0usize;
+        for src_dir in &src_dirs {
+            if !src_dir.is_dir() {
+                continue;
+            }
+            let engine = SyncEngine::new(json_dir.clone(), src_dir.clone());
+            stale += engine
                 .status()
                 .map(|status| status.stale_files)
-                .unwrap_or(0)
-        };
-        let stale = stale_now(&engine);
+                .unwrap_or(0);
+        }
         if params.freshness == FreshnessMode::WaitForFresh && stale > 0 && params.auto_update {
-            if engine.gen_scoped(workspace).is_ok() {
-                let restaled = stale_now(&engine);
+            let mut refreshed = true;
+            for src_dir in &src_dirs {
+                if !src_dir.is_dir() {
+                    continue;
+                }
+                let mut engine = SyncEngine::new(json_dir.clone(), src_dir.clone());
+                if engine.gen_scoped(src_dir).is_err() {
+                    refreshed = false;
+                }
+            }
+            if refreshed {
+                let mut restaled = 0usize;
+                for src_dir in &src_dirs {
+                    if !src_dir.is_dir() {
+                        continue;
+                    }
+                    let engine = SyncEngine::new(json_dir.clone(), src_dir.clone());
+                    restaled += engine
+                        .status()
+                        .map(|status| status.stale_files)
+                        .unwrap_or(0);
+                }
                 return (
                     if restaled == 0 {
                         Freshness::Fresh

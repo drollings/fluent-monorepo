@@ -25,6 +25,7 @@
 //! - `config` — pure config types, zero domain coupling
 //! - `query/snapshot` — pure file-reading snapshot type
 pub mod ast_parser;
+pub mod capability;
 pub mod change_set;
 pub mod clippy;
 pub mod component_map;
@@ -46,6 +47,7 @@ pub mod item_hashes;
 pub mod journal;
 pub mod maintenance;
 pub mod model_lanes;
+pub mod model_text;
 pub mod offload;
 pub mod orchestrator;
 pub mod pipeline;

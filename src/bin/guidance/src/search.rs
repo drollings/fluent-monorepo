@@ -423,6 +423,68 @@ pub fn run_search(
     }
 }
 
+/// Collapse dual-indexed rows at the recall merge: hits sharing one
+/// canonical file identity and one entity range render once (the
+/// first keeps its rank and score). Provenance merges — extra
+/// evidence and recall traces ride along — so the collapse is
+/// visible only in trace output, never as a second row. Distinct
+/// files and distinct spans never collapse. Pure; reuses the
+/// shared `canonical_hit_path` file rule (same module, no second
+/// normalizer).
+#[must_use]
+/// Collapse dual-indexed rows at the recall merge: hits sharing one
+/// canonical file identity and one entity range render once (the
+/// first keeps its rank and score). Provenance merges — extra
+/// evidence and recall traces ride along — so the collapse is
+/// visible only in trace output, never as a second row. Distinct
+/// files and distinct spans never collapse. Pure; reuses the
+/// shared `canonical_hit_path` file rule (same module, no second
+/// normalizer).
+pub fn dedupe_dual_hits(hits: Vec<SearchHit>, workspace: &std::path::Path) -> Vec<SearchHit> {
+    let mut out: Vec<SearchHit> = Vec::with_capacity(hits.len());
+    let mut keys: Vec<(String, guidance_core::search_types::FragmentSpan)> = Vec::new();
+    for hit in hits {
+        let key = (
+            canonical_hit_path(&hit, workspace),
+            hit.entity.range.clone(),
+        );
+        match keys.iter().position(|known| *known == key) {
+            Some(index) => {
+                let target = &mut out[index];
+                for evidence in hit.evidence {
+                    if !target
+                        .evidence
+                        .iter()
+                        .any(|known| known.range == evidence.range && known.path == evidence.path)
+                    {
+                        target.evidence.push(evidence);
+                    }
+                }
+                match (&mut target.trace, hit.trace) {
+                    (Some(target_trace), Some(source_trace)) => {
+                        for entry in source_trace.recall {
+                            if !target_trace.recall.iter().any(|known| {
+                                known.path == entry.path && known.route_id == entry.route_id
+                            }) {
+                                target_trace.recall.push(entry);
+                            }
+                        }
+                    }
+                    (None, Some(source_trace)) => {
+                        target.trace = Some(source_trace);
+                    }
+                    _ => {}
+                }
+            }
+            None => {
+                keys.push(key);
+                out.push(hit);
+            }
+        }
+    }
+    out
+}
+
 /// Shared Fuse recall assembly: open the index at `db_path`, resolve the
 /// embedder from the workspace config, and run a caller-built plan through
 /// [`run_recall`]. Both `run_search` (Fuse path) and [`fused_hits`] enter
@@ -463,7 +525,10 @@ fn recall_on_index(
     drop(nlp_phase);
     let _recall_phase = crate::profile::Phase::new("recall.run");
     match run_recall(plan, &storage, embedder.as_deref(), nlp_ref) {
-        Ok(output) => Ok(output.hits),
+        Ok(output) => Ok(dedupe_dual_hits(
+            output.hits,
+            std::path::Path::new(workspace),
+        )),
         Err(error) => Err(format!("search failed: {error}")),
     }
 }
@@ -477,7 +542,11 @@ pub fn fused_hits(
     db_path: &str,
     limit: usize,
 ) -> Result<Vec<SearchHit>, String> {
-    let plan = build_search_plan(query, SearchMode::Fuse, limit, false, false, &[], &[]);
+    // Identifier-extracting routes ride along: queries naming a symbol
+    // get symbol-filtered candidates fused into rank, so the defining
+    // file surfaces instead of drowning in prose matches. Queries
+    // without identifiers build byte-identical plans.
+    let plan = build_search_plan(query, SearchMode::Fuse, limit, false, true, &[], &[]);
     recall_on_index(workspace, db_path, &plan)
 }
 
@@ -598,13 +667,19 @@ pub fn stale_hit_sources(
     let mut out = Vec::new();
     for hit in hits {
         let abs = PathBuf::from(&hit.file.absolute_path);
+        // Sidecars mirror their source root: absolutize both sides so a
+        // relative workspace still prefixes absolute hit paths, then map
+        // through the same `guidance_dir/src/<rel>.json` shape the
+        // pipeline writes.
         let stale = src_dirs
             .iter()
             .find(|root| {
-                abs.strip_prefix(root).is_ok() || root.as_path() == std::path::Path::new(".")
+                let root_abs = guidance_core::sync_engine::absolute_or((*root).clone());
+                abs.strip_prefix(&root_abs).is_ok()
             })
             .map(|root| {
-                let rel = abs.strip_prefix(root).unwrap_or(&abs);
+                let root_abs = guidance_core::sync_engine::absolute_or(root.clone());
+                let rel = abs.strip_prefix(&root_abs).unwrap_or(&abs);
                 PathBuf::from(guidance_dir)
                     .join("src")
                     .join(format!("{}.json", rel.display()))
@@ -928,10 +1003,18 @@ pub fn cite_hits_live(hits: &[SearchHit], workspace: &std::path::Path) -> Vec<St
     use std::collections::HashSet;
     let mut seen_keys: HashSet<(String, u32, u32)> = HashSet::new();
     let mut seen_lines: HashSet<String> = HashSet::new();
+    let mut seen_unresolved: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     for hit in hits {
         if let Some((start, end)) = cite_bounds(hit, workspace) {
             if !seen_keys.insert((canonical_hit_path(hit, workspace), start, end)) {
+                continue;
+            }
+        } else {
+            // No live bounds (moved, removed, or unreadable): the key
+            // above never fires, so dual rows cite the same file twice —
+            // collapse on canonical identity instead.
+            if !seen_unresolved.insert(canonical_hit_path(hit, workspace)) {
                 continue;
             }
         }
@@ -967,6 +1050,210 @@ pub fn suggest_drill_downs(
         .take(limit)
         .map(|(name, _, _, _, _)| format!("guidance explain \"callers of {name}\""))
         .collect()
+}
+
+/// Parse a `callers of <symbol>` query: case-insensitive prefix,
+/// surrounding whitespace and quotes trimmed. `Some` carries the
+/// symbol (`""` when nothing follows — an unknown, never a keyword
+/// fallback); `None` means an ordinary query.
+#[must_use]
+/// Parse a `callers of <symbol>` query: case-insensitive prefix,
+/// surrounding whitespace and quotes trimmed. `Some` carries the
+/// symbol (`""` when nothing follows — an unknown, never a keyword
+/// fallback); `None` means an ordinary query.
+pub fn parse_callers_query(query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lowered = trimmed.to_lowercase();
+    let prefix = "callers of";
+    if lowered == prefix {
+        return Some(String::new());
+    }
+    let rest = lowered
+        .strip_prefix(prefix)
+        .filter(|tail| tail.starts_with(char::is_whitespace))?;
+    let raw = trimmed[prefix.len()..].trim();
+    if raw.is_empty() {
+        return Some(String::new());
+    }
+    let _ = rest;
+    let unquoted = raw
+        .strip_prefix('"')
+        .and_then(|inner| inner.strip_suffix('"'))
+        .or_else(|| {
+            raw.strip_prefix('\'')
+                .and_then(|inner| inner.strip_suffix('\''))
+        })
+        .unwrap_or(raw);
+    Some(unquoted.trim().to_string())
+}
+
+/// Callers of one symbol over persisted call edges: exact callee-name
+/// match, sorted by (caller file, caller symbol) for determinism.
+/// Homonyms expand (every caller of the name); unknown or empty
+/// symbols yield nothing. Pure over the edge slice.
+#[must_use]
+/// Callers of one symbol over persisted call edges: exact callee-name
+/// match, sorted by (caller file, caller symbol) for determinism.
+/// Homonyms expand (every caller of the name); unknown or empty
+/// symbols yield nothing. Pure over the edge slice.
+pub fn callers_for_symbol(
+    edges: &[guidance_core::graph_index::CallEdge],
+    symbol: &str,
+) -> Vec<(
+    String,
+    Option<String>,
+    guidance_core::graph_index::ResolutionMethod,
+)> {
+    if symbol.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<(
+        String,
+        Option<String>,
+        guidance_core::graph_index::ResolutionMethod,
+    )> = edges
+        .iter()
+        .filter(|edge| edge.callee == symbol)
+        .map(|edge| {
+            (
+                edge.caller_file.clone(),
+                edge.caller_symbol.clone(),
+                edge.resolution,
+            )
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Graph-backed hits for a `callers of` symbol: hydrate from persisted
+/// rows (no file reads, no parsing), resolve callers, and materialize
+/// one hit per caller file/symbol for the shared citation machinery.
+/// Unknown symbols yield no hits (honest empty upstream), never a
+/// keyword search.
+pub fn graph_callers_hits(
+    db: &GuidanceDb,
+    workspace: &str,
+    symbol: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
+    use guidance_core::search_types::{
+        CodeSymbolType, Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan,
+        RecallPath, SearchHitEvidence, SearchMatchedBy,
+    };
+    if symbol.is_empty() {
+        return Ok(Vec::new());
+    }
+    let graph = crate::index_cmd::hydrated_graph(db, &[workspace.to_string()])
+        .map_err(|error| format!("graph hydration failed ({error})"))?;
+    let callers = callers_for_symbol(graph.call_edges(), symbol);
+    if callers.is_empty() {
+        return Ok(Vec::new());
+    }
+    let files = db
+        .list_files()
+        .map_err(|error| format!("list files: {error}"))?;
+    let by_path: std::collections::HashMap<&str, &search_vector::db::FileRecord> = files
+        .iter()
+        .map(|record| (record.absolute_path.as_str(), record))
+        .collect();
+    let mut hits = Vec::new();
+    for (index, (caller_file, caller_symbol, _)) in
+        callers.into_iter().take(limit.max(1)).enumerate()
+    {
+        let record = by_path.get(caller_file.as_str());
+        let (file_id, relative_path, root_path) = match record {
+            Some(record) => (
+                record.id.clone(),
+                record.relative_path.clone(),
+                record.root_path.clone(),
+            ),
+            None => (
+                caller_file.clone(),
+                std::path::Path::new(&caller_file)
+                    .strip_prefix(workspace)
+                    .map(|rel| rel.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| caller_file.clone()),
+                workspace.to_string(),
+            ),
+        };
+        let format = std::path::Path::new(&caller_file)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("")
+            .to_string();
+        // Persisted range for the caller symbol's owning fragment;
+        // otherwise the whole file (live resolution still pins lines).
+        // The symbols table carries identity only — the span reads from
+        // the fragment row, which keeps its range.
+        let mut range = FragmentSpan::File;
+        if let (Some(record), Some(name)) = (record, caller_symbol.as_deref()) {
+            if let Ok(Some((_, range_json))) = db.symbol_fragment(&record.id, name, None) {
+                range = serde_json::from_str(&range_json).unwrap_or(FragmentSpan::File);
+            }
+        }
+        let metadata = caller_symbol.as_deref().map(|name| EntityMetadata::Code {
+            symbol_type: CodeSymbolType::Function,
+            symbol_name: Some(name.to_string()),
+            scope: None,
+            node_type: None,
+            signature: None,
+            doc: None,
+            modifiers: Vec::new(),
+        });
+        let entity_id = match caller_symbol.as_deref() {
+            Some(name) => format!("{caller_file}::{name}"),
+            None => caller_file.clone(),
+        };
+        let file = FileInfo {
+            id: file_id.clone(),
+            absolute_path: caller_file.clone(),
+            relative_path,
+            root_path,
+            size_bytes: 0,
+            last_modified_time: 0,
+            content_hash: None,
+            kind: None,
+            format,
+            index_status: None,
+        };
+        let entity = Entity {
+            id: entity_id,
+            file_id: file_id.clone(),
+            range: range.clone(),
+            content: FragmentContent::Text {
+                text: String::new(),
+            },
+            metadata: metadata.clone(),
+        };
+        hits.push(SearchHit {
+            entity,
+            file,
+            evidence: vec![SearchHitEvidence {
+                range,
+                content: FragmentContent::Text {
+                    text: String::new(),
+                },
+                metadata,
+                is_entity: true,
+                path: RecallPath::Fts,
+                route_id: None,
+                query: None,
+                rank: Some(index),
+                score: None,
+                forced: None,
+            }],
+            rank: index + 1,
+            score: guidance_core::search_types::RrfScore::new(1.0 / (index + 1) as f64),
+            matched_by: SearchMatchedBy::Fts,
+            trace: None,
+        });
+    }
+    Ok(hits)
 }
 
 /// Minimum decision score (0-100) for a doc paragraph to be cited.
@@ -1009,8 +1296,14 @@ pub fn judge_doc_paragraphs(
         Ok(text) => text,
         Err(_) => return Vec::new(),
     };
+    // Think-wrapped or prose-wrapped bodies never survive whole-body
+    // parsing; extract the first balanced value first (fail-closed
+    // shape unchanged: unparseable still drops everything).
+    let stripped = guidance_core::model_text::strip_think_tags(&text);
     let scores: std::collections::BTreeMap<String, serde_json::Value> =
-        serde_json::from_str(text.trim()).unwrap_or_default();
+        guidance_core::model_text::extract_json_value(stripped.trim())
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
     let mut kept: Vec<(u64, usize)> = Vec::new();
     for (key, value) in &scores {
         let Ok(one_based) = key.parse::<usize>() else {
@@ -1029,6 +1322,224 @@ pub fn judge_doc_paragraphs(
         .collect()
 }
 
+/// Minimum decision score (0-100) for a capability brief to tier
+/// `strong`. Same floor shape as the docs judge.
+pub const EXPLAIN_CAPABILITY_MIN_SCORE: u32 = 60;
+
+/// Capability judge prompt version fenced into shadow records.
+pub const CAPABILITY_JUDGE_VERSION: u64 = 1;
+
+/// One judged brief: the ranked brief plus its optional 0-100 score.
+/// `None` keeps deterministic SVO order — the fail-open contrast with
+/// the docs judge, which drops everything unparseable.
+#[derive(Debug, Clone)]
+/// One judged brief: the ranked brief plus its optional 0-100 score.
+/// `None` keeps deterministic SVO order — the fail-open contrast with
+/// the docs judge, which drops everything unparseable.
+pub struct ScoredBrief {
+    /// The SVO-ranked brief.
+    pub brief: guidance_core::query::capability_match::RankedBrief,
+    /// Judge score 0-100 (`None` = unjudged, renders `considered`).
+    pub score: Option<u8>,
+}
+
+/// Brief tier: `strong` briefs feed synthesis context, `considered`
+/// briefs render without feeding it. Unjudged briefs render as
+/// `considered` — never filtered, until a calibrated gate earns it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Brief tier: `strong` briefs feed synthesis context, `considered`
+/// briefs render without feeding it. Unjudged briefs render as
+/// `considered` — never filtered, until a calibrated gate earns it.
+pub enum CapabilityTier {
+    /// At or above the floor: feeds synthesis context.
+    Strong,
+    /// Below the floor or unjudged: renders without feeding synthesis.
+    Considered,
+}
+
+/// Tier one score: the floor decides; unjudged reads `considered`.
+#[must_use]
+/// Tier one score: the floor decides; unjudged reads `considered`.
+pub fn capability_tier(score: Option<u8>) -> CapabilityTier {
+    match score {
+        Some(score) if u32::from(score) >= EXPLAIN_CAPABILITY_MIN_SCORE => CapabilityTier::Strong,
+        _ => CapabilityTier::Considered,
+    }
+}
+
+/// Tier label for rendering (`strong` / `considered`).
+#[must_use]
+/// Tier label for rendering (`strong` / `considered`).
+pub fn capability_tier_label(tier: CapabilityTier) -> &'static str {
+    match tier {
+        CapabilityTier::Strong => "strong",
+        CapabilityTier::Considered => "considered",
+    }
+}
+
+/// Pure capability-judge prompt constructor: byte-stable prompts for
+/// one query, its SVO understanding, and labelled candidates. The
+/// judge calls this, so the wire format cannot drift from the
+/// goldens; the agent loop reuses it for its own judging.
+#[must_use]
+/// Pure capability-judge prompt constructor: byte-stable prompts for
+/// one query, its SVO understanding, and labelled candidates. The
+/// judge calls this, so the wire format cannot drift from the
+/// goldens; the agent loop reuses it for its own judging.
+pub fn build_capability_judge_prompt(
+    query: &str,
+    understanding_svo: &[String],
+    candidates: &[(String, String)],
+) -> Vec<fluent_llm::protocol::ChatMessage> {
+    let mut body = format!("Question: {query}\n\nBriefs:\n");
+    for (index, (label, purpose)) in candidates.iter().enumerate() {
+        use std::fmt::Write as _;
+        let _ = write!(body, "{}. {label}\n{purpose}\n\n", index + 1);
+    }
+    let signals = if understanding_svo.is_empty() {
+        "(none)".to_string()
+    } else {
+        understanding_svo.join(", ")
+    };
+    body.push_str(&format!("Query signals: {signals}\n"));
+    vec![
+        fluent_llm::protocol::ChatMessage::with_role(
+            fluent_llm::roles::ChatRole::System,
+            "Rate how relevant each brief is to the question, 0-100. \
+             Respond with ONLY a strict JSON object mapping 1-based brief \
+             number to integer score, e.g. {\"1\": 85}.",
+        ),
+        fluent_llm::protocol::ChatMessage::with_role(fluent_llm::roles::ChatRole::User, body),
+    ]
+}
+
+/// Machine-readable capability brief: the agent-handoff shape
+/// (crate/domain/SVO/tier), pinned by schema goldens. Pure.
+#[must_use]
+/// Machine-readable capability brief: the agent-handoff shape
+/// (crate/domain/SVO/tier), pinned by schema goldens. Pure.
+pub fn scored_brief_json(scored: &ScoredBrief) -> serde_json::Value {
+    serde_json::json!({
+        "anchor": scored.brief.anchor,
+        "crate": scored.brief.crate_name,
+        "domain": scored.brief.domain,
+        "id": scored.brief.id,
+        "predicate": scored.brief.predicate,
+        "purpose": scored.brief.purpose,
+        "rank": scored.brief.rank,
+        "roles": scored.brief.roles,
+        "score": scored.score,
+        "source_path": scored.brief.source_path,
+        "tier": capability_tier_label(capability_tier(scored.score)),
+    })
+}
+
+/// Decision-judged capability briefs:/// Decision-judged capability briefs: the local decision model scores
+/// each brief 0-100 and scores tier the render. Ranks never move —
+/// the judge is uncalibrated, so it tiers but neither filters nor
+/// reorders. Unparseable, unknown-id, or failed judgments keep every
+/// brief unjudged in deterministic order (fail open by design — the
+/// section is a foothold, and dropping it on judge failure repeats
+/// the docs bug).
+pub fn judge_capability_briefs(
+    query: &str,
+    briefs: &[guidance_core::query::capability_match::RankedBrief],
+    backend: &dyn fluent_llm::client::ChatBackend,
+) -> Vec<ScoredBrief> {
+    if briefs.is_empty() {
+        return Vec::new();
+    }
+    let understanding = significant_query_tokens(query);
+    let candidates: Vec<(String, String)> = briefs
+        .iter()
+        .map(|brief| {
+            (
+                format!(
+                    "{}/{} ({}#{})",
+                    brief.crate_name, brief.domain, brief.source_path, brief.anchor
+                ),
+                brief.purpose.clone(),
+            )
+        })
+        .collect();
+    let messages = build_capability_judge_prompt(query, &understanding, &candidates);
+    let extras = serde_json::json!({
+        "temperature": 0.0,
+        "max_tokens": 64,
+        "prompt_version": CAPABILITY_JUDGE_VERSION,
+    });
+    let unjudged = || {
+        briefs
+            .iter()
+            .map(|brief| ScoredBrief {
+                brief: brief.clone(),
+                score: None,
+            })
+            .collect()
+    };
+    let text = match backend.chat_complete_with_extras(&messages, &extras) {
+        Ok(text) => text,
+        Err(_) => return unjudged(),
+    };
+    let stripped = guidance_core::model_text::strip_think_tags(&text);
+    let scores: std::collections::BTreeMap<String, serde_json::Value> =
+        guidance_core::model_text::extract_json_value(stripped.trim())
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+    if scores.keys().any(|key| {
+        key.parse::<usize>()
+            .map_or(true, |n| n < 1 || n > briefs.len())
+    }) {
+        return unjudged();
+    }
+    briefs
+        .iter()
+        .enumerate()
+        .map(|(index, brief)| {
+            let score = scores
+                .get(&(index + 1).to_string())
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|score| u8::try_from(score).ok());
+            ScoredBrief {
+                brief: brief.clone(),
+                score,
+            }
+        })
+        .collect()
+}
+
+/// Whether one explain row's source names a stale file: row sources
+/// are relative against their ingest root (a src dir), while the stale
+/// set is absolute. Candidates resolve against the workspace plus every
+/// src dir, so `src/` layouts match exactly like root layouts do. Pure.
+#[must_use]
+/// Whether one explain row's source names a stale file: row sources
+/// are relative against their ingest root (a src dir), while the stale
+/// set is absolute. Candidates resolve against the workspace plus every
+/// src dir, so `src/` layouts match exactly like root layouts do. Pure.
+pub fn explain_row_is_stale(
+    row_source: &str,
+    workspace: &str,
+    src_dirs: &[PathBuf],
+    stale: &[String],
+) -> bool {
+    let mut candidates = Vec::with_capacity(src_dirs.len() + 1);
+    candidates.push(
+        PathBuf::from(workspace)
+            .join(row_source)
+            .to_string_lossy()
+            .into_owned(),
+    );
+    candidates.extend(
+        src_dirs
+            .iter()
+            .map(|root| root.join(row_source).to_string_lossy().into_owned()),
+    );
+    candidates
+        .iter()
+        .any(|candidate| stale.iter().any(|path| path == candidate))
+}
+
 /// Code snippet for one top hit with live bounds: the node's current
 /// span when symbol metadata resolves, else the stored evidence range
 /// sliced from live bytes. Capped to [`EXPLAIN_SNIPPET_MAX_LINES`];
@@ -1039,8 +1550,11 @@ pub fn snippet_for_hit(hit: &SearchHit, workspace: &std::path::Path) -> Option<(
     let max_lines = EXPLAIN_SNIPPET_MAX_LINES;
     if let Some((name, symbol)) = hit_symbol(hit) {
         if let Some(member) = member_type_for_symbol(symbol) {
+            // Absolute path: relative_path is src-root-relative, which
+            // workspace.join would misresolve in src/ layouts (stale
+            // fallback under a live header). Absolute join is a no-op.
             if let Some((snippet, start, end)) = guidance_core::ast_parser::extract_code_snippet(
-                &hit.file.relative_path,
+                &hit.file.absolute_path,
                 &name,
                 member,
                 workspace,
@@ -1068,17 +1582,60 @@ pub fn snippet_for_hit(hit: &SearchHit, workspace: &std::path::Path) -> Option<(
     Some((snippet, start, end))
 }
 
+/// Source files behind doc ranking: the configured tree walk plus,
+/// when enabled, the repo-root orientation files. One home for the
+/// ranked set — rank and fingerprint both consume it, so a file the
+/// ranker sees is always fingerprinted (no stale-serving) and a file
+/// it skips never invalidates (no wasted recompute). Root files
+/// bypass the tree count/byte caps (exactly two bounded files) but
+/// keep the per-file size cap; an already-listed root (docs tree
+/// rooted at the workspace) dedupes by canonical path.
+fn doc_source_files(
+    docs_dir: Option<&std::path::Path>,
+    workspace: &std::path::Path,
+    include_roots: bool,
+) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut total_bytes: u64 = 0;
+    if let Some(dir) = docs_dir {
+        collect_markdown(dir, &mut files, &mut total_bytes);
+    }
+    if include_roots {
+        for name in ["README.md", "AGENTS.md"] {
+            let candidate = workspace.join(name);
+            let listed = files.iter().any(|listed| {
+                std::fs::canonicalize(listed)
+                    .ok()
+                    .zip(std::fs::canonicalize(&candidate).ok())
+                    .is_some_and(|(a, b)| a == b)
+            });
+            if listed || !candidate.is_file() {
+                continue;
+            }
+            if let Ok(meta) = std::fs::metadata(&candidate) {
+                if meta.len() > 100_000 {
+                    continue;
+                }
+            }
+            files.push(candidate);
+        }
+    }
+    files
+}
+
 /// Ranked doc paragraphs for one query over a markdown tree: walk once
 /// (capped), split blank-line paragraphs, score by shared query-token
 /// overlap. Returns `(doc-rel-path, excerpt)` in rank order. Pure file
 /// I/O, no index writes — the docs stay outside the fragment index.
 #[must_use]
-/// Ranked doc paragraphs for one query over a markdown tree.
+/// Ranked doc paragraphs for one query over a markdown tree, plus the
+/// repo-root orientation files when enabled.
 pub fn rank_doc_paragraphs(
     query: &str,
-    docs_dir: &std::path::Path,
+    docs_dir: Option<&std::path::Path>,
     workspace: &std::path::Path,
     limit: usize,
+    include_roots: bool,
 ) -> Vec<(String, String)> {
     use search_vector::tokens::split_tokens;
     let query_tokens: Vec<String> = {
@@ -1091,9 +1648,20 @@ pub fn rank_doc_paragraphs(
     if query_tokens.is_empty() {
         return Vec::new();
     }
-    let mut files = Vec::new();
-    let mut total_bytes: u64 = 0;
-    collect_markdown(docs_dir, &mut files, &mut total_bytes);
+    let files = doc_source_files(docs_dir, workspace, include_roots);
+    score_ranked_files(&files, &query_tokens, workspace, limit)
+}
+
+/// Score one file list (shared by rank entry points): split
+/// blank-line paragraphs, keep overlaps, rank by (overlap desc,
+/// path asc), take the limit. Pure.
+fn score_ranked_files(
+    files: &[PathBuf],
+    query_tokens: &[String],
+    workspace: &std::path::Path,
+    limit: usize,
+) -> Vec<(String, String)> {
+    use search_vector::tokens::split_tokens;
     let mut scored: Vec<(usize, String, String)> = Vec::new();
     for path in files {
         let Ok(bytes) = std::fs::read(&path) else {
@@ -1168,6 +1736,217 @@ fn collect_markdown(dir: &std::path::Path, out: &mut Vec<PathBuf>, total_bytes: 
     }
 }
 
+/// Max cached query rankings in the on-disk docs rank cache.
+pub const DOC_RANK_CACHE_MAX_ENTRIES: usize = 128;
+
+/// Cache file name inside the guidance dir. Never ingested (JSON
+/// under `.guidance/`, outside every selection root) and never
+/// treated as a sidecar (not under `src/`).
+pub const DOC_RANK_CACHE_FILE: &str = "doc_rank_cache.json";
+
+/// Fingerprint of the ranked file set for cache validation:
+/// sorted `(workspace-relative path, mtime ms, size bytes)`.
+/// Computed over exactly the files `doc_source_files` returns, so a
+/// file the ranker sees is always fingerprinted (no stale serving)
+/// and a file it skips never invalidates (no wasted recompute).
+/// Cheap stat walk — no reads.
+#[must_use]
+/// Fingerprint of the ranked file set for cache validation:
+/// sorted `(workspace-relative path, mtime ms, size bytes)`.
+/// Computed over exactly the files `doc_source_files` returns, so a
+/// file the ranker sees is always fingerprinted (no stale serving)
+/// and a file it skips never invalidates (no wasted recompute).
+/// Cheap stat walk — no reads.
+pub fn doc_tree_fingerprint(
+    files: &[PathBuf],
+    workspace: &std::path::Path,
+) -> Vec<(String, i64, u64)> {
+    let mut out: Vec<(String, i64, u64)> = files
+        .iter()
+        .filter_map(|path| {
+            let meta = std::fs::metadata(path).ok()?;
+            let rel = path
+                .strip_prefix(workspace)
+                .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_millis() as i64);
+            Some((rel, mtime, meta.len()))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Order-insensitive cache key: sorted significant query tokens
+/// plus the rank limit and the root-files flag. Rank scoring is
+/// token-set based with path-ordered tiebreaks, so token order never
+/// changes the output; the flag separates scoped from unscoped runs
+/// over the same query.
+#[must_use]
+/// Order-insensitive cache key: sorted significant query tokens
+/// plus the rank limit and the root-files flag. Rank scoring is
+/// token-set based with path-ordered tiebreaks, so token order never
+/// changes the output; the flag separates scoped from unscoped runs
+/// over the same query.
+pub fn doc_rank_cache_key(query: &str, limit: usize, include_roots: bool) -> String {
+    use search_vector::tokens::split_tokens;
+    let mut tokens: Vec<String> = {
+        let mut seen = Vec::new();
+        for token in split_tokens(query) {
+            search_vector::tokens::lower_dedup_push(&mut seen, &token);
+        }
+        seen
+    };
+    tokens.sort();
+    tokens.push(format!("limit={limit}"));
+    tokens.push(format!("roots={include_roots}"));
+    tokens.join("\x1f")
+}
+
+/// One cached ranking: the query key plus the exact ranked list
+/// `rank_doc_paragraphs` returned (post-take, byte-identical).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One cached ranking: the query key plus the exact ranked list
+/// `rank_doc_paragraphs` returned (post-take, byte-identical).
+struct DocRankCacheEntry {
+    query: String,
+    ranked: Vec<(String, String)>,
+}
+
+/// On-disk memo of doc rankings: the tree fingerprint the entries
+/// were computed from, plus bounded query→ranking rows. All methods
+/// are total and hermetic: missing/corrupt input is an empty cache,
+/// never an error.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// On-disk memo of doc rankings: the tree fingerprint the entries
+/// were computed from, plus bounded query→ranking rows. All methods
+/// are total and hermetic: missing/corrupt input is an empty cache,
+/// never an error.
+pub struct DocRankCache {
+    files: Vec<(String, i64, u64)>,
+    entries: Vec<DocRankCacheEntry>,
+}
+
+impl DocRankCache {
+    /// Load from disk; missing or unparsable files read as empty
+    /// (fail open to a fresh rank — a corrupt cache must never
+    /// break explain or serve stale paragraphs as current).
+    #[must_use]
+    pub fn load(path: &std::path::Path) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
+    }
+
+    /// Persist atomically. Callers save only after a miss changed
+    /// the cache, so read commands stay write-free on hits.
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = serde_json::to_string(self)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        common_core::io::write_atomic(path, text.as_bytes())
+    }
+
+    /// Number of cached query rankings (bounded by
+    /// [`DOC_RANK_CACHE_MAX_ENTRIES`]). Test introspection only;
+    /// production code keys off lookup hits, not sizes.
+    #[cfg(test)]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// True when no ranking is cached. Test introspection only.
+    #[cfg(test)]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Hit only when the tree fingerprint matches exactly AND the
+    /// query key is present. Anything else is a miss (re-rank).
+    #[must_use]
+    pub fn lookup(
+        &self,
+        fingerprint: &[(String, i64, u64)],
+        key: &str,
+    ) -> Option<Vec<(String, String)>> {
+        if self.files != fingerprint {
+            return None;
+        }
+        self.entries
+            .iter()
+            .find(|entry| entry.query == key)
+            .map(|entry| entry.ranked.clone())
+    }
+
+    /// Record a ranking, keyed by query. Returns true when the
+    /// cache content changed (caller saves only then). Oldest
+    /// entries evict past the cap; re-storing an identical ranking
+    /// refreshes recency without reporting a change.
+    pub fn store(
+        &mut self,
+        fingerprint: Vec<(String, i64, u64)>,
+        key: String,
+        ranked: Vec<(String, String)>,
+    ) -> bool {
+        let mut changed = self.files != fingerprint;
+        self.files = fingerprint;
+        if let Some(index) = self.entries.iter().position(|entry| entry.query == key) {
+            let entry = self.entries.remove(index);
+            if entry.ranked != ranked {
+                changed = true;
+            }
+            self.entries.push(DocRankCacheEntry { query: key, ranked });
+        } else {
+            changed = true;
+            self.entries.push(DocRankCacheEntry { query: key, ranked });
+        }
+        while self.entries.len() > DOC_RANK_CACHE_MAX_ENTRIES {
+            self.entries.remove(0);
+            changed = true;
+        }
+        changed
+    }
+}
+
+/// Ranked doc paragraphs with a persistent memo: fingerprint the tree
+/// (stat walk, no reads); on fingerprint + query-key hit return the
+/// stored list byte-identical, else rank fresh and record it.
+/// Returns the ranking plus whether the cache changed (callers save
+/// only then, keeping read commands write-free on hits).
+#[must_use]
+/// Ranked doc paragraphs with a persistent memo: fingerprint the tree
+/// (stat walk, no reads); on fingerprint + query-key hit return the
+/// stored list byte-identical, else rank fresh and record it.
+/// Returns the ranking plus whether the cache changed (callers save
+/// only then, keeping read commands write-free on hits).
+pub fn rank_doc_paragraphs_cached(
+    query: &str,
+    docs_dir: Option<&std::path::Path>,
+    workspace: &std::path::Path,
+    limit: usize,
+    include_roots: bool,
+    cache: &mut DocRankCache,
+) -> (Vec<(String, String)>, bool) {
+    let key = doc_rank_cache_key(query, limit, include_roots);
+    let files = doc_source_files(docs_dir, workspace, include_roots);
+    let fingerprint = doc_tree_fingerprint(&files, workspace);
+    if let Some(hit) = cache.lookup(&fingerprint, &key) {
+        return (hit, false);
+    }
+    let ranked = rank_doc_paragraphs(query, docs_dir, workspace, limit, include_roots);
+    let changed = cache.store(fingerprint, key, ranked.clone());
+    (ranked, changed)
+}
+
 /// Answer prompt: the question plus fenced excerpts as the only
 /// evidence. The model must answer concisely from the excerpts and
 /// cite every claim as `file:line`.
@@ -1176,12 +1955,13 @@ fn collect_markdown(dir: &std::path::Path, out: &mut Vec<PathBuf>, total_bytes: 
 pub fn answer_messages(
     query: &str,
     context: &[(String, String, u32, u32, String)],
+    briefs: &[String],
 ) -> Vec<fluent_llm::protocol::ChatMessage> {
     use fluent_llm::protocol::ChatMessage;
     use fluent_llm::roles::ChatRole;
     let system = ChatMessage::with_role(
         ChatRole::System,
-        "You answer questions about a codebase using ONLY the provided excerpts. \
+        "You answer questions about a codebase using ONLY the provided excerpts and briefs. \
          Be concise (150 words or fewer). Cite every claim as file:line. \
          If the excerpts do not answer the question, say so.",
     );
@@ -1193,7 +1973,53 @@ pub fn answer_messages(
             "## {name} ({file}:{start}-{end})\n```code\n{snippet}\n```\n"
         );
     }
+    if !briefs.is_empty() {
+        use std::fmt::Write as _;
+        body.push_str("\nCapability briefs:\n");
+        for purpose in briefs {
+            let _ = write!(body, "- {purpose}\n");
+        }
+    }
     vec![system, ChatMessage::with_role(ChatRole::User, body)]
+}
+
+/// Max answer characters for post-processing: the repo's token
+/// estimate convention (tokens * 4), mirroring the summary budget.
+pub const EXPLAIN_ANSWER_MAX_CHARS: usize = EXPLAIN_ANSWER_MAX_TOKENS * 4;
+
+/// Clean one model answer: strip think/reasoning wrappers, then cut an
+/// over-long answer at the last in-cap sentence boundary (never
+/// mid-word). Falls back to the hard char-boundary cut only when no
+/// boundary exists; short answers pass through byte-identical.
+#[must_use]
+/// Clean one model answer: strip think/reasoning wrappers, then cut an
+/// over-long answer at the last in-cap sentence boundary (never
+/// mid-word). Falls back to the hard char-boundary cut only when no
+/// boundary exists; short answers pass through byte-identical.
+fn clean_answer_text(text: &str) -> String {
+    let stripped = guidance_core::model_text::strip_think_tags(text);
+    let trimmed = stripped.trim();
+    if trimmed.len() <= EXPLAIN_ANSWER_MAX_CHARS {
+        return trimmed.to_string();
+    }
+    let mut end = EXPLAIN_ANSWER_MAX_CHARS.min(trimmed.len());
+    while !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    let prefix = &trimmed[..end];
+    let mut boundary: Option<usize> = None;
+    for (index, cell) in prefix.char_indices() {
+        if matches!(cell, '.' | '!' | '?') {
+            let next = prefix[index + cell.len_utf8()..].chars().next();
+            if next.is_none_or(char::is_whitespace) {
+                boundary = Some(index + cell.len_utf8());
+            }
+        }
+    }
+    match boundary {
+        Some(cut) => prefix[..cut].trim_end().to_string(),
+        None => prefix.to_string(),
+    }
 }
 
 /// Concise model answer over the excerpt context. `None` when there is
@@ -1202,13 +2028,14 @@ pub fn answer_messages(
 pub fn answer_with_backend(
     query: &str,
     context: &[(String, String, u32, u32, String)],
+    briefs: &[String],
     backend: &dyn fluent_llm::client::ChatBackend,
     model: &str,
 ) -> Result<Option<String>, String> {
     if context.is_empty() {
         return Ok(None);
     }
-    let messages = answer_messages(query, context);
+    let messages = answer_messages(query, context, briefs);
     let extras = serde_json::json!({
         "temperature": 0.0,
         "max_tokens": EXPLAIN_ANSWER_MAX_TOKENS,
@@ -1217,11 +2044,11 @@ pub fn answer_with_backend(
         .chat_complete_with_extras(&messages, &extras)
         .map_err(|error| error.to_string())?;
     let _ = model;
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
+    let cleaned = clean_answer_text(&text);
+    if cleaned.is_empty() {
         return Ok(None);
     }
-    Ok(Some(trimmed))
+    Ok(Some(cleaned))
 }
 
 /// Top snippets for fused hits, rank order, byte-identical duplicates
@@ -1269,10 +2096,102 @@ pub fn top_snippets(
     snippets
 }
 
+/// Significant query tokens: lowercase word tokens of length 3 or more,
+/// minus scaffolding stopwords. The relevance gate's vocabulary:
+/// distinctive names survive on one token, prose needs two.
+/// Delegates to the shared funnel rule so the two can never drift.
+#[must_use]
+/// Significant query tokens: lowercase word tokens of length 3 or more,
+/// minus scaffolding stopwords. The relevance gate's vocabulary:
+/// distinctive names survive on one token, prose needs two.
+/// Delegates to the shared funnel rule so the two can never drift.
+pub fn significant_query_tokens(query: &str) -> Vec<String> {
+    guidance_core::query::funnel::significant_terms(query)
+}
+
+/// Lowercase haystack behind one hit: symbol name, file stem, and every
+/// evidence/entity text. Structural identity (name, stem) and prose
+/// (texts) share one string; the caller decides the bar.
+fn hit_search_text(hit: &SearchHit) -> String {
+    fn push_content(out: &mut String, content: &guidance_core::search_types::FragmentContent) {
+        use guidance_core::search_types::FragmentContent;
+        if let FragmentContent::Text { text } = content {
+            out.push(' ');
+            out.push_str(&text.to_lowercase());
+        }
+    }
+    let mut out = String::new();
+    if let Some((name, _)) = hit_symbol(hit) {
+        out.push_str(&name.to_lowercase());
+    }
+    out.push(' ');
+    if let Some(stem) = std::path::Path::new(&hit.file.absolute_path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+    {
+        out.push_str(&stem.to_lowercase());
+    }
+    for evidence in &hit.evidence {
+        push_content(&mut out, &evidence.content);
+    }
+    push_content(&mut out, &hit.entity.content);
+    out
+}
+
+/// Whether one fused hit is relevant to the query's significant tokens:
+/// any token in the symbol name (structural match), or two distinct
+/// tokens anywhere in name, file stem, or evidence text (prose match).
+/// File stems alone never qualify: any `*components*.rs` file would
+/// otherwise survive its own name token on a broad query and feed the
+/// answer confabulation. Single-token queries keep everything — a lone
+/// token cannot prove irrelevance, so narrow intent keeps today's
+/// behavior byte-identically.
+#[must_use]
+/// Whether one fused hit is relevant to the query's significant tokens:
+/// any token in the symbol name (structural match), or two distinct
+/// tokens anywhere in name, file stem, or evidence text (prose match).
+/// File stems alone never qualify: any `*components*.rs` file would
+/// otherwise survive its own name token on a broad query and feed the
+/// answer confabulation. Single-token queries keep everything — a lone
+/// token cannot prove irrelevance, so narrow intent keeps today's
+/// behavior byte-identically.
+pub fn hit_is_relevant(hit: &SearchHit, tokens: &[String]) -> bool {
+    if tokens.len() <= 1 {
+        return true;
+    }
+    let structural = hit_symbol(hit).is_some_and(|(name, _)| {
+        let name = name.to_lowercase();
+        tokens.iter().any(|token| name.contains(token.as_str()))
+    });
+    if structural {
+        return true;
+    }
+    let haystack = hit_search_text(hit);
+    let distinct = tokens
+        .iter()
+        .filter(|token| haystack.contains(token.as_str()))
+        .count();
+    distinct >= 2
+}
+
+/// Keep the relevant subset of fused hits, rank order. Pure; the caller
+/// decides what gated-empty means.
+#[must_use]
+/// Keep the relevant subset of fused hits, rank order. Pure; the caller
+/// decides what gated-empty means.
+pub fn filter_relevant_hits(hits: &[SearchHit], tokens: &[String]) -> Vec<SearchHit> {
+    hits.iter()
+        .filter(|hit| hit_is_relevant(hit, tokens))
+        .cloned()
+        .collect()
+}
+
 /// Canonical identity for one hit's file: absolute paths verbatim,
 /// workspace-relative rows joined to the workspace, `/./` and interior
-/// `..` collapsed lexically. Dual rows from mixed relative/absolute
-/// invocations resolve to one identity without touching stored ids.
+/// `..` collapsed lexically. A relative workspace (`.` or `src`) resolves
+/// against the process working directory first, so dual rows (one
+/// indexed relative, one absolute) collapse to one identity instead of
+/// rendering twice.
 fn canonical_hit_path(hit: &SearchHit, workspace: &std::path::Path) -> String {
     use std::path::Component;
     let abs = PathBuf::from(&hit.file.absolute_path);
@@ -1280,6 +2199,16 @@ fn canonical_hit_path(hit: &SearchHit, workspace: &std::path::Path) -> String {
         abs
     } else {
         workspace.join(abs)
+    };
+    // A relative workspace (`.` or `src`) must not leave a relative
+    // identity: resolve against the working directory first, best
+    // effort, so dual rows collapse instead of rendering twice.
+    let joined = if joined.is_absolute() {
+        joined
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(&joined))
+            .unwrap_or(joined)
     };
     let mut out = PathBuf::new();
     for component in joined.components() {
@@ -1294,6 +2223,304 @@ fn canonical_hit_path(hit: &SearchHit, workspace: &std::path::Path) -> String {
     out.to_string_lossy().into_owned()
 }
 
+/// Code-thin bar: fewer relevant code hits than this opens the
+/// capability branch (branch 1).
+pub const CAPABILITY_TRIGGER_HITS: usize = 3;
+
+/// Multi-route agreement floor: a top fused score below this means no
+/// code hit ranked in more than one route (single-route RRF peaks at
+/// ~1/61), which also opens the capability branch.
+pub const CAPABILITY_TOP_SCORE_FLOOR: f64 = 0.02;
+
+/// Brief candidate pool per axis (FTS, lemma) before SVO ranking.
+pub const CAPABILITY_CANDIDATE_LIMIT: usize = 20;
+
+/// Scoped code hits pulled per traversed brief (branch 2).
+pub const CAPABILITY_BRANCH2_LIMIT: usize = 5;
+
+/// One branch-2 scoped pull: the traversed brief's code hits, tagged
+/// with the brief's crate for provenance.
+#[derive(Debug, Clone)]
+/// One branch-2 scoped pull: the traversed brief's code hits, tagged
+/// with the brief's crate for provenance.
+pub struct BranchPull {
+    /// Traversed brief's crate (the scope the pull ran under).
+    pub crate_name: String,
+    /// Scoped code hits passing the relaxed gate.
+    pub hits: Vec<SearchHit>,
+}
+
+/// Branch outcome: the ranked briefs plus the branch-2 pulls (at most
+/// one — the rank-1 pre-calibration pull). An untriggered query reads
+/// as empty briefs and pulls.
+#[derive(Debug, Clone, Default)]
+/// Branch outcome: the ranked briefs plus the branch-2 pulls (at most
+/// one — the rank-1 pre-calibration pull). An untriggered query reads
+/// as empty briefs and pulls.
+pub struct CapabilityBranch {
+    /// Ranked briefs, capped by the shared ranker.
+    pub briefs: Vec<guidance_core::query::capability_match::RankedBrief>,
+    /// Scoped code pulls (rank-1 brief only, pre-calibration).
+    pub pulls: Vec<BranchPull>,
+}
+
+/// Whether code-thin recall opens the capability branch: fewer
+/// relevant hits than the bar, or a top fused score with no
+/// multi-route agreement. Pure; the caller decides what fires.
+#[must_use]
+/// Whether code-thin recall opens the capability branch: fewer
+/// relevant hits than the bar, or a top fused score with no
+/// multi-route agreement. Pure; the caller decides what fires.
+pub fn capability_trigger(hits: &[SearchHit]) -> bool {
+    if hits.len() < CAPABILITY_TRIGGER_HITS {
+        return true;
+    }
+    hits.first()
+        .is_some_and(|hit| hit.score.value() < CAPABILITY_TOP_SCORE_FLOOR)
+}
+
+/// Whether a ranked brief opens branch-2 traversal: the rank-1 brief
+/// only (pre-calibration exception — unjudged briefs count as weak,
+/// and the single best guess keeps the tree functional before any
+/// judge is calibrated).
+#[must_use]
+/// Whether a ranked brief opens branch-2 traversal: the rank-1 brief
+/// only (pre-calibration exception — unjudged briefs count as weak,
+/// and the single best guess keeps the tree functional before any
+/// judge is calibrated).
+pub fn brief_opens_traversal(rank: usize) -> bool {
+    rank == 1
+}
+
+/// Branch-2 scope for a brief's crate: the package's registered prefix
+/// as a glob. `None` (unknown or unmapped crate) never traverses —
+/// an unscoped pull is just keyword recall again.
+#[must_use]
+/// Branch-2 scope for a brief's crate: the package's registered prefix
+/// as a glob. `None` (unknown or unmapped crate) never traverses —
+/// an unscoped pull is just keyword recall again.
+pub fn branch_scope_glob(crate_name: &str) -> Option<String> {
+    if crate_name.is_empty() || crate_name == "unknown" {
+        return None;
+    }
+    guidance_core::component_map::prefix_for_package(crate_name)
+        .map(|prefix| format!("{prefix}/**"))
+}
+
+/// Whether a branch-2 hit passes the relaxed gate: the originating
+/// brief already established *where to look*, so the text bar drops
+/// from two significant tokens to one (name, stem, or text).
+/// Single-token queries keep everything, like the standard gate.
+#[must_use]
+/// Whether a branch-2 hit passes the relaxed gate: the originating
+/// brief already established *where to look*, so the text bar drops
+/// from two significant tokens to one (name, stem, or text).
+/// Single-token queries keep everything, like the standard gate.
+pub fn branch_hit_passes_gate(hit: &SearchHit, tokens: &[String]) -> bool {
+    if tokens.len() <= 1 {
+        return true;
+    }
+    let haystack = hit_search_text(hit);
+    tokens.iter().any(|token| haystack.contains(token.as_str()))
+}
+
+/// Merge branch-2 pulls into the base hits with a visited-set on
+/// canonical file identity: a file rendering in both branches renders
+/// once (first wins), annotated with both provenances. Returns the
+/// merged hits, per-hit branch tags (aligned, `None` for base hits),
+/// and dual-provenance tags for base-covered files.
+#[must_use]
+/// Merge branch-2 pulls into the base hits with a visited-set on
+/// canonical file identity: a file rendering in both branches renders
+/// once (first wins), annotated with both provenances. Returns the
+/// merged hits, per-hit branch tags (aligned, `None` for base hits),
+/// and dual-provenance tags for base-covered files.
+pub fn merge_branch_hits(
+    base: Vec<SearchHit>,
+    pulls: &[BranchPull],
+    workspace: &std::path::Path,
+) -> (Vec<SearchHit>, Vec<Option<String>>, Vec<(String, String)>) {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = base
+        .iter()
+        .map(|hit| canonical_hit_path(hit, workspace))
+        .collect();
+    let mut merged = base;
+    let mut tags: Vec<Option<String>> = vec![None; merged.len()];
+    let mut duals: Vec<(String, String)> = Vec::new();
+    for pull in pulls {
+        for hit in &pull.hits {
+            if seen.insert(canonical_hit_path(hit, workspace)) {
+                tags.push(Some(pull.crate_name.clone()));
+                merged.push(hit.clone());
+            } else {
+                duals.push((
+                    hit.file.relative_path.clone(),
+                    format!("via capability: {}", pull.crate_name),
+                ));
+            }
+        }
+    }
+    (merged, tags, duals)
+}
+
+/// Per-snippet provenance tags from file-level branch tags: every
+/// snippet whose file a branch-2 pull covered carries the pull's tag.
+/// Multiple crates join with `, `; uncovered snippets read `""`.
+#[must_use]
+/// Per-snippet provenance tags from file-level branch tags: every
+/// snippet whose file a branch-2 pull covered carries the pull's tag.
+/// Multiple crates join with `, `; uncovered snippets read `""`.
+pub fn tag_snippets_by_file(
+    snippets: &[(String, String, u32, u32, String)],
+    file_tags: &[(String, String)],
+) -> Vec<String> {
+    snippets
+        .iter()
+        .map(|(_, file, _, _, _)| {
+            let mut crates: Vec<&str> = file_tags
+                .iter()
+                .filter(|(tagged, _)| tagged == file)
+                .map(|(_, tag)| tag.as_str())
+                .collect();
+            crates.sort();
+            crates.dedup();
+            crates.join(", ")
+        })
+        .collect()
+}
+
+/// Branch-1 recall over stored briefs: SVO overlap over the funneled
+/// query signals plus FTS/lemma over brief text, ranked never
+/// filtered. Empty on any failure (old index without the table reads
+/// as no briefs, never an error).
+#[must_use]
+/// Branch-1 recall over stored briefs: SVO overlap over the funneled
+/// query signals plus FTS/lemma over brief text, ranked never
+/// filtered. Empty on any failure (old index without the table reads
+/// as no briefs, never an error).
+pub fn recall_capability_briefs(
+    query: &str,
+    db: &GuidanceDb,
+    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+) -> Vec<guidance_core::query::capability_match::RankedBrief> {
+    use guidance_core::query::capability_match::{
+        funneled_query_signals, rank_briefs, BriefCandidate,
+    };
+    use guidance_core::query::funnel::funnel_terms;
+    let funnel = funnel_terms(query, &search_vector::SemanticAliases::new(), None);
+    if funnel.is_empty() {
+        return Vec::new();
+    }
+    let signals = funneled_query_signals(&funnel, nlp);
+    let expanded = funnel.expanded.join(" ");
+    let mut fts_scores: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    if let Ok(hits) = db.search_capabilities(&expanded, CAPABILITY_CANDIDATE_LIMIT) {
+        for hit in hits {
+            fts_scores.insert(hit.id, hit.score);
+        }
+    }
+    let mut ids: std::collections::HashSet<String> = fts_scores.keys().cloned().collect();
+    let lemmas = guidance_core::query::ingest::query_lemmas(nlp, &expanded);
+    if !lemmas.is_empty() {
+        if let Ok(lemma_ids) = db.capabilities_for_lemmas(&lemmas, CAPABILITY_CANDIDATE_LIMIT) {
+            ids.extend(lemma_ids);
+        }
+    }
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let mut ordered: Vec<String> = ids.into_iter().collect();
+    ordered.sort();
+    let rows = db.capabilities_for_ids(&ordered).unwrap_or_default();
+    let candidates: Vec<BriefCandidate> = rows
+        .into_iter()
+        .map(|row| {
+            let roles: Vec<String> = serde_json::from_str(&row.roles_json).unwrap_or_default();
+            BriefCandidate {
+                id: row.id.clone(),
+                purpose: row.purpose,
+                predicate: row.predicate,
+                roles,
+                crate_name: row.crate_name,
+                domain: row.domain,
+                source_path: row.source_path,
+                anchor: row.anchor,
+                fts_score: fts_scores.remove(&row.id),
+            }
+        })
+        .collect();
+    rank_briefs(&signals, &candidates)
+}
+
+/// The capability branch beside fused recall: code-thin relevant hits
+/// open SVO-ranked briefs (branch 1); the rank-1 brief opens one
+/// scoped code pull through the relaxed gate (branch 2, depth ≤ 2 by
+/// construction — pulls never recurse). Untriggered queries cost
+/// nothing: no DB open, no pipeline build.
+#[must_use]
+/// The capability branch beside fused recall: code-thin relevant hits
+/// open SVO-ranked briefs (branch 1); the rank-1 brief opens one
+/// scoped code pull through the relaxed gate (branch 2, depth ≤ 2 by
+/// construction — pulls never recurse). Untriggered queries cost
+/// nothing: no DB open, no pipeline build.
+pub fn capability_branch(
+    query: &str,
+    workspace: &str,
+    db_path: &str,
+    hits: &[SearchHit],
+) -> CapabilityBranch {
+    if !capability_trigger(hits) {
+        return CapabilityBranch::default();
+    }
+    let db_file = PathBuf::from(db_path);
+    if !db_file.exists() {
+        return CapabilityBranch::default();
+    }
+    let db = match GuidanceDb::open(&db_file) {
+        Ok(db) => db,
+        Err(error) => {
+            eprintln!("Warning: capability branch cannot open index at {db_path}: {error}");
+            return CapabilityBranch::default();
+        }
+    };
+    let nlp_holder = LazyNlp::new();
+    let nlp = nlp_holder.get();
+    let briefs = recall_capability_briefs(query, &db, nlp);
+    let tokens = significant_query_tokens(query);
+    let mut pulls = Vec::new();
+    for brief in briefs
+        .iter()
+        .filter(|brief| brief_opens_traversal(brief.rank))
+    {
+        let Some(scope) = branch_scope_glob(&brief.crate_name) else {
+            continue;
+        };
+        let plan = build_search_plan(
+            &brief.purpose,
+            SearchMode::Fuse,
+            CAPABILITY_BRANCH2_LIMIT,
+            false,
+            true,
+            &[scope],
+            &[],
+        );
+        let mut branch_hits = match recall_on_index(workspace, db_path, &plan) {
+            Ok(branch_hits) => branch_hits,
+            Err(error) => {
+                eprintln!("Warning: capability branch-2 recall failed ({error})");
+                Vec::new()
+            }
+        };
+        branch_hits.retain(|hit| branch_hit_passes_gate(hit, &tokens));
+        pulls.push(BranchPull {
+            crate_name: brief.crate_name.clone(),
+            hits: branch_hits,
+        });
+    }
+    CapabilityBranch { briefs, pulls }
+}
+
 /// Render the full explain output in reference order: answer, docs,
 /// top snippets (fenced, blank-line separated), table, citations,
 /// drill-down footer. Empty recall keeps the legacy empty state
@@ -1306,9 +2533,11 @@ pub fn render_explain_full(
     docs: &[(String, String)],
     answer: Option<&str>,
     suggestions: &[String],
+    capabilities: &[(String, String)],
+    snippet_tags: &[String],
 ) -> String {
     let mut out = format!("## Explain: {query}\n\n");
-    if rows.is_empty() {
+    if rows.is_empty() && capabilities.is_empty() {
         out.push_str("No results found.\n");
         return out;
     }
@@ -1321,6 +2550,12 @@ pub fn render_explain_full(
         out.push_str("\n### From the docs\n");
         for (path, excerpt) in docs {
             out.push_str(&format!("- {path}: {excerpt}\n"));
+        }
+    }
+    if !capabilities.is_empty() {
+        out.push_str("\n### From the capabilities\n");
+        for (label, purpose) in capabilities {
+            out.push_str(&format!("- {label}: {purpose}\n"));
         }
     }
     if !snippets.is_empty() {
@@ -1336,8 +2571,14 @@ pub fn render_explain_full(
                 Some("md") => "md",
                 _ => "",
             };
+            let tag = snippet_tags.get(index).map(String::as_str).unwrap_or("");
+            let tagged = if tag.is_empty() {
+                String::new()
+            } else {
+                format!(" ({tag})")
+            };
             out.push_str(&format!(
-                "#### {}. {name} — {file}:{start}-{end}\n",
+                "#### {}. {name} — {file}:{start}-{end}{tagged}\n",
                 index + 1
             ));
             out.push_str(&format!("```{lang}\n{snippet}\n```\n\n"));

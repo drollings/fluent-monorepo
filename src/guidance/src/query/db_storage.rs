@@ -346,6 +346,25 @@ pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> Fragme
     }
 }
 
+/// Content-stable symbol identity: file plus symbol path, never the
+/// positional chunk index. Reorder and window-count edits keep it;
+/// only renames, moves, and scope changes move it.
+#[must_use]
+/// Content-stable symbol identity: file plus symbol path, never the
+/// positional chunk index. Reorder and window-count edits keep it;
+/// only renames, moves, and scope changes move it.
+pub fn stable_symbol_id(file_id: &str, name: Option<&str>, scope: Option<&str>) -> String {
+    let mut id = String::with_capacity(file_id.len() + 3);
+    id.push_str(file_id);
+    id.push('#');
+    if let Some(scope) = scope.filter(|scope| !scope.is_empty()) {
+        id.push_str(scope);
+        id.push_str("::");
+    }
+    id.push_str(name.unwrap_or("$symbol"));
+    id
+}
+
 /// Interface fingerprint: name, type, scope, and normalized signature.
 /// Body text never enters this hash, so a body-only edit keeps it stable.
 #[must_use]
@@ -403,41 +422,32 @@ pub fn content_hash_for_entity(fragment: &EntityFragment) -> String {
 }
 
 /// Identity row for one definition; `None` for chunks without metadata.
-/// Callers persist the returned rows alongside fragments from the same
-/// harvest pass; reads stay on fragments this milestone.
+/// One row per (file, symbol, scope) under the content-stable id —
+/// window chunks of one entity share the row, so chunk-count edits
+/// never churn identity. Callers persist the returned rows alongside
+/// fragments from the same harvest pass; reads stay on fragments
+/// this milestone.
 #[must_use]
 /// Identity row for one definition; `None` for chunks without metadata.
-/// Callers persist the returned rows alongside fragments from the same
-/// harvest pass; reads stay on fragments this milestone.
+/// One row per (file, symbol, scope) under the content-stable id —
+/// window chunks of one entity share the row, so chunk-count edits
+/// never churn identity. Callers persist the returned rows alongside
+/// fragments from the same harvest pass; reads stay on fragments
+/// this milestone.
 pub fn symbol_record(fragment: &EntityFragment) -> Option<SymbolRecord> {
-    let (name, scope, signature) = match &fragment.metadata {
+    let (name, scope) = match &fragment.metadata {
         Some(EntityMetadata::Code {
-            symbol_name,
-            scope,
-            signature,
-            ..
-        }) => (symbol_name.clone(), scope.clone(), signature.clone()),
-        Some(EntityMetadata::Markdown {
-            heading,
-            scope,
-            level,
-        }) => (
-            heading.clone(),
-            scope.clone(),
-            level.map(|level| format!("h{level}")),
-        ),
+            symbol_name, scope, ..
+        }) => (symbol_name.clone(), scope.clone()),
+        Some(EntityMetadata::Markdown { heading, scope, .. }) => (heading.clone(), scope.clone()),
         None => return None,
     };
-    let range_json = serde_json::to_string(&fragment.range).unwrap_or_else(|_| "{}".to_string());
     Some(SymbolRecord {
-        symbol_id: fragment.id.clone(),
+        symbol_id: stable_symbol_id(&fragment.file_id, name.as_deref(), scope.as_deref()),
         file_id: fragment.file_id.clone(),
         name,
         scope,
-        signature,
         interface_hash: interface_hash_for_entity(fragment),
-        content_hash: content_hash_for_entity(fragment),
-        range_json,
     })
 }
 
