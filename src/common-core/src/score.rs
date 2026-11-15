@@ -140,14 +140,14 @@ where
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 /// Closed set of score dimensions used by ranked-candidate scoring.
-/// 
+///
 /// The wire format stays the lowercase strings (`"coherence"`,
 /// `"complexity"`, `"completeness"`, `"risk"`), so existing configs and
 /// serialized matrices deserialize byte-identically; new code matches on
 /// this enum instead of repeating the raw literals. The confidence /
 /// task-value axis separation is a consumer-side contract (documented where
 /// the matrix is configured): this type carries the category names only,
-/// 
+///
 /// and assigns no meaning to them.
 pub enum ScoreDimension {
     /// Producer confidence/self-doubt axis at consumers that use it so.

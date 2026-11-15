@@ -33,7 +33,7 @@ use std::collections::{HashMap, HashSet};
 /// engine observes the same registrations in mixed runs.
 #[derive(Default)]
 /// Every builtin store that lives exactly as long as one run.
-/// 
+///
 /// Growth discipline: stores are created on first use (`ta`) or on first
 /// present value (`fixnan`), so a purely numeric run allocates nothing here.
 /// Strategy, drawing, and request state joined this owner with their shared

@@ -4,13 +4,13 @@
 //! endpoint, contention retry, chain budget). Fallbacks narrate every
 //! hop so silence always comes with the exact remedy.
 
+use orator::OratorConfig;
 use orator_cli::{
     config::{resolve_backend, s2s_base_url},
     socket::{daemon_call_transport, Transport},
     stream::stream_chunks,
     ExitCode,
 };
-use orator::OratorConfig;
 
 use super::note_unavailable;
 
@@ -94,13 +94,15 @@ pub(crate) fn say(
 /// the daemon so the reply still speaks.
 fn say_audio_server(text: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
     match run_audio_turn(config, transport, |session| session.speak_blocking(text)) {
-        Ok(samples) => match orator_audio::play_blocking(&samples, orator_voice::s2s::AUDIO_OUT_RATE) {
-            Ok(()) => ExitCode::Success,
-            Err(error) => {
-                eprintln!("orator: {error}");
-                ExitCode::Error
+        Ok(samples) => {
+            match orator_audio::play_blocking(&samples, orator_voice::s2s::AUDIO_OUT_RATE) {
+                Ok(()) => ExitCode::Success,
+                Err(error) => {
+                    eprintln!("orator: {error}");
+                    ExitCode::Error
+                }
             }
-        },
+        }
         Err(orator_voice::s2s::S2sError::Aborted) => ExitCode::Interrupted,
         Err(error) if orator_voice::s2s::should_advance_chain(&error) => {
             say_fallback(text, config, transport)
@@ -191,10 +193,11 @@ pub(crate) fn run_audio_turn<T>(
             match daemon_voice_endpoint(transport) {
                 orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                     eprintln!("orator: using the daemon-owned voice server");
-                    let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
-                        endpoint: url,
-                        ..s2s.clone()
-                    });
+                    let mut retry =
+                        orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
+                            endpoint: url,
+                            ..s2s.clone()
+                        });
                     let outcome = run(&mut retry);
                     if watch.signalled() {
                         return interrupted();
@@ -213,10 +216,12 @@ pub(crate) fn run_audio_turn<T>(
                     match wait_for_daemon_boot(transport) {
                         orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                             eprintln!("orator: using the daemon-owned voice server");
-                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
-                                endpoint: url,
-                                ..s2s.clone()
-                            });
+                            let mut retry = orator_voice::s2s::AudioSession::new(
+                                orator_voice::s2s::S2sConfig {
+                                    endpoint: url,
+                                    ..s2s.clone()
+                                },
+                            );
                             let outcome = run(&mut retry);
                             if watch.signalled() {
                                 return interrupted();
@@ -269,10 +274,12 @@ pub(crate) fn run_audio_turn<T>(
                                 let owned = std::sync::Arc::clone(&owned);
                                 move || owned.release()
                             }));
-                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
-                                endpoint: owned.base_url().to_string(),
-                                ..s2s.clone()
-                            });
+                            let mut retry = orator_voice::s2s::AudioSession::new(
+                                orator_voice::s2s::S2sConfig {
+                                    endpoint: owned.base_url().to_string(),
+                                    ..s2s.clone()
+                                },
+                            );
                             let outcome = run(&mut retry);
                             if watch.signalled() {
                                 return interrupted();
@@ -299,10 +306,11 @@ pub(crate) fn run_audio_turn<T>(
             match daemon_voice_endpoint(transport) {
                 orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                     eprintln!("orator: using the daemon-owned voice server");
-                    let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
-                        endpoint: url,
-                        ..s2s.clone()
-                    });
+                    let mut retry =
+                        orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
+                            endpoint: url,
+                            ..s2s.clone()
+                        });
                     let outcome = run(&mut retry);
                     if watch.signalled() {
                         return interrupted();
@@ -321,10 +329,12 @@ pub(crate) fn run_audio_turn<T>(
                     match wait_for_daemon_boot(transport) {
                         orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                             eprintln!("orator: using the daemon-owned voice server");
-                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
-                                endpoint: url,
-                                ..s2s.clone()
-                            });
+                            let mut retry = orator_voice::s2s::AudioSession::new(
+                                orator_voice::s2s::S2sConfig {
+                                    endpoint: url,
+                                    ..s2s.clone()
+                                },
+                            );
                             let outcome = run(&mut retry);
                             if watch.signalled() {
                                 return interrupted();
@@ -357,10 +367,12 @@ pub(crate) fn run_audio_turn<T>(
                                 let owned = std::sync::Arc::clone(&owned);
                                 move || owned.release()
                             }));
-                            let mut retry = orator_voice::s2s::AudioSession::new(orator_voice::s2s::S2sConfig {
-                                endpoint: owned.base_url().to_string(),
-                                ..s2s.clone()
-                            });
+                            let mut retry = orator_voice::s2s::AudioSession::new(
+                                orator_voice::s2s::S2sConfig {
+                                    endpoint: owned.base_url().to_string(),
+                                    ..s2s.clone()
+                                },
+                            );
                             let outcome = run(&mut retry);
                             if watch.signalled() {
                                 return interrupted();
@@ -433,7 +445,12 @@ fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> Exit
     if let Some(binary) = orator_voice::s2s::resolve_tts_binary() {
         eprintln!("orator: server sent no audio; synthesizing on the GPU worker");
         let bundle = orator::bundle_from_s2s(&config.s2s, &config.models, &config.gguf_dir);
-        match orator_voice::s2s::synth_blocking(&binary, &bundle, text, orator_voice::s2s::TTS_TIMEOUT) {
+        match orator_voice::s2s::synth_blocking(
+            &binary,
+            &bundle,
+            text,
+            orator_voice::s2s::TTS_TIMEOUT,
+        ) {
             Ok((samples, rate)) => {
                 return match orator_audio::play_blocking(&samples, rate) {
                     Ok(()) => ExitCode::Success,

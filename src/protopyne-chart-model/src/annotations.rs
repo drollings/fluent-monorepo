@@ -18,7 +18,7 @@ use crate::convert::to_display_float;
 /// cheaply; serialization keeps the price exact (no float rounding).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Domain identity of one annotation: when plus at what exact price.
-/// 
+///
 /// Both legs are `Copy` and `Eq`, so keys compare by value and travel
 /// cheaply; serialization keeps the price exact (no float rounding).
 pub struct AnnotationKey {
@@ -60,7 +60,7 @@ impl AnnotationKey {
 /// the marker records that something is worth looking at, never what to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Display role of an annotation marker: which theme key paints it.
-/// 
+///
 /// These are paint roles (`bull`/`bear`/neutral), not trade semantics —
 /// the marker records that something is worth looking at, never what to do.
 pub enum AnnotationStyle {

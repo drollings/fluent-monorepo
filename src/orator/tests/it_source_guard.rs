@@ -279,8 +279,8 @@ fn dependency_edges_stay_split() {
         !models.contains("orator-s2s"),
         "orator-models must stay a leaf (no runtime-crate edge)"
     );
-    let voice =
-        std::fs::read_to_string(root.join("orator-voice/Cargo.toml")).expect("voice manifest readable");
+    let voice = std::fs::read_to_string(root.join("orator-voice/Cargo.toml"))
+        .expect("voice manifest readable");
     assert!(
         voice.contains("orator-audio"),
         "orator-voice reads WAV through orator-audio"

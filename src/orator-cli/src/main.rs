@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 use fluent_concurrency::stream::StreamAbort;
+use orator::OratorConfig;
 use orator_audio::{resample_linear, CpalBackend};
 use orator_cli::{
     config::resolve_backend,
@@ -20,7 +21,6 @@ use orator_cli::{
     transcribe::{audio_server_cue, cue_from_centiseconds, render, Cue, TranscriptFormat},
     Cli, Command, ExitCode,
 };
-use orator::OratorConfig;
 use orator_desktop::{ExternalClipboard, LadderMemory, NoChord};
 use orator_voice::stt::WhisperBackend;
 
@@ -2360,9 +2360,9 @@ fn propose(request: &[String], config: &OratorConfig, transport: Transport) -> E
 /// server ownership (unlike `ask` with `llm.auto_boot` set).
 /// Returns the reply text or the exit to fall back with.
 fn propose_via_supervised(want: &str, config: &OratorConfig) -> Result<String, ExitCode> {
-    use orator_cli::config::resolve_llm_base;
     use orator::LlmSession as _;
     use orator_agent::llm::{probe_models, HttpSession};
+    use orator_cli::config::resolve_llm_base;
     let llm = config.llm.clone();
     let explicit = std::env::var("LLM_BASE_URL").unwrap_or_default();
     let (base, model) = resolve_llm_base(&llm);
@@ -2413,8 +2413,8 @@ fn config(action: &str, key: &str, value: &str) -> ExitCode {
         "path" => {
             let mut candidates = vec![std::path::PathBuf::from("orator.json")];
             candidates.extend(orator::config_path());
-            let Some(path) = common_core::config::find_hierarchical(&candidates)
-                .or_else(orator::config_path)
+            let Some(path) =
+                common_core::config::find_hierarchical(&candidates).or_else(orator::config_path)
             else {
                 eprintln!("orator: no config path (HOME and XDG_DATA_HOME are unset)");
                 return ExitCode::Error;
@@ -2446,8 +2446,8 @@ fn config(action: &str, key: &str, value: &str) -> ExitCode {
             }
             let mut candidates = vec![std::path::PathBuf::from("orator.json")];
             candidates.extend(orator::config_path());
-            let Some(path) = common_core::config::find_hierarchical(&candidates)
-                .or_else(orator::config_path)
+            let Some(path) =
+                common_core::config::find_hierarchical(&candidates).or_else(orator::config_path)
             else {
                 eprintln!("orator: no config path (HOME and XDG_DATA_HOME are unset)");
                 return ExitCode::Error;

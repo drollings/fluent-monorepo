@@ -41,28 +41,29 @@ pub fn batch_embed(
                 }
             },
         );
-        let mut indexed = futures_util::future::try_join_all(
-            segments.iter().cloned().enumerate().map(|(index, samples)| {
-                let pool = &pool;
-                async move {
-                    pool.submit((index, samples)).await.map_err(|error| match error {
-                        ResultPoolError::Pool(error) => {
-                            format!("orator: embed pool refused segment {index}: {error}")
-                        }
-                        ResultPoolError::Canceled => {
-                            "orator: embed worker left a segment empty".to_string()
-                        }
-                        ResultPoolError::Inner(never) => match never {},
-                    })
-                }
-            }),
-        )
-        .await?;
+        let mut indexed =
+            futures_util::future::try_join_all(segments.iter().cloned().enumerate().map(
+                |(index, samples)| {
+                    let pool = &pool;
+                    async move {
+                        pool.submit((index, samples))
+                            .await
+                            .map_err(|error| match error {
+                                ResultPoolError::Pool(error) => {
+                                    format!("orator: embed pool refused segment {index}: {error}")
+                                }
+                                ResultPoolError::Canceled => {
+                                    "orator: embed worker left a segment empty".to_string()
+                                }
+                                ResultPoolError::Inner(never) => match never {},
+                            })
+                    }
+                },
+            ))
+            .await?;
         pool.shutdown().await;
         indexed.sort_by_key(|(index, _)| *index);
-        Ok::<Vec<Vec<f32>>, String>(
-            indexed.into_iter().map(|(_, vector)| vector).collect(),
-        )
+        Ok::<Vec<Vec<f32>>, String>(indexed.into_iter().map(|(_, vector)| vector).collect())
     })
 }
 

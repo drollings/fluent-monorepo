@@ -423,7 +423,7 @@ fn realised_volatility(closes: &[f64]) -> Option<f64> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)] // six independent verdicts, not a state machine
 /// Which triggers armed one bar, by side and by family.
-/// 
+///
 /// The split matters because the counter-trend arm is a different trade thesis:
 /// it may be admitted through its own filter set, and it must not be read as
 /// evidence that the trend triggers also fired.
@@ -528,11 +528,11 @@ fn filter_params_for_slot(slot: &FilterSlot) -> serde_json::Value {
 /// the build to bind time.
 #[must_use]
 /// Build the trigger set from the nested entry section, in row order.
-/// 
+///
 /// This is the canonical assembly: the flat config reaches the slots only
 /// through the [`entry_from_config`] projection. Unknown row kinds refuse
 /// at build time (the catalog errors); they never silently arm nothing.
-/// 
+///
 /// The rows are stateless (every trigger is `Copy` with no bar state), so
 /// rebuilding per call — as the position exit path does every bar — is
 /// behavior-neutral. A stateful row must never be added here without moving
@@ -558,7 +558,7 @@ pub fn build_triggers_from_entry(entry: &EntrySpec) -> Vec<Arc<dyn Trigger>> {
 /// bind time, never per bar.
 #[must_use]
 /// Build the admission guards from the nested entry section, in row order.
-/// 
+///
 /// Same canonicality contract as [`build_triggers_from_entry`]: rows that
 /// can carry bar state (the regime hysteresis) build once per instance at
 /// bind time, never per bar.
@@ -587,7 +587,7 @@ pub fn build_filters_from_entry(entry: &EntrySpec) -> Vec<Arc<dyn Filter>> {
 #[must_use]
 /// Build the trigger set from the flat config, in the reference's dispatch
 /// order.
-/// 
+///
 /// Compatibility wrapper: the flat config projects onto the nested entry
 /// and builds from there, so the flat struct reaches the slots only through
 /// the canonical assembly. The order matters because the first arming side
@@ -651,7 +651,7 @@ pub fn entry_triggers(
 #[must_use]
 /// Build the admission guards from the flat config, in the reference's
 /// evaluation order.
-/// 
+///
 /// Compatibility wrapper: the flat config projects onto the nested entry
 /// and builds from there. The order is load-bearing: the regime label is
 /// written last, so an earlier block leaves the hysteresis state untouched

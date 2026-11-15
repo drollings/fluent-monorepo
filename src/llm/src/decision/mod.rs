@@ -15,6 +15,7 @@ pub mod ladder;
 pub mod question;
 pub mod registry;
 pub mod shadow;
+pub mod systemone;
 pub mod transport;
 pub mod types;
 pub mod wvr;
@@ -44,6 +45,7 @@ pub use registry::{
     GateReport, RegistryEntry,
 };
 pub use shadow::{instrumented_shadow, shadow_adapter, ShadowLog, ShadowOutcome};
+pub use systemone::{batch_body, decision_from_answer, SystemOneBackend, SystemOneSupport};
 pub use transport::{
     anonymize_hook, AuditSink, DecisionAudit, DecisionProbe, DecisionTransport, PreparedPrompt,
     RedactHook,

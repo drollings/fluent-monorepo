@@ -43,7 +43,11 @@ fn zero_parallel_clamps_to_one_worker() {
 #[test]
 fn scripted_vectors_cycle_by_input_index() {
     let seam = Arc::new(ScriptSeam {
-        script: vec![vec![1.0; TEST_DIMS], vec![2.0; TEST_DIMS], vec![3.0; TEST_DIMS]],
+        script: vec![
+            vec![1.0; TEST_DIMS],
+            vec![2.0; TEST_DIMS],
+            vec![3.0; TEST_DIMS],
+        ],
     });
     let segments = vec![vec![0.0; 8]; 7];
     let vectors = batch_embed(seam, &segments, 3).expect("pool embeds");

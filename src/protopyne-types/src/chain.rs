@@ -29,7 +29,7 @@ use crate::money::Money;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Opaque handle for one option contract. No arithmetic by construction:
-/// 
+///
 /// ```text
 /// let _: ContractId = PortfolioId::new("x"); // fails to compile
 /// ```

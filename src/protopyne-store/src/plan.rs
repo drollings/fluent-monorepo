@@ -347,7 +347,7 @@ fn buckets_whole(covered: &Coverage, span: &TimeRange, want: Timeframe) -> bool 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// One tape's bounds from its stamps alone: first stamp, last stamp.
 /// `None` is an empty tape — answered, not failed.
-/// 
+///
 /// Deliberately no row count: counting would walk every stamp, which would
 /// put the read path back at O(tape) per read. The watermark anchor and
 /// hole clipping need bounds, never a count; the audit path counts the

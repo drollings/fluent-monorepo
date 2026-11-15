@@ -171,15 +171,15 @@ fn decode_escape(chars: &[char], i: usize, n: usize, quote: char) -> Option<(Str
 #[allow(clippy::many_single_char_names)]
 /// Strip a matching outer single- or double-quote pair and decode the inner
 /// content to its logical value:
-/// 
+///
 /// - `'…'` / `"…"` pairs are removed and their content is JSON-escape-decoded
-/// (`\"`, `\\`, `\'`, `\n`, `\t`, `\r`, `\b`, `\f`, `\uXXXX`); unknown
-/// escapes are preserved verbatim.
+///   (`\"`, `\\`, `\'`, `\n`, `\t`, `\r`, `\b`, `\f`, `\uXXXX`); unknown
+///   escapes are preserved verbatim.
 /// - An opening quote with no matching close is treated as unterminated: the
-/// decoded content is still produced (a dangling trailing backslash is
-/// preserved).
+///   decoded content is still produced (a dangling trailing backslash is
+///   preserved).
 /// - No quote pair at all (a bare value): returned unchanged.
-/// 
+///
 /// The result is the *logical* member content — what `serde_json` will re-escape
 /// when the value is serialized. The document-repair lexer keeps escape
 /// sequences verbatim precisely because it rebuilds a JSON document; this

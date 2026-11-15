@@ -29,7 +29,7 @@ use crate::error::DbError;
 /// timeout (matching `crate::sqlite::open_wal`'s `busy_timeout=5000`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Pool sizing and busy-timeout configuration.
-/// 
+///
 /// Defaults preserve the historical pool shape: 5 connections and a 5s busy
 /// timeout (matching `crate::sqlite::open_wal`'s `busy_timeout=5000`).
 pub struct PoolConfig {

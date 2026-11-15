@@ -53,7 +53,7 @@ pub struct MemorySearchRequest {
 /// matches on this enum to select the retrieval pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Retrieval strategy discriminator.
-/// 
+///
 /// Flat enum dispatch — no `dyn Trait` in the hot path. The plugin
 /// matches on this enum to select the retrieval pipeline.
 pub enum SearchStrategy {

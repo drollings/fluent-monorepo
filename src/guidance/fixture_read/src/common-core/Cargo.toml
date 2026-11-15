@@ -1,0 +1,3 @@
+[package]
+name = "common-core"
+description = "Shared primitives: hashing, calibration, citations."

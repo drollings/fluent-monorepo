@@ -160,17 +160,13 @@ impl ExportRegistry {
                     names.insert(name);
                 }
                 if let PineStmt::TypeDecl { name, fields } = inner.as_ref() {
-                    registry
-                        .types
-                        .entry((*key).to_owned())
-                        .or_default()
-                        .insert(
-                            name.clone(),
-                            fields
-                                .iter()
-                                .map(|field| (field.name.clone(), field.default.clone()))
-                                .collect(),
-                        );
+                    registry.types.entry((*key).to_owned()).or_default().insert(
+                        name.clone(),
+                        fields
+                            .iter()
+                            .map(|field| (field.name.clone(), field.default.clone()))
+                            .collect(),
+                    );
                 }
             }
             // Alias reads resolve through the target namespace with no
@@ -197,10 +193,7 @@ impl ExportRegistry {
         module: &str,
         type_name: &str,
     ) -> Option<Vec<(String, Option<PineExpr>)>> {
-        self.types
-            .get(module)?
-            .get(type_name)
-            .cloned()
+        self.types.get(module)?.get(type_name).cloned()
     }
 
     /// Ordered (param, default) pairs for one module's function, if the
@@ -208,11 +201,7 @@ impl ExportRegistry {
     /// fallback: unknown spellings refuse through the shared unknown
     /// path, overloaded ones through the overload veto — both exactly
     /// like the tree-walk.
-    pub fn func_params(
-        &self,
-        module: &str,
-        func: &str,
-    ) -> Option<Vec<(String, Option<PineExpr>)>> {
+    pub fn func_params(&self, module: &str, func: &str) -> Option<Vec<(String, Option<PineExpr>)>> {
         if self
             .func_overloaded
             .contains(&(module.to_owned(), func.to_owned()))
@@ -620,9 +609,9 @@ fn literal_value(expr: &PineExpr) -> Option<PineValue> {
         PineExpr::Number(value) => Some(PineValue::Float(*value)),
         PineExpr::Boolean(flag) => Some(PineValue::Bool(*flag)),
         PineExpr::StringLiteral(text) => Some(PineValue::Str(text.clone())),
-        PineExpr::ColorLiteral(packed) => Some(PineValue::ColorHandle(crate::ColorHandle::new(
-            *packed,
-        ))),
+        PineExpr::ColorLiteral(packed) => {
+            Some(PineValue::ColorHandle(crate::ColorHandle::new(*packed)))
+        }
         _ => None,
     }
 }
@@ -673,11 +662,7 @@ type FuncIndex = HashMap<String, (usize, Vec<(String, Option<PineExpr>)>)>;
 /// One linked module as the registries see it: key, program, and alias
 /// table. All three registries share one list so positions agree.
 #[allow(clippy::implicit_hasher)]
-type RegistrySources<'a> = &'a [(
-    &'a str,
-    &'a PineProgram,
-    &'a HashMap<String, String>,
-)];
+type RegistrySources<'a> = &'a [(&'a str, &'a PineProgram, &'a HashMap<String, String>)];
 
 /// One indexed method body: block plus ordered (name, default) params
 /// (receiver first) and the receiver parameter callers bind `this`
@@ -2524,8 +2509,7 @@ impl<'a> Compiler<'a> {
                 // executes one `Const` instead of two plus a `BinOp`. Only
                 // successful folds lower (a refusing pair keeps its `BinOp`
                 // so the refusal fires at run time, never at link).
-                if let (Some(first), Some(second)) = (literal_value(left), literal_value(right))
-                {
+                if let (Some(first), Some(second)) = (literal_value(left), literal_value(right)) {
                     if let Ok(folded) = super::eval::binary(*op, Some(&first), Some(&second)) {
                         if let Some(constant) = folded_const(folded.as_ref()) {
                             let dst = self.temp();
@@ -2635,9 +2619,7 @@ impl<'a> Compiler<'a> {
                         && !self.loop_bound(name)
                         && !self.globals.contains_key(name)
                         && !self.stmt_bound.contains(name)
-                        && !self
-                            .decls
-                            .declared(name, self.module_pos, self.top_level)
+                        && !self.decls.declared(name, self.module_pos, self.top_level)
                     {
                         let cursor = self.temp();
                         self.emit(Instruction::Builtin {
@@ -3081,9 +3063,7 @@ impl<'a> Compiler<'a> {
                     }
                     None => false,
                 };
-                if !enum_shaped
-                    && super::builtins_core::ChartScope::parse(name).is_none()
-                {
+                if !enum_shaped && super::builtins_core::ChartScope::parse(name).is_none() {
                     let slot = self.global(name);
                     let dst = self.temp();
                     self.emit(Instruction::GLoad { dst, slot });
@@ -3446,7 +3426,8 @@ impl<'a> Compiler<'a> {
                 && !self.aliases.contains_key(head)
                 && self.enums.shape_matches(name).is_some()
                 && self.enum_runtime_ok(head)
-            {                let (enm, member) = super::builtins_core::split_enum_member(name)
+            {
+                let (enm, member) = super::builtins_core::split_enum_member(name)
                     .expect("shape-matched spelling splits");
                 let flat = self.global(name);
                 let dst = self.temp();
@@ -3563,11 +3544,7 @@ impl<'a> Compiler<'a> {
         if core_cast(name) {
             return self.lower_core_cast(name, args);
         }
-        if name == "fixnan"
-            || name == "time"
-            || name == "hour"
-            || name == "minute"
-            || name == "iff"
+        if name == "fixnan" || name == "time" || name == "hour" || name == "minute" || name == "iff"
         {
             return self.lower_pure_bare_call(name, args);
         }
@@ -3579,37 +3556,19 @@ impl<'a> Compiler<'a> {
         // same `ta.{method}` spelling.
         if !self.func_blocks.contains_key(name) && !self.overloaded.contains(name) {
             if super::builtins_ta::TaBridge::supported_methods().contains(&name) {
-                return self.lower_builtin_call(
-                    BuiltinNamespace::Ta,
-                    name,
-                    args,
-                    &[],
-                    false,
-                );
+                return self.lower_builtin_call(BuiltinNamespace::Ta, name, args, &[], false);
             }
             // Legacy bare math names (`pow(...)`): same shadow rule, then
             // the shared `math` namespace with the qualified spelling's
             // site key (built by `lower_builtin_call` exactly like a
             // qualified call).
             if super::builtins_core::legacy_bare_math_names().contains(&name) {
-                return self.lower_builtin_call(
-                    BuiltinNamespace::Math,
-                    name,
-                    args,
-                    &[],
-                    false,
-                );
+                return self.lower_builtin_call(BuiltinNamespace::Math, name, args, &[], false);
             }
             // Legacy bare string names (`tostring(...)`): same shadow
             // rule, then the shared `str` namespace.
             if super::builtins_core::legacy_bare_str_names().contains(&name) {
-                return self.lower_builtin_call(
-                    BuiltinNamespace::Str,
-                    name,
-                    args,
-                    &[],
-                    false,
-                );
+                return self.lower_builtin_call(BuiltinNamespace::Str, name, args, &[], false);
             }
         }
         // User function: single definition; binding mirrors the
@@ -4373,7 +4332,9 @@ impl<'a> Compiler<'a> {
                 || self.loop_bound(namespace)
                 || self.globals.contains_key(namespace)
                 || self.stmt_bound.contains(namespace)
-                || self.decls.declared(namespace, self.module_pos, self.top_level))
+                || self
+                    .decls
+                    .declared(namespace, self.module_pos, self.top_level))
         {
             let recv = self.lower_variable(namespace)?;
             let ordinal = self.frame_vars.get(namespace).map(|(ordinal, _)| *ordinal);
@@ -4420,13 +4381,7 @@ impl<'a> Compiler<'a> {
             if head == "this" && !rest.contains('.') {
                 let recv = self.temp();
                 let field = self.intern(rest);
-                self.emit_instance_call(
-                    recv,
-                    method,
-                    args,
-                    CallHome::ThisField { field },
-                    true,
-                )?;
+                self.emit_instance_call(recv, method, args, CallHome::ThisField { field }, true)?;
                 return Ok(());
             }
         }
@@ -4538,7 +4493,9 @@ impl<'a> Compiler<'a> {
                 || self.loop_bound(namespace)
                 || self.globals.contains_key(namespace)
                 || self.stmt_bound.contains(namespace)
-                || self.decls.declared(namespace, self.module_pos, self.top_level))
+                || self
+                    .decls
+                    .declared(namespace, self.module_pos, self.top_level))
         {
             let recv = self.lower_variable(namespace)?;
             let ordinal = self.frame_vars.get(namespace).map(|(ordinal, _)| *ordinal);
@@ -4970,11 +4927,11 @@ impl<'a> Compiler<'a> {
     ) -> Result<SlotId, FallbackReason> {
         let mut lowered: Vec<(Option<String>, SlotId)> = Vec::with_capacity(args.len());
         for arg in args {
-            let slot = self.lower_expr_slot(&arg.value).map_err(|inner| {
-                FallbackReason::CallArgument {
-                    inner: Box::new(inner),
-                }
-            })?;
+            let slot =
+                self.lower_expr_slot(&arg.value)
+                    .map_err(|inner| FallbackReason::CallArgument {
+                        inner: Box::new(inner),
+                    })?;
             lowered.push((arg.name.clone(), slot));
         }
         let mut bound: HashMap<String, SlotId> = HashMap::new();
@@ -4982,16 +4939,14 @@ impl<'a> Compiler<'a> {
         for (name, slot) in lowered {
             if let Some(given) = name {
                 if !decls.iter().any(|(field, _)| field == &given) {
-                    return Ok(self.emit_refuse(
-                        super::eval::method_unknown_argument_message(&given),
-                    ));
+                    return Ok(
+                        self.emit_refuse(super::eval::method_unknown_argument_message(&given))
+                    );
                 }
                 bound.entry(given).or_insert(slot);
             } else {
                 let Some((field, _)) = decls.get(positional) else {
-                    return Ok(self.emit_refuse(
-                        super::eval::method_too_many_positionals_message(),
-                    ));
+                    return Ok(self.emit_refuse(super::eval::method_too_many_positionals_message()));
                 };
                 positional += 1;
                 bound.entry(field.clone()).or_insert(slot);
@@ -5023,7 +4978,8 @@ impl<'a> Compiler<'a> {
     /// lowers at the call site in order (its refusals stand), missing
     /// defaults read absence — exactly the tree-walk's field-by-field
     /// build, shared by same-module and alias-qualified construction.
-    fn emit_construct(        &mut self,
+    fn emit_construct(
+        &mut self,
         type_name: &str,
         decls: Vec<(String, Option<PineExpr>)>,
         stmt_position: bool,
@@ -5612,7 +5568,10 @@ impl<'a> Compiler<'a> {
         } else {
             let one = self.temp();
             let id = self.const_value(ConstValue::Int(1));
-            self.emit(Instruction::Const { dst: one, value: id });
+            self.emit(Instruction::Const {
+                dst: one,
+                value: id,
+            });
             one
         };
         let counter = self.temp();

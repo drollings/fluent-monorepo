@@ -1,10 +1,8 @@
 //! `template` goldens: marker expansion counts, role framing,
 //! refusal shapes — no model, no network.
 
-use crate::lfm::template::{
-    assemble_prompt, AudioClip, AudioOutClip, TemplateError, TextTurn,
-};
 use crate::lfm::arch::{AUDIO_OUT_TOKEN_ID, AUDIO_TOKEN_ID};
+use crate::lfm::template::{assemble_prompt, AudioClip, AudioOutClip, TemplateError, TextTurn};
 
 fn user_turn(text: &str) -> TextTurn {
     TextTurn {
@@ -72,12 +70,18 @@ fn bad_shapes_refuse_loudly() {
         Err(TemplateError::MultipleAudioMarkers)
     );
     let orphan_marker = user_turn("hear <|audio|>");
-    assert_eq!(assemble_prompt(&orphan_marker), Err(TemplateError::OrphanAudio));
+    assert_eq!(
+        assemble_prompt(&orphan_marker),
+        Err(TemplateError::OrphanAudio)
+    );
     let orphan_clip = TextTurn {
         audio: Some(AudioClip { mel_frames: 8 }),
         ..user_turn("hear this")
     };
-    assert_eq!(assemble_prompt(&orphan_clip), Err(TemplateError::OrphanAudio));
+    assert_eq!(
+        assemble_prompt(&orphan_clip),
+        Err(TemplateError::OrphanAudio)
+    );
     // Audio-out follows the same one-marker-per-clip rule: a clip
     // without its marker and a marker without its clip both refuse,
     // like the reference's count check.
@@ -87,19 +91,28 @@ fn bad_shapes_refuse_loudly() {
         audio: None,
         audio_out: Some(AudioOutClip { frames: 12 }),
     };
-    assert_eq!(assemble_prompt(&out_no_marker), Err(TemplateError::OrphanAudio));
+    assert_eq!(
+        assemble_prompt(&out_no_marker),
+        Err(TemplateError::OrphanAudio)
+    );
     let marker_no_out = TextTurn {
         role: "assistant".to_string(),
         text: "answer <|audio_out|> now".to_string(),
         audio: None,
         audio_out: None,
     };
-    assert_eq!(assemble_prompt(&marker_no_out), Err(TemplateError::OrphanAudio));
+    assert_eq!(
+        assemble_prompt(&marker_no_out),
+        Err(TemplateError::OrphanAudio)
+    );
     let two_markers = TextTurn {
         role: "assistant".to_string(),
         text: "a <|audio_out|> b <|audio_out|>".to_string(),
         audio: None,
         audio_out: Some(AudioOutClip { frames: 12 }),
     };
-    assert_eq!(assemble_prompt(&two_markers), Err(TemplateError::OrphanAudio));
+    assert_eq!(
+        assemble_prompt(&two_markers),
+        Err(TemplateError::OrphanAudio)
+    );
 }

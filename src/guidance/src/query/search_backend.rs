@@ -77,10 +77,7 @@ pub struct IdentifierBackend;
 
 impl SearchBackend for IdentifierBackend {
     fn matches(&self, intent: QueryIntent) -> bool {
-        matches!(
-            intent,
-            QueryIntent::SingleIdentifier
-        )
+        matches!(intent, QueryIntent::SingleIdentifier)
     }
 
     fn retrieval_tier(&self) -> crate::search_types::RetrievalTier {

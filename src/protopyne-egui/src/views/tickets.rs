@@ -56,7 +56,7 @@ impl TicketModel {
 /// a rendered click can never fan out into a second write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One operator decision on a manual ticket.
-/// 
+///
 /// The action carries only the opaque document the gateway forwards (the
 /// core alone parses it); applying it invokes exactly one gateway verb, so
 /// a rendered click can never fan out into a second write.

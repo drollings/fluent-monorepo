@@ -10,10 +10,6 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, Result};
 
-use anndists::dist::DistCosine;
-use common_core::constants::HnswParams;
-use hnsw_rs::hnsw::Hnsw;
-
 use crate::error::DbError;
 
 /// Quote `id` as a SQL identifier, rejecting anything that could break out
@@ -82,23 +78,6 @@ pub fn open_shared_in_memory(name: &str) -> Result<Connection> {
 /// Execute a multi-statement SQL batch (e.g. DDL) on `conn`.
 pub fn run_batch(conn: &Connection, schema: &str) -> Result<()> {
     conn.execute_batch(schema)
-}
-
-/// Build a cosine-distance HNSW index from `HnswParams` with a pluggable
-/// `initial_capacity`.
-///
-/// Centralizes the positional-argument unpacking so the
-/// (max_nb_connection, initial_capacity, max_layer, ef_construction,
-/// DistCosine) ordering is decided in exactly one place across the
-/// workspace.  Previously duplicated in coral and search-vector.
-pub fn make_hnsw(p: &HnswParams, initial_capacity: usize) -> Hnsw<'static, f32, DistCosine> {
-    Hnsw::<f32, DistCosine>::new(
-        p.max_nb_connection,
-        initial_capacity,
-        p.max_layer,
-        p.ef_construction,
-        DistCosine,
-    )
 }
 
 /// True when `e` is a SQLite `UNIQUE` or `PRIMARY KEY` constraint violation.

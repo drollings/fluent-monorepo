@@ -684,7 +684,7 @@ pub const SESSION_SNAPSHOT_SWEEP_INTERVAL: Duration = Duration::from_secs(3600);
 /// across an await.
 #[derive(Clone)]
 /// Process-wide registry of `DependencySession`s keyed by `session_id`.
-/// 
+///
 /// The canonical server-side session home: sessions are
 /// created on first use, attached to a shared `SnapshotStore`, and retained
 /// for the process lifetime so checkpoint/rewind state survives across

@@ -44,8 +44,10 @@ fn dirty_report(file: &str) -> ClippyReport {
             code: Some("E0308".to_string()),
             message: "mismatch".to_string(),
             level: "error".to_string(),
+            rendered: None,
             suggestions: Vec::new(),
         }],
+        ..ClippyReport::default()
     }
 }
 

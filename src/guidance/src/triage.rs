@@ -62,6 +62,10 @@ pub fn fix_class_for_code(code: &str) -> Option<&'static str> {
         Some("removal")
     } else if code.contains("E0432") || code.contains("E0433") {
         Some("import")
+    } else if matches!(code, "E0384" | "E0596") {
+        Some("mut")
+    } else if code.contains("needless_return") {
+        Some("style")
     } else {
         None
     }

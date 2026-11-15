@@ -24,7 +24,7 @@ use crate::error::EguiError;
 /// integer bar window the data slice is taken from.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Visible pane geometry: one price window mapped onto fixed pixels.
-/// 
+///
 /// Construct once per visible window; recompute only on scroll, zoom, or
 /// range change — never per frame per bar. All mapping delegates to the
 /// owned canonical scale, so there is exactly one price↔pixel truth. The
@@ -350,7 +350,7 @@ pub fn auto_height_range(
 /// labels are byte-identical to the input grid.
 #[must_use]
 /// Cap grid labels for readability; order-preserving stride thinning.
-/// 
+///
 /// Returns every tick when the grid already fits `max_labels`, an empty
 /// vector when `max_labels` is zero, and otherwise every Nth tick with
 /// `N = ceil(len / max_labels)`. Counts only — the surviving values and
@@ -373,7 +373,7 @@ pub fn thin_ticks(ticks: Vec<Tick>, max_labels: usize) -> Vec<Tick> {
 /// rather than a misleading grid.
 #[must_use]
 /// Round grid for `[min, max]` within `budget`, thinned to `max_labels`.
-/// 
+///
 /// One call from window to paint-ready labels: the canonical grid generator
 /// followed by the readability cap. Degenerate windows still yield no ticks
 /// rather than a misleading grid.

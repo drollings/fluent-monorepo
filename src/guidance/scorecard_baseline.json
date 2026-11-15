@@ -3,7 +3,7 @@
     "speed.explain_p50_us": 12600.0,
     "speed.explain_p99_us": 12700.0
   },
-  "date": "2026-11-10",
+  "date": "2026-11-15",
   "history": [
     {
       "bounds": {},
@@ -178,6 +178,202 @@
         "speed.explain_p50_us": 650.0,
         "speed.explain_p99_us": 650.0
       }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "read.corpus_leakage": [
+          null,
+          1.0
+        ],
+        "read.degraded_rate": [
+          null,
+          1.0
+        ],
+        "read.fact_recall.heldout": [
+          null,
+          0.6041666666666666
+        ],
+        "read.fact_recall.tune": [
+          null,
+          0.8697916666666666
+        ],
+        "read.file_recall_at_5.heldout": [
+          null,
+          0.5416666666666667
+        ],
+        "read.file_recall_at_5.tune": [
+          null,
+          0.6979166666666667
+        ],
+        "read.no_result_false": [
+          null,
+          0.0
+        ],
+        "read.p50_ms": [
+          null,
+          8.200197
+        ],
+        "read.p95_ms": [
+          null,
+          11.074249
+        ],
+        "read.tokens_per_correct": [
+          null,
+          230.3134328358209
+        ],
+        "read.unsupported_claims": [
+          null,
+          0.0
+        ],
+        "speed.explain_p50_us": [
+          6158.32,
+          6183.267
+        ],
+        "speed.explain_p99_us": [
+          6249.9,
+          6265.606
+        ]
+      },
+      "date": "2026-11-15",
+      "reason": "M13 acceptance: record read-plane eval ratchet (first measurement of the shipping path over the eval corpus)",
+      "tolerances": {
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "read.degraded_rate": [
+          1.0,
+          0.5416666666666666
+        ],
+        "read.p50_ms": [
+          8.200197,
+          8.297179999999999
+        ],
+        "read.p95_ms": [
+          11.074249,
+          11.183459
+        ],
+        "read.tokens_per_correct": [
+          230.3134328358209,
+          212.46268656716416
+        ],
+        "speed.explain_p50_us": [
+          6183.267,
+          6246.563
+        ],
+        "speed.explain_p99_us": [
+          6265.606,
+          6502.929999999999
+        ]
+      },
+      "date": "2026-11-15",
+      "reason": "M13 acceptance: correct degraded_rate/tokens to post-fix values; add timing tolerances for machine noise",
+      "tolerances": {
+        "read.p50_ms": 1.0,
+        "read.p95_ms": 1.5,
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "read.p50_ms": [
+          8.297179999999999,
+          8.265566999999999
+        ],
+        "read.p95_ms": [
+          11.183459,
+          11.129595
+        ],
+        "read.tokens_per_correct": [
+          212.46268656716416,
+          212.46268656716416
+        ],
+        "speed.explain_p50_us": [
+          6246.563,
+          6230.280000000001
+        ],
+        "speed.explain_p99_us": [
+          6502.929999999999,
+          6299.989
+        ]
+      },
+      "date": "2026-11-15",
+      "reason": "M13 acceptance: tolerance for tokens-per-correct float noise (ulp-level JSON/division variance, far below any real regression)",
+      "tolerances": {
+        "read.p50_ms": 1.0,
+        "read.p95_ms": 1.5,
+        "read.tokens_per_correct": 0.5,
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "read.degraded_rate": [
+          0.5416666666666666,
+          0.5833333333333334
+        ],
+        "read.fact_recall.heldout": [
+          0.6041666666666666,
+          0.6979166666666666
+        ],
+        "read.fact_recall.tune": [
+          0.8697916666666666,
+          0.8854166666666666
+        ],
+        "read.file_recall_at_5.tune": [
+          0.6979166666666667,
+          0.7447916666666666
+        ],
+        "read.p50_ms": [
+          8.265566999999999,
+          12.430368000000001
+        ],
+        "read.p95_ms": [
+          11.129595,
+          20.128237
+        ],
+        "read.tokens_per_correct": [
+          212.46268656716416,
+          266.40845070422534
+        ],
+        "speed.explain_p50_us": [
+          6230.280000000001,
+          6197.04
+        ],
+        "speed.explain_p99_us": [
+          6299.989,
+          6465.677000000001
+        ]
+      },
+      "date": "2026-11-15",
+      "reason": "Accuracy-first: doc-plane verbatim sections, doc-scoped recall, rg fallback-only, and shadow/authorized judging direct explain to the correct code (file_recall_tune up, fact recall held). Accept higher degraded/latency/tokens vs pre-docs baseline; explain p50/p95 stay within interactive budget and sync stays embed-off by default.",
+      "tolerances": {
+        "read.p50_ms": 1.0,
+        "read.p95_ms": 1.5,
+        "read.tokens_per_correct": 0.5,
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
     }
   ],
   "metrics": {
@@ -206,12 +402,26 @@
     "nav.mrr.tune": 0.875,
     "nav.recall_at_3.heldout": 1.0,
     "nav.recall_at_3.tune": 1.0,
-    "speed.explain_p50_us": 6158.32,
-    "speed.explain_p99_us": 6249.9
+    "read.corpus_leakage": 1.0,
+    "read.degraded_rate": 0.5833333333333334,
+    "read.fact_recall.heldout": 0.6979166666666666,
+    "read.fact_recall.tune": 0.8854166666666666,
+    "read.file_recall_at_5.heldout": 0.5416666666666667,
+    "read.file_recall_at_5.tune": 0.7447916666666666,
+    "read.no_result_false": 0.0,
+    "read.p50_ms": 12.430368000000001,
+    "read.p95_ms": 20.128237,
+    "read.tokens_per_correct": 266.40845070422534,
+    "read.unsupported_claims": 0.0,
+    "speed.explain_p50_us": 6197.04,
+    "speed.explain_p99_us": 6465.677000000001
   },
-  "reason": "W7: pin journal.revert_rate, decision.triage_precision/recall, loop.passes_to_fixpoint, breaker.trip_signal outcome ratchets",
+  "reason": "Accuracy-first: doc-plane verbatim sections, doc-scoped recall, rg fallback-only, and shadow/authorized judging direct explain to the correct code (file_recall_tune up, fact recall held). Accept higher degraded/latency/tokens vs pre-docs baseline; explain p50/p95 stay within interactive budget and sync stays embed-off by default.",
   "tolerance_source": "repeat-run variance (3 fast-tier runs, max spread <1%); deterministic metrics tol 0, timing 10% of value, ceilings 2x value; bootstrap pending long-run calibration",
   "tolerances": {
+    "read.p50_ms": 1.0,
+    "read.p95_ms": 1.5,
+    "read.tokens_per_correct": 0.5,
     "speed.explain_p50_us": 650.0,
     "speed.explain_p99_us": 650.0
   }

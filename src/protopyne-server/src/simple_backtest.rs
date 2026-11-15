@@ -183,7 +183,7 @@ impl<'a> SimpleBacktestRequest<'a> {
 /// it.
 #[allow(clippy::too_many_arguments)]
 /// Run the simple decision stack over closed bars.
-/// 
+///
 /// The signal proposes, the equity policy sizes, and the order fills at the
 /// quoted touch (entries and market exits) or the resting stop/limit
 /// (touched exits) — pure arithmetic over the bar, with no gates and no
@@ -761,7 +761,7 @@ pub fn run_simple_backtest(
 /// must never be read as a grant-covered one.
 #[allow(clippy::too_many_arguments)]
 /// A fill decision on a path with no gates to evaluate.
-/// 
+///
 /// The wire shape is the shared [`BarDecision`] so runs, views, and the
 /// portfolio fold keep working unchanged; the gate verdicts read
 /// pass-through true with empty reasons and no lifecycle transitions

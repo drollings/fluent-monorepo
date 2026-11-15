@@ -214,7 +214,7 @@ fn default_io_conv_layers() -> Vec<usize> {
 /// transformers.js-style causal-LM export, so the decoder knows exactly which
 /// graph inputs to build and which output to read — one place to edit, one
 /// place to fail loudly.
-/// 
+///
 /// The defaults match the LFM2.5-2.6B export (`Lfm2ForCausalLM`): prefill via
 /// `input_ids`/`attention_mask`/`position_ids`, a per-layer conv state
 /// (`past_conv.{L}`, shape `[1, hidden_size, conv_L_cache]`) for the 22 conv
@@ -314,7 +314,7 @@ pub struct LlmIo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[builder(start_fn = new)]
 /// The trained-encoder annotation-heads contract.
-/// 
+///
 /// A finetuned `FillMask` Encoder export carries three per-token heads — UPOS,
 /// dependency label, and head position — in the **same graph** as the base
 /// `last_hidden_state`. Each head's ONNX output tensor name is configurable
@@ -396,7 +396,7 @@ impl AnnotationLabels {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 /// Whether a declared onnx model is resident for the process lifetime.
-/// 
+///
 /// `Always` models load at boot into the `OrtSessionRegistry` and are never
 /// evicted or unloaded (`/models/unload` refuses them). `Unloadable` models
 /// load on first use (`ensure_loaded`) and may be released.
@@ -780,7 +780,7 @@ fn discover_config_json(model_path: &Path) -> Option<PathBuf> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 /// ── Role-based fleet declarations ────────────────────────────────────────────
-/// 
+///
 /// A top-level `onnx` section keys one optional `OnnxRoleConfig` per role
 /// (Encoder / PII / Router / Policy / ColBERT). Every role is optional and the
 /// pipeline is fully functional (pure-deterministic) with none of them loaded.
@@ -885,7 +885,7 @@ fn default_onnx_instance_count() -> u32 {
 /// `ModelEntry.instances` vocabulary). `fluent-onnx` deliberately does not
 /// import router config; the composition root (`ort.rs`) maps this type
 /// to/from `InstanceProfile` where the two fleets must be driven uniformly.
-/// 
+///
 /// The map key on `OnnxRoleConfig.instances` provides the default context
 /// name; `count > 1` expands into sibling contexts named `<key>-0` ..
 /// `<key>-{count-1}` sharing the profile's group. `num_ctx` is the context
@@ -950,7 +950,7 @@ impl OnnxInstanceProfile {
 /// role and injected by [`OnnxRoleConfig::to_onnx_config`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// A llama.cpp-parallel, role-scoped ONNX model declaration.
-/// 
+///
 /// The `model` fields are flattened [`OnnxConfig`] (model/tokenizer paths,
 /// provider, threads, quantization, context, heads/labels); the surrounding
 /// fields mirror the llama.cpp lifecycle surface. The task is implied by the

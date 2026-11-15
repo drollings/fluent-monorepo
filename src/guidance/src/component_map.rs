@@ -292,6 +292,17 @@ pub fn prefix_for_package(package: &str) -> Option<&'static str> {
         .map(|entry| entry.prefix)
 }
 
+/// Workspace prefixes owning one Cargo package, in table order.
+#[must_use]
+/// Workspace prefixes owning one Cargo package, in table order.
+pub fn paths_for_package(package: &str) -> Vec<String> {
+    ENTRIES
+        .iter()
+        .filter(|entry| entry.package == package)
+        .map(|entry| entry.prefix.to_string())
+        .collect()
+}
+
 /// Resolve `path` (workspace-relative, leading `./` tolerated) to its
 /// narrowest gate by longest boundary-matching prefix.
 #[must_use]

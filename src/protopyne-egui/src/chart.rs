@@ -50,7 +50,7 @@ pub const DEFAULT_RANGE: DateRange = DateRange::Month2;
 /// kernels always see plain closed bars, never a timeframe concept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 /// Intraday-to-daily bar timeframe key behind the terminal toolbar.
-/// 
+///
 /// Display-only selector: each key maps to bar spacing (for range-window
 /// math), to the store's [`Timeframe`](protopyne_types::Timeframe) grid, and
 /// to a history slot in the shell. Higher keys (`H1`, `H4`, `D1`) resample
@@ -314,7 +314,7 @@ fn check_oscillator_selection(what: &str, kind: &str) -> Result<(), EguiError> {
 #[builder(start_fn = new)]
 /// Top-level chart configuration: toolbar selection, pane switches, display
 /// threshold, ribbon fill bounds, geometry, and theme key.
-/// 
+///
 /// `execute` validates, then builds the standard pane plan for the configured
 /// oscillator pair and reports its size — plan construction is the unit's
 /// work, so [`timed_plan_build`] times exactly this.
@@ -535,7 +535,7 @@ pub fn timed_plan_build(
 /// canonical preset math instead of a second estimator.
 #[must_use]
 /// Trailing window for a toolbar range preset.
-/// 
+///
 /// Keeps the last `range.estimated_bars(bar_duration_seconds)` rows (or every
 /// row when fewer exist), so a range pick maps to a data window through the
 /// canonical preset math instead of a second estimator.
@@ -556,7 +556,7 @@ pub fn window_for_range(
 /// favors coverage, never precision.
 #[must_use]
 /// Fetch size for a range preset at a bar spacing, plus warmup headroom.
-/// 
+///
 /// The floor keeps small windows on the bounded trailing read; above it the
 /// fetch is exactly the calendar need plus warmup — never more. Calendar
 /// math knowingly over-counts sessions (weekends still count), so the bound
@@ -589,7 +589,7 @@ pub fn fetch_for_span(span_seconds: u64, bar_seconds: u64, warmup: usize) -> usi
 /// not a third source — it refuses through [`refuse_chart_type`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Where one chart type's terminal picture comes from.
-/// 
+///
 /// The single classification every dispatcher consumes: bar-backed pictures
 /// render candle geometry from bars, rows-backed pictures render a series
 /// from converted display rows. Anything outside the four wired kinds is
@@ -661,7 +661,7 @@ pub fn chart_price_bars(bars: &[Bar], kind: ChartType) -> Result<Vec<Bar>, EguiE
 #[must_use]
 /// Line series behind the terminal's line picture: the row closes, shaped
 /// for the polyline emitter.
-/// 
+///
 /// The `Option` is the paint edge's hole currency, kept so the result feeds
 /// [`area_view`] and `oscillator_points` without re-wrapping: closes have
 /// no holes, so every element is unconditionally `Some` here. Dropping the
@@ -681,7 +681,7 @@ pub fn line_values(rows: &[ChartRow]) -> Vec<Option<f64>> {
 #[derive(Debug, Clone, PartialEq)]
 /// Validated area-fill input: the owned upper-edge series, the baseline it
 /// closes against, and the fill strength.
-/// 
+///
 /// Built once by [`area_view`] (which validates every leg) and closed into
 /// polygons by the scaffolding's `area_polygons` — the lower edge is never
 /// materialized as a per-bar vector because it repeats one baseline, and

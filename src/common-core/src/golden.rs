@@ -82,7 +82,7 @@ pub struct CompareReport {
 #[must_use]
 /// Compare `actual` against a pinned `expected` series at absolute tolerance
 /// `eps`.
-/// 
+///
 /// `None` equals `None` (warmup/`na` agreement matters as much as values);
 /// anything else unequal — value drift beyond `eps`, `None` vs `Some`,
 /// length skew, or a non-finite actual — is one [`Mismatch`]. Empty series

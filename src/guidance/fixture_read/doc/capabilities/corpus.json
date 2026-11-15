@@ -1,0 +1,11 @@
+{"briefs": [
+  {"id": "doc/guidance/CAPABILITY_SUMMARIES.md#summaries", "title": "Capability corpus",
+   "purpose": "The external capability corpus lives in capabilities_dir and imports ready cards.",
+   "crate": "guidance-core", "domain": "guidance",
+   "source_path": "doc/guidance/CAPABILITY_SUMMARIES.md", "anchor": "summaries",
+   "keywords": ["capability", "corpus"]},
+  {"id": "doc/guidance/CALIBRATION.md#calibration", "title": "Calibration",
+   "purpose": "A decision point promotes from shadow to active on measured precision.",
+   "crate": "guidance-core", "domain": "guidance",
+   "source_path": "doc/guidance/CALIBRATION.md", "anchor": "calibration",
+   "keywords": ["calibration"]}]}

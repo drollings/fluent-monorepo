@@ -33,7 +33,7 @@ pub const DEFAULT_SLEEP_IDLE_SECONDS: i32 = 30;
 /// refusal (`Always`/pinned) surfaces as [`LlmRuntimeError::UnloadRefused`].
 #[cfg(feature = "onnx")]
 /// ── The onnx half of the shared LlmWeights contract ─────────────
-/// 
+///
 /// `OnnxWeights` presents one in-process onnx role through the shared
 /// `fluent_llm::runtime::LlmWeights` surface (the same contract the llama
 /// adapters in `instances/traits.rs` implement). It wraps the role's generative

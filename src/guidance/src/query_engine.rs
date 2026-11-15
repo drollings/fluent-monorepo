@@ -930,6 +930,10 @@ mod tests {
                         QueryIntent::Conceptual => "Conceptual",
                         QueryIntent::MultiKeyword => "MultiKeyword",
                         QueryIntent::GeneralSearch => "GeneralSearch",
+                        QueryIntent::Graph => "Graph",
+                        QueryIntent::Ownership => "Ownership",
+                        QueryIntent::Orientation => "Orientation",
+                        QueryIntent::Provenance => "Provenance",
                     },
                     owners,
                 )

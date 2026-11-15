@@ -1,9 +1,7 @@
 //! Refine-chain goldens: LLM polish wins, raw never loses, history
 //! always saves, identical calls decide identically.
 
-use crate::refine::{
-    refine_transcript, wrap_transcript, RefineSource, DEFAULT_REFINE_PROMPT,
-};
+use crate::refine::{refine_transcript, wrap_transcript, RefineSource, DEFAULT_REFINE_PROMPT};
 
 #[test]
 fn llm_polish_wins_when_available() {
@@ -32,11 +30,9 @@ fn raw_transcript_never_loses_when_llm_declines() {
 #[test]
 fn empty_input_saves_empty() {
     let mut history = Vec::new();
-    let refined = refine_transcript(
-        "",
-        &|raw| Some(format!("{raw} polished")),
-        &mut |text| history.push(text.to_string()),
-    );
+    let refined = refine_transcript("", &|raw| Some(format!("{raw} polished")), &mut |text| {
+        history.push(text.to_string());
+    });
     assert_eq!(history.len(), 1, "history saves on every path");
     assert_eq!(refined.source, RefineSource::Llm);
 }

@@ -1042,6 +1042,303 @@ fn percentile(sorted: &[f64], pct: f64) -> f64 {
     sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
 }
 
+/// Read tier over the shipping path: `ReadEngine` over a real
+/// `GuidanceDb` and the eval corpus (`doc/guidance/eval`). The staged
+/// mirror under `fixture_read/` preserves repo-relative paths so
+/// golden files match by identity; golden facts match as substrings
+/// of the rendered answer. Evidence-only (no synthesis): with no
+/// claims there are no unsupported sentences, so that metric ratchets
+/// at zero until the synthesis tier exists. Controls are excluded
+/// from quality metrics; leakage covers every answer including
+/// controls.
+fn fixture_read_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixture_read")
+}
+
+/// Copy the read fixture into scratch and index it through the real
+/// pipeline (selection, extractor, FTS, project and capability
+/// cards). The checked-in tree stays pristine; the tempdir copy is
+/// the indexed workspace.
+fn index_read_fixture() -> (PathBuf, Arc<search_vector::db::GuidanceDb>) {
+    use crate::selection::FileSelection;
+    let staged = scratch_dir("read");
+    copy_tree(&fixture_read_root(), &staged);
+    let db = Arc::new(search_vector::db::GuidanceDb::open_in_memory().expect("read db"));
+    let selection = FileSelection {
+        workspace_root: staged.clone(),
+        include_fixtures: true,
+        roots: vec![staged.clone()],
+        include_globs: Vec::new(),
+        exclude_globs: Vec::new(),
+        extra_skip_dirs: Vec::new(),
+        honor_gitignore: false,
+        max_bytes_override: None,
+    };
+    index_workspace(
+        Arc::clone(&db),
+        fluent_llm::embeddings::NoopEmbedding::new(4),
+        &selection,
+        &IndexOptions::default(),
+        None,
+        &AtomicBool::new(false),
+        &mut |_| {},
+    )
+    .expect("read fixture indexes");
+    crate::read::project_map::import_project_cards(&staged, "fixture", &db, None)
+        .expect("project cards import");
+    let import = crate::read::doc_cards::import_capability_corpus(
+        &staged,
+        &crate::config::ProjectConfig::default(),
+        &db,
+    )
+    .expect("capability corpus imports");
+    assert!(import.present, "staged capability corpus imports");
+    (staged, db)
+}
+
+/// Recursive copy for the read fixture (small, checked-in, stable).
+fn copy_tree(source: &Path, target: &Path) {
+    for entry in std::fs::read_dir(source).expect("fixture dir") {
+        let entry = entry.expect("fixture entry");
+        let dest = target.join(entry.file_name());
+        if entry.path().is_dir() {
+            std::fs::create_dir_all(&dest).expect("fixture mkdir");
+            copy_tree(&entry.path(), &dest);
+        } else {
+            std::fs::copy(entry.path(), &dest).expect("fixture copy");
+        }
+    }
+}
+
+/// One eval answer with its latency, over the shipping path.
+struct ReadAnswer {
+    rendered: String,
+    citations: Vec<String>,
+    claims_without_citation: usize,
+    degraded: bool,
+    tokens: u64,
+    sections_empty: bool,
+    latency_ms: f64,
+}
+
+fn answer_read_question(
+    engine: &crate::read::engine::ReadEngine,
+    workspace: &Path,
+    db: &search_vector::db::GuidanceDb,
+    query: &str,
+) -> ReadAnswer {
+    use crate::read::engine::{ExplainContext, ExplainRequest};
+    let request = ExplainRequest {
+        query: query.to_string(),
+        limit: 10,
+        budget_override: None,
+        no_llm: true,
+    };
+    let coverage = crate::read::readiness::Coverage::empty();
+    let context = ExplainContext {
+        workspace,
+        db,
+        nlp: None,
+        coverage: Some(coverage),
+    };
+    let start = Instant::now();
+    let answer = engine.explain(&request, &context, None);
+    let latency_ms = start.elapsed().as_secs_f64() * 1e3;
+    let rendered = crate::read::render::render_answer(&answer);
+    let mut files: Vec<String> = Vec::new();
+    let citations: Vec<String> = answer.citations.iter().map(ToString::to_string).collect();
+    for citation in &citations {
+        let source = citation.split(':').next().unwrap_or(citation).to_string();
+        if !files.contains(&source) {
+            files.push(source);
+        }
+    }
+    let empty = |title: &str| {
+        answer
+            .sections
+            .iter()
+            .find(|section| section.title == title)
+            .is_none_or(|section| section.body.trim() == format!("### {title}"))
+    };
+    ReadAnswer {
+        rendered,
+        citations: files,
+        claims_without_citation: answer
+            .claims
+            .iter()
+            .filter(|claim| claim.citation.is_none())
+            .count(),
+        degraded: answer.degraded,
+        tokens: answer.tokens_used,
+        sections_empty: empty("Top matches")
+            && empty("From the docs")
+            && empty("From the capabilities"),
+        latency_ms,
+    }
+}
+
+/// Read tier: fact recall, file recall@5, unsupported claims,
+/// false no-result, degraded rate, latency, tokens per correct, and
+/// corpus leakage — all over `ReadEngine` answers, tune and heldout
+/// reported side by side.
+async fn measure_read() -> Vec<Measured> {
+    const READ_REPRO: &str = "cargo test -p guidance-core --lib scorecard_read";
+    // The real pipeline builds its own runtime per wave, so it cannot
+    // run on the scorecard's tokio worker: one blocking thread hosts
+    // the whole index build, like production sync does.
+    let (staged, db) = tokio::task::spawn_blocking(index_read_fixture)
+        .await
+        .expect("read fixture indexes");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../doc/guidance/eval/questions.jsonl");
+    let tasks = crate::eval::load_eval_tasks(&path).expect("eval corpus loads");
+    let engine = crate::read::engine::ReadEngine::new();
+    let mut rows: Vec<(&crate::eval::EvalTask, ReadAnswer)> = Vec::new();
+    for task in tasks.iter().filter(|task| !task.control) {
+        rows.push((
+            task,
+            answer_read_question(&engine, &staged, &db, &task.query),
+        ));
+    }
+    let mut out = Vec::new();
+    for split in ["tune", "heldout"] {
+        let split_rows: Vec<&ReadAnswer> = rows
+            .iter()
+            .filter(|(task, _)| task.split == split)
+            .map(|(_, answer)| answer)
+            .collect();
+        let fact_hits: Vec<f64> = rows
+            .iter()
+            .filter(|(task, _)| task.split == split)
+            .map(|(task, answer)| {
+                let lowered = answer.rendered.to_lowercase();
+                let total = task.golden_facts.len().max(1) as f64;
+                let hits = task
+                    .golden_facts
+                    .iter()
+                    .filter(|fact| lowered.contains(&fact.to_lowercase()))
+                    .count() as f64;
+                hits / total
+            })
+            .collect();
+        let file_hits: Vec<f64> = rows
+            .iter()
+            .filter(|(task, _)| task.split == split)
+            .map(|(task, answer)| {
+                if task.relevant.is_empty() {
+                    return 1.0;
+                }
+                let top: Vec<&String> = answer.citations.iter().take(5).collect();
+                let hits = task
+                    .relevant
+                    .iter()
+                    .filter(|golden| top.iter().any(|file| file.as_str() == golden.as_str()))
+                    .count() as f64;
+                hits / task.relevant.len() as f64
+            })
+            .collect();
+        out.push(Measured {
+            name: format!("read.fact_recall.{split}"),
+            value: mean(&fact_hits),
+            repro: READ_REPRO.to_string(),
+            higher_is_better: true,
+        });
+        out.push(Measured {
+            name: format!("read.file_recall_at_5.{split}"),
+            value: mean(&file_hits),
+            repro: READ_REPRO.to_string(),
+            higher_is_better: true,
+        });
+        let _ = split_rows;
+    }
+    let non_control: Vec<&ReadAnswer> = rows.iter().map(|(_, answer)| answer).collect();
+    let unsupported: Vec<f64> = non_control
+        .iter()
+        .map(|answer| answer.claims_without_citation as f64)
+        .collect();
+    out.push(Measured {
+        name: "read.unsupported_claims".to_string(),
+        value: mean(&unsupported),
+        repro: READ_REPRO.to_string(),
+        higher_is_better: false,
+    });
+    let misses: Vec<f64> = non_control
+        .iter()
+        .map(|answer| f64::from(answer.sections_empty))
+        .collect();
+    out.push(Measured {
+        name: "read.no_result_false".to_string(),
+        value: mean(&misses),
+        repro: READ_REPRO.to_string(),
+        higher_is_better: false,
+    });
+    let degraded: Vec<f64> = non_control
+        .iter()
+        .map(|answer| f64::from(answer.degraded))
+        .collect();
+    out.push(Measured {
+        name: "read.degraded_rate".to_string(),
+        value: mean(&degraded),
+        repro: READ_REPRO.to_string(),
+        higher_is_better: false,
+    });
+    let mut latencies: Vec<f64> = non_control.iter().map(|answer| answer.latency_ms).collect();
+    latencies.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    out.push(Measured {
+        name: "read.p50_ms".to_string(),
+        value: percentile(&latencies, 50.0),
+        repro: READ_REPRO.to_string(),
+        higher_is_better: false,
+    });
+    out.push(Measured {
+        name: "read.p95_ms".to_string(),
+        value: percentile(&latencies, 95.0),
+        repro: READ_REPRO.to_string(),
+        higher_is_better: false,
+    });
+    let tokens: u64 = non_control.iter().map(|answer| answer.tokens).sum();
+    let correct: f64 = rows
+        .iter()
+        .map(|(task, answer)| {
+            let lowered = answer.rendered.to_lowercase();
+            task.golden_facts
+                .iter()
+                .filter(|fact| lowered.contains(&fact.to_lowercase()))
+                .count() as f64
+        })
+        .sum();
+    out.push(Measured {
+        name: "read.tokens_per_correct".to_string(),
+        value: tokens as f64 / correct.max(1.0),
+        repro: READ_REPRO.to_string(),
+        higher_is_better: false,
+    });
+    // Leakage covers every answer including controls: no staged
+    // answer may name a measurement path.
+    let mut leaked = false;
+    for task in tasks {
+        let answer = answer_read_question(&engine, &staged, &db, &task.query);
+        if answer.rendered.contains("doc/guidance/eval")
+            || answer.rendered.contains("src/guidance/corpora")
+        {
+            leaked = true;
+        }
+        for citation in &answer.citations {
+            if citation.contains("doc/guidance/eval") || citation.contains("src/guidance/corpora") {
+                leaked = true;
+            }
+        }
+    }
+    out.push(Measured {
+        name: "read.corpus_leakage".to_string(),
+        value: f64::from(!leaked),
+        repro: READ_REPRO.to_string(),
+        higher_is_better: true,
+    });
+    let _ = staged;
+    out
+}
+
 /// Speed tier: microsecond p50/p99 of one explain sweep over the fixture.
 fn measure_speed(docs: &[fluent_types::GuidanceDoc]) -> Vec<Measured> {
     const SPEED_REPRO: &str = "make guidance-scorecard-deep";
@@ -1256,6 +1553,8 @@ fn measure_loop_clean() -> Vec<Measured> {
         }
         let db = Arc::new(search_vector::db::GuidanceDb::open_in_memory().expect("memory db"));
         let selection = FileSelection {
+            workspace_root: dir.clone(),
+            include_fixtures: true,
             roots: vec![dir.clone()],
             include_globs: Vec::new(),
             exclude_globs: Vec::new(),
@@ -1494,6 +1793,7 @@ pub async fn run_fast_tier() -> Vec<Measured> {
     let (_root, docs) = stage_fixture_docs();
     let queries = load_nav_queries();
     let mut measured = measure_navigation(&docs, &queries);
+    measured.extend(measure_read().await);
     measured.extend(measure_graph());
     measured.extend(measure_freshness());
     measured.extend(measure_speed(&docs));
@@ -1542,3 +1842,7 @@ mod scorecard_tests;
 #[cfg(test)]
 #[path = "../tests/scorecard_ratchet.rs"]
 mod scorecard_ratchet_tests;
+
+#[cfg(test)]
+#[path = "../tests/scorecard_read.rs"]
+mod scorecard_read_tests;

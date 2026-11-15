@@ -59,20 +59,20 @@ pub struct Watermark {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Where the tape covers, as maximal half-open bar spans plus the counts that
 /// interpret them.
-/// 
+///
 /// The fields are read access, not construction surface: build through
 /// [`Coverage::from_bars`] or [`Coverage::from_runs`]. The first and last
 /// stamps bound the tape; `bars` is the observed row count; `runs` are the
 /// maximal covered spans in ascending order, each `[first_stamp,
 /// last_stamp + step)` so a hole between two runs is exactly the missing
 /// bars' span.
-/// 
+///
 /// A deviation from the usual shape, stated plainly: this type cannot be
 /// `Copy`. Locating an interior hole needs the run boundaries, and the three
 /// pinned fields cannot name them. Dropping `Copy` is what keeps [`holes`]
 /// honest — a `Copy` coverage could name how far the tape reaches but never
 /// where it is torn, and the repair loop needs the second fact.
-/// 
+///
 /// [`holes`]: Coverage::holes
 pub struct Coverage {
     /// First observed stamp.
@@ -392,7 +392,7 @@ impl_component!(FreshnessPolicy);
 /// flag on this function.
 #[must_use]
 /// Say what a tape's coverage means: repair, or leave it alone.
-/// 
+///
 /// `None` is an empty table, reported as [`GapClass::Empty`] — distinctly
 /// from "the store could not be reached", which never gets here. The tail is
 /// judged first: a tape that is both stale and torn reports

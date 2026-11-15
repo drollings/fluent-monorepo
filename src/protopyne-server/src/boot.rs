@@ -318,7 +318,7 @@ fn default_history_timeframe() -> String {
 /// label means.
 #[must_use]
 /// Map the terminal toolbar's resolution label onto a [`Timeframe`].
-/// 
+///
 /// The one toolbar-label bridge lives on [`Timeframe::from_chart_label`];
 /// this delegates to it so serving and display cannot disagree about what a
 /// label means.

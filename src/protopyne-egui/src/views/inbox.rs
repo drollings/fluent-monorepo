@@ -73,7 +73,7 @@ impl InboxModel {
 /// into a second write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One operator decision on an actionable inbox row.
-/// 
+///
 /// The action carries only the id and (for a reject) the reason; applying it
 /// invokes exactly one gateway verb, so a rendered click can never fan out
 /// into a second write.

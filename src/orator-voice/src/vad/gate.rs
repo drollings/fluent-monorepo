@@ -58,10 +58,7 @@ pub fn stationary_tone_present(samples: &[f32]) -> bool {
 /// Tonal verdict under the configured intervals and ceiling.
 #[must_use]
 /// Tonal verdict under the configured intervals and ceiling.
-pub fn stationary_tone_present_with_config(
-    samples: &[f32],
-    config: &orator::VadConfig,
-) -> bool {
+pub fn stationary_tone_present_with_config(samples: &[f32], config: &orator::VadConfig) -> bool {
     if samples.len() < 2 {
         return false;
     }

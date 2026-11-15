@@ -311,6 +311,18 @@ impl LazyNlp {
         self.get_with(default_en_pipeline)
     }
 
+    /// Borrow unless skipped: the extractive path passes `true` and
+    /// never constructs (suffix fallback covers inflection), so a
+    /// model-free query builds no pipeline.
+    #[must_use]
+    pub fn get_unless(&self, skip: bool) -> Option<&spacy_rs::pipeline::NlpPipeline> {
+        if skip {
+            None
+        } else {
+            self.get()
+        }
+    }
+
     /// Borrow with an injectable constructor (tests count builds;
     /// production enters through [`LazyNlp::get`]).
     pub fn get_with(

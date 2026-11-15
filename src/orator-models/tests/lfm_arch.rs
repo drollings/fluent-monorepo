@@ -3,10 +3,10 @@
 
 use crate::lfm::arch::{
     encoder_tokens_for_frames, layer_operator, LayerOperator, AUDIO_EOS_CODE, AUDIO_OUT_TOKEN_ID,
-    AUDIO_START_TOKEN_ID, AUDIO_TOKEN_ID, AUDIO_VOCAB_SIZE, BOS_TOKEN_ID, CODEBOOKS,
-    CONV_KERNEL, EOS_TOKEN_ID, INTERLEAVED_N_AUDIO, INTERLEAVED_N_TEXT, MIXED_START_TOKEN_ID,
-    PAD_TOKEN_ID, SAMPLE_RATE_IN, SAMPLE_RATE_OUT, TEXT_END_TOKEN_ID, TEXT_HEADS, TEXT_HIDDEN,
-    TEXT_KV_HEADS, TEXT_LAYERS, TEXT_MAX_POS, TEXT_VOCAB,
+    AUDIO_START_TOKEN_ID, AUDIO_TOKEN_ID, AUDIO_VOCAB_SIZE, BOS_TOKEN_ID, CODEBOOKS, CONV_KERNEL,
+    EOS_TOKEN_ID, INTERLEAVED_N_AUDIO, INTERLEAVED_N_TEXT, MIXED_START_TOKEN_ID, PAD_TOKEN_ID,
+    SAMPLE_RATE_IN, SAMPLE_RATE_OUT, TEXT_END_TOKEN_ID, TEXT_HEADS, TEXT_HIDDEN, TEXT_KV_HEADS,
+    TEXT_LAYERS, TEXT_MAX_POS, TEXT_VOCAB,
 };
 
 #[test]
@@ -14,7 +14,9 @@ fn layer_interleave_matches_the_reference() {
     let ops: Vec<LayerOperator> = (0..TEXT_LAYERS).map(layer_operator).collect();
     assert_eq!(ops.len(), 24);
     assert_eq!(
-        ops.iter().filter(|op| **op == LayerOperator::ShortConv).count(),
+        ops.iter()
+            .filter(|op| **op == LayerOperator::ShortConv)
+            .count(),
         13,
         "13 conv layers"
     );
@@ -41,7 +43,10 @@ fn layer_interleave_matches_the_reference() {
 
 #[test]
 fn text_backbone_dims_are_pinned() {
-    assert_eq!((TEXT_HIDDEN, TEXT_LAYERS, TEXT_HEADS, TEXT_KV_HEADS), (2048, 24, 16, 4));
+    assert_eq!(
+        (TEXT_HIDDEN, TEXT_LAYERS, TEXT_HEADS, TEXT_KV_HEADS),
+        (2048, 24, 16, 4)
+    );
     assert_eq!((TEXT_VOCAB, TEXT_MAX_POS), (128_000, 128_000));
     assert_eq!(CONV_KERNEL, 7);
 }
@@ -56,7 +61,10 @@ fn token_ids_match_generation_config() {
     assert_eq!(AUDIO_OUT_TOKEN_ID, 125_032);
     assert_eq!(AUDIO_START_TOKEN_ID, 125_012);
     assert_eq!(MIXED_START_TOKEN_ID, 125_015);
-    assert_eq!((CODEBOOKS, AUDIO_VOCAB_SIZE, AUDIO_EOS_CODE), (12, 2_017, 2_016));
+    assert_eq!(
+        (CODEBOOKS, AUDIO_VOCAB_SIZE, AUDIO_EOS_CODE),
+        (12, 2_017, 2_016)
+    );
 }
 
 #[test]

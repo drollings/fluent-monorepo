@@ -149,7 +149,7 @@ impl<'de> serde::Deserialize<'de> for PipelineStage {
 /// Pipeline-level error (M9): replaces the synthetic `PipelineStage::Router`
 /// `StageDecision` push. `Stage` carries the failing stage + source `WorkError`;
 /// `Internal` covers non-stage pipeline failures.
-/// 
+///
 /// Compatibility: historical `"Router"` stage labels deserialize to
 /// `PipelineStage::Classifier` with a `warn!` (see the `Deserialize` impl
 /// above); fresh telemetry never emits `"Router"`.
@@ -349,7 +349,7 @@ impl NlpResidual {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 /// Typed access to the documented `StageDecision.metadata` handoff keys.
-/// 
+///
 /// Producers build metadata through the typed setters and consumers read it
 /// through the typed getters — no raw string-key traversal of the handoff
 /// vocabulary outside this type. The underlying `serde_json::Value` storage
@@ -556,7 +556,7 @@ impl From<serde_json::Value> for StageMetadata {
 #[derive(Debug, Clone, Copy)]
 /// A borrowed view of [`StageMetadata`]: the same typed getters, reading
 /// directly from a stored `serde_json::Value` with no clone.
-/// 
+///
 /// Construct with [`StageMetadata::metadata_ref`]. Structured getters
 /// deserialize from the borrowed value (`T::deserialize(&Value)`) rather
 /// than cloning the subtree through `from_value` first.

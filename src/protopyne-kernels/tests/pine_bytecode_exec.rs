@@ -751,10 +751,8 @@ fn cache_hit_serves_only_the_requested_program() {
     let (key_a, program_a) = stored("a = close + 1.0\nplot(a, \"A\")");
     let (key_b, program_b) = stored("a = close + 2.0\nplot(a, \"A\")");
     assert_ne!(key_a, key_b, "distinct programs key distinctly");
-    let cached_a =
-        cached_link(key_a, || Some(program_a.clone())).expect("first program stores");
-    let cached_b =
-        cached_link(key_b, || Some(program_b.clone())).expect("second program stores");
+    let cached_a = cached_link(key_a, || Some(program_a.clone())).expect("first program stores");
+    let cached_b = cached_link(key_b, || Some(program_b.clone())).expect("second program stores");
     assert!(
         std::sync::Arc::ptr_eq(&cached_a, &program_a),
         "the stored program is the requested one"
@@ -954,13 +952,10 @@ fn every_written_column_gets_history() {
         );
         engine.set_bytecode_mode(crate::pine::BytecodeMode::TreeWalk);
         engine
-        .run_linked(&modules, bars, crate::InputSet::new())
-        .expect("tree runs the shape")
+            .run_linked(&modules, bars, crate::InputSet::new())
+            .expect("tree runs the shape")
     }
-    fn back_values(
-        outcome: &crate::pine::RunOutcome,
-        title: &str,
-    ) -> Vec<Option<f64>> {
+    fn back_values(outcome: &crate::pine::RunOutcome, title: &str) -> Vec<Option<f64>> {
         outcome
             .plots
             .iter()
@@ -1048,7 +1043,14 @@ fn every_written_column_gets_history() {
     );
     assert_eq!(
         plain,
-        vec![None, Some(100.0), Some(100.0), Some(100.0), Some(100.0), Some(100.0)],
+        vec![
+            None,
+            Some(100.0),
+            Some(100.0),
+            Some(100.0),
+            Some(100.0),
+            Some(100.0)
+        ],
         "a plain store reads the committed close"
     );
     let journaled = back_values(

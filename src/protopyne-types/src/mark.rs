@@ -8,7 +8,7 @@
 /// Where a position's per-unit mark came from.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Option-mark basis: where a position's per-unit mark came from.
-/// 
+///
 /// A foundation vocabulary (strategy names it in its mark context, the
 /// server names it in its reports), so it lives here rather than in either
 /// consumer. The wire tags are frozen — reports and view rows serialize the

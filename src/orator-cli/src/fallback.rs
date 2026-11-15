@@ -134,7 +134,8 @@ pub fn decode_whisper_samples(
     samples: &[f32],
     abort: &StreamAbort,
 ) -> Result<String, String> {
-    let mut backend = orator_voice::stt::WhisperBackend::new(path.to_path_buf(), language.to_string());
+    let mut backend =
+        orator_voice::stt::WhisperBackend::new(path.to_path_buf(), language.to_string());
     if gpu {
         backend = backend.with_gpu();
     }
@@ -746,10 +747,7 @@ pub fn local_ask(question: &str, config: &orator::OratorConfig) -> Result<String
 /// fail loudly naming the fetch; errors never read as silence. The
 /// caller narrates the hop (head leg vs daemon fallback); this stays
 /// quiet so one synth never logs twice.
-pub fn local_say(
-    text: &str,
-    config: &orator::OratorConfig,
-) -> Result<(Vec<f32>, u32), String> {
+pub fn local_say(text: &str, config: &orator::OratorConfig) -> Result<(Vec<f32>, u32), String> {
     synth_kokoro(text, config)
 }
 

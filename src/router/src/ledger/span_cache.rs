@@ -54,7 +54,7 @@ pub trait SpanCache: Send + Sync {
 /// get/put is negligible compared to a model call.
 #[derive(Debug, Default)]
 /// Hermetic in-memory span cache (tests + non-ledger callers).
-/// 
+///
 /// `Mutex<HashMap>` — the cache is not a hot loop; a single lock per
 /// get/put is negligible compared to a model call.
 pub struct InMemorySpanCache {

@@ -109,13 +109,13 @@ impl StructureKind {
 /// terminalizes without journaling a submission that never happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Lifecycle state of a proposal.
-/// 
+///
 /// ```text
 /// Proposed -> RiskChecked -> AutoApproved | PendingHuman
 /// -> Approved | Rejected | Expired -> Submitted -> Working
 /// -> Filled | Partial | Cancelled
 /// ```
-/// 
+///
 /// An approved-but-unsubmitted proposal may also cancel directly: withdrawing
 /// approval before submission (entries disarmed, quantity unrepresentable)
 /// terminalizes without journaling a submission that never happened.
@@ -235,7 +235,7 @@ pub struct JournaledTransition {
 #[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
 /// The single unit of tradable intent.
-/// 
+///
 /// A proposal carries its own economics (`limit_price`, `max_loss`,
 /// `notional`) so risk and grant checks never re-derive numbers from a
 /// strategy handle: the checked values are the submitted values.

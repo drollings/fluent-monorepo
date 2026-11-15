@@ -14,11 +14,11 @@
 /// Precision/recall/FPR at a single operating point.
 #[derive(Debug, Clone, PartialEq)]
 /// Calibration harness for confidence vs task-value thresholds.
-/// 
+///
 /// Pure, zero-domain: no I/O, no domain types. Composed everywhere thresholds
 /// are trusted for caching/persisting decisions. The gate is precision ≥0.90
 /// and FPR ≤0.05 on control groups (see ROADMAP_20260901_FIXES_4.md M1).
-/// 
+///
 /// Scope: threshold sweeps over scored cases only. Must-fire/must-not-fire
 /// control gates (binary accept at a frozen expectation, no scores, no
 /// thresholds — e.g. the kernels control/treatment gate in

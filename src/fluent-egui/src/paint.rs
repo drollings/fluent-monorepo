@@ -213,7 +213,7 @@ pub fn column_candle_geoms(
 /// caller's contract, grouping is this function's.
 #[must_use]
 /// Partition slot-ordered bars into consecutive pixel-column runs.
-/// 
+///
 /// `column_of` maps a bar slot to its pixel column; the call site passes the
 /// floored x pixel of each slot, so one run is exactly the bars that would
 /// overdraw one screen column. Returns `(column, bar-range)` runs in slot
@@ -248,7 +248,7 @@ pub fn column_runs(
 /// callers pass converted rows, never raw floats.
 #[must_use]
 /// Fold one pixel column's rows into a single aggregate candle.
-/// 
+///
 /// open = first open, high = max high, low = min low, close = last close,
 /// volume = saturating sum, time = first bar time. This is what makes
 /// sub-pixel zoom honest: one screen column can only ever show one vertical
@@ -333,7 +333,7 @@ pub fn sample_column_extremes(values: &[Option<f64>]) -> Option<(f64, f64)> {
 /// Sampled vertices of one line-like series at sub-pixel zoom: one vertex
 /// per pixel column over global bar slots `base..`, sampled with
 /// [`sample_column_last`] and mapped like [`oscillator_points`].
-/// 
+///
 /// This is the display-only sampler behind native-timeframe evaluation:
 /// indicator values are computed over full-resolution bars and only
 /// *sampled* here, so a zoomed-out overlay costs O(columns) vertices while
@@ -371,7 +371,7 @@ pub fn sampled_line_points(
 /// Sampled spans of one band-like series at sub-pixel zoom: one `(x, top,
 /// bottom)` span per pixel column, sampled with [`sample_column_extremes`]
 /// and mapped through the shared window predicate.
-/// 
+///
 /// The same display-only contract as [`sampled_line_points`]: full-resolution
 /// values in, one span per column out, holes staying holes at every stage.
 /// A run whose high or low leg sits off-window spans nothing — spans break at
@@ -590,7 +590,7 @@ pub fn oscillator_points(values: &[Option<f64>], viewport: &Viewport) -> Vec<Opt
 /// zero-based entry over the same core, never a second mapping.
 #[must_use]
 /// Map a borrowed series window to screen points with a window base.
-/// 
+///
 /// The single mapping behind [`oscillator_points`]: `base` is the global
 /// index of the first value, so culled windows re-offset x pixels to window
 /// coordinates instead of cloning a window. [`oscillator_points`] is the
@@ -623,7 +623,7 @@ pub fn oscillator_points_sliced(
 /// instead of O(history). Empty and off-window viewports paint nothing.
 #[must_use]
 /// Native line points over the twice-visible window only.
-/// 
+///
 /// Computes the viewport's proportional window over `values`, borrows that
 /// slice through the shared slicer, and maps it with the window base — so the
 /// result is pixel-identical to the corresponding slice of full-window
@@ -661,7 +661,7 @@ pub struct PivotDot {
 /// where [`oscillator_points`] does.
 #[must_use]
 /// Place pivot dots from crossing marks onto fast-oscillator values.
-/// 
+///
 /// Marks whose value is missing, non-finite, out of range, or out of bounds
 /// are skipped — dots decorate crossings only. Off-window values refuse
 /// through the shared window predicate, so the dots lift the pen exactly
@@ -693,7 +693,7 @@ pub fn pivot_dots(marks: &[PivotMark], fast: &[Option<f64>], viewport: &Viewport
 #[must_use]
 /// Place pivot dots at bar price extremes, mirroring the reference overlay
 /// labels: `High` marks sit on the bar high, `Low` marks on the bar low.
-/// 
+///
 /// Marks past the rows, on holes, or with unmappable extremes are skipped —
 /// dots decorate confirmed extremes only.
 pub fn pivot_price_dots(
@@ -806,7 +806,7 @@ pub const CANDLE_BODY_FRACTION: f32 = 0.8;
 /// configured default. Non-finite spacing reads the minimum.
 #[must_use]
 /// The candle body width for a displayed time-bar width.
-/// 
+///
 /// A candle is the width of the unit of time it draws, so the body *is* the
 /// slot at ordinary zoom and the bars read as a solid tape. Past
 /// [`CANDLE_GAP_THRESHOLD_PX`] the slot is wide enough that neighbours run
@@ -814,7 +814,7 @@ pub const CANDLE_BODY_FRACTION: f32 = 0.8;
 /// separates them. The width never falls below [`CANDLE_MIN_BODY_PX`]: a
 /// fully zoomed-out bar stays a visible mark rather than disappearing, which
 /// would hide data by zooming.
-/// 
+///
 /// `bar_spacing` is the *live* spacing from the pane's own viewport, so the
 /// body follows the horizontal zoom the chart currently shows rather than the
 /// configured default. Non-finite spacing reads the minimum.
@@ -887,7 +887,7 @@ pub fn paint_candles(
 /// what it is given, like every painter here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// One candle plus its resolved paint color.
-/// 
+///
 /// Pairs headless geometry with the display color the caller resolved for
 /// it (theme key, momentum tint, or fallback): the emitter draws exactly
 /// what it is given, like every painter here.
@@ -971,7 +971,7 @@ pub fn paint_ribbon(
 #[derive(Debug, Clone, PartialEq)]
 /// One ribbon fill run: a closed polygon between the band edges over a
 /// contiguous stretch of bars sharing one trend key.
-/// 
+///
 /// `points` walks the upper edge forward, then the lower edge reversed, so
 /// the emitter fills exactly the band the reference `fill()` shades —
 /// a continuous area, never per-bar candle lookalikes. Pane-local, like
@@ -1113,7 +1113,7 @@ pub fn proportional_ribbon_polygons(
 /// emits one band per painted column, never one per bar.
 #[must_use]
 /// Sampled ribbon bands at sub-pixel zoom: one band per pixel column.
-/// 
+///
 /// Composes the two display samplers, never a third: each column run (over
 /// floored slot pixels) spans the present upper legs through
 /// [`sample_column_extremes`] for its top and the present lower legs for its
@@ -1176,7 +1176,7 @@ pub fn sampled_ribbon_bands(
 #[must_use]
 /// Build area fill polygons: maximal runs of contiguous bars whose values
 /// map, closed against one constant baseline.
-/// 
+///
 /// Same run-closing core as [`ribbon_polygons`] — no second polygon code —
 /// with the lower edge fixed at `baseline` and the trend key fixed at
 /// `false`, so no per-bar lower/trend vectors are materialized. Holes,
@@ -1586,7 +1586,7 @@ pub fn alpha_u8(alpha: f32) -> u8 {
 /// paint stays visible and debuggable rather than silently vanishing).
 #[must_use]
 /// Map a Pine-style transparency percent to a byte opacity.
-/// 
+///
 /// `color.new(c, t)` semantics: `0` is fully opaque, `100` fully invisible.
 /// Out-of-range inputs clamp; non-finite input paints opaque (fail-soft —
 /// paint stays visible and debuggable rather than silently vanishing).
@@ -1792,7 +1792,7 @@ pub struct CrosshairLines {
 /// outside the window, or the extents are degenerate.
 #[must_use]
 /// Build crosshair spans for a readout over a `width × height` pane.
-/// 
+///
 /// The snapped pixel comes from the pure [`crosshair_pixel`], so the edge
 /// draws exactly what the headless mapping resolves — `egui` translates
 /// pointer events into readouts and paints these spans, never its own
@@ -1889,7 +1889,7 @@ impl MarkerDot {
 /// extrapolated points off the pane.
 #[must_use]
 /// Resolve markers to pixels over the caller's window.
-/// 
+///
 /// Markers ride the append-only set (the render-side journal): operator
 /// clicks append through [`crate::annotations::annotate_at`], Pine drawings
 /// arrive through the terminal bridge, and both paint here alike. One
@@ -1989,7 +1989,7 @@ pub fn paint_session_breaks(
 /// `origin.1` moves every y leg.
 #[must_use]
 /// Shift pane-local candle geometry into UI space by a pane origin.
-/// 
+///
 /// Geometry here is pane-local (origin at the pane's top-left); every emitter
 /// draws exactly the coordinates it is given, so a frame that lays panes side
 /// by side shifts each layer by its own origin first. `origin.0` moves x,
@@ -2157,7 +2157,7 @@ pub struct EyeIconGeom {
 /// centers, non-finite radii, and radii at or below zero.
 #[must_use]
 /// Build eye geometry around `center` at `radius`.
-/// 
+///
 /// The lids are ellipse arcs (`0.6` vertical squash) pinned exactly to the
 /// horizontal through center at both corners, so the upper lid never dips
 /// below center and the lower lid never rises above it. Refuses non-finite
@@ -2219,7 +2219,7 @@ pub struct HexBoltIconGeom {
 /// Refuses non-finite centers, non-finite radii, and radii at or below zero.
 #[must_use]
 /// Build six-sided bolt geometry around `center` at `radius`.
-/// 
+///
 /// Refuses non-finite centers, non-finite radii, and radii at or below zero.
 pub fn hex_bolt_icon_geom(center: (f32, f32), radius: f32) -> Option<HexBoltIconGeom> {
     if !center.0.is_finite() || !center.1.is_finite() || !radius.is_finite() || radius <= 0.0 {
@@ -2264,7 +2264,7 @@ pub struct SearchIconGeom {
 /// non-finite centers, non-finite radii, and radii at or below zero.
 #[must_use]
 /// Build search geometry around `center` at `radius`.
-/// 
+///
 /// The handle leaves the lens rim at 45 degrees down-right. Refuses
 /// non-finite centers, non-finite radii, and radii at or below zero.
 pub fn search_icon_geom(center: (f32, f32), radius: f32) -> Option<SearchIconGeom> {

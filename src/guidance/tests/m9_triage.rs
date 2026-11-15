@@ -33,7 +33,7 @@ fn static_table_covers_known_codes() {
     );
     assert_eq!(
         static_classify("error[E0384]: cannot assign twice to immutable variable"),
-        Some(TriageVerdict::LocalRewrite)
+        Some(TriageVerdict::Mechanical { fix_class: "mut" })
     );
     assert_eq!(
         static_classify("error[E0308]: mismatched types"),
@@ -392,7 +392,10 @@ fn calibration_gates_auto_apply_on_pinned_thresholds() {
                 fix_class: "import",
             },
         ),
-        ("error[E0384]: cannot assign", TriageVerdict::LocalRewrite),
+        (
+            "error[E0384]: cannot assign",
+            TriageVerdict::Mechanical { fix_class: "mut" },
+        ),
         ("error[E0308]: mismatched types", TriageVerdict::NeedsHuman),
         ("error: can't find crate for `x`", TriageVerdict::External),
     ];

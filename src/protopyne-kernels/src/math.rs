@@ -169,7 +169,7 @@ pub fn variance_sample(window: &[f64]) -> f64 {
 /// `(peak − now) / peak`. The one home for peak-to-trough arithmetic — the
 /// series fold in `protopyne-server::metrics` delegates to this per step, so
 /// there is exactly one spelling of the division.
-/// 
+///
 /// `None` when there is no peak to fall from (a non-positive peak) or the
 /// math overflows: no peak, no drawdown, never a zero. A reading at or above
 /// the peak reports zero or headroom — defined, and never a breach.
@@ -229,7 +229,7 @@ pub fn corr_pearson(a: &[f64], b: &[f64]) -> Option<f64> {
 /// length mismatch, empty input, or constant/non-finite `x` (no slope
 /// exists there). Holds the shared fit core: [`linreg_slope_intercept`]
 /// delegates to this for its slope leg, so the two never fork.
-/// 
+///
 /// This is the canonical per-window fit for RSRS-style rolling regressions;
 /// the scoring tail composes [`variance_pop`] + [`fin_or_none`] (same
 /// sum-then-divide-by-`m`, `sqrt` once) or [`standardize_scores`] for the
@@ -346,7 +346,7 @@ pub fn mode_of(values: &[f64]) -> Option<f64> {
 /// runs, then the leader is recovered in **first-appearance order**. The old
 /// shape scanned the prefix for a duplicate and recounted the whole slice for
 /// every element, O(n²); this is O(n log n) with the same answer.
-/// 
+///
 /// `-0.0` and `0.0` count as one bucket (they compare equal), so the sorted
 /// copy folds the sign of zero before bucketing. `NaN` is never equal to
 /// itself, so it forms no bucket — an all-`NaN` input keeps the old answer,
@@ -554,7 +554,7 @@ pub fn rolling_min_periods_mask(len: usize, min_periods: usize) -> Vec<bool> {
 #[must_use]
 #[allow(clippy::manual_midpoint)]
 /// Reference-order midpoint of two prices (`(h + l) / 2`).
-/// 
+///
 /// This deliberately keeps the reference's rounding instead of the
 /// overflow-proof `f64::midpoint`: prices never approach overflow, and
 /// matching the reference operation-for-operation is what the Expr-parity suites

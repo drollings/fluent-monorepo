@@ -103,7 +103,7 @@ pub fn find_all_on_path(name: &str) -> Vec<PathBuf> {
 /// Missing paths and escapes both fail closed (`false`). Resolution is
 /// hop-capped (never an unbounded `canonicalize`): loops and deep
 /// chains refuse instead of hanging or resolving outside.
-/// 
+///
 /// Layering (intentional, not duplication): this is the fast check —
 /// callers that then open the path must re-validate the opened
 /// handle (`orator_agent::tools::sandbox::open_within`, fd re-validation),

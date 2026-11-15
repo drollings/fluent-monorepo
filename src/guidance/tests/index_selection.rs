@@ -29,6 +29,8 @@ fn tree() -> TempDir {
 
 fn selection(root: &std::path::Path) -> FileSelection {
     FileSelection {
+        workspace_root: root.to_path_buf(),
+        include_fixtures: false,
         roots: vec![root.to_path_buf()],
         include_globs: Vec::new(),
         exclude_globs: Vec::new(),
@@ -394,6 +396,8 @@ fn select_files_skips_hidden_files_by_default() {
     std::fs::write(dir.path().join("visible.rs"), "fn visible() {}\n").expect("write");
     std::fs::write(dir.path().join(".hidden.rs"), "fn hidden() {}\n").expect("write");
     let sel = FileSelection {
+        workspace_root: dir.path().to_path_buf(),
+        include_fixtures: false,
         roots: vec![dir.path().to_path_buf()],
         include_globs: Vec::new(),
         exclude_globs: Vec::new(),
@@ -424,6 +428,8 @@ fn select_files_explicit_glob_restores_hidden_files() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join(".hidden.rs"), "fn hidden() {}\n").expect("write");
     let sel = FileSelection {
+        workspace_root: dir.path().to_path_buf(),
+        include_fixtures: false,
         roots: vec![dir.path().to_path_buf()],
         include_globs: vec!["*.rs".to_string()],
         exclude_globs: Vec::new(),
@@ -475,6 +481,8 @@ fn select_files_test_skip_ignores_explicit_globs() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("unit_test.rs"), "fn t() {}\n").expect("write");
     let sel = FileSelection {
+        workspace_root: dir.path().to_path_buf(),
+        include_fixtures: false,
         roots: vec![dir.path().to_path_buf()],
         include_globs: vec!["*.rs".to_string()],
         exclude_globs: Vec::new(),
@@ -486,4 +494,84 @@ fn select_files_test_skip_ignores_explicit_globs() {
     let files = select_files(&sel, &mut diag).expect("select");
     assert!(files.is_empty(), "test paths never restore");
     assert_eq!(diag.skipped_test, 1, "{diag:?}");
+}
+
+#[test]
+fn compiled_globs_match_per_call_path_exactly() {
+    use super::{compile_selection_globs, compiled_glob_matches};
+    use crate::query::glob::{normalize_path_for_match, path_pattern_matches};
+    // One matcher per non-empty pattern, built once; every verdict
+    // agrees with the per-call path on scaffolding shapes, absolute
+    // patterns, double stars, and empties.
+    let cases = [
+        ("src/**", "src/a/b.rs", "/repo/src/a/b.rs", true),
+        ("src/**", "other/a.rs", "/repo/other/a.rs", false),
+        ("*.rs", "src/a.rs", "/repo/src/a.rs", true),
+        ("*.rs", "src/a.md", "/repo/src/a.md", false),
+        ("/repo/src/**", "src/a.rs", "/repo/src/a.rs", true),
+        ("/repo/src/**", "src/a.rs", "/other/src/a.rs", false),
+        ("src", "src/a.rs", "/repo/src/a.rs", true),
+        ("src", "other/a.rs", "/repo/other/a.rs", false),
+        ("README.md", "README.md", "/repo/README.md", true),
+        ("", "src/a.rs", "/repo/src/a.rs", false),
+    ];
+    for (pattern, relative, display, expected) in cases {
+        let compiled = compile_selection_globs(&[pattern.to_string()]);
+        if pattern.is_empty() {
+            assert!(compiled.is_empty(), "empty patterns drop at build");
+            continue;
+        }
+        assert_eq!(compiled.len(), 1, "one matcher per pattern: {pattern}");
+        let relative_match = normalize_path_for_match(relative);
+        let display_match = normalize_path_for_match(display);
+        // Absolute patterns match the absolute (display) path;
+        // relative patterns match the root-relative path — the same
+        // branch the per-call path takes.
+        let oracle = if pattern.starts_with('/') {
+            path_pattern_matches(pattern, display)
+        } else {
+            path_pattern_matches(pattern, relative)
+        };
+        assert_eq!(
+            compiled_glob_matches(&compiled[0], &relative_match, &display_match),
+            oracle,
+            "relative: {pattern} {relative}"
+        );
+        assert_eq!(
+            compiled_glob_matches(&compiled[0], &relative_match, &display_match),
+            expected,
+            "verdict: {pattern} {relative}"
+        );
+    }
+}
+
+#[test]
+fn fixture_tree_is_excluded_by_default_and_opt_in() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join("src/guidance/fixture_read")).expect("mkdir");
+    std::fs::write(
+        dir.path().join("src/guidance/fixture_read/README.md"),
+        "# fixture\n",
+    )
+    .expect("write");
+    std::fs::write(dir.path().join("src/lib.rs"), "pub fn real() {}\n").expect("write");
+    let mut selection = selection(dir.path());
+    selection.roots = vec![dir.path().join("src")];
+    selection.workspace_root = dir.path().to_path_buf();
+    let mut diag = crate::selection::ScanDiagnostics::default();
+    let files = crate::selection::select_files(&selection, &mut diag).expect("select");
+    assert!(
+        files
+            .iter()
+            .all(|file| !file.relative.contains("fixture_read")),
+        "{files:?}"
+    );
+    selection.include_fixtures = true;
+    let files = crate::selection::select_files(&selection, &mut diag).expect("select");
+    assert!(
+        files
+            .iter()
+            .any(|file| file.relative.contains("fixture_read")),
+        "{files:?}"
+    );
 }

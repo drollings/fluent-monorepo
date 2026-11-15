@@ -22,7 +22,7 @@ use crate::signals_lite::LiteIndicatorParams;
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 /// One entry trigger's parameters.
-/// 
+///
 /// The fields are kind-conditional, like the filter row below: `level`
 /// carries the momentum level, the exhaustion band, or the slow leg of the
 /// dual exhaustion; `fast_level` only the dual's fast leg; `lookback` only
@@ -53,7 +53,7 @@ pub struct TriggerSlot {
     Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 /// One admission filter's parameters.
-/// 
+///
 /// The numeric fields are kind-conditional: `minimum` carries the health,
 /// slow-side, or volume floor; `maximum` the extension ceiling; `length`
 /// the delta window. The two regime arms ride their own switches because
@@ -245,7 +245,7 @@ impl From<&IntegrationLiteStrategyConfig> for TriggerSlot {
 /// the entry section directly.
 #[must_use]
 /// Project the flat wire config onto the nested entry section.
-/// 
+///
 /// This is the one flat→entry mapping: the slot builders read the entry,
 /// never the flat config, so the flat struct reaches the slots only through
 /// this projection. Every entry dial has a lossless slot field; the section

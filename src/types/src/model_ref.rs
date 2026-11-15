@@ -12,7 +12,7 @@
 /// Canonical model-reference parsing: the single home for
 /// `provider:model` references shared by config resolution and (from M11)
 /// provenance parsing.
-/// 
+///
 /// The separator is `:` and only the first colon splits (`"a:b:c"` is
 /// provider `"a"`, model `"b:c"`). A bare name (`"model"`) carries the
 /// default provider. No dash/punctuation stripping exists anywhere in the

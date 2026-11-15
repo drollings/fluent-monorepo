@@ -10,8 +10,18 @@ use crate::diary::segment::Segment;
 #[test]
 fn words_take_the_covering_segment() {
     let segments = vec![
-        Segment { index: 0, start_sample: 0, end_sample: 24_000, channel: Channel::Sys },
-        Segment { index: 1, start_sample: 12_000, end_sample: 36_000, channel: Channel::Sys },
+        Segment {
+            index: 0,
+            start_sample: 0,
+            end_sample: 24_000,
+            channel: Channel::Sys,
+        },
+        Segment {
+            index: 1,
+            start_sample: 12_000,
+            end_sample: 36_000,
+            channel: Channel::Sys,
+        },
     ];
     // Word midpoints in ms: 500 sits in segment 0, 1500 in segment 1.
     let labels = align_words(&[500, 1500], &segments, &[0, 1]);

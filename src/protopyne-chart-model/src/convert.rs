@@ -29,7 +29,7 @@ pub use protopyne_view::ChartBars;
 /// (overflow to infinity, `NaN`). Never panics.
 #[must_use]
 /// Convert one money/price leg to a chart float.
-/// 
+///
 /// Returns `None` when the value is unrepresentable as a finite `f64`
 /// (overflow to infinity, `NaN`). Never panics.
 pub fn to_display_float(value: Decimal) -> Option<f64> {

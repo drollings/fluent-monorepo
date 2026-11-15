@@ -47,7 +47,7 @@ impl ScoreMatrix {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 /// Closed set of well-known router routes that carry score bands.
-/// 
+///
 /// The wire format stays the lowercase strings (`"plan"`, `"rigor"`,
 /// `"local"`), so existing JSON configs carrying those names deserialize
 /// byte-identically; new code matches on this enum instead of repeating the

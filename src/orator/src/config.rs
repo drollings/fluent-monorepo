@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 #[must_use]
 /// Home of downloaded model weights. Single source for every crate that
 /// reads or writes the model directory.
-/// 
+///
 /// Managed artifacts only (whisper, Kokoro): language-model weights
 /// resolve from the llama.cpp installation layout first (see
 /// [`resolve_llm_weights`]) and fall back here last. `None` when no
@@ -142,7 +142,7 @@ pub fn audio_bundle_dir(gguf_dir: &str) -> PathBuf {
 /// relative to the top-level `gguf_dir` (never repeated per key).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// The three audio components plus the language backbone.
-/// 
+///
 /// A speech model is a bundle, not a file: the audio encoder
 /// projector (mmproj) rides alongside the language backbone. The
 /// vocoder (audio decoder) and audio tokenizer are legacy LFM2.5
@@ -264,7 +264,7 @@ pub const AUDIO_OUT_RATE: u32 = 24_000;
 /// config file under `s2s.*` so the endpoint, model tag, and bundle
 /// paths are operator-settable; the endpoint defaults to port 8080,
 /// the same loopback default as the text endpoint.
-/// 
+///
 /// Every leaf carries its builder value as the serde default (the
 /// `DaemonConfig` precedent), so hand-written files may set only the
 /// endpoint and still load port-8080-complete everywhere else.
@@ -1584,7 +1584,7 @@ impl Default for ChatConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FieldAccess, Describable)]
 /// The whole daemon configuration. Leaves stay individually editable at
 /// runtime; the root loads from disk.
-/// 
+///
 /// Selection precedence (single-home authority): the role tables
 /// decide; root selection leaves (`stt.model`, `llm.model`,
 /// `s2s.model`, `tts.voice`) are typed fallback; code defaults come

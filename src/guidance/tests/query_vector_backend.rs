@@ -125,3 +125,138 @@ fn vector_backend_declines_without_an_embedder() {
         Err(crate::query_engine::QueryEngineError::NoResults)
     ));
 }
+
+#[test]
+fn vector_route_is_empty_without_stored_vectors() {
+    // The CLI refuses `--vector` loudly when no vectors are stored;
+    // this pins the recall side: an unembedded index yields nothing
+    // from the vector route.
+    use crate::query::db_storage::GuidanceDbStorage;
+    use crate::query::recall::run_recall;
+    use crate::search_types::{SearchPlan, SearchPlanRoute, SearchPlanRouteMode};
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: "file-a".to_string(),
+            absolute_path: "/repo/src/a.rs".to_string(),
+            relative_path: "src/a.rs".to_string(),
+            root_path: "/repo".to_string(),
+            size_bytes: 100,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "fn".to_string(),
+            group: None,
+            file_id: "file-a".to_string(),
+            range_json: "{\"kind\":\"item\"}".to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("fn alpha() {}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("alpha".to_string()),
+            scope: None,
+            signature: Some("fn alpha()".to_string()),
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed");
+    assert_eq!(db.embedded_fragment_count().expect("count"), 0);
+    let storage = GuidanceDbStorage::new(&db);
+    let plan = SearchPlan {
+        routes: vec![SearchPlanRoute {
+            mode: SearchPlanRouteMode::Vector,
+            query: "alpha".to_string(),
+        }],
+        trace: true,
+        limit: Some(5),
+        ..Default::default()
+    };
+    let output = run_recall(&plan, &storage, Some(&TestEmbedder), None).expect("recall");
+    assert!(
+        output.hits.is_empty(),
+        "unembedded index yields no vector hits: {:?}",
+        output.hits
+    );
+}
+
+#[test]
+fn vector_route_marks_hits_with_a_vector_trace_when_ready() {
+    // Backfilled vectors feed the vector route end to end: the hit
+    // carries `matched_by: vector` plus its trace when requested.
+    use crate::query::db_storage::GuidanceDbStorage;
+    use crate::query::recall::run_recall;
+    use crate::search_types::{SearchMatchedBy, SearchPlan, SearchPlanRoute, SearchPlanRouteMode};
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: "file-a".to_string(),
+            absolute_path: "/repo/src/a.rs".to_string(),
+            relative_path: "src/a.rs".to_string(),
+            root_path: "/repo".to_string(),
+            size_bytes: 100,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "fn".to_string(),
+            group: None,
+            file_id: "file-a".to_string(),
+            range_json: "{\"kind\":\"item\"}".to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("fn alpha() {}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("alpha".to_string()),
+            scope: None,
+            signature: Some("fn alpha()".to_string()),
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed");
+    crate::index_pipeline::backfill_fragment_embeddings(
+        &db,
+        Some(&TestEmbedder),
+        &crate::index_pipeline::IndexOptions::default(),
+    )
+    .expect("backfill");
+    assert_eq!(db.embedded_fragment_count().expect("count"), 1);
+    let storage = GuidanceDbStorage::new(&db);
+    let plan = SearchPlan {
+        routes: vec![SearchPlanRoute {
+            mode: SearchPlanRouteMode::Vector,
+            query: "alpha".to_string(),
+        }],
+        trace: true,
+        limit: Some(5),
+        ..Default::default()
+    };
+    let output = run_recall(&plan, &storage, Some(&TestEmbedder), None).expect("recall");
+    assert_eq!(output.hits.len(), 1, "{output:?}");
+    assert_eq!(
+        output.hits[0].matched_by,
+        SearchMatchedBy::Vector,
+        "{output:?}"
+    );
+    assert!(output.hits[0].trace.is_some(), "{output:?}");
+}

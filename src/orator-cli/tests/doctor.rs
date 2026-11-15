@@ -211,12 +211,8 @@ fn composed_params_name_no_winning_layer() {
             params: Some(serde_json::json!({"threads": 16})),
         },
     )]));
-    let composed = orator::compose_role_params(
-        &config.models,
-        &config.roles,
-        "asr",
-        "large-v3-turbo-q5_0",
-    );
+    let composed =
+        orator::compose_role_params(&config.models, &config.roles, "asr", "large-v3-turbo-q5_0");
     assert_eq!(
         composed.get("threads"),
         Some(&serde_json::json!(16)),

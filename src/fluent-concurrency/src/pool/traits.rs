@@ -46,7 +46,7 @@ pub enum PoolError {
 /// future is implied by the `Send + Sync` receiver; desugaring to
 /// `-> impl Future + Send` would be noisy for no gain in this internal crate.
 /// Fire-and-forget pool — `WorkerPool` and `CreditGatedPool`.
-/// 
+///
 /// `submit` enqueues without a per-job response channel (no `oneshot` alloc).
 pub trait SinkPool {
     type Job: Send + 'static;

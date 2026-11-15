@@ -134,7 +134,7 @@ impl SealedSnapshot {
 /// it with the manifest transaction.
 #[derive(Debug)]
 /// Write sealed artifacts into one directory with one chunk policy.
-/// 
+///
 /// The writer is file-only: it never touches the database. [`seal`] composes
 /// it with the manifest transaction.
 pub struct SnapshotWriter<'a> {

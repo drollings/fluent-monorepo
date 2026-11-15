@@ -71,7 +71,7 @@ pub(crate) fn is_false(value: &bool) -> bool {
 #[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
 /// How quotes are derived from closed-bar closes in the prototype.
-/// 
+///
 /// The mid equals the bar close; the spread is `close * spread_bps / 10_000`
 /// split symmetrically around the mid. Sizes are fixed. This is a stated
 /// fill assumption surfaced in every report, not a claim about real
@@ -177,7 +177,7 @@ impl fluent_wvr::validate::Validate for BacktestConfig {
 /// non-positive or the derived touch would be crossed.
 #[must_use]
 /// Synthesize a two-sided quote for `bar` under `config`.
-/// 
+///
 /// Returns `None` (fail closed, bar skipped with a reason) when the close is
 /// non-positive or the derived touch would be crossed.
 pub fn quote_for_bar(bar: &Bar, config: &BacktestConfig) -> Option<Quote> {
@@ -224,7 +224,7 @@ pub fn quote_for_bar(bar: &Bar, config: &BacktestConfig) -> Option<Quote> {
 #[derive(Debug, Clone)]
 /// Where a run's bars come from: a file set, a caller-supplied tape, or
 /// a durable store.
-/// 
+///
 /// The files arm carries CSV or Parquet candidates in fallback order and
 /// walks them through the one candidate ladder (a missing or unreadable file
 /// skips to the next; any parse or structural refusal stops the walk).

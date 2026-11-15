@@ -9,7 +9,7 @@
 /// Notification actions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Notifications with approve/deny/stop actions.
-/// 
+///
 /// Summaries stay content-free by default: the notification names the
 /// tool and its effect, never the transcript or reply text that
 /// prompted it. Delivery rides an injected sink so tests and the

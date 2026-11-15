@@ -397,7 +397,7 @@ pub enum StepStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 /// The overlay kinds a node may carry (OVERLAYS §4.3).
-/// 
+///
 /// The **source of truth** for each overlay's value is the corresponding node
 /// field (`annotation` / `metadata["llm_overlay"]` / `embedding`); these
 /// bookkeeping types are advisory/audit metadata stored under
@@ -751,7 +751,7 @@ impl<'de> serde::Deserialize<'de> for OriginRole {
 /// computed with `common_core::hash::fnv1a64` so existing stored rows stay
 /// joinable. `UNSTAMPED` (the `0` value) means there is no version to key
 /// against: the node has no LOD0 content or has not yet been stamped.
-/// 
+///
 /// A non-empty LOD0 hashes to `0` with probability 2⁻⁶⁴ and is treated as
 /// unstamped (annotations rejected). This sentinel reservation is accepted,
 /// not accidental.

@@ -326,7 +326,7 @@ pub struct FieldEdits {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// One tab of an indicator settings pane: calculation inputs, paint styling,
 /// or the visibility toggles.
-/// 
+///
 /// The split is a routing over field names, not a second schema: every
 /// lifted field lands in exactly one tab (see [`classify_schema_field`]),
 /// so the three tabs partition the schema without loss or overlap.
@@ -369,7 +369,7 @@ impl SettingsTab {
 /// both `snake_case` and display casing.
 #[must_use]
 /// Route one lifted field to its settings tab.
-/// 
+///
 /// An explicit `x-tab` pin wins over everything: the schema names its tab
 /// and the router obeys. Otherwise precedence is fixed so the partition is
 /// total: a boolean visibility name (`show_*`, `visible`) wins over
@@ -491,7 +491,7 @@ pub fn inline_runs(fields: &[SchemaField]) -> Vec<Vec<SchemaField>> {
 /// operator set overrides that apply to no painted line.
 #[must_use]
 /// Project a style-component schema down to the keys one slot paints.
-/// 
+///
 /// The style component's whole schema is the same override block for every
 /// indicator; a settings pane that renders all of it shows every slot the
 /// same editors. Filtering to the stroke width plus the `color_<key>`
@@ -535,7 +535,7 @@ pub fn project_style_fields(
 #[must_use]
 /// The fields one settings tab renders for a slot that owns both a
 /// configuration and a style component.
-/// 
+///
 /// Inputs and Visibility read the configuration alone. Style reads the
 /// configuration's own paint knobs *and* the style component's whole schema,
 /// in that order: a paint knob lives in the style component when it is a

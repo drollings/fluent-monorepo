@@ -81,8 +81,10 @@ fn dirty_witness_sticks_with_findings() {
                 code: Some("E0308".to_string()),
                 message: "mismatch".to_string(),
                 level: "error".to_string(),
+                rendered: None,
                 suggestions: Vec::new(),
             }],
+            ..crate::clippy::ClippyReport::default()
         },
     );
     let report = run_seal(&ctx_for(dir.path().to_path_buf(), matrix_stub(reports)));

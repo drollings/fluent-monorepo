@@ -292,6 +292,22 @@ impl MaintenanceQueue {
         })
     }
 
+    /// Counts by state: queued, in-progress, verified, failed, escalated.
+    #[must_use]
+    pub fn state_counts(&self) -> (usize, usize, usize, usize, usize) {
+        let mut counts = (0, 0, 0, 0, 0);
+        for item in self.items.values() {
+            match item.state {
+                WorkState::Queued => counts.0 += 1,
+                WorkState::InProgress => counts.1 += 1,
+                WorkState::Verified => counts.2 += 1,
+                WorkState::Failed => counts.3 += 1,
+                WorkState::Escalated => counts.4 += 1,
+            }
+        }
+        counts
+    }
+
     /// Borrow one item's state.
     #[must_use]
     pub fn state(&self, id: &str) -> Option<WorkState> {

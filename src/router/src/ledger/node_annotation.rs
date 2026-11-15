@@ -37,7 +37,7 @@ impl fluent_types::NodeOverlay for NodeAnnotation {
 /// so consumers get exact alignment without re-running the tokenizer.
 #[derive(Debug, Clone)]
 /// A fully-materialized, immutable annotation document, shareable as an `Arc`.
-/// 
+///
 /// Produced by the annotation ladder and validated by the 7-check gate;
 /// nothing in it is mutable after construction. The `tokens` detail baseline
 /// carries the token orths and byte offsets aligned to the raw request text,
@@ -123,7 +123,7 @@ impl NodeAnnotation {
 /// wired — resolved `doc` plus its ladder [`AnnotationResult`] handoff.
 /// Composes [`spacy_rs::extract_routing_signals`] over the run's doc and hands
 /// the validated output to [`NodeAnnotation::from_doc`].
-/// 
+///
 /// Pure and additive: the annotation is the validated output — the wire
 /// records + signals + token baseline — not the working [`Doc`], so consumers
 /// share it behind an `Arc` with no locks at read time.

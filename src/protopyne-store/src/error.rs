@@ -127,7 +127,7 @@ common_core::impl_from_io_error!(StoreError);
 /// correctly, so it is not answered. None is a confidence reading.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 /// Why a requested read could not be resolved into a plan.
-/// 
+///
 /// Every variant is a **task-value** refusal: the request cannot be answered
 /// correctly, so it is not answered. None is a confidence reading.
 pub enum PlanError {

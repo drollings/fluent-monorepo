@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// The `ledger.orchestrator` section: configures the
 /// `LedgerAgentCoordinator`'s restore-vs-re-prefill policy, its prompt budget,
 /// and the default role recorded for agent output nodes.
-/// 
+///
 /// Default-on since M14c (M14-CAL projects a net frontier decrease):
 /// a present `ledger` section attaches the coordinator unless the operator
 /// opts out with `enabled = false` or rolls back at runtime via

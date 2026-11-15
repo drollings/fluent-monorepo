@@ -73,8 +73,17 @@ pub fn parse_chord(text: &str) -> Option<Chord> {
 fn is_modifier_word(word: &str) -> bool {
     matches!(
         word,
-        "ctrl" | "control" | "alt" | "option" | "super" | "win" | "cmd" | "command" | "meta"
-            | "shift" | "fn"
+        "ctrl"
+            | "control"
+            | "alt"
+            | "option"
+            | "super"
+            | "win"
+            | "cmd"
+            | "command"
+            | "meta"
+            | "shift"
+            | "fn"
     )
 }
 

@@ -17,9 +17,13 @@ pub mod voice;
 pub mod worker;
 
 pub use config::{S2sConfig, AUDIO_IN_RATE, AUDIO_OUT_RATE};
-pub use ensure::{boot_audio_server, ensure_audio_server, model_loaded, serves_model, AudioEndpoint};
+pub use ensure::{
+    boot_audio_server, ensure_audio_server, model_loaded, serves_model, AudioEndpoint,
+};
 pub use protocol::{completions_url, StreamEvent, SYSTEM_ASR, SYSTEM_INTERLEAVED};
-pub use session::{audio_input_unsupported, should_advance_chain, AudioSession, ChatTurn, S2sError};
+pub use session::{
+    audio_input_unsupported, should_advance_chain, AudioSession, ChatTurn, S2sError,
+};
 pub use voice::{
     audio_server_home, audio_supervisor_config, managed_binary, resolve_audio_server,
     resolve_audio_server_candidates, voice_server_args, AUDIO_SERVER_BIN, AUDIO_SERVER_ENV,

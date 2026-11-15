@@ -35,14 +35,14 @@ use crate::config::{strip_declaration_params, ModelEntry};
 /// stringly-typed `format!("{base}:{q}")` / `split_once(':')` (Pattern 7,
 /// `fluent-wvr/SKILL.md:1107`). Kept router-local per the import-boundary rule:
 /// only the router speaks this grammar.
-/// 
+///
 /// Ownership: `fluent_types::model_key::split_model_key` is the single
 /// `split_once(':')` site; `QualifiedModelId::parse` delegates to it.
 /// Zero-alloc callers use `split_model_key`; typed callers use
 /// `QualifiedModelId::parse`/`as_wire`.
 /// Never duplicate the `split_once` literal elsewhere. Model-id parsing is
 /// neither confidence nor task-value — no threshold.
-/// 
+///
 /// `as_wire` is the single `format!("{base}:{q}")` site.
 pub struct QualifiedModelId {
     pub base: String,

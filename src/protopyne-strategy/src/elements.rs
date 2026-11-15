@@ -56,35 +56,6 @@ use crate::view::{MarketData, MarketView};
 /// estimates (edge per unit, gross odds per unit), `None` until a signal
 /// measures them. No shipping signal fills them today; absence sizes zero.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// What a signal concluded on closed bars: a direction, a confidence in that
-/// direction, the task-value readings a policy may threshold, and the observed
-/// edge/odds pair a research sizer prices.
-/// 
-/// **The two axes are distinct and are never substituted for one another.**
-/// 
-/// - [`SignalOutput::conviction`] is **producer confidence**: the signal's own
-/// doubt about the reading it just produced. It may silence the producer
-/// (disarm entries, withhold a reading); it must never deny a trade on merit.
-/// Read it through [`SignalOutput::confidence`], which returns the typed
-/// [`Confidence`] value.
-/// - [`SignalOutput::activity_score`] and [`SignalOutput::volatility`] are
-/// **task-value** readings: the opportunity and the regime a sizing policy
-/// needs in order to judge the *outcome*. Read them through
-/// [`SignalOutput::merit`].
-/// 
-/// A confident producer can be wrong for the task, and a hesitant one can be
-/// right, so a policy that gates a trade must say that it is applying a
-/// task-value threshold to a confidence reading — it must not pretend the two
-/// are the same number.
-/// 
-/// `volatility` is `Option` on purpose — absence is not a zero: a policy that
-/// needs σ and does not get one sizes **zero**, and the composed strategy
-/// refuses the zero quantity with a reason
-/// ([`EconRefusal::ZeroQuantity`](crate::economics::EconRefusal::ZeroQuantity)).
-/// 
-/// `edge` and `odds` are the same doctrine for a Kelly-style sizer: observed
-/// estimates (edge per unit, gross odds per unit), `None` until a signal
-/// measures them. No shipping signal fills them today; absence sizes zero.
 pub struct SignalOutput {
     /// Direction of exposure.
     pub direction: Direction,
@@ -607,7 +578,7 @@ impl StructureSelector for LegSelector {
 /// One open position as the loss and monitor elements see it: identity,
 /// direction, size, and entry economics. A strategy-side view over the
 /// venue's book — venue position types never cross into strategy code.
-/// 
+///
 /// `legs` and `events` are `Option` on purpose — `None` means *unknown*, and
 /// a rule that needs them **refuses to act**: absence is not a trigger, and
 /// no rule invents a calendar or a leg it was not given. Every existing
@@ -912,19 +883,19 @@ impl Sizing for PercentNetLiq {
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Volatility-scaled sizing: `min(base, round(base * target_vol / max(σ,
 /// vol_floor)))`.
-/// 
+///
 /// **Reduce-only by construction.** The `min(base, …)` is the whole point: a
 /// naive inverse-vol sizer *increases* size when volatility collapses, which is
 /// the opposite of prudent. Here a collapsing σ can only ever return `base`, and
 /// [`SizingCaps::contain`] remains the second, independent bound (the risk cap
 /// and buying power bind after the policy, never before).
-/// 
+///
 /// σ is the realised per-bar volatility of simple returns the signal measured
 /// ([`SignalOutput::volatility`]): absence is **not** a zero — a missing or
 /// non-finite σ sizes zero, and the composed strategy refuses that zero quantity
 /// with a reason
 /// ([`EconRefusal::ZeroQuantity`](crate::economics::EconRefusal::ZeroQuantity)).
-/// 
+///
 /// `target_vol` and `vol_floor` are per-bar σ in the same unit as the signal's
 /// measurement (unitless fractions, e.g. `0.004` = 0.4% per bar at the decision
 /// timeframe). `vol_floor` is the σ below which size stops responding; keeping it
@@ -1068,26 +1039,6 @@ impl Sizing for VolatilityScaled {
 /// never before).
 #[cfg(feature = "research")]
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Capped fractional-Kelly sizing: `floor(base * min(cap, fraction * f*))`
-/// where `f* = edge / odds`.
-/// 
-/// **Research-only by construction.** This is the one sizing policy that must
-/// never reach live money untuned, so the type exists only under the
-/// `research` feature (compile-time, not a runtime flag): a build without it
-/// cannot name the type at all.
-/// 
-/// `edge` and `odds` are observed estimates the signal carried on
-/// [`SignalOutput`]: absence is **not** a zero — a missing or non-finite
-/// input sizes zero, and the composed strategy refuses that zero quantity
-/// with a reason
-/// ([`EconRefusal::ZeroQuantity`](crate::economics::EconRefusal::ZeroQuantity)).
-/// A non-positive edge sizes zero too: this is a *sizing* element, never a
-/// direction element, so it never flips a losing idea into a short.
-/// 
-/// `fraction` and `cap` both live in `(0, 1]`, so the policy can only ever ask
-/// for `base` at most — and [`SizingCaps::contain`] remains the second,
-/// independent bound (the risk cap and buying power bind after the policy,
-/// never before).
 pub struct FractionalKelly {
     /// Contracts at the full Kelly fraction (and the hard upper bound).
     pub base: u32,
@@ -1478,7 +1429,7 @@ impl LossMgmt for TimeStop {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Assignment and ex-dividend protection: fires `"assignment-protection"`
 /// once when a **short leg** sits inside the event window.
-/// 
+///
 /// Two arms, one action. The **ex-div arm** fires when the underlying goes
 /// ex-dividend within `days_before_ex_div` days before (or on) a short leg's
 /// own expiry — both edges inclusive, measured on the calendar both sides
@@ -1486,7 +1437,7 @@ impl LossMgmt for TimeStop {
 /// [`PositionEvents::assignment_eligible`] and the guard was built with
 /// `include_assignment_window`. At most one action per review, however many
 /// legs sit inside.
-/// 
+///
 /// The guard needs legs *and* events and refuses to act without them:
 /// [`can_judge`](Self::can_judge) reports whether the position carries both,
 /// so an unknown calendar reads as "cannot judge" — a distinguishable state,
@@ -1600,7 +1551,7 @@ impl LossMgmt for AssignmentGuard {
 /// package, and the venue fills it atomically or not at all.
 #[derive(Debug, Clone, PartialEq)]
 /// A roll/adjustment draft: the rule's priced decision, not yet a proposal.
-/// 
+///
 /// An `Adjustment` is a **proposal draft** — structure, legs, target DTE,
 /// credit intent, and the economics the rule priced off the mark — never an
 /// order intent and never a [`LossAction`]. The types are distinct on purpose:
@@ -1608,7 +1559,7 @@ impl LossMgmt for AssignmentGuard {
 /// bypass the roll permission or collapse two authorities into one. Identity
 /// (`id`, strategy, creation time) is the runner's; everything economic is
 /// the rule's, set when the rule reviewed the position.
-/// 
+///
 /// The legs travel as one validated [`SpreadLegs`]: construction already
 /// refused naked-short leg sets, so a draft can only ever name a defined-risk
 /// package, and the venue fills it atomically or not at all.

@@ -565,7 +565,7 @@ pub fn slugify(text: &str) -> String {
 // `CHART_OPTIONS` / `legacy_default()` field-init API for no gain.
 #[allow(clippy::struct_excessive_bools)]
 /// Options for the parameterized slug primitive (P4).
-/// 
+///
 /// `slugify(text) == slugify_with(text, &SlugOptions::legacy_default())`
 /// byte-for-byte (locked in by `slugify_characterization_table`); the
 /// router's chart-name slug is `CHART_OPTIONS` (separator `'_'`, run
@@ -943,12 +943,12 @@ pub fn cjk_bigrams(text: &str) -> Vec<String> {
 /// Extract the first `<tag>...</tag>` body, trimmed (`None` when either
 /// delimiter is missing or the body trims to empty). Callers fall back to
 /// the raw response on `None` — the tag is advisory, never load-bearing.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use common_core::string::extract_tag;
-/// 
+///
 /// assert_eq!(extract_tag("<comment> hi </comment>", "comment"), Some("hi"));
 /// assert_eq!(extract_tag("no tags", "comment"), None);
 /// assert_eq!(extract_tag("<comment></comment>", "comment"), None);
@@ -984,17 +984,17 @@ pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
 /// ```
 #[must_use]
 /// Split a name on non-ASCII-alphanumeric separators, dropping empties.
-/// 
+///
 /// Case-preserving (unlike [`split_tokens`]-style lowercasing tokenizers in
 /// `search-vector::tokens`): `bug_triage` → `["bug", "triage"]`, so a query
 /// naming only a fragment still matches. Moved verbatim from the router's
 /// chart store (M7.2); the indexed-doc-text join stays with the chart type.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use common_core::string::ascii_alnum_tokens;
-/// 
+///
 /// assert_eq!(ascii_alnum_tokens("bug_triage"), vec!["bug", "triage"]);
 /// assert_eq!(ascii_alnum_tokens(""), Vec::<String>::new());
 /// ```
@@ -1022,12 +1022,12 @@ pub fn ascii_alnum_tokens(name: &str) -> Vec<String> {
 /// preserved token per separator-delimited run (same contract, no `String`
 /// per token). Skips leading/trailing/repeated separators; empty input
 /// yields nothing.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use common_core::string::AsciiAlnumTokens;
-/// 
+///
 /// let tokens: Vec<&str> = AsciiAlnumTokens::new("Foo.Bar-baz").collect();
 /// assert_eq!(tokens, vec!["Foo", "Bar", "baz"]);
 /// ```
@@ -1097,31 +1097,31 @@ impl<'a> Iterator for AsciiAlnumTokens<'a> {
 /// ```
 #[must_use]
 /// Replace byte spans rightmost-first so earlier offsets stay valid.
-/// 
+///
 /// The one shared span-splicing stanza (scrubbers, anonymizers): sorts by
 /// `(start, end)` descending, then applies each span's replacement with
 /// [`str::replace_range`]. Total and deterministic — input order is
 /// irrelevant; degenerate spans are skipped, never panics:
-/// 
+///
 /// - empty/inverted (`start >= end`), past-the-end, and non-`char`-boundary
-/// spans are skipped; spans straddling the end of (the current) text are
-/// clamped to what exists;
+///   spans are skipped; spans straddling the end of (the current) text are
+///   clamped to what exists;
 /// - a span starting inside already-handled text is skipped (an exact
-/// duplicate, or nested inside a wider applied span);
+///   duplicate, or nested inside a wider applied span);
 /// - a span straddling the handled frontier is clamped to the unhandled
-/// prefix — the rightmost replacement wins, and matched text is never
-/// left in place by an overlap (fail-closed bias: over-scrubbing clean
-/// text is safe, under-scrubbing a match is a leak).
-/// 
+///   prefix — the rightmost replacement wins, and matched text is never
+///   left in place by an overlap (fail-closed bias: over-scrubbing clean
+///   text is safe, under-scrubbing a match is a leak).
+///
 /// Adjacent spans all apply; each span's replacement is used verbatim (no
 /// escaping). Callers with one replacement for every span pass the same
 /// `&str` N times.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use common_core::string::apply_spans_rightmost;
-/// 
+///
 /// assert_eq!(
 /// apply_spans_rightmost("aaaBBBccc", vec![(6, 9, "C"), (0, 3, "A")]),
 /// "ABBBC"
@@ -1182,12 +1182,12 @@ pub fn apply_spans_rightmost(text: &str, spans: Vec<(usize, usize, &str)>) -> St
 /// short match expressions keep the query planner cheap. Extracted from
 /// `search-vector`'s match builder so coral's node index composes the same
 /// token stream instead of growing a second one.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use common_core::string::fts_match_tokens;
-/// 
+///
 /// assert_eq!(fts_match_tokens("find AlphaSymbol"), vec!["find", "alphasymbol"]);
 /// assert_eq!(fts_match_tokens("hello hello"), vec!["hello"]);
 /// assert_eq!(fts_match_tokens("!!!"), Vec::<String>::new());
@@ -1220,12 +1220,12 @@ pub fn fts_match_tokens(query: &str) -> Vec<String> {
 #[must_use]
 /// Quote one FTS5 match token: wrap in double quotes, doubling embedded
 /// quotes so user input can never act as an operator or break the expression.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use common_core::string::fts_quote;
-/// 
+///
 /// assert_eq!(fts_quote("hi"), "\"hi\"");
 /// assert_eq!(fts_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
 /// ```

@@ -17,7 +17,8 @@ pub(crate) mod schema;
 pub mod summaries;
 
 pub use capabilities::{
-    build_capability_fts_match, CapabilityLemma, CapabilityRecord, ScoredCapability,
+    build_capability_fts_match, CapabilityLemma, CapabilityRecord, ProjectCard, ScoredCapability,
+    CAPABILITY_SCHEMA_VERSION,
 };
 pub use embedding_status::EmbeddingStatusRecord;
 use fragments::{
@@ -55,9 +56,12 @@ pub struct SearchResult {
 /// a `SqliteStore` for the connection/schema and an `HnswIndex` for the KNN
 /// index.
 ///
-/// Two table families coexist: the legacy `guidance_nodes` member index
-/// (untouched — P5 regression gate) and the P1 fragment index
-/// (FTS5 + vectors + lemmas) that the hybrid recall path queries.
+/// Two table families coexist: the shared node document store
+/// (embedded JSON documents with change-gated sync plus vector/keyword
+/// search — a generic primitive any consumer may use) and the P1
+/// fragment index (FTS5 + vectors + lemmas) that the hybrid recall
+/// path queries. Guidance's live read path does not depend on the
+/// node store.
 pub struct GuidanceDb {
     store: SqliteStore,
     hnsw: HnswIndex,
@@ -112,7 +116,7 @@ impl GuidanceDb {
         let node_id = self.store.with_conn(|conn| {
             fluent_db::query::execute(
                 conn,
-                "INSERT INTO guidance_nodes (name, source, signature, comment, module, language, embedding)
+                "INSERT INTO nodes (name, source, signature, comment, module, language, embedding)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     name,
@@ -145,7 +149,7 @@ impl GuidanceDb {
     /// Rebuild the HNSW index from all embedded nodes in the database.
     pub fn rebuild_hnsw(&self) -> Result<usize, VectorDbError> {
         let rows = self.store.query_rows(
-            "SELECT id, embedding FROM guidance_nodes WHERE embedding IS NOT NULL",
+            "SELECT id, embedding FROM nodes WHERE embedding IS NOT NULL",
             &[],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )?;
@@ -211,7 +215,7 @@ impl GuidanceDb {
             let similarity = vector::distance_to_similarity(distance);
 
             if let Ok(Some(row)) = self.store.query_row(
-                "SELECT name, source, signature FROM guidance_nodes WHERE id = ?1",
+                "SELECT name, source, signature FROM nodes WHERE id = ?1",
                 params![node_id],
                 |row| {
                     Ok(SearchResult {
@@ -237,7 +241,7 @@ impl GuidanceDb {
         k: usize,
     ) -> Result<Vec<SearchResult>, VectorDbError> {
         let rows = self.store.query_rows(
-            "SELECT id, name, source, signature, embedding FROM guidance_nodes WHERE embedding IS NOT NULL",
+            "SELECT id, name, source, signature, embedding FROM nodes WHERE embedding IS NOT NULL",
             &[],
             |row| {
                 let id: i64 = row.get(0)?;
@@ -278,7 +282,7 @@ impl GuidanceDb {
         // 1. Try exact full-query substring match first (fast, precise).
         let pattern = format!("%{query}%");
         let exact: Vec<SearchResult> = self.store.query_rows(
-            "SELECT id, name, source, signature FROM guidance_nodes
+            "SELECT id, name, source, signature FROM nodes
              WHERE name LIKE ?1 OR signature LIKE ?1 OR comment LIKE ?1
              LIMIT 50",
             params![pattern],
@@ -337,7 +341,7 @@ impl GuidanceDb {
 
         let sql = format!(
             "SELECT id, name, source, signature, ({hits_expr}) AS hits
-             FROM guidance_nodes
+             FROM nodes
              WHERE hits >= ?{min_hits_param}
              ORDER BY hits DESC
              LIMIT 50"
@@ -399,7 +403,7 @@ impl GuidanceDb {
     pub fn get_node_count(&self) -> Result<i64, VectorDbError> {
         let count = self
             .store
-            .query_row("SELECT COUNT(*) FROM guidance_nodes", &[], |row| {
+            .query_row("SELECT COUNT(*) FROM nodes", &[], |row| {
                 row.get::<_, i64>(0)
             })?;
         Ok(count.unwrap_or(0))
@@ -407,7 +411,7 @@ impl GuidanceDb {
 
     pub fn get_embedding_count(&self) -> Result<i64, VectorDbError> {
         let count = self.store.query_row(
-            "SELECT COUNT(*) FROM guidance_nodes WHERE embedding IS NOT NULL",
+            "SELECT COUNT(*) FROM nodes WHERE embedding IS NOT NULL",
             &[],
             |row| row.get::<_, i64>(0),
         )?;
@@ -415,8 +419,8 @@ impl GuidanceDb {
     }
 
     /// Fragment rows committed: the live retrieval-unit count behind the
-    /// MCP `node_count` key (the legacy `guidance_nodes` table is no
-    /// longer written by sync; see `sync_from_dir`).
+    /// MCP `node_count` key (the shared `nodes` document store is
+    /// written by `sync_from_dir`, not by the fragment sync).
     pub fn fragment_count(&self) -> Result<i64, VectorDbError> {
         let count = self
             .store
@@ -439,9 +443,61 @@ impl GuidanceDb {
         Ok(count.unwrap_or(0))
     }
 
-    /// Sync all JSON files from a directory into the `guidance_nodes` table.
-    /// Walks JSON files, parses GuidanceDoc, upserts into database.
-    /// Rebuilds HNSW index after sync.
+    /// Stored fragments with no vector (FP32 or quantized), id-ordered
+    /// and bounded: the embed backfill's candidate pool. Callers select
+    /// semantic units from these rows; the status table decides which
+    /// ones are actually due. `None` reads the whole pool (SQLite
+    /// `LIMIT -1`); prefer a bound on interactive paths.
+    pub fn fragments_without_vectors(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<FragmentRow>, VectorDbError> {
+        let bound = limit.map_or(-1, |value| value as i64);
+        self.store
+            .query_rows(
+                "SELECT id, grp, file_id, range_json, content_kind, content_text,
+                        symbol_type, symbol_name, scope, signature, doc, modifiers,
+                        heading, heading_level
+                 FROM fragments
+                 WHERE embedding IS NULL AND embedding_q8 IS NULL
+                 ORDER BY id ASC LIMIT ?1",
+                params![bound],
+                FragmentRow::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Store backfill vectors: quantized bytes only (the same convention
+    /// as the ingest writer), FP32 cleared. One transaction; ids are
+    /// unique so exactly one row updates per input.
+    pub fn store_fragment_vectors(
+        &self,
+        rows: &[(String, Vec<f32>)],
+    ) -> Result<usize, VectorDbError> {
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        self.store
+            .transaction(|tx| {
+                for (id, vector) in rows {
+                    let quantized = vector::QuantizedEmbedding::from_f32(vector);
+                    let bytes = vector::quantized_to_bytes(&quantized);
+                    fluent_db::query::execute(
+                        tx,
+                        "UPDATE fragments SET embedding = NULL, embedding_q8 = ?1 WHERE id = ?2",
+                        params![bytes, id],
+                    )?;
+                }
+                Ok(rows.len())
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Sync all JSON files from a directory into the shared `nodes`
+    /// document store. Walks JSON files, parses each document, upserts
+    /// into the database with a change-gate fingerprint, and rebuilds
+    /// the HNSW index after sync. Generic primitive: any consumer may
+    /// call it; guidance's live sync path does not.
     pub fn sync_from_dir(&self, json_dir: &std::path::Path) -> Result<usize, VectorDbError> {
         if !json_dir.is_dir() {
             return Ok(0);
@@ -524,9 +580,9 @@ impl GuidanceDb {
 
         let synced = self.store.transaction(|tx| {
             // Clear existing nodes before re-sync to avoid stale duplicates.
-            fluent_db::query::execute(tx, "DELETE FROM guidance_nodes", [])?;
+            fluent_db::query::execute(tx, "DELETE FROM nodes", [])?;
             let mut insert = tx.prepare(
-                "INSERT INTO guidance_nodes (name, source, signature, comment, module, language)
+                "INSERT INTO nodes (name, source, signature, comment, module, language)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?;
             for row in &rows {
@@ -858,7 +914,15 @@ impl GuidanceDb {
         let mut values = vec![rusqlite::types::Value::Text(match_expr)];
         let mut param = 2;
         append_fragment_filter(&mut sql, &mut values, filter, &mut param);
-        let _ = write!(sql, " ORDER BY r ASC LIMIT ?{param}");
+        // Deterministic tie-break independent of ingest order and
+        // rowids: parallel waves insert in unstable order, so rank
+        // ties must never resolve by rowid. Relative path and range
+        // are content-stable (absolute ids are not — they embed the
+        // workspace root), and the fragment id settles the rest.
+        let _ = write!(
+            sql,
+            " ORDER BY r ASC, fl.relative_path ASC, f.range_json ASC, f.id ASC LIMIT ?{param}"
+        );
         values.push(rusqlite::types::Value::Integer(limit as i64));
         self.store
             .with_conn(|conn| {
@@ -995,16 +1059,17 @@ impl GuidanceDb {
             return Ok(Vec::new());
         }
         let placeholders: Vec<String> = (0..lemmas.len()).map(|i| format!("?{}", i + 1)).collect();
-        // `fragment_lemmas` is WITHOUT ROWID; its insertion-order tiebreak
-        // reads `fragments.rowid` through the id join instead. Lemma
-        // strings resolve through the dictionary; the grain and order are
-        // unchanged from the string-keyed layout.
+        // `fragment_lemmas` is WITHOUT ROWID; ties break on
+        // content-stable keys, never ingest order: parallel waves
+        // insert in unstable order, so rowids must not leak into
+        // ranks (same rule as the FTS route).
         let sql = format!(
             "SELECT f.id FROM fragments f \
              JOIN fragment_lemmas l ON l.fragment_rowid = f.rowid \
              JOIN lemma_terms d ON d.id = l.lemma_id \
+             JOIN files fl ON fl.id = f.file_id \
              WHERE d.lemma IN ({}) \
-             GROUP BY f.id, f.rowid ORDER BY COUNT(*) DESC, MIN(f.rowid) ASC LIMIT ?{}",
+             GROUP BY f.id, f.rowid ORDER BY COUNT(*) DESC, fl.relative_path ASC, f.range_json ASC, f.id ASC LIMIT ?{}",
             placeholders.join(","),
             lemmas.len() + 1
         );
@@ -1120,8 +1185,8 @@ impl GuidanceDb {
             .map_err(VectorDbError::from)
     }
 
-    /// Drop the whole fragment index (workspace-index drop; the legacy
-    /// `guidance_nodes` table is untouched).
+    /// Drop the whole fragment index (workspace-index drop; the shared
+    /// `nodes` document store is untouched).
     pub fn drop_index(&self) -> Result<(), VectorDbError> {
         self.store
             .transaction(|tx| {
@@ -1238,6 +1303,21 @@ impl GuidanceDb {
                 "SELECT symbol_id, file_id, name, scope, interface_hash
                  FROM symbols WHERE file_id = ?1 ORDER BY symbol_id",
                 params![file_id],
+                SymbolRecord::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Every declaration of one name across files: the exact-symbol
+    /// input. Homonyms stay listed (every candidate reachable);
+    /// unknown names yield empty (honest empty, never a guess).
+    pub fn symbols_by_name(&self, name: &str) -> Result<Vec<SymbolRecord>, VectorDbError> {
+        use crate::db::fragments::SymbolRecord;
+        self.store
+            .query_rows(
+                "SELECT symbol_id, file_id, name, scope, interface_hash
+                 FROM symbols WHERE name = ?1 ORDER BY symbol_id",
+                params![name],
                 SymbolRecord::from_row,
             )
             .map_err(VectorDbError::from)

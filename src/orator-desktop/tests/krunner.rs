@@ -18,7 +18,10 @@ fn orator_prefix_parses_with_offers() {
 fn bare_prefix_offers_sessions_only() {
     let query = parse_query("orator").expect("parses");
     assert!(query.question.is_empty());
-    assert!(!query.offers.iter().any(|offer| matches!(offer, RunnerOffer::Ask(_))));
+    assert!(!query
+        .offers
+        .iter()
+        .any(|offer| matches!(offer, RunnerOffer::Ask(_))));
 }
 
 #[test]

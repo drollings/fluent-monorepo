@@ -157,7 +157,7 @@ impl RunnerConfig {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::struct_excessive_bools)] // recorded verdicts, not a state machine
 /// One bar's recorded verdict: proposal, gates, and fill outcome.
-/// 
+///
 /// `skipped` carries the reason whenever no proposal reached the venue
 /// (warmup, unquotable bar, refused quote, denied gate, venue refusal).
 /// recorded verdicts, not a state machine
@@ -306,7 +306,7 @@ pub(crate) fn skipped_decision(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// The executable order derived from a proposal: venue side plus the limit
 /// the venue will actually receive.
-/// 
+///
 /// Proposals carry an indicative bar-close limit, but the touch side (buy at
 /// ask, sell at bid) depends on direction, which only proposing reveals — so
 /// the executable limit is derived post-proposal, after the gates. Any future
@@ -350,7 +350,7 @@ fn is_entry_side(side: &Option<ProposalSide>) -> bool {
 /// exit as a second entry, doubling the position the report folds.
 #[must_use]
 /// The order side a booked fill implies.
-/// 
+///
 /// The proposal's own side decides it: opening a long buys, closing one sells,
 /// and the short book mirrors that. Reading only the direction would book an
 /// exit as a second entry, doubling the position the report folds.
@@ -392,7 +392,7 @@ pub fn checked_order_for(direction: Direction, quote: &Quote) -> CheckedOrder {
 /// verdict, and merit outcomes never write back here.
 #[derive(Debug, Clone, Copy)]
 /// Observed producer-health facts for one bar, fed into the merit gates.
-/// 
+///
 /// Axis: **(producer-confidence)** for staleness/skew/reconciliation doubt,
 /// **(correctness)** for what the gates do with it (refuse with reasons).
 /// These facts describe the producer (feed, clock, venue book) — never the
@@ -669,7 +669,7 @@ pub(crate) fn decide_proposal(
 /// exactly once per bar.
 #[allow(clippy::too_many_arguments)]
 /// Evaluate one bar and submit its proposal through the shared gate stack.
-/// 
+///
 /// Direct callers own a single bar, so one instance is bound for the call.
 /// Runners hold their instance across bars and compose
 /// [`decide_proposal`](decide_proposal) with
@@ -742,7 +742,7 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
 /// cannot be advanced twice on one bar.
 #[allow(clippy::too_many_arguments)]
 /// Submit a proposal the caller already decided, after the quote check.
-/// 
+///
 /// The body every decision path shares: leg selection, risk, grant, lifecycle,
 /// and the venue protocol. It never evaluates a signal, so a run's instance
 /// cannot be advanced twice on one bar.
@@ -1137,7 +1137,7 @@ fn intent_for(
 /// it.
 #[allow(clippy::too_many_arguments)]
 /// Route a human-approved proposal into the ledger + submit path.
-/// 
+///
 /// The approval itself is journaled by `decide_proposal` on the command plane;
 /// this re-checks the risk gate against fresh facts, reserves the grant's
 /// budgets atomically, advances the lifecycle to `Submitted`, and submits
@@ -1335,7 +1335,7 @@ impl BacktestRun {
 /// flows through every booked number. Pure and deterministic.
 #[must_use]
 /// Mark-to-close equity curve for filled decisions.
-/// 
+///
 /// Cash starts at zero; buys pay `price * filled + fee`, sells receive
 /// `price * filled - fee`. The fold is keyed on `BarDecision.bar_index`:
 /// each bar marks the running state after applying only that bar's fills,
@@ -1459,7 +1459,7 @@ fn economics_arm_note(economics: EconomicsPolicy, configured: Money) -> String {
 /// always produce byte-identical manifests and decisions.
 #[allow(clippy::too_many_arguments)]
 /// Run the full decision stack over `bars` through a versioned venue.
-/// 
+///
 /// Determinism is a **(correctness)** invariant, not a tunable: same inputs
 /// always produce byte-identical manifests and decisions.
 pub async fn run_backtest(
@@ -1515,7 +1515,7 @@ pub async fn run_backtest(
 /// only consulted by the tape arm.
 #[allow(clippy::too_many_arguments)]
 /// Run the full decision stack over a [`HistorySource`].
-/// 
+///
 /// The one difference from [`run_backtest`] is the input: the bars — and the
 /// planner provenance the tape arm carries — come from [`load_history`],
 /// then enter the identical [`run_backtest_on_venue`] decide path. A files or
@@ -1577,7 +1577,7 @@ pub async fn run_backtest_from_source(
 /// with the callers (they own the input shape); the manifest arrives pinned.
 #[allow(clippy::too_many_arguments)]
 /// Run the shared decide path over `bars` through a caller-supplied venue.
-/// 
+///
 /// The single-symbol `run_backtest` and the multi-symbol harness both enter
 /// here, so one code path stays one code path: a divergence between rehearsal
 /// shapes is a bug, never a modeling choice. Config and bar validation stay
@@ -1800,7 +1800,7 @@ pub(crate) fn booked_fills_of(
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(start_fn = new)]
 /// One symbol's leg of a multi-symbol run: its configs plus its bar source.
-/// 
+///
 /// Histories arrive from files or dynamically — the harness loads either arm
 /// through `load_history`, so a symbol with no file replays beside one with
 /// a pinned file through the identical decide path.
@@ -2261,7 +2261,7 @@ pub fn complete_replay(graph: &mut CheckpointedStepGraph<String, ReplayStep>) {
 /// the next `window - 1` bars for the first touch of the profit barrier
 /// (`entry * (1 + take_profit)` on highs) or the loss barrier
 /// (`entry * (1 - stop_loss)` on lows).
-/// 
+///
 /// Labels are `Some(1.0)` (profit first), `Some(-1.0)` (loss first), or the
 /// horizon bar's signed drift when time expires (flat expiry reads
 /// `Some(0.0)`). A bar touched on both sides resolves to whichever extreme

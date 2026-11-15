@@ -258,7 +258,7 @@ pub struct CommandStatus {
 /// `"UnknownSymbol"`, `"Denied"`, `"Store"`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Liveness plus command-plane status, mirroring the health route payload.
-/// 
+///
 /// Field order is alphabetical on purpose: the route historically
 /// serialized a `serde_json::Map` (sorted keys), and the DTO keeps that
 /// byte order so the server-side swap is invisible on the wire. The store
@@ -362,7 +362,7 @@ pub enum TicketSide {
 /// and the authority to submit one — never crosses into the paint edge.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// One manual ticket draft: the four fields the terminal's form fills.
-/// 
+///
 /// This is the neutral **shape** of a manual order, not the venue's intent.
 /// The terminal fills it and the core turns it into an `OrderIntent` (minting
 /// the ticket identity and validating every value), so the intent schema —
@@ -387,7 +387,7 @@ pub struct TicketDraft {
 /// strategy enum, so this mirror is what crosses the read boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Structure a rehearsal is opened for, in the picker's vocabulary.
-/// 
+///
 /// A **hint**, not a decision: the core maps it to its own structure kind and
 /// refuses a shape it cannot price. The neutral crate never links the
 /// strategy enum, so this mirror is what crosses the read boundary.
@@ -429,7 +429,7 @@ impl StructureKindHint {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// The economics the core books on every rehearsal proposal for one
 /// underlying and structure.
-/// 
+///
 /// The core owns these numbers: a replay start takes them from here instead
 /// of authoring its own. Money rides decimal text (the neutral crate keeps
 /// exactness without narrowing the scale at the boundary).
@@ -479,7 +479,7 @@ pub struct DenyCount {
 /// serves the same shape with the run tree attached.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Preview outcome: the run plus why bars did not trade.
-/// 
+///
 /// `run` stays an opaque JSON value on this side of the boundary: the typed
 /// run tree (manifest, per-bar verdicts, report) is core-owned, and the
 /// terminal reads the typed deny histogram, not the run. The value
@@ -546,7 +546,7 @@ pub struct ChartBars {
 /// it, and the view crate never links a market-data taxonomy to do so.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// One selectable instrument in a symbol catalog.
-/// 
+///
 /// `asset_class` is a stable display tag (`Stocks`, `Funds`, `Futures`,
 /// `Crypto`): the terminal groups and filters the Symbol Selection Modal by
 /// it, and the view crate never links a market-data taxonomy to do so.
@@ -586,7 +586,7 @@ pub struct OverlaySeries {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// One replayable step: a bar the core can re-run to, and how far the
 /// recorded run got.
-/// 
+///
 /// Neutral vocabulary only: a step names a bar and a timestamp, never a
 /// pane, a graph key, or a run type. Which panes a step touches is the
 /// terminal's own plan, so no core replay type crosses this boundary.
@@ -614,7 +614,7 @@ pub struct ReplayStepView {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Replay read model: where the scrub stands, and the ordered steps it may
 /// stand at.
-/// 
+///
 /// `cursor` is the task-value answer to "what did the strategy see at this
 /// bar" — an exact index the core supplies. `total_bars` is the window the
 /// steps span; `cursor == total_bars` is the head (nothing rewound). The
@@ -638,7 +638,7 @@ pub struct ReplayView {
 /// (signal inputs match a batch run from that bar, with fresh budgets).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Parameters for opening an interactive replay session.
-/// 
+///
 /// Neutral data only: the core builds the strategy, risk engine, and grant
 /// from these knobs (a supplied grant document, else its fixed rehearsal
 /// grant), so the terminal never links the trading path. `start_bar` is the
@@ -687,7 +687,7 @@ fn default_replay_structure() -> String {
 /// singles, refusals, and verdicts recorded before leg rows existed).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// One replayed bar's verdict, in display vocabulary.
-/// 
+///
 /// Direction and structure ride the same stable tags as [`ProposalView`]
 /// (`"Long"`, `"Vertical"`, …); both are `None` when no proposal was
 /// emitted. `state` is the last journaled lifecycle target, or the skip
@@ -769,7 +769,7 @@ pub struct ReplayPositionView {
 /// stopped or unknown session instead of serving an empty one.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Interactive replay state: cursor, verdicts so far, fills, and journal.
-/// 
+///
 /// Decisions and journal rows cover decided bars only — the session never
 /// reports a bar it has not stepped. `active` is false only on the terminal
 /// stop shape (a live session always reports true); the gateway refuses a

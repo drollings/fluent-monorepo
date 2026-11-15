@@ -81,8 +81,11 @@ fn stale_manifest_loads_nothing() {
     let workspace = dir.path().join("ws");
     let guidance = dir.path().join(".guidance");
     std::fs::create_dir_all(workspace.join("doc")).expect("mkdir");
-    std::fs::write(workspace.join("doc").join("a.md"), "# A\n\nAlpha beta gamma.\n")
-        .expect("write");
+    std::fs::write(
+        workspace.join("doc").join("a.md"),
+        "# A\n\nAlpha beta gamma.\n",
+    )
+    .expect("write");
     sync_jumps(&workspace, &guidance).expect("sync");
     std::fs::write(
         workspace.join("doc").join("a.md"),

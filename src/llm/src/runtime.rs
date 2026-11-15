@@ -188,7 +188,7 @@ impl std::fmt::Display for ResidencyState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// One row of a weights instance's residency view — the trait-object form of
 /// `InstanceInfo` (llama) / `ResidencyReportEntry` + pool context (onnx).
-/// 
+///
 /// `last_used` is **pool-native**: seconds for `runtime: Llama` (the fork's
 /// `/instances` clock), milliseconds for `runtime: Onnx` (the registry's
 /// `last_used_ms` clock). The engine keeps each fleet's unit so its ordering

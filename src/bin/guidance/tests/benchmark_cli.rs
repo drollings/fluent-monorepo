@@ -164,7 +164,10 @@ fn benchmark_json_handoff_carries_recall_per_arm() {
 }
 
 #[test]
-fn benchmark_synthesizes_tasks_from_the_index() {
+fn benchmark_refuses_missing_tasks_file() {
+    // No synthesized tasks: without --tasks the command fails loud
+    // and points at the checked-in battery instead of indexing its
+    // own answer key.
     let dir = fixture();
     sync(dir.path(), ".bench.db", false);
     let root = dir.path().to_str().unwrap().to_string();
@@ -172,8 +175,8 @@ fn benchmark_synthesizes_tasks_from_the_index() {
     let db = db.to_str().unwrap().to_string();
     let args = vec!["benchmark", "--workspace", &root, "--db", &db, "--num", "2"];
     let out = run(dir.path(), &args);
-    assert!(out.status.success(), "synthesized: {out:?}");
-    let text = stdout(&out);
-    assert!(text.contains("## Benchmark: 2 queries"), "{text}");
-    assert!(text.contains("synth-1"), "{text}");
+    assert!(!out.status.success(), "no synthesis: {out:?}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("no tasks file"), "{err}");
+    assert!(err.contains("benchmark_tasks.jsonl"), "{err}");
 }

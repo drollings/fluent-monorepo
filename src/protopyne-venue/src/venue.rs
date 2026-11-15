@@ -53,7 +53,7 @@ pub struct BalanceEntry {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// The whole account view at one instant: balances, working orders, recent
 /// fills.
-/// 
+///
 /// Update semantics are snapshot-replace: receiving a snapshot discards the
 /// previous view entirely. An empty snapshot reads as "no account state",
 /// never as "unknown" — a venue with nothing to report returns the default.
@@ -87,7 +87,7 @@ impl AccountSnapshot {
 /// is a new execution, never an update to an earlier one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// One incremental account update.
-/// 
+///
 /// Update semantics are upsert: each event carries one entry keyed by its
 /// natural key — orders by client ID, balances by asset — replacing any
 /// prior entry under that key. Trades are append-only: each [`Fill`](crate::order::Fill)

@@ -69,9 +69,9 @@ impl MeetingPipeline {
 
     /// Mark `step` done with `summary`, checkpointing durably.
     pub fn finish(&mut self, step: &str, summary: &str) -> Result<(), DbError> {
-        self.graph.checkpoint(step.to_string()).map_err(|error| {
-            DbError::Other(format!("checkpoint {step}: {error}"))
-        })?;
+        self.graph
+            .checkpoint(step.to_string())
+            .map_err(|error| DbError::Other(format!("checkpoint {step}: {error}")))?;
         self.graph.complete(&step.to_string());
         if let Some(state) = self.graph.state_mut(&step.to_string()) {
             *state = StepState::Done(summary.to_string());

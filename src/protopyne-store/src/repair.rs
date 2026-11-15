@@ -106,7 +106,7 @@ pub enum RepairStatus {
 /// names the reason in words; statuses alone never carry the explanation.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 /// One symbol's repair: what was wanted, what was attempted, what happened.
-/// 
+///
 /// `wanted` is the window the caller needed; `spans` is what the pass
 /// actually attempted — the servable subset after horizon and width bounds.
 /// The two diverge exactly when a bound refused part of the want, so a
@@ -588,7 +588,7 @@ pub(crate) async fn repair_spans(
 #[derive(Debug, Clone)]
 /// One symbol's repair as a supervised unit: synchronous `execute`, one
 /// attempt, never inline sleeps.
-/// 
+///
 /// `execute` validates the repair bounds through `check_for_execute`,
 /// gates on the root-bound permit before consulting the task-local set,
 /// and then blocks on one fetch-and-append: the store is synchronous and
@@ -714,7 +714,7 @@ impl_component!(RepairWorker);
 /// without backing off; [`cancel`](Self::cancel) releases the whole pass.
 #[derive(Clone)]
 /// Owns repair passes: planning, bounded fan-out, retry, and cancellation.
-/// 
+///
 /// The coordinator holds the store, one provider per symbol, and the
 /// repair bounds. A pass plans coverage into spans, repairs symbols through
 /// a bounded pool, retries `Deferred` outcomes under capped backoff with a

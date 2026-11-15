@@ -79,8 +79,8 @@ pub use format::{
 };
 pub use hash::{
     blake3_hash, blake3_hex, content_hash_with_model, fnv1a64, hash_batch, hash_file, hex_encode,
-    sha256_digest, sha256_file, sha256_hex, sha256_str, uuid_v4, verify_sha256_file, BatchHashResult,
-    FileVerification, HashAlgorithm, HashState,
+    sha256_digest, sha256_file, sha256_hex, sha256_str, uuid_v4, verify_sha256_file,
+    BatchHashResult, FileVerification, HashAlgorithm, HashState,
 };
 pub use interner::CapabilityRegistry;
 pub use io::{

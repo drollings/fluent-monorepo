@@ -367,8 +367,11 @@ pub fn canonical_value(value: Option<&crate::PineValue>) -> String {
                 format!("Some(Array([{}]))", rendered.join(", "))
             }
             Some(PineValue::Matrix(grid)) => {
-                let rendered: Vec<String> =
-                    grid.cells.iter().map(|slot| sorted(slot.as_ref())).collect();
+                let rendered: Vec<String> = grid
+                    .cells
+                    .iter()
+                    .map(|slot| sorted(slot.as_ref()))
+                    .collect();
                 format!(
                     "Some(Matrix(MatrixValue {{ rows: {}, cols: {}, cells: [{}] }}))",
                     grid.rows,

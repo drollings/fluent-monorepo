@@ -86,7 +86,7 @@ pub enum LedgerError {
 /// `ContentNodeStore::snapshot`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Full-detail ledger entry recorded before any filter runs (§5).
-/// 
+///
 /// Kept as the flat read projection for audit/boundary consumers; the
 /// canonical in-memory form is `fluent_types::ContentNode` (see
 /// `ContentNodeStore::snapshot`).

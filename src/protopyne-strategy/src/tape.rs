@@ -109,7 +109,7 @@ impl<'a> Tape<'a> {
 /// An owned, shareable tape binding: the bars, the batched legs, and the
 /// cursor, behind `Arc`s so a per-bar snapshot crosses a `WorkContext`
 /// channel without borrowing the decision loop's frame.
-/// 
+///
 /// A [`Tape`] borrows; a `TapeSnapshot` owns. [`TapeSnapshot::view`]
 /// rebinds the borrow-checked window, refusing exactly what [`Tape::new`]
 /// refuses, so the snapshot can never smuggle an out-of-bounds cursor past

@@ -25,7 +25,7 @@ use common_core::constants::default_true;
 /// defaults through [`super::root::RouterConfig::spawn_defaults_for`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// A role's run parameters — the `params` block on a `roles` entry.
-/// 
+///
 /// Supplies the "how a model is run" configuration for everything serving
 /// the role: the `llama-server` launch knobs (`--batch-size`,
 /// `--ubatch-size`, `--cache-type-k/v`, `--flash-attn`, `--n-gpu-layers`,
@@ -347,6 +347,11 @@ pub(crate) fn role_window_templates(
 /// qualifier, sampling, backend, and supervision path reads composed values
 /// through `ModelEntry::effective_pool`.
 ///
+/// Compose one model's effective instance pool at boot: the single
+/// role → per-model-instance params chain, synthesized here so every
+/// qualifier, sampling, backend, and supervision path reads composed values
+/// through `ModelEntry::effective_pool`.
+///
 /// The config declares no instance pools; profiles are synthesized from the
 /// model entry and the roles that bind it:
 ///
@@ -365,28 +370,6 @@ pub(crate) fn role_window_templates(
 /// demand. `expand_instance_map` clamps each profile's `num_ctx` to its
 /// `max_ctx` cap and resolves names/groups.
 #[allow(clippy::implicit_hasher)]
-/// Compose one model's effective instance pool at boot: the single
-/// role → per-model-instance params chain, synthesized here so every
-/// qualifier, sampling, backend, and supervision path reads composed values
-/// through `ModelEntry::effective_pool`.
-/// 
-/// The config declares no instance pools; profiles are synthesized from the
-/// model entry and the roles that bind it:
-/// 
-/// - one profile per role whose `models` list binds this model (sorted
-/// role order), composing role run-block sampling and the model-side
-/// `roles.<role>` override over the entry params, with `pinned`
-/// composing as role OR model and `max_ctx` as override-else-entry;
-/// - when no role binds the model, no profile at all — there is no
-/// synthetic `base` dispatch point. Every dispatch names a real role
-/// window (`<model>:<role>`), opened on demand from the role's params
-/// when the model is selected; unlisted models stay fully lazy until
-/// then.
-/// 
-/// A pinned profile is what boots a model at startup
-/// (`supervisor::LlamaServerSpec::from_entry`); everything else loads on
-/// demand. `expand_instance_map` clamps each profile's `num_ctx` to its
-/// `max_ctx` cap and resolves names/groups.
 pub(crate) fn materialize_effective_pool(
     model_key: &str,
     entry: &ModelEntry,

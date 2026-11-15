@@ -1,8 +1,8 @@
 use super::*;
 
 // P1 fragment tables: FTS5 + group collapse + filter pushdown +
-// `fragment_lemmas` + brute-force KNN over `fragments`. The legacy
-// `guidance_nodes` behavior is untouched (P5 regression gate).
+// `fragment_lemmas` + brute-force KNN over `fragments`. The shared
+// `nodes` document store keeps its own goldens in `node_sync`.
 
 fn file_a() -> FileRecord {
     FileRecord {
@@ -338,9 +338,12 @@ fn lemma_lookup_orders_full_matches_before_partial() {
 }
 
 #[test]
-fn lemma_lookup_keeps_insertion_order_on_count_ties() {
-    // Must-NOT-fire control: uniform match counts preserve today's rowid
-    // order exactly — the promotion must only fire on count differences.
+fn lemma_lookup_breaks_count_ties_by_content_stable_keys() {
+    // Deterministic retrieval: uniform match counts break by
+    // (relative path, range, fragment id) — never by ingest order.
+    // Parallel waves insert in unstable order, so rowid order would
+    // flap the same query across syncs; content keys keep the
+    // shipping path byte-identical for one tree.
     let db = GuidanceDb::open_in_memory().expect("db");
     db.upsert_fragments(
         &file_a(),
@@ -361,7 +364,7 @@ fn lemma_lookup_keeps_insertion_order_on_count_ties() {
     let ids = db
         .fragments_for_lemmas(&["scale".to_string()], 10)
         .expect("lookup");
-    assert_eq!(ids, vec!["partial-b", "partial-c", "exact-a"]);
+    assert_eq!(ids, vec!["exact-a", "partial-b", "partial-c"]);
 }
 
 #[test]
@@ -541,6 +544,7 @@ fn embedding_status_round_trips_per_file() {
             input_hash: "aaa".to_string(),
             embedder: "model-x:4".to_string(),
             status: "ready".to_string(),
+            reason: String::new(),
             updated_at: 1,
         },
         EmbeddingStatusRecord {
@@ -548,6 +552,7 @@ fn embedding_status_round_trips_per_file() {
             input_hash: "bbb".to_string(),
             embedder: "model-x:4".to_string(),
             status: "failed".to_string(),
+            reason: "transport refused".to_string(),
             updated_at: 1,
         },
     ];
@@ -573,6 +578,7 @@ fn embedding_status_round_trips_per_file() {
         input_hash: "ccc".to_string(),
         embedder: "model-y:4".to_string(),
         status: "ready".to_string(),
+        reason: String::new(),
         updated_at: 1,
     }])
     .expect("replace");
@@ -685,5 +691,5 @@ fn bulk_freshness_matches_single_probes() {
         assert_eq!(single, bulk, "bulk must match single probe for {}", file.id);
     }
     assert!(map.get("file-a").expect("row").embedded);
-    assert!(map.get("never-ingested").is_none());
+    assert!(!map.contains_key("never-ingested"));
 }

@@ -368,7 +368,7 @@ pub const AUX_DEP: &str = "aux";
 /// modern `en_core_web_sm` actually emits (`compound`, `case`, `flat`, …),
 /// so a finetuned model is not rejected for using current UD labels while
 /// still failing closed on garbage.
-/// 
+///
 /// The set is serde-able (serialized as the label list) and round-trips
 /// through [`FromStr`]/[`Display`] (comma-joined), so a model's `label_data`
 /// can override the default accepted set (§10.6, roadmap §5).

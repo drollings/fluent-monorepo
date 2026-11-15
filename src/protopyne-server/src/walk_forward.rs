@@ -349,7 +349,7 @@ struct FoldJob {
 #[allow(clippy::too_many_arguments)]
 /// Run the shared decide path once per fold: train on the in-sample window,
 /// evaluate on the out-of-sample window that follows.
-/// 
+///
 /// Every fold runs through the same [`run_backtest`] the single-symbol path
 /// uses, so a walk-forward verdict equals a standalone run on the same window
 /// bit for bit. Folds fan out over the shared

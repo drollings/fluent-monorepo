@@ -216,8 +216,7 @@ fn parent_check_rejects_a_foreign_owner() {
         error.to_string().contains("owned by uid"),
         "names the owner: {error}"
     );
-    super::check_parent(dir.path(), orator::paths::current_uid())
-        .expect("own directory passes");
+    super::check_parent(dir.path(), orator::paths::current_uid()).expect("own directory passes");
 }
 
 #[test]

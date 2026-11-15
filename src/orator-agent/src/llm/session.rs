@@ -37,7 +37,7 @@ const ASK_TIMEOUT_MS: u64 = 120_000;
 /// (flat names over the session handle, like the config wrappers).
 #[derive(Debug, Clone, FieldAccess, Describable)]
 /// What to serve and how to address it.
-/// 
+///
 /// The `FieldAccess + Describable` surface (M15-S2): the four tunable
 /// leaves derive from here; `endpoint_base` is construction-only
 /// (skipped — dials route through `resolve_llm_base`, never a

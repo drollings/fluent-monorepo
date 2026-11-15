@@ -1,0 +1,3 @@
+[package]
+name = "search-vector"
+description = "SQLite fragment index with FTS."

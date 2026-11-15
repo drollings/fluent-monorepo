@@ -428,7 +428,7 @@ impl MomentumPalette {
 /// `opacity_from_transparency` and paints it beside the candle geometry.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// One ported candle tint: momentum-gradient RGB plus Pine transparency.
-/// 
+///
 /// The shell turns `transparency` into byte opacity through
 /// `opacity_from_transparency` and paints it beside the candle geometry.
 pub struct MomentumTint {
@@ -461,7 +461,7 @@ pub struct MomentumTint {
 /// Port of `libApex.getColorMomentumAlpha` (`_libApex.pine`): candle color
 /// from price momentum and volume conviction with smooth gradients and
 /// per-bar transparency.
-/// 
+///
 /// Mirrors the reference line for line — `fast_tanh` conviction scaling,
 /// `int()` truncation toward zero, momentum clamped to ±100, gradient
 /// corner picks on candle direction (`close > open` is bullish; flat reads
@@ -470,7 +470,7 @@ pub struct MomentumTint {
 /// [`candle_momentum_series`]: `alpha` is the pane's fixed EIT smoothing
 /// because the adaptive per-bar alpha needs LTF tick data the fixture
 /// history never carries.
-/// 
+///
 /// Non-finite inputs yield `None`, mirroring Pine `na` propagation (an `na`
 /// gradient paints no tint, so the shell falls back to the discrete key).
 pub fn momentum_tint(
@@ -1007,7 +1007,7 @@ fn default_mtf_timeframe_4() -> String {
 #[allow(clippy::struct_excessive_bools)]
 /// One IntegrationLite indicator's configuration: the single schema-driven
 /// control truth behind its settings pane.
-/// 
+///
 /// Every field is a `Component` field, so the settings modal renders from the
 /// `describe()` schema and a new knob appears without a UI edit. Tabs ride
 /// explicit `x-tab` pins on the show flags (the name heuristic only

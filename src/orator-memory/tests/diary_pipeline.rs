@@ -42,7 +42,10 @@ fn redo_from_diarize_reruns_exactly_the_suffix() {
     pipeline.finish("diarize", "2 speakers").expect("finish");
     assert_eq!(pipeline.completed(), 3);
     let suffix = pipeline.rewind("diarize").expect("rewind");
-    assert_eq!(suffix, vec!["diarize", "align", "name", "summarize", "export"]);
+    assert_eq!(
+        suffix,
+        vec!["diarize", "align", "name", "summarize", "export"]
+    );
     assert_eq!(pipeline.completed(), 2);
     assert!(pipeline.ready().contains(&"diarize".to_string()));
 }

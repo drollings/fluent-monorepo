@@ -32,7 +32,7 @@ use crate::error::OrtError;
 /// Pure and unit-testable — the classifier's deterministic half.
 #[must_use]
 /// Decode per-token BILUO labels into char-aligned spans.
-/// 
+///
 /// `offsets` are the per-token byte offsets (from the LFM tokenizer), `labels`
 /// the predicted label strings (`"O"`, `"B-contact.email"`, `"I-contact.email"`,
 /// `"E-contact.email"`, `"S-contact.email"`), `scores` the per-token

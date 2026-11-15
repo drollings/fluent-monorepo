@@ -461,7 +461,7 @@ impl_component!(L5FrontierUnit);
 
 /// ---------------------------------------------------------------------------
 /// TierRegistry — sequential tier cascade
-/// 
+///
 /// No separate `TierRegistry` trait is needed. Each tier unit implements
 /// `WorkUnit` (and `Component`), and its `provides()` returns a unique
 /// identifier (`"coral.tier.l2"`, `"coral.tier.l3"`, etc.) that serves as

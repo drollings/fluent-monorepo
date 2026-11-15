@@ -139,15 +139,15 @@ fn char_token_weight(c: char) -> f64 {
 #[derive(Debug)]
 /// ── Atomic Token Budget ─────────────────────────────────────────────
 /// A thread-safe token budget using atomic operations internally.
-/// 
+///
 /// All methods take `&self` (no mutable borrow) so the budget can be
 /// shared across concurrent tasks.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use fluent_llm::tokens::AtomicTokenBudget;
-/// 
+///
 /// let budget = AtomicTokenBudget::new(1000);
 /// assert_eq!(budget.remaining(), 1000);
 /// assert!(budget.reserve(200));
@@ -244,22 +244,22 @@ impl AtomicTokenBudget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// ── Token Budget (mutable, per-request) ─────────────────────────────
 /// A remaining token budget that can be checked and consumed.
-/// 
+///
 /// Single-threaded, `&mut` form: the caller owns the count and mutates it
 /// directly. For shared ownership across threads/tasks use
 /// [`AtomicTokenBudget`] instead (interior mutability via atomics, `&`
 /// methods). The two never interconvert: pick one per call path.
 /// Useful for truncating prompts or responses to fit within LLM context windows.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use fluent_llm::tokens::{TokenBudget, estimate_tokens};
-/// 
+///
 /// let mut budget = TokenBudget(1000);
 /// let text = "This is a test prompt.";
 /// let tokens = estimate_tokens(text) as usize;
-/// 
+///
 /// assert!(budget.fits(tokens));
 /// assert!(budget.consume(tokens));
 /// assert_eq!(budget.remaining(0), 1000 - tokens);
@@ -316,7 +316,7 @@ impl TokenBudget {
 #[must_use]
 /// Middle-truncation splitter: the first `head_chars` chars, then
 /// `marker`, then the last `tail_chars` chars.
-/// 
+///
 /// Pure char splitting — the caller owns every budget decision
 /// (whether to truncate, how big the halves are, what the marker
 /// says), so `bound_prompt`'s keep/head/tail math keeps its exact

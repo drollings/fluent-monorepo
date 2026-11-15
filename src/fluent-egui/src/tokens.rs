@@ -99,7 +99,7 @@ pub fn known_roles() -> &'static [&'static str] {
 #[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
 /// Named token theme: a mode, a contrast dial, and role colors.
-/// 
+///
 /// Roles enter through [`insert_role`](Self::insert_role), `set_field`, or
 /// deserialization; every entry point validates before anything resolves.
 pub struct MaterialTokens {

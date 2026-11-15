@@ -23,7 +23,7 @@ use protopyne_types::Bar;
 /// re-runs the scan. Display-side only — the durable bars are never touched.
 #[derive(Debug, Default)]
 /// Content-addressed memo of the session-break scan over closed bars.
-/// 
+///
 /// A break depends on the full ordered series — daylight rules and session
 /// boundaries inside the window, not just its endpoints — so the key is a
 /// fingerprint of every bar timestamp plus the provider identity; a
@@ -130,7 +130,7 @@ fn fingerprint_times(times: &[DateTime<Utc>], provider: &dyn SessionProvider) ->
 /// when the content moves (see [`SessionBreakCache`]).
 #[must_use]
 /// Session-break gridlines over closed bars, served from `cache`.
-/// 
+///
 /// Composes the canonical break scan with this viewport's index mapping: each
 /// returned line sits exactly on its break bar's x pixel. The scan runs only
 /// when the content moves (see [`SessionBreakCache`]).
@@ -245,7 +245,7 @@ pub fn fmt_boundary_time(epoch: i64, unit_seconds: i64) -> String {
 #[must_use]
 /// Whether time-axis labels for `bar_seconds` bars read as clock time
 /// (`%H:%M`) rather than calendar dates (`%m-%d`).
-/// 
+///
 /// The granularity follows the chart timeframe, never the window span: any
 /// sub-daily timeframe labels down to hour and minute (a month of
 /// fifteen-minute bars still reads as clock time), while daily bars and
@@ -296,7 +296,7 @@ pub fn pan_unit_seconds(bar_seconds: u64) -> i64 {
 #[must_use]
 /// Vertical time-gridlines at the major time unit for a chart of
 /// `bar_seconds` bars.
-/// 
+///
 /// The unit is the next sensible boundary above the chart's own magnitude
 /// (see [`time_major_unit`]): a `5M` or `1M` chart grids hourly, a `15M` or
 /// `1H` chart every four hours, so a boundary line is never finer than a

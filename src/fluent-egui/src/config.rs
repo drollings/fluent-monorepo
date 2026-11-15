@@ -177,7 +177,7 @@ impl_component!(PaneConfig);
 )]
 #[builder(start_fn = new)]
 /// Named theme: style keys resolved to `#RRGGBB` colors at paint time.
-/// 
+///
 /// Slots are named for their role (`bull`, `bear`, `fast`, `slow`), never
 /// for a kernel — the paint edge resolves a series' style key here instead
 /// of carrying color literals in compute.

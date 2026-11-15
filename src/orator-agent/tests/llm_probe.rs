@@ -93,7 +93,12 @@ fn probe_keeps_server_order_duplicates_and_skips_invalid_entries() {
     .expect("probe succeeds");
     assert_eq!(
         probe.models,
-        vec!["b".to_string(), "a".to_string(), "b".to_string(), "c".to_string()]
+        vec![
+            "b".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string()
+        ]
     );
     assert!(!probe.via_v1_fallback);
     mock.assert_hits(1);

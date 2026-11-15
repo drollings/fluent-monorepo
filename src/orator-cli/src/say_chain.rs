@@ -72,7 +72,7 @@ fn structured_kind(body: &str) -> Option<&str> {
 /// only for old daemons that omitted it.
 #[must_use]
 /// Classify a daemon `VoiceEndpoint` failure body.
-/// 
+///
 /// The daemon reports ejection, saturation, and boot contention as
 /// `ok: false` with the reason in the body; absence or refusal
 /// without those markers is `Unavailable` (the caller may boot). The
@@ -114,7 +114,7 @@ pub fn classify_daemon_voice_error(body: &str) -> DaemonVoiceHint {
 /// saturated, and contention bodies become the chain-skipping arms.
 #[must_use]
 /// Classify a transport-level daemon-call failure for the voice path.
-/// 
+///
 /// `text` is the quiet-core failure line when the daemon answered
 /// `ok: false`, or `None` when the call never reached the daemon.
 /// `None` and unmarked refusals are `Unavailable`; ejected,
@@ -139,7 +139,7 @@ pub fn classify_daemon_call_failure(text: Option<&str>) -> DaemonVoiceHint {
 /// of matching variants inline.
 #[must_use]
 /// Whether `error` advances the voice fallback chain.
-/// 
+///
 /// Single home for the decision: the serving arms call this instead
 /// of matching variants inline.
 pub fn should_advance(error: &S2sError) -> bool {
@@ -154,7 +154,7 @@ pub fn should_advance(error: &S2sError) -> bool {
 /// actually synthesized.
 #[must_use]
 /// Split `text` for speech after normalizing once.
-/// 
+///
 /// Fenced code, markup, and bare URLs never reach the voice: the
 /// reply on screen keeps them, the spoken form drops them. The split
 /// runs on the normalized form so chunk boundaries match what is

@@ -173,9 +173,11 @@ fn gpu_flag_reaches_the_whisper_params() {
         eprintln!("SKIP gpu-flag-reaches-params: GPU device present, nothing to refuse");
         return;
     }
-    let backend =
-        orator_voice::stt::WhisperBackend::new(std::path::PathBuf::from("/nonexistent/ggml.bin"), "en")
-            .with_gpu();
+    let backend = orator_voice::stt::WhisperBackend::new(
+        std::path::PathBuf::from("/nonexistent/ggml.bin"),
+        "en",
+    )
+    .with_gpu();
     let error = backend
         .decode_blocking(&[0.0; 320], &StreamAbort::new())
         .expect_err("GPU without a device must fail");
@@ -183,8 +185,10 @@ fn gpu_flag_reaches_the_whisper_params() {
         error.to_string().contains("GPU"),
         "the flag reached the params: {error:?}"
     );
-    let plain =
-        orator_voice::stt::WhisperBackend::new(std::path::PathBuf::from("/nonexistent/ggml.bin"), "en");
+    let plain = orator_voice::stt::WhisperBackend::new(
+        std::path::PathBuf::from("/nonexistent/ggml.bin"),
+        "en",
+    );
     let error = plain
         .decode_blocking(&[0.0; 320], &StreamAbort::new())
         .expect_err("missing model must fail");
@@ -358,12 +362,10 @@ fn gguf_models_roles_round_trip_as_json() {
     );
     // Whole-table get parses back to the same tables.
     let models_json = config_get(&config, "models").expect("models readable");
-    let models: orator::ModelsConfig =
-        serde_json::from_str(&models_json).expect("models are JSON");
+    let models: orator::ModelsConfig = serde_json::from_str(&models_json).expect("models are JSON");
     assert!(models.models.contains_key(orator::DEFAULT_TTS_MODEL));
     let roles_json = config_get(&config, "roles").expect("roles readable");
-    let roles: orator::RolesConfig =
-        serde_json::from_str(&roles_json).expect("roles are JSON");
+    let roles: orator::RolesConfig = serde_json::from_str(&roles_json).expect("roles are JSON");
     assert_eq!(
         orator::resolve_role_model(&roles, "asr").as_deref(),
         Some(orator::DEFAULT_ASR_MODEL)

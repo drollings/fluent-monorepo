@@ -41,8 +41,8 @@ pub fn read_desktop_env() -> DesktopEnv {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
-    let session_bus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some()
-        || user_bus_socket_exists();
+    let session_bus =
+        std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some() || user_bus_socket_exists();
     let daemon_socket = orator::socket_path().is_some_and(|path| path.exists());
     DesktopEnv {
         current_desktop,
@@ -86,10 +86,8 @@ pub fn probe_hotkeys(env: &DesktopEnv) -> HotkeyRoute {
     first_some_in_order_sync(
         [Rung::Portal, Rung::Compositor, Rung::Fallback],
         |rung| match rung {
-            Rung::Portal => {
-                (env.session_bus && env.current_desktop.is_some())
-                    .then_some(HotkeyRoute::PortalCandidate)
-            }
+            Rung::Portal => (env.session_bus && env.current_desktop.is_some())
+                .then_some(HotkeyRoute::PortalCandidate),
             Rung::Compositor => env
                 .current_desktop
                 .as_deref()
@@ -105,13 +103,16 @@ pub fn probe_hotkeys(env: &DesktopEnv) -> HotkeyRoute {
 fn compositor_instructions(desktop: &str) -> String {
     let family = desktop.to_uppercase();
     if family.contains("KDE") {
-        "KDE: System Settings → Shortcuts → Custom Shortcuts, bind the fallback commands".to_string()
+        "KDE: System Settings → Shortcuts → Custom Shortcuts, bind the fallback commands"
+            .to_string()
     } else if family.contains("COSMIC") {
         "COSMIC: Settings → Keyboard → Custom Shortcuts, bind the fallback commands".to_string()
     } else if family.contains("GNOME") {
         "GNOME: Settings → Keyboard → Custom Shortcuts, bind the fallback commands".to_string()
     } else {
-        format!("{desktop}: bind the fallback commands as custom shortcuts in the compositor settings")
+        format!(
+            "{desktop}: bind the fallback commands as custom shortcuts in the compositor settings"
+        )
     }
 }
 
@@ -138,7 +139,10 @@ pub fn probe_tray(env: &DesktopEnv) -> TrayRoute {
         Headless,
     }
     first_some_in_order_sync([Rung::Host, Rung::Headless], |rung| match rung {
-        Rung::Host => env.current_desktop.is_some().then_some(TrayRoute::HostCandidate),
+        Rung::Host => env
+            .current_desktop
+            .is_some()
+            .then_some(TrayRoute::HostCandidate),
         Rung::Headless => Some(TrayRoute::Headless),
     })
     .unwrap_or(TrayRoute::Headless)

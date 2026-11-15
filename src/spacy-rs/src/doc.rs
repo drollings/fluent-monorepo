@@ -760,7 +760,7 @@ pub fn set_children_from_heads(tokens: &mut [TokenRecord]) -> Result<(), SpacyEr
 #[must_use]
 #[inline]
 /// Whether a token's dep label equals `label`.
-/// 
+///
 /// The single canonical spelling shared by the frame, routing-signal, and
 /// triple extractors (primitives roadmap M1): `common_core::label_match`
 /// bound to spaCy's `hash_utf8` wire hash. The `MISSING_DEP` sentinel
@@ -776,7 +776,7 @@ pub fn dep_is(token: &TokenRecord, label: &str) -> bool {
 #[must_use]
 #[inline]
 /// Whether a token's dep label is one of `labels`.
-/// 
+///
 /// Canonical shared spelling (M1); an empty table matches nothing.
 pub fn dep_in(token: &TokenRecord, labels: &[&str]) -> bool {
     common_core::label_match::label_in(token.dep, labels, crate::hash::hash_utf8)
@@ -944,7 +944,7 @@ fn set_lr_kids_and_edges(tokens: &mut [TokenRecord], loop_count: usize) -> bool 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One sentence's argument skeleton: its span, its root, and the
 /// span-ordered candidate indices per core role.
-/// 
+///
 /// The single traversal shared by the routing-signal, frame, and triple
 /// extractors: partition via [`sentence_spans`], root via
 /// [`sentence_root`], role candidates via the canonical [`crate::labels`]

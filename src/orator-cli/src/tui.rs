@@ -208,9 +208,7 @@ impl SessionControl for LiveControl {
             code: failure.code,
             text: failure.text.unwrap_or_else(|| match failure.code {
                 ExitCode::DaemonUnavailable => match self.transport {
-                    Transport::Socket => {
-                        unavailable_socket_text(orator::socket_path().as_deref())
-                    }
+                    Transport::Socket => unavailable_socket_text(orator::socket_path().as_deref()),
                     Transport::Ws => {
                         let (config, _) = orator::config::load_hierarchical();
                         unavailable_ws_text(&config.daemon.ws_listen)

@@ -64,7 +64,7 @@ pub struct InterlinguaSignal {
 /// in a ledger `ContentNode`'s metadata verbatim.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// The routing frame of one sentence, plus its per-token transcript.
-/// 
+///
 /// Serde-serializable so it can ride in `StageDecision.metadata` and be stored
 /// in a ledger `ContentNode`'s metadata verbatim.
 pub struct RoutingSignal {
@@ -113,7 +113,7 @@ pub struct RoutingSignal {
 /// as predicate, everything else a dependent).
 #[must_use]
 /// Extract one [`RoutingSignal`] per sentence of an attached `doc`.
-/// 
+///
 /// Sentence boundaries come from the `sent_start` markers (set by the
 /// sentencizer and by `set_children_from_heads` at each root). A doc with no
 /// markers is treated as a single sentence. Requires an attached doc (deps and

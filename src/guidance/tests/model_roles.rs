@@ -1,5 +1,6 @@
 use super::super::config::{
-    default_decision_role, default_generative_role, ModelRole, ProjectConfig,
+    calibration_path, default_decision_role, default_generative_role, load_config, ModelRole,
+    ModelTransport, ProjectConfig,
 };
 
 #[test]
@@ -9,6 +10,7 @@ fn decision_role_defaults_match_contract() {
     assert_eq!(role.model, "liquidai/d1-2b");
     assert!(role.enabled);
     assert!(role.timeout_ms > 0);
+    assert_eq!(role.transport, ModelTransport::SystemOne);
 }
 
 #[test]
@@ -18,6 +20,8 @@ fn generative_role_defaults_match_contract() {
     assert_eq!(role.model, "code");
     assert!(role.enabled);
     assert!(role.timeout_ms > 0);
+    assert_eq!(role.transport, ModelTransport::Chat);
+    assert_eq!(role.max_tokens, Some(2048));
 }
 
 #[test]
@@ -61,8 +65,48 @@ fn role_block_parses_and_round_trips() {
 }
 
 #[test]
-fn unknown_keys_are_tolerated() {
-    let raw = r#"{"guidance_dir": ".guidance", "future_field": {"nested": true}}"#;
-    let config: ProjectConfig = serde_json::from_str(raw).expect("unknown keys ignored");
-    assert_eq!(config.guidance_dir, std::path::PathBuf::from(".guidance"));
+fn legacy_models_map_resolves_into_roles() {
+    let dir = fluent_wvr_testutil::tempdir();
+    std::fs::create_dir_all(dir.path().join(".guidance")).expect("dir");
+    std::fs::write(
+        dir.path().join(".guidance/guidance-config.json"),
+        r#"{
+            "providers": {"llama": {"base_url": "http://localhost:8080", "chat_endpoint": "/v1/chat/completions"}},
+            "models": {"decision": "llama:decision", "default": "llama:code"}
+        }"#,
+    )
+    .expect("config");
+    let config = load_config(dir.path()).expect("load");
+    assert_eq!(config.decision.model, "decision");
+    assert_eq!(config.decision.transport, ModelTransport::SystemOne);
+    assert_eq!(config.decision.base_url, "http://localhost:8080");
+    assert_eq!(config.generative.model, "code");
+    assert_eq!(config.generative.transport, ModelTransport::Chat);
+}
+
+#[test]
+fn explicit_role_wins_over_legacy_map() {
+    let dir = fluent_wvr_testutil::tempdir();
+    std::fs::create_dir_all(dir.path().join(".guidance")).expect("dir");
+    std::fs::write(
+        dir.path().join(".guidance/guidance-config.json"),
+        r#"{
+            "models": {"decision": "llama:ignored"},
+            "decision": {"model": "explicit", "transport": "chat"}
+        }"#,
+    )
+    .expect("config");
+    let config = load_config(dir.path()).expect("load");
+    assert_eq!(config.decision.model, "explicit");
+    assert_eq!(config.decision.transport, ModelTransport::Chat);
+}
+
+#[test]
+fn calibration_path_is_workspace_relative() {
+    let config = ProjectConfig::default();
+    let path = calibration_path(&config, std::path::Path::new("/repo"));
+    assert_eq!(
+        path,
+        std::path::PathBuf::from("/repo/.guidance/state/calibration.json")
+    );
 }

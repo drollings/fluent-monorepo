@@ -114,6 +114,8 @@ pub struct FragmentIngestStats {
     /// Image files discovered + kind-tagged but skipped (text-only parity,
     /// Gate 0 §5; a VL backend is P6+ work).
     pub skipped_images: usize,
+    /// Documentation files skipped by fragment ingest (doc cards own them).
+    pub skipped_docs: usize,
     /// Files that failed to read or ingest (stored count, run continues).
     pub failed: usize,
     /// Absolute paths ingested this run (seeds for dependent propagation).
@@ -190,6 +192,8 @@ pub fn ingest_workspace_fragments(
             continue;
         }
         let selection = FileSelection {
+            workspace_root: workspace.to_path_buf(),
+            include_fixtures: false,
             roots: vec![src_dir.clone()],
             include_globs: Vec::new(),
             exclude_globs: Vec::new(),
@@ -217,6 +221,10 @@ pub fn ingest_workspace_fragments(
             }
             if selected.kind == FileKind::Image {
                 stats.skipped_images += 1;
+                continue;
+            }
+            if selected.scope == guidance_core::source_scope::SourceScope::Doc {
+                stats.skipped_docs += 1;
                 continue;
             }
             // Change gate: an unchanged file keeps its committed row —
@@ -502,24 +510,7 @@ pub fn affected_for_sync(
 /// reads, no parsing — the M2 hydrated constructor). Shared by sync
 /// propagation and the explain port (one hydration helper, two callers).
 pub fn hydrated_graph(db: &GuidanceDb, roots: &[String]) -> Result<GraphIndex, String> {
-    let files = db
-        .list_files()
-        .map_err(|error| format!("list files: {error}"))?;
-    let known: Vec<String> = files.into_iter().map(|file| file.absolute_path).collect();
-    let edges: Vec<(String, String)> = db
-        .graph_edge_rows()
-        .map_err(|error| format!("edge rows: {error}"))?
-        .into_iter()
-        .map(|row| (row.importer, row.specifier))
-        .collect();
-    let symbols: Vec<(String, String, Vec<String>)> = db
-        .graph_symbol_rows()
-        .map_err(|error| format!("symbol rows: {error}"))?
-        .into_iter()
-        .map(|row| (row.name, row.file, row.calls))
-        .collect();
-    GraphIndex::build_from_rows(&known, &edges, &symbols, roots)
-        .map_err(|error| format!("assemble: {error}"))
+    GraphIndex::hydrate_from_db(db, roots).map_err(|error| format!("assemble: {error}"))
 }
 
 #[cfg(test)]

@@ -29,6 +29,23 @@ use hnsw_rs::hnsw::Hnsw;
 
 use crate::error::DbError;
 
+/// Build a cosine-distance HNSW index from `HnswParams` with a pluggable
+/// `initial_capacity`.
+///
+/// Centralizes the positional-argument unpacking so the
+/// (max_nb_connection, initial_capacity, max_layer, ef_construction,
+/// DistCosine) ordering is decided in exactly one place.
+#[must_use]
+pub fn make_hnsw(p: &HnswParams, initial_capacity: usize) -> Hnsw<'static, f32, DistCosine> {
+    Hnsw::<f32, DistCosine>::new(
+        p.max_nb_connection,
+        initial_capacity,
+        p.max_layer,
+        p.ef_construction,
+        DistCosine,
+    )
+}
+
 /// Single adaptive-dispatch policy for HNSW-vs-brute-force routing (M6).
 ///
 /// This is a policy, not an index: it owns the threshold and answers whether
@@ -46,19 +63,19 @@ use crate::error::DbError;
 /// [`DEFAULT_HNSW_THRESHOLD`]: common_core::constants::DEFAULT_HNSW_THRESHOLD
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Single adaptive-dispatch policy for HNSW-vs-brute-force routing (M6).
-/// 
+///
 /// This is a policy, not an index: it owns the threshold and answers whether
 /// a store of `len` vectors should consult a built HNSW graph. The one
 /// threshold source is [`DEFAULT_HNSW_THRESHOLD`]; there is no second
 /// threshold type — call sites reuse `HnswParams`/`DEFAULT_HNSW_THRESHOLD`
 /// through this struct.
-/// 
+///
 /// Axis: **[B] cost/recall only.** This gate measures corpus scale (where the
 /// HNSW approximation pays off — recall≥0.95 at N≥512 per M5a). It is NOT a
 /// confidence signal and must never gate verification, persistence, or
 /// frontier escalation (those are [A]/[B]-outcome decisions owned by the
 /// workflow/rubric gates calibrated in M5c–M5d).
-/// 
+///
 /// [`DEFAULT_HNSW_THRESHOLD`]: common_core::constants::DEFAULT_HNSW_THRESHOLD
 pub struct AdaptiveHnsw {
     /// Corpus size above which a built HNSW graph is consulted. Strict `>`:
@@ -126,10 +143,10 @@ pub struct HnswIndexHandle {
 /// lock is ever held across the index traversal.
 #[derive(Default)]
 /// A generic HNSW-backed vector index with external-id mapping.
-/// 
+///
 /// The index is built lazily on first `insert` (mirroring the historical
 /// `get_or_insert_with` behavior) and wholesale-rebuilt by `rebuild_from`.
-/// 
+///
 /// Concurrency: a `generation` seqlock (even = stable) guards torn reads.
 /// Writers bump it odd before mutating either structure and even after both
 /// are swapped; readers (`search_with_ids`) snapshot it around the
@@ -179,7 +196,7 @@ impl HnswIndex {
             let mut guard = lock_write(&self.hnsw);
             let hnsw = guard.get_or_insert_with(|| {
                 let p = HnswParams::default();
-                crate::sqlite::make_hnsw(&p, p.initial_capacity)
+                make_hnsw(&p, p.initial_capacity)
             });
             hnsw.insert((embedding, external_id));
         }
@@ -204,7 +221,7 @@ impl HnswIndex {
     ) -> Result<usize, DbError> {
         use std::sync::atomic::Ordering;
         let p = HnswParams::default();
-        let hnsw = crate::sqlite::make_hnsw(&p, p.initial_capacity);
+        let hnsw = make_hnsw(&p, p.initial_capacity);
 
         let mut id_map = Vec::new();
         let mut examined = 0;

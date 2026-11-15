@@ -61,7 +61,7 @@ pub fn frame_of_values(name: &str, values: &[Option<f64>]) -> Result<DataFrame, 
 /// Kaufman-style efficiency ratio over closes: net displacement over total
 /// path length, `|c[i] - c[i-p]| / sum |diff|`. Reads `None` while warming
 /// and on degenerate (flat) windows, matching the reference's null there.
-/// 
+///
 /// Note: this deliberately shares its name with the per-bar candle measure
 /// and therefore stays module-pathed (`research::efficiency_ratio`) instead
 /// of joining the crate-root re-exports — same name, different arity and

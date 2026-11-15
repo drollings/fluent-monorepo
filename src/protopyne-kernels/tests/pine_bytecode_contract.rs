@@ -150,7 +150,11 @@ fn contract_golden_outcomes_reproduce() {
             case.name
         );
         let tree_form = fingerprint_result(&tree);
-        assert_eq!(&tree_form, expected, "{}: canonical form drifted", case.name);
+        assert_eq!(
+            &tree_form, expected,
+            "{}: canonical form drifted",
+            case.name
+        );
     }
 }
 
@@ -252,10 +256,8 @@ fn refusal_inventory_is_complete() {
         .expect("inventory writes");
         return;
     }
-    let text =
-        std::fs::read_to_string(refusal_inventory_path()).expect("refusal inventory loads");
-    let value: serde_json::Value =
-        serde_json::from_str(&text).expect("refusal inventory parses");
+    let text = std::fs::read_to_string(refusal_inventory_path()).expect("refusal inventory loads");
+    let value: serde_json::Value = serde_json::from_str(&text).expect("refusal inventory parses");
     let stored: BTreeMap<String, String> = value
         .get("refusals")
         .expect("inventory has refusals")

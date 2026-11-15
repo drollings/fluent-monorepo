@@ -114,3 +114,11 @@ fn every_workspace_crate_has_a_table_entry() {
     }
     assert!(missing.is_empty(), "unmapped crate dirs: {missing:?}");
 }
+
+#[test]
+fn paths_for_package_uses_the_single_entry_table() {
+    let paths = crate::component_map::paths_for_package("guidance-core");
+    assert_eq!(paths, vec!["src/guidance".to_string()]);
+    let paths = crate::component_map::paths_for_package("guidance");
+    assert!(paths.contains(&"src/bin/guidance".to_string()), "{paths:?}");
+}

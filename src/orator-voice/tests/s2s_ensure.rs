@@ -51,7 +51,8 @@ fn missing_model_without_bundle_fails_actionably() {
             when.method("GET").path("/v1/models");
             then.status(200).json_body(serde_json::json!({"data": []}));
         });
-        let Err(error) = ensure_audio_server(&server.base_url(), "nope", &bundle(), true, false).await
+        let Err(error) =
+            ensure_audio_server(&server.base_url(), "nope", &bundle(), true, false).await
         else {
             panic!("nothing served, bundle incomplete on disk");
         };
@@ -250,10 +251,10 @@ fn boot_release_reaps_the_owned_child() {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
         .expect("stub server runs");
     std::env::set_var(crate::s2s::voice::AUDIO_SERVER_ENV, &script);
-    let endpoint = common_core::runtime::block_on_shared(
-        crate::s2s::ensure::boot_audio_server(&bundle, "m", true, false),
-    )
-            .expect("stub server boots");
+    let endpoint = common_core::runtime::block_on_shared(crate::s2s::ensure::boot_audio_server(
+        &bundle, "m", true, false,
+    ))
+    .expect("stub server boots");
     let port: u16 = endpoint
         .base_url()
         .rsplit(':')
@@ -333,9 +334,15 @@ fn audio_build_without_models_list_serves_on_options_readiness() {
             serves_model(&server.base_url(), "any-audio-model").await,
             "OPTIONS-ready appliance serves without a listing"
         );
-        let endpoint = ensure_audio_server(&server.base_url(), "any-audio-model", &bundle(), true, false)
-            .await
-            .expect("OPTIONS-ready audio build is shared, never booted");
+        let endpoint = ensure_audio_server(
+            &server.base_url(),
+            "any-audio-model",
+            &bundle(),
+            true,
+            false,
+        )
+        .await
+        .expect("OPTIONS-ready audio build is shared, never booted");
         assert_eq!(endpoint.base_url(), server.base_url());
         endpoint.release();
     });
@@ -466,9 +473,9 @@ fn boot_audio_server_tries_candidates_in_order_and_stops_after_success() {
         std::env::join_paths([dir1.clone(), dir2.clone(), dir3.clone()]).expect("join"),
     );
 
-    let endpoint = common_core::runtime::block_on_shared(
-        crate::s2s::ensure::boot_audio_server(&bundle, "m", true, false),
-    );
+    let endpoint = common_core::runtime::block_on_shared(crate::s2s::ensure::boot_audio_server(
+        &bundle, "m", true, false,
+    ));
     let Ok(endpoint) = endpoint else {
         panic!("second candidate serves");
     };
@@ -478,7 +485,10 @@ fn boot_audio_server_tries_candidates_in_order_and_stops_after_success() {
         endpoint.base_url()
     );
     assert!(marker1.exists(), "first candidate ran");
-    assert!(!marker3.exists(), "third candidate never runs after success");
+    assert!(
+        !marker3.exists(),
+        "third candidate never runs after success"
+    );
     endpoint.release();
 
     match prior_audio {
@@ -536,10 +546,16 @@ fn boot_audio_server_returns_last_error_when_all_candidates_fail() {
     for dir in [&dir1, &dir2] {
         std::fs::create_dir(dir).expect("candidate dir");
     }
-    std::fs::write(dir1.join(crate::s2s::voice::AUDIO_SERVER_BIN), "not an executable\n")
-        .expect("exec-format stub writes");
-    std::fs::write(dir2.join(crate::s2s::voice::AUDIO_SERVER_BIN), "#!/bin/sh\nexit 1\n")
-        .expect("immediate-exit stub writes");
+    std::fs::write(
+        dir1.join(crate::s2s::voice::AUDIO_SERVER_BIN),
+        "not an executable\n",
+    )
+    .expect("exec-format stub writes");
+    std::fs::write(
+        dir2.join(crate::s2s::voice::AUDIO_SERVER_BIN),
+        "#!/bin/sh\nexit 1\n",
+    )
+    .expect("immediate-exit stub writes");
     for dir in [&dir1, &dir2] {
         std::fs::set_permissions(
             dir.join(crate::s2s::voice::AUDIO_SERVER_BIN),

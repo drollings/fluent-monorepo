@@ -94,12 +94,12 @@ pub struct PreviewParams {
 /// terminal reads; this is the typed core side of that split.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Preview outcome: the run plus why bars did not trade.
-/// 
+///
 /// The histogram reports outcome counts (a property of the run), never a
 /// confidence score: nothing here measures a component's self-doubt, and
 /// nothing fires on these counts. Authorization behavior is unchanged — the
 /// same grants produce the same verdicts, now with visible reasons.
-/// 
+///
 /// The response type stays server-local on purpose: the typed run tree
 /// (manifest, per-bar verdicts, report) is core-owned, and a neutral copy
 /// would be a second implementation. The histogram legs ride the neutral

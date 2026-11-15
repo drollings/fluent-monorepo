@@ -29,7 +29,7 @@ pub struct SymbolId(pub u32);
 /// folding, never stored twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// One tape: one instrument at one bar spacing.
-/// 
+///
 /// A store file holds one timeframe per symbol — rows are keyed
 /// `(symbol_id, ts_ms)` with no timeframe column, so two spacings for one
 /// symbol would collide on the primary key. The key names the spacing the

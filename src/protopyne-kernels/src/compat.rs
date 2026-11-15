@@ -200,13 +200,13 @@ pub use evidence::ArtifactId;
 #[must_use]
 /// The only path to [`CompatStatus::ExternalParityVerified`]: validate the
 /// export's provenance, then mint its artifact id.
-/// 
+///
 /// Hand-writing the variant in [`COMPATIBILITY`] does not compile — the
 /// payload can only come from here — and an invalid artifact refuses when the
 /// table is evaluated, so a row cannot claim external numbers it cannot name.
-/// 
+///
 /// # Panics
-/// 
+///
 /// See [`evidence::mint`]: any missing or malformed provenance field.
 pub const fn external_evidence(artifact: &ExternalArtifact) -> CompatStatus {
     CompatStatus::ExternalParityVerified(evidence::mint(artifact))
@@ -648,7 +648,7 @@ pub fn is_native_row(id: &str) -> bool {
 /// serving): rows also cover served views like the `MarketContext`, which
 /// holds freeze agreement without a link-time provider. Eps rules match the
 /// kernel side: finite and positive, never widened.
-/// 
+///
 /// Needs the `pine` feature: it reads the native link table, which ships
 /// with the language runtime.
 pub fn assert_native_matrix_covers() -> Result<(), String> {

@@ -78,7 +78,7 @@ json_boundary!(GrantPermission, "grant permissions");
 /// What a grant covers: which strategies, underlyings, structures, and
 /// directions may trade, and with which lifecycle permissions. Empty lists
 /// match nothing: a grant must name its scope explicitly to authorize.
-/// 
+///
 /// The list fields stay out of the field descriptor (`#[field(skip)]`): a
 /// `Vec` has no boundary-string reading and the orphan rule forbids lending
 /// it one, so no list encoding is declared until a second consumer needs it.
@@ -350,7 +350,7 @@ pub struct ComputedWorstCase {
 /// list is empty, the numbers fall back to the budget fields.
 #[must_use]
 /// Bound an armed grant's exposure from per-structure unit economics.
-/// 
+///
 /// For every permitted structure the caller prices, the implied package
 /// units are `min(max_trades, max_contracts / legs_per_unit)`, and the worst
 /// case is the largest `units × per-unit` over those structures. Both numbers
@@ -475,7 +475,7 @@ pub struct ReAttestationWindow {
 /// (or equal) windows — never the reverse. A policy table, not a fit: the
 /// calibration suite asserts every window length maps exactly once and the
 /// mapping never loosens with length.
-/// 
+///
 /// | window length | re-attestation |
 /// |---|---|
 /// | ≤ 1 h | none — the window ends before any cadence could lapse |
@@ -961,7 +961,7 @@ impl Grant {
 #[builder(start_fn = new)]
 /// Optional per-tier replacements for [`Grant::tighten`]. `None` keeps the
 /// current value; `Some` must move toward more restrictive.
-/// 
+///
 /// The field descriptor drives the arming form: every settable tier edits
 /// leaf by leaf (see [`Describable`] below), so the form renders from the
 /// schema with no hand-written field list. `scope` stays out of the
@@ -969,7 +969,7 @@ impl Grant {
 /// borrow, which only compiles for `Copy` tiers, and the scope lists are
 /// skipped anyway (see [`GrantScope`]) — scope narrowing stays enforced
 /// core-side by [`Grant::tighten`], never through the form.
-/// 
+///
 /// Whole-tier boundary strings stay the server path: [`FieldAccess`]
 /// `set_field` parses one tier document through its `FromStr` codec, so a
 /// patch arriving as tier texts needs no second parser.
@@ -1187,16 +1187,16 @@ fn budget_exceeded(
 /// for audit.
 #[must_use]
 /// Decide whether `grant` covers `proposal`.
-/// 
+///
 /// Pure function: same inputs always produce the identical decision, with no
 /// I/O, clock reads, or hidden state. Backtest preview, paper trading, and
 /// (later) live submission all call this one function — never a second
 /// preview-only copy.
-/// 
+///
 /// Check order: liveness, scope, budgets, signal tier, trade tier (including
 /// the defined-risk rule), portfolio/market tier, breakers. All failures are
 /// collected so a denial explains itself fully.
-/// 
+///
 /// Scope appears twice by design, with distinct meanings: the `scope.allows`
 /// check is the whole-scope gate (one reason covering strategy, underlying,
 /// structure, direction, and permission together), while the trade-tier

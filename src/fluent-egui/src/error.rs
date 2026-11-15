@@ -6,7 +6,7 @@
 /// Fail-closed refusal for paint-edge construction.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 /// Typed errors for the paint edge.
-/// 
+///
 /// Every fallible entry refuses with a reason instead of substituting a
 /// value; display code never invents coordinates, thresholds, or colors.
 /// Fail-closed refusal for paint-edge construction.

@@ -134,23 +134,48 @@ pub fn resolve_constant(name: &str) -> Option<PineValue> {
     // unevaluated, so the handle is recorded, never decided on.
     match name {
         "line" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_line"))),
-        "linebr" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_linebr"))),
+        "linebr" => {
+            return Some(PineValue::EnumHandle(EnumHandle::new(
+                "plot",
+                "style_linebr",
+            )))
+        }
         "stepline" => {
-            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_stepline")));
+            return Some(PineValue::EnumHandle(EnumHandle::new(
+                "plot",
+                "style_stepline",
+            )));
         }
         "steplinebr" => {
-            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_steplinebr")));
+            return Some(PineValue::EnumHandle(EnumHandle::new(
+                "plot",
+                "style_steplinebr",
+            )));
         }
         "histogram" => {
-            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_histogram")));
+            return Some(PineValue::EnumHandle(EnumHandle::new(
+                "plot",
+                "style_histogram",
+            )));
         }
         "columns" => {
-            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_columns")));
+            return Some(PineValue::EnumHandle(EnumHandle::new(
+                "plot",
+                "style_columns",
+            )));
         }
-        "cross" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_cross"))),
+        "cross" => {
+            return Some(PineValue::EnumHandle(EnumHandle::new(
+                "plot",
+                "style_cross",
+            )))
+        }
         "area" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_area"))),
         "circles" => {
-            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_circles")));
+            return Some(PineValue::EnumHandle(EnumHandle::new(
+                "plot",
+                "style_circles",
+            )));
         }
         _ => {}
     }
@@ -410,8 +435,27 @@ fn single(values: &[f64], f: impl Fn(&[f64]) -> Vec<Option<f64>>) -> Option<Pine
 /// The calibration gate freezes this list: additions fail there first.
 pub fn legacy_bare_math_names() -> &'static [&'static str] {
     &[
-        "abs", "floor", "ceil", "sqrt", "log", "log10", "exp", "sign", "cos", "sin", "tan",
-        "asin", "acos", "atan", "pow", "max", "min", "avg", "sum", "round", "todegrees",
+        "abs",
+        "floor",
+        "ceil",
+        "sqrt",
+        "log",
+        "log10",
+        "exp",
+        "sign",
+        "cos",
+        "sin",
+        "tan",
+        "asin",
+        "acos",
+        "atan",
+        "pow",
+        "max",
+        "min",
+        "avg",
+        "sum",
+        "round",
+        "todegrees",
         "toradians",
     ]
 }
@@ -430,7 +474,8 @@ pub fn legacy_bare_str_names() -> &'static [&'static str] {
 /// Every op delegates to its [`wq_comb`](crate::wq_comb) combinator over
 /// single-element legs, inheriting the funnel contract (out-of-domain reads
 /// absence) instead of re-implementing it.
-fn math_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {    let name = format!("math.{method}");
+fn math_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {
+    let name = format!("math.{method}");
     let Some(values) = nums(&name, args)? else {
         return Ok(None);
     };
@@ -1033,8 +1078,9 @@ pub(crate) fn split_rest(
     key: Option<&PineValue>,
 ) -> Result<Option<Option<PineValue>>, KernelError> {
     match (bridge, method) {
-        ("array", "shift") => Ok(shift_parts("array.shift", receiver)?
-            .map(|(rest, _)| Some(PineValue::Array(rest)))),
+        ("array", "shift") => {
+            Ok(shift_parts("array.shift", receiver)?.map(|(rest, _)| Some(PineValue::Array(rest))))
+        }
         ("array", "pop") => match arr("array.pop", receiver)? {
             Some(items) => Ok(Some(Some(PineValue::Array(
                 items[..items.len().saturating_sub(1)].to_vec(),
@@ -1042,7 +1088,7 @@ pub(crate) fn split_rest(
             None => Ok(None),
         },
         ("map", "remove") => Ok(remove_parts("map.remove", receiver, key)?
-        .map(|(rest, _)| Some(PineValue::IntMap(rest)))),
+            .map(|(rest, _)| Some(PineValue::IntMap(rest)))),
         _ => Ok(None),
     }
 }
@@ -2168,7 +2214,7 @@ fn timeframe_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, K
 /// because the tree-walk has no value for them either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// One deterministic chart-scope member the headless harness serves.
-/// 
+///
 /// Chart scope is run configuration, not bar state: the tree-walk and the
 /// compiled loop resolve the same names to the same values through
 /// [`ChartScope::read`], so a chart-scope read can never diverge across a

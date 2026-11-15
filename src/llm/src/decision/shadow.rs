@@ -72,10 +72,10 @@ impl ShadowOutcome {
 /// ```
 #[derive(Default)]
 /// Shared append-only shadow log.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{Decision, ShadowLog, ShadowOutcome, ThresholdSet};
-/// 
+///
 /// let log = ShadowLog::new();
 /// assert!(log.is_empty());
 /// ```
@@ -139,13 +139,13 @@ impl ShadowLog {
 #[must_use]
 /// Wrap `inner` so `execute` runs it, records `outcome`, and returns the
 /// inner output unchanged.
-/// 
+///
 /// ```rust
 /// use std::sync::Arc;
 /// use fluent_llm::decision::{Decision, ShadowLog, ShadowOutcome, ThresholdSet, shadow_adapter};
 /// use fluent_llm::testutil::StubBackend;
 /// use fluent_wvr::{Component, WorkContext, WorkUnit};
-/// 
+///
 /// let inner: Arc<dyn Component> = Arc::new(StubBackend::new("stub", vec!["m"], "hi"));
 /// let d = Decision::from_distribution(
 /// "B",

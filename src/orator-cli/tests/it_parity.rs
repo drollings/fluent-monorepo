@@ -3,8 +3,8 @@
 
 use std::collections::HashSet;
 
-use orator_cli::{Cli, OutboundRequest, COMMANDS};
 use orator::protocol::METHOD_NAMES;
+use orator_cli::{Cli, OutboundRequest, COMMANDS};
 use orator_daemon::DISPATCH_METHODS;
 
 #[test]

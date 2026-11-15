@@ -1,9 +1,11 @@
 //! Fragment/graph schema: DDL, init, and migrate-on-open ensures.
 //!
 //! Moved verbatim from `db.rs` (M6 split): the full `init_schema` body (same
-//! SQL text, now taking the store explicitly — including the legacy
-//! `guidance_nodes` table, untouched P5 surface) plus the `ensure_*` column
-//! guards.
+//! SQL text, now taking the store explicitly — including the shared node
+//! document store, a generic embedded-JSON primitive with change-gated
+//! sync plus vector/keyword search; any consumer may use it, guidance's
+//! live path reads the fragment index) plus the `ensure_*` column
+//! guards. A legacy `guidance_nodes` table renames to `nodes` on open.
 
 use fluent_db::error::DbError;
 use fluent_db::store::SqliteStore;
@@ -11,8 +13,11 @@ use fluent_db::store::SqliteStore;
 use super::VectorDbError;
 
 pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
+    // Rename before create: a pre-rename database carries its rows in
+    // `guidance_nodes`, and creating `nodes` first would shadow them.
+    store.with_conn(|conn| ensure_nodes_table(conn).map_err(DbError::from))?;
     store.init_schema(
-        "CREATE TABLE IF NOT EXISTS guidance_nodes (
+        "CREATE TABLE IF NOT EXISTS nodes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 source TEXT NOT NULL,
@@ -28,9 +33,9 @@ pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
             fluent_db::embedding_cache::init_embedding_cache(conn).map_err(DbError::from)?;
             fluent_db::sqlite::run_batch(
                 conn,
-                "CREATE INDEX IF NOT EXISTS idx_nodes_name ON guidance_nodes(name);
-                 CREATE INDEX IF NOT EXISTS idx_nodes_source ON guidance_nodes(source);
-                 CREATE INDEX IF NOT EXISTS idx_nodes_name_source ON guidance_nodes(name, source);
+                "CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
+                 CREATE INDEX IF NOT EXISTS idx_nodes_source ON nodes(source);
+                 CREATE INDEX IF NOT EXISTS idx_nodes_name_source ON nodes(name, source);
                  CREATE INDEX IF NOT EXISTS idx_cache_query_hash ON embedding_cache(query_hash);
                  CREATE TABLE IF NOT EXISTS sync_state (
                      key TEXT PRIMARY KEY,
@@ -126,22 +131,44 @@ pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
                     project TEXT NOT NULL DEFAULT '',
                     crate_name TEXT NOT NULL DEFAULT '',
                     domain TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
                     purpose TEXT NOT NULL DEFAULT '',
                     predicate TEXT NOT NULL DEFAULT '',
                     roles_json TEXT NOT NULL DEFAULT '[]',
+                    keywords_json TEXT NOT NULL DEFAULT '[]',
+                    code_paths_json TEXT NOT NULL DEFAULT '[]',
+                    symbols_json TEXT NOT NULL DEFAULT '[]',
                     source_path TEXT NOT NULL DEFAULT '',
                     anchor TEXT NOT NULL DEFAULT '',
                     content_hash TEXT NOT NULL DEFAULT '',
                     model TEXT NOT NULL DEFAULT '',
                     prompt_version INTEGER NOT NULL DEFAULT 0,
+                    origin TEXT NOT NULL DEFAULT '',
+                    corpus_hash TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'ready',
                     gap_reason TEXT,
                     generated_at INTEGER NOT NULL DEFAULT 0);
                 CREATE INDEX IF NOT EXISTS idx_capabilities_source ON capabilities(source_path);
                 CREATE VIRTUAL TABLE IF NOT EXISTS capabilities_fts USING fts5(
-                    purpose, predicate,
+                    title, purpose, predicate, keywords_json,
                     tokenize='unicode61 remove_diacritics 2',
                     content='capabilities', content_rowid='rowid');
+                CREATE TABLE IF NOT EXISTS project_cards (
+                    key TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    body TEXT NOT NULL DEFAULT '',
+                    source_path TEXT NOT NULL DEFAULT '',
+                    anchor TEXT NOT NULL DEFAULT '',
+                    aliases_json TEXT NOT NULL DEFAULT '[]',
+                    code_paths_json TEXT NOT NULL DEFAULT '[]',
+                    symbols_json TEXT NOT NULL DEFAULT '[]',
+                    content_hash TEXT NOT NULL DEFAULT '',
+                    generated_at INTEGER NOT NULL DEFAULT 0);
+                CREATE VIRTUAL TABLE IF NOT EXISTS project_cards_fts USING fts5(
+                    title, body, aliases_json,
+                    tokenize='unicode61 remove_diacritics 2',
+                    content='project_cards', content_rowid='rowid');
                 CREATE TABLE IF NOT EXISTS capability_lemmas (
                     capability_rowid INTEGER NOT NULL,
                     lemma_id INTEGER NOT NULL,
@@ -154,16 +181,38 @@ pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
                     input_hash TEXT NOT NULL,
                     embedder TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
                     updated_at INTEGER NOT NULL DEFAULT 0);",
             )
             .map_err(DbError::from)?;
             ensure_file_status_columns(conn)?;
             ensure_fragment_q8_column(conn).map_err(DbError::from)?;
+            ensure_embedding_status_reason_column(conn)?;
             ensure_fts_doc_column(conn).map_err(DbError::from)?;
+            ensure_capabilities_schema7(conn)?;
             ensure_fts_triggers(conn).map_err(DbError::from)?;
             ensure_lemma_dictionary(conn).map_err(DbError::from)?;
             Ok(())
         })?;
+    Ok(())
+}
+
+/// Generic node document store: a legacy `guidance_nodes` table renames
+/// to `nodes` on open when a pre-rename database still carries it; fresh
+/// databases create `nodes` directly. The store is a shared primitive
+/// (embedded JSON documents with change-gated sync plus vector/keyword
+/// search), not guidance-specific: any consumer may use it, and
+/// guidance's live read path does not depend on it.
+fn ensure_nodes_table(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('guidance_nodes', 'nodes')",
+    )?;
+    let tables: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    if tables.contains(&"guidance_nodes".to_string()) && !tables.contains(&"nodes".to_string()) {
+        conn.execute_batch("ALTER TABLE guidance_nodes RENAME TO nodes")?;
+    }
     Ok(())
 }
 
@@ -248,19 +297,85 @@ fn ensure_fts_triggers(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
          DROP TRIGGER IF EXISTS capabilities_ad;
          DROP TRIGGER IF EXISTS capabilities_au;
          CREATE TRIGGER capabilities_ai AFTER INSERT ON capabilities BEGIN
-             INSERT INTO capabilities_fts(rowid, purpose, predicate)
-             VALUES (new.rowid, new.purpose, new.predicate);
+             INSERT INTO capabilities_fts(rowid, title, purpose, predicate, keywords_json)
+             VALUES (new.rowid, new.title, new.purpose, new.predicate, new.keywords_json);
          END;
          CREATE TRIGGER capabilities_ad AFTER DELETE ON capabilities BEGIN
-             INSERT INTO capabilities_fts(capabilities_fts, rowid, purpose, predicate)
-             VALUES ('delete', old.rowid, old.purpose, old.predicate);
+             INSERT INTO capabilities_fts(capabilities_fts, rowid, title, purpose, predicate, keywords_json)
+             VALUES ('delete', old.rowid, old.title, old.purpose, old.predicate, old.keywords_json);
          END;
          CREATE TRIGGER capabilities_au AFTER UPDATE ON capabilities BEGIN
-             INSERT INTO capabilities_fts(capabilities_fts, rowid, purpose, predicate)
-             VALUES ('delete', old.rowid, old.purpose, old.predicate);
-             INSERT INTO capabilities_fts(rowid, purpose, predicate)
-             VALUES (new.rowid, new.purpose, new.predicate);
+             INSERT INTO capabilities_fts(capabilities_fts, rowid, title, purpose, predicate, keywords_json)
+             VALUES ('delete', old.rowid, old.title, old.purpose, old.predicate, old.keywords_json);
+             INSERT INTO capabilities_fts(rowid, title, purpose, predicate, keywords_json)
+             VALUES (new.rowid, new.title, new.purpose, new.predicate, new.keywords_json);
+         END;
+         DROP TRIGGER IF EXISTS project_cards_ai;
+         DROP TRIGGER IF EXISTS project_cards_ad;
+         DROP TRIGGER IF EXISTS project_cards_au;
+         CREATE TRIGGER project_cards_ai AFTER INSERT ON project_cards BEGIN
+             INSERT INTO project_cards_fts(rowid, title, body, aliases_json)
+             VALUES (new.rowid, new.title, new.body, new.aliases_json);
+         END;
+         CREATE TRIGGER project_cards_ad AFTER DELETE ON project_cards BEGIN
+             INSERT INTO project_cards_fts(project_cards_fts, rowid, title, body, aliases_json)
+             VALUES ('delete', old.rowid, old.title, old.body, old.aliases_json);
+         END;
+         CREATE TRIGGER project_cards_au AFTER UPDATE ON project_cards BEGIN
+             INSERT INTO project_cards_fts(project_cards_fts, rowid, title, body, aliases_json)
+             VALUES ('delete', old.rowid, old.title, old.body, old.aliases_json);
+             INSERT INTO project_cards_fts(rowid, title, body, aliases_json)
+             VALUES (new.rowid, new.title, new.body, new.aliases_json);
          END;",
+    )
+}
+
+/// Schema 7 capability import: new card columns on old databases, and
+/// the FTS index rebuilt once to cover title + keywords. FTS5 tables
+/// cannot be altered, so old databases rebuild like the doc-column
+/// migration above; triggers are refreshed by `ensure_fts_triggers`.
+fn ensure_capabilities_schema7(conn: &rusqlite::Connection) -> Result<(), DbError> {
+    use fluent_db::migrate::ensure_column;
+    for (column, col_def) in [
+        ("title", "TEXT NOT NULL DEFAULT ''"),
+        ("keywords_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("code_paths_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("symbols_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("origin", "TEXT NOT NULL DEFAULT ''"),
+        ("corpus_hash", "TEXT NOT NULL DEFAULT ''"),
+    ] {
+        ensure_column(conn, "capabilities", column, col_def)?;
+    }
+    let sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'capabilities_fts'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(DbError::from)?;
+    if sql.contains("title") {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS capabilities_fts;
+         CREATE VIRTUAL TABLE capabilities_fts USING fts5(
+             title, purpose, predicate, keywords_json,
+             tokenize='unicode61 remove_diacritics 2',
+             content='capabilities', content_rowid='rowid');
+         INSERT INTO capabilities_fts(capabilities_fts) VALUES('rebuild');",
+    )
+    .map_err(DbError::from)
+}
+
+/// Schema 7 follow-up: every embedding status row carries the reason
+/// for its state (`ready` rows keep it empty). Additive column, old
+/// databases gain it on open.
+fn ensure_embedding_status_reason_column(conn: &rusqlite::Connection) -> Result<(), DbError> {
+    fluent_db::migrate::ensure_column(
+        conn,
+        "fragment_embedding_status",
+        "reason",
+        "TEXT NOT NULL DEFAULT ''",
     )
 }
 

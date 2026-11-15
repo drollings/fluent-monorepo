@@ -49,6 +49,10 @@ pub struct RgOptions {
     pub mtime_after_ms: Option<i64>,
     /// Modification-time ceiling (ms epoch).
     pub mtime_before_ms: Option<i64>,
+    /// Extra include globs (rg `--glob` syntax, relative to the root).
+    pub include_globs: Vec<String>,
+    /// Extra exclude globs (rg `--glob !pattern` syntax).
+    pub exclude_globs: Vec<String>,
 }
 
 /// Managed-rg failure.
@@ -137,6 +141,12 @@ impl RgBackend {
         }
         if options.context_after > 0 {
             command.args(["--after-context", &options.context_after.to_string()]);
+        }
+        for glob in &options.include_globs {
+            command.args(["--glob", glob]);
+        }
+        for glob in &options.exclude_globs {
+            command.args(["--glob", &format!("!{glob}")]);
         }
         command
             .args(["--", query, "."])

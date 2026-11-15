@@ -140,7 +140,7 @@ pub fn split_import(seed: &str) -> (&str, Option<&str>) {
 /// `AmbiguousDependency` carrying every candidate.
 #[allow(clippy::implicit_hasher)]
 /// Pick the single provider of `capability` satisfying `req`.
-/// 
+///
 /// Providers with no entry in `versions` never match a constraint (running
 /// unversioned code against a pinned import would be a silent downgrade).
 /// Zero matches refuse with a `MissingDependency` naming the request and the

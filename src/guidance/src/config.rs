@@ -34,14 +34,40 @@ pub struct EmbedConfig {
     pub cache_limit: Option<usize>,
 }
 
+/// Which wire protocol a role speaks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+/// Which wire protocol a role speaks.
+pub enum ModelTransport {
+    /// OpenAI-compatible chat completions; text generation.
+    #[default]
+    Chat,
+    /// Native `/v1/systemone`; bounded choice/score/noul judgment.
+    SystemOne,
+}
+
+/// Embedding cost policy: explicit opt-in, never a relevance gate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+/// Embedding cost policy: explicit opt-in, never a relevance gate.
+pub enum EmbedPolicy {
+    /// No embedding on normal sync (default).
+    #[default]
+    Off,
+    /// Embed changed units only.
+    Changed,
+    /// Embed all units.
+    All,
+}
+
 /// One independently-addressable model role: its own endpoint, model,
-/// timeout, and kill switch. A disabled role resolves to no endpoint,
-/// which is the fail-closed signal: callers fall through to the
+/// timeout, transport, and kill switch. A disabled role resolves to no
+/// endpoint, which is the fail-closed signal: callers fall through to the
 /// deterministic path, never to a silent answer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// One independently-addressable model role: its own endpoint, model,
-/// timeout, and kill switch. A disabled role resolves to no endpoint,
-/// which is the fail-closed signal: callers fall through to the
+/// timeout, transport, and kill switch. A disabled role resolves to no
+/// endpoint, which is the fail-closed signal: callers fall through to the
 /// deterministic path, never to a silent answer.
 pub struct ModelRole {
     #[serde(default = "default_role_base_url")]
@@ -52,6 +78,12 @@ pub struct ModelRole {
     pub timeout_ms: u64,
     #[serde(default = "default_role_enabled")]
     pub enabled: bool,
+    #[serde(default)]
+    pub transport: ModelTransport,
+    #[serde(default)]
+    pub max_tokens: Option<usize>,
+    #[serde(default)]
+    pub thinking: Option<bool>,
 }
 
 fn default_role_base_url() -> String {
@@ -78,6 +110,9 @@ pub fn default_decision_role() -> ModelRole {
         model: "liquidai/d1-2b".to_string(),
         timeout_ms: default_role_timeout_ms(),
         enabled: true,
+        transport: ModelTransport::SystemOne,
+        max_tokens: None,
+        thinking: None,
     }
 }
 
@@ -90,6 +125,9 @@ pub fn default_generative_role() -> ModelRole {
         model: "code".to_string(),
         timeout_ms: default_role_timeout_ms(),
         enabled: true,
+        transport: ModelTransport::Chat,
+        max_tokens: Some(2048),
+        thinking: Some(false),
     }
 }
 
@@ -132,15 +170,11 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub embedding_dims: Option<usize>,
 
+    /// External capability corpus directory (`corpus.json` manifest;
+    /// consumed by `sync`, never generated). Absent means orientation
+    /// answers use project cards alone.
     #[serde(default)]
     pub capabilities_dir: Option<PathBuf>,
-
-    /// Include globs for the capability-brief pass (empty selects the
-    /// built-in doc set: root orientation files, `doc/**/*.md`, crate
-    /// READMEs, manifests).
-    #[serde(default)]
-    #[builder(default)]
-    pub capability_docs: Vec<String>,
 
     #[serde(default)]
     #[builder(default)]
@@ -233,6 +267,17 @@ pub struct ProjectConfig {
     #[serde(default = "default_root_docs")]
     #[builder(default = default_root_docs())]
     pub root_docs: bool,
+
+    /// Decision-model fingerprint authorizing filtering (M7). Absent
+    /// means shadow-only: labels render, nothing filters.
+    #[serde(default)]
+    pub decision_fingerprint: Option<String>,
+
+    /// Embedding cost policy (default off; `--embed` or config enables).
+    /// Enabling is measured on a paraphrase corpus, never a relevance gate.
+    #[serde(default)]
+    #[builder(default)]
+    pub embed_policy: EmbedPolicy,
 }
 
 fn default_guidance_dir() -> PathBuf {
@@ -259,7 +304,6 @@ impl Default for ProjectConfig {
             embedding_model: None,
             embedding_dims: None,
             capabilities_dir: None,
-            capability_docs: vec![],
             src_dirs: vec![],
             providers: HashMap::new(),
             model_default: None,
@@ -279,6 +323,8 @@ impl Default for ProjectConfig {
             policy: crate::policy::MaintenancePolicy::default(),
             docs_dir: default_docs_dir(),
             root_docs: default_root_docs(),
+            decision_fingerprint: None,
+            embed_policy: EmbedPolicy::Off,
         }
     }
 }
@@ -363,8 +409,64 @@ pub fn find_config_file(workspace: &Path) -> Option<PathBuf> {
 pub fn load_config(workspace: &Path) -> Result<ProjectConfig, ConfigError> {
     let config_path = find_config_file(workspace);
     match config_path {
-        Some(path) => Ok(common_core::config::load_json(&path)?),
+        Some(path) => {
+            let mut config: ProjectConfig = common_core::config::load_json(&path)?;
+            if let Ok(raw) = std::fs::read_to_string(&path) {
+                apply_legacy_roles(&mut config, &raw);
+            }
+            Ok(config)
+        }
         None => Ok(ProjectConfig::default()),
+    }
+}
+
+/// Resolve the one calibration registry path. A configured path is
+/// workspace-relative; the default is the state dir all writers use.
+#[must_use]
+/// Resolve the one calibration registry path. A configured path is
+/// workspace-relative; the default is the state dir all writers use.
+pub fn calibration_path(config: &ProjectConfig, workspace: &Path) -> PathBuf {
+    let path = config
+        .calibration_registry
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(".guidance/state/calibration.json"));
+    if path.is_absolute() {
+        path
+    } else {
+        workspace.join(path)
+    }
+}
+
+/// Legacy `models` map -> role objects. Explicit `decision`/`generative`
+/// objects win; the map is only a migration input.
+fn apply_legacy_roles(config: &mut ProjectConfig, raw: &str) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return;
+    };
+    if value.get("decision").is_none() {
+        if let Some(reference) = config.models.get("decision").cloned() {
+            apply_model_ref(&mut config.decision, &reference, &config.providers);
+            config.decision.transport = ModelTransport::SystemOne;
+        }
+    }
+    if value.get("generative").is_none() {
+        if let Some(reference) = config.models.get("default").cloned() {
+            apply_model_ref(&mut config.generative, &reference, &config.providers);
+            config.generative.transport = ModelTransport::Chat;
+        }
+    }
+    tracing::warn!(
+        "legacy `models` map resolved into model roles; move to `decision`/`generative` objects"
+    );
+}
+
+fn apply_model_ref(role: &mut ModelRole, reference: &str, providers: &HashMap<String, Provider>) {
+    let (provider, model) = reference
+        .split_once(':')
+        .map_or(("", reference), |(provider, model)| (provider, model));
+    role.model = model.to_string();
+    if let Some(provider) = providers.get(provider) {
+        role.base_url = provider.base_url.trim_end_matches('/').to_string();
     }
 }
 
@@ -377,6 +479,10 @@ pub fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 #[path = "../tests/model_roles.rs"]
 mod model_roles_tests;
+
+#[cfg(test)]
+#[path = "../tests/embed_policy.rs"]
+mod embed_policy_tests;
 
 #[cfg(test)]
 #[path = "../tests/config_extra.rs"]

@@ -1,9 +1,10 @@
 //! The `fluent_db::sqlite` connection/setup helpers: WAL mode, shared-cache
 //! lifetime, HNSW construction, violation classification, placeholder lists.
 
+use crate::hnsw::make_hnsw;
 use crate::sqlite::{
-    in_clause, is_unique_violation, make_hnsw, open_in_memory, open_shared_in_memory, open_wal,
-    quote_ident, run_batch,
+    in_clause, is_unique_violation, open_in_memory, open_shared_in_memory, open_wal, quote_ident,
+    run_batch,
 };
 use common_core::constants::HnswParams;
 

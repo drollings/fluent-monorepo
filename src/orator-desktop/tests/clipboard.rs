@@ -121,7 +121,11 @@ fn own_write_never_counts_as_movement() {
         PasteOutcome::PastedRestored,
         "a still clipboard restores instead of claiming movement"
     );
-    assert_eq!(clip.read().as_deref(), None, "nothing saved, clipboard cleared");
+    assert_eq!(
+        clip.read().as_deref(),
+        None,
+        "nothing saved, clipboard cleared"
+    );
 }
 
 #[test]
@@ -139,7 +143,11 @@ fn polling_observes_changes_promptly() {
     });
     let started = Instant::now();
     let outcome = paste_with_restore(&*clip, &QuietPaste, "hello", 2000).expect("paste");
-    assert_eq!(outcome, PasteOutcome::Pasted, "mid-deadline change observed");
+    assert_eq!(
+        outcome,
+        PasteOutcome::Pasted,
+        "mid-deadline change observed"
+    );
     assert!(
         started.elapsed() < Duration::from_millis(1000),
         "polling returns promptly, never burns the deadline"
@@ -193,8 +201,8 @@ fn bounded_wait_reports_failure_status_not_timeout() {
 /// interactive hang. The post-call `try_wait` proves no zombie.
 #[test]
 fn bounded_wait_kills_and_reaps_parked_child() {
-    use std::time::{Duration, Instant};
     use crate::clipboard::{wait_child_bounded, ChildWaitError};
+    use std::time::{Duration, Instant};
     let mut child = std::process::Command::new("sleep")
         .arg("30")
         .spawn()

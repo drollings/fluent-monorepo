@@ -324,7 +324,7 @@ pub struct ChartTarget {
 /// successfully-executed output.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 /// An acceptance rubric for a chart target's (or chart's) output.
-/// 
+///
 /// Before a target's output is promoted to `provides`, the rubric gate
 /// runs: a cheap deterministic field-presence rule first, and an optional
 /// LLM judge only when `judge_model` is set.  An absent rubric accepts any

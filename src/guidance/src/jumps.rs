@@ -91,7 +91,7 @@ impl JumpIndex {
 /// Derive jump records for one doc: shared chunker, shared
 /// attribution, shared funnel terms. Pure.
 pub fn derive_jumps_for_doc(source_path: &str, text: &str) -> Vec<JumpRecord> {
-    let (chunks, _gaps) = crate::capability::chunk_markdown_sections(source_path, text);
+    let (chunks, _gaps) = crate::read::doc_cards::chunk_markdown_sections(source_path, text);
     chunks
         .into_iter()
         .map(|chunk| {
@@ -114,14 +114,30 @@ pub fn derive_jumps_for_doc(source_path: &str, text: &str) -> Vec<JumpRecord> {
 /// Doc tree behind the jumps: `doc/**/*.md` plus the two workspace
 /// root orientation files, sorted, size-capped per file.
 pub fn doc_tree_files(workspace: &Path) -> Vec<PathBuf> {
+    doc_tree_files_with(workspace, Path::new("doc"), true, &[])
+}
+
+/// Doc tree with explicit config: docs dir, root docs, and source-root
+/// markdown (non-test/non-fixture). Shared by jumps and doc cards.
+#[must_use]
+/// Doc tree with explicit config: docs dir, root docs, and source-root
+/// markdown (non-test/non-fixture). Shared by jumps and doc cards.
+pub fn doc_tree_files_with(
+    workspace: &Path,
+    docs_dir: &Path,
+    root_docs: bool,
+    src_dirs: &[PathBuf],
+) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    let doc_dir = workspace.join("doc");
+    let doc_dir = workspace.join(docs_dir);
     let mut stack = vec![doc_dir];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        let mut names: Vec<PathBuf> = entries.filter_map(|entry| entry.ok().map(|e| e.path())).collect();
+        let mut names: Vec<PathBuf> = entries
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .collect();
         names.sort();
         for path in names {
             if path.is_dir() {
@@ -133,15 +149,53 @@ pub fn doc_tree_files(workspace: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    for root in ["README.md", "AGENTS.md"] {
-        let path = workspace.join(root);
-        if path.is_file()
-            && std::fs::metadata(&path).is_ok_and(|meta| meta.len() <= JUMP_MAX_FILE_BYTES)
-        {
-            files.push(path);
+    for src_dir in src_dirs {
+        let root = if src_dir.is_absolute() {
+            src_dir.clone()
+        } else {
+            workspace.join(src_dir)
+        };
+        let mut stack = vec![root];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut names: Vec<PathBuf> = entries
+                .filter_map(|entry| entry.ok().map(|e| e.path()))
+                .collect();
+            names.sort();
+            for path in names {
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().and_then(|ext| ext.to_str()) == Some("md")
+                    && std::fs::metadata(&path).is_ok_and(|meta| meta.len() <= JUMP_MAX_FILE_BYTES)
+                {
+                    let rel = path
+                        .strip_prefix(workspace)
+                        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+                        .unwrap_or_default();
+                    if !crate::source_scope::is_fixture_path(&rel)
+                        && !crate::offload::is_test_path(&path)
+                        && !crate::eval::is_eval_path(&rel)
+                    {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+    }
+    if root_docs {
+        for root in ["README.md", "AGENTS.md"] {
+            let path = workspace.join(root);
+            if path.is_file()
+                && std::fs::metadata(&path).is_ok_and(|meta| meta.len() <= JUMP_MAX_FILE_BYTES)
+            {
+                files.push(path);
+            }
         }
     }
     files.sort();
+    files.dedup();
     files
 }
 
@@ -252,8 +306,8 @@ pub fn sync_jumps(workspace: &Path, guidance_dir: &Path) -> Result<JumpSyncRepor
     };
     std::fs::create_dir_all(guidance_dir)
         .map_err(|error| format!("cannot create {}: {error}", guidance_dir.display()))?;
-    let body =
-        serde_json::to_string(&manifest).map_err(|error| format!("cannot encode jumps: {error}"))?;
+    let body = serde_json::to_string(&manifest)
+        .map_err(|error| format!("cannot encode jumps: {error}"))?;
     let tmp = manifest_path(guidance_dir).with_extension("json.tmp");
     std::fs::write(&tmp, body).map_err(|error| format!("cannot stage jumps: {error}"))?;
     std::fs::rename(&tmp, manifest_path(guidance_dir))

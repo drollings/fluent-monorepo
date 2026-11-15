@@ -909,7 +909,7 @@ fn has_valid_complete_marker(
 /// validation falls back to the pinned content hash.
 #[derive(Debug, Clone, Copy)]
 /// The change signal recorded for one cached artifact.
-/// 
+///
 /// Nanosecond resolution is load-bearing. A millisecond stamp cannot tell a
 /// same-size in-place rewrite from no rewrite at all, so an artifact mutated
 /// inside the same millisecond as the recorded stamp still matched its marker

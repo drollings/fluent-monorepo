@@ -3,13 +3,13 @@
 //! A live endpoint is used as-is; otherwise this command owns a
 //! supervised server for exactly one question, then stops it.
 
+use orator::{LlmEndpointConfig, LlmSession, OratorConfig};
+use orator_agent::llm::{probe_models, HttpSession};
 use orator_cli::{
     config::{gpu_llm_args, resolve_llm_base},
     socket::Transport,
     ExitCode,
 };
-use orator::{LlmEndpointConfig, LlmSession, OratorConfig};
-use orator_agent::llm::{probe_models, HttpSession};
 use orator_supervise::{Supervisor, SupervisorConfig};
 
 use crate::say::say_via_daemon;

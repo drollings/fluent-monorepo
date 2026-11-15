@@ -75,7 +75,7 @@ pub fn parse_self_assessment(response: &str) -> Result<SelfAssessment, WorkError
 /// resolved display name (`ModelEntry.name` or the key when absent).
 #[derive(Debug, Clone)]
 /// One ordered member of a role the matcher climbs over.
-/// 
+///
 /// `model_key` is the config key (`models`/role `models`), `model_name` the
 /// resolved display name (`ModelEntry.name` or the key when absent).
 pub struct TargetCandidate {
@@ -661,7 +661,7 @@ pub fn is_match(candidate: &TargetCandidate, assessed: u8) -> bool {
 #[derive(Clone)]
 /// The ladder's per-candidate backend set, built once by `config::builder`
 /// (the single `LlmClient` factory — DIP) and shared by every pipeline.
-/// 
+///
 /// `by_key` holds one `ChatBackend` per model key referenced by any
 /// role `models` member. `default` serves any candidate key absent from
 /// `by_key`: the injected mock/transcript backend in mock runs (covering every
@@ -722,7 +722,7 @@ impl TargetBackends {
 /// `ChatBackend` per candidate model key plus the `default` fallback — the
 /// injected mock/transcript backend or a real client) and runs the climb under
 /// a shared `Limiter`, exactly like the classifier stage's sync LLM call.
-/// 
+///
 /// `Clone` is cheap (three `Arc`-ish fields + a `u64`), so the same matcher
 /// can be shared between the flat classifier stage and the classification-tree
 /// engine without re-provisioning backends.

@@ -14,21 +14,13 @@
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 /// The producing authority of a ledger annotation. Ordered by strength:
 /// `Deterministic < LocalModel < Frontier < HumanReview`.
 ///
 /// - **Deterministic** — pure, model-free output (tokenizer, ArcEager/rule
 ///   parser, deterministic frame extraction).
-/// - **LocalModel** — a local enrichment model (the ONNX LLM, an encoder rung).
-/// - **Frontier** — a frontier/remote provider (a future substitution point).
-/// - **HumanReview** — a human reviewer overrode or confirmed the claim.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-/// The producing authority of a ledger annotation. Ordered by strength:
-/// `Deterministic < LocalModel < Frontier < HumanReview`.
-/// 
-/// - **Deterministic** — pure, model-free output (tokenizer, ArcEager/rule
-/// parser, deterministic frame extraction).
 /// - **LocalModel** — a local enrichment model (the ONNX LLM, an encoder rung).
 /// - **Frontier** — a frontier/remote provider (a future substitution point).
 /// - **HumanReview** — a human reviewer overrode or confirmed the claim.

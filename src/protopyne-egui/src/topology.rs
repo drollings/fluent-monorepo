@@ -96,7 +96,7 @@ pub(crate) fn describe_kernel(error: &protopyne_kernels::KernelError) -> EguiErr
 /// explicit, never guessed from a bare word.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One indicator input: raw bars or a published series.
-/// 
+///
 /// `Bars` reads an OHLC-derived column (the M1 registry); `Series` names a
 /// published node (`fast_mas:first`, `kernel:sma`, ...). Spellings are
 /// `close`-style names for bars and `series:<node>` for series; anything
@@ -418,7 +418,7 @@ pub fn kernel_warmup(kernel_id: &str, params: &ParamSet) -> Result<usize, EguiEr
 #[must_use]
 /// Bar slice for visible-window-plus-warmup assessment: the visible bars
 /// plus the warmup bars before them, clamped to history.
-/// 
+///
 /// Returns `(eval_start, eval_len)` with `eval_start + eval_len` clamped to
 /// `total_bars`, so the caller slices `bars[eval_start..eval_start + eval_len]`
 /// without a second bounds check. A visible window past the data (or no

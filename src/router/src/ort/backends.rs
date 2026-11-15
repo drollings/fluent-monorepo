@@ -50,7 +50,7 @@ pub fn onnx_chart_embedder(
 /// ColBERT two-stage reranker: builds a `ColbertRetriever` from the registry
 /// for `model_key` (must be a `LateInteraction` task). The caller wraps it
 /// in a `ColbertReranker` and uses it for MaxSim-based candidate re-ranking.
-/// 
+///
 /// Returns `Ok(Some(retriever))` when available; `Ok(None)` when the model
 /// is not registered or not a `LateInteraction` task.
 /// No-ort build: no ColBERT reranker available.
@@ -158,7 +158,7 @@ impl OnnxLlmRunner for RealOnnxRunner {
 /// The onnx generative `ChatBackend`: a `CausalLm` session
 /// served behind the `fluent_llm::client::ChatBackend` seam, with optional
 /// grammar-constrained structured decoding.
-/// 
+///
 /// - `chat_complete` → free text (no grammar — summarization / free generation).
 /// - `chat_complete_with_extras` reads `extras["response_format"]["schema"]` and
 /// builds a [`fluent_onnx::JsonObjectGrammar`] / [`fluent_onnx::JsonArrayGrammar`]
@@ -166,7 +166,7 @@ impl OnnxLlmRunner for RealOnnxRunner {
 /// caller's output is structurally valid by construction. An unrepresentable
 /// schema degrades to free text (the caller's post-hoc validator is the
 /// backstop — the grammar is a strictness improvement, never a gate).
-/// 
+///
 /// Every decode is bounded by a [`fluent_concurrency::pool::Limiter`] (the
 /// router's thread-budget rule): a CPU decode never starves a GPU dispatch.
 pub(crate) struct OnnxChatBackend {

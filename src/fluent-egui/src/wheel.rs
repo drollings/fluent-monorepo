@@ -23,7 +23,7 @@
 /// What a wheel gesture over a chart region acts on.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Region-aware wheel routing: where a wheel gesture acts.
-/// 
+///
 /// A chart is not one surface: the candle plot scrolls on the time (x) axis,
 /// each pane's price labels drive that pane's own y zoom, a floating list
 /// (the hot-slot legend) scrolls under the pointer instead of the chart, and
@@ -32,14 +32,14 @@
 /// module is the single decision that maps a hover point to *what a wheel acts
 /// on*, kept headless (plain `f32` rectangles, no `egui` types) so the routing
 /// is unit-testable without a UI context and the terminal never re-decides it.
-/// 
+///
 /// Routing is disjoint by construction: zones are tested in a fixed priority
 /// (overlay, then list, then each pane's axis strip, then its plot) and the first zone whose
 /// rectangle contains the point wins, so a point on a boundary belongs to
 /// exactly one target. Each target carries a *pane-local* anchor — the pixel
 /// the gesture keeps fixed — so the caller forwards it straight into the
 /// existing [`crate::interaction`] wheel inputs without re-deriving geometry.
-/// 
+///
 /// The module names no indicator, no pane layout, and no domain: it routes
 /// rectangles. Which rectangle is a price axis or a list is the caller's
 /// vocabulary, decided once when it builds the [`WheelZones`].
@@ -96,7 +96,7 @@ pub struct PaneZones {
 /// The wheel zones of one chart frame: the price pane, the oscillator pane,
 /// the floating list, and the floating overlay (when a settings pane is
 /// open), resolved into disjoint hit regions.
-/// 
+///
 /// Built once per frame from the pane layout; handed to
 /// [`route`](Self::route) with the pointer to decide the target. Priority is
 /// overlay, then list, then each pane in order, so a floating surface on

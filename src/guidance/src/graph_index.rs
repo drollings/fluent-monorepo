@@ -338,6 +338,34 @@ impl GraphIndex {
         Self::assemble(&ordered, roots)
     }
 
+    /// Hydrate from a committed index (no file reads, no parsing):
+    /// the shared row-to-graph assembly behind the binary's sync and
+    /// the read plane's graph queries. One implementation, two callers.
+    pub fn hydrate_from_db(
+        db: &search_vector::db::GuidanceDb,
+        roots: &[String],
+    ) -> Result<Self, GraphIndexError> {
+        use search_vector::db::VectorDbError;
+        let files = db.list_files().map_err(|error| match error {
+            VectorDbError::Serialization(detail) => GraphIndexError::Harvest(detail),
+            other => GraphIndexError::Harvest(other.to_string()),
+        })?;
+        let known: Vec<String> = files.into_iter().map(|file| file.absolute_path).collect();
+        let edges: Vec<(String, String)> = db
+            .graph_edge_rows()
+            .map_err(|error| GraphIndexError::Harvest(error.to_string()))?
+            .into_iter()
+            .map(|row| (row.importer, row.specifier))
+            .collect();
+        let symbols: Vec<(String, String, Vec<String>)> = db
+            .graph_symbol_rows()
+            .map_err(|error| GraphIndexError::Harvest(error.to_string()))?
+            .into_iter()
+            .map(|row| (row.name, row.file, row.calls))
+            .collect();
+        Self::build_from_rows(&known, &edges, &symbols, roots)
+    }
+
     /// Guarded build from rows: refuse before assembling when the
     /// caller-computed expected generation differs from the committed
     /// one. `build_from_rows` keeps its shape for existing callers.

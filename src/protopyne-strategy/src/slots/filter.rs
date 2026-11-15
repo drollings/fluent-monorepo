@@ -303,7 +303,7 @@ impl Filter for AtrDistanceMaxFilter {
 /// a stateless veto.
 #[derive(Debug)]
 /// Regime skip with hysteresis state held per filter instance.
-/// 
+///
 /// The label is written back on every evaluation, exactly as the caller-held
 /// hysteresis did, so a skipped regime remains a state transition rather than
 /// a stateless veto.

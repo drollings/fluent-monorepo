@@ -356,7 +356,7 @@ fn parse_plot(line: &str) -> Option<String> {
 /// explicitly out of scope for this spike.
 #[must_use]
 /// Compile `source`: accept-or-refuse, never miscompile.
-/// 
+///
 /// Acceptance bar **(task-value: grammar coverage, not confidence)**: scripts
 /// inside the `sma`/`ema`/`trima`/`midpoint` subset lower to HIR and schematic
 /// Rust; everything else is refused with reasons. "Compiles" here means the emission

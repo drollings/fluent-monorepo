@@ -64,7 +64,7 @@ impl LodSpec {
 /// remaining budget.
 #[derive(Debug, Clone, Copy)]
 /// A worker's context-window budget.
-/// 
+///
 /// `max_chars` is the total character ceiling; `reserve_head_tail` is the
 /// amount guaranteed to the first/last LOD0 anchors (they are included
 /// regardless — even overrunning the reserve). Intermediates compete for the

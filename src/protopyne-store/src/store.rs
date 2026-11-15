@@ -42,7 +42,7 @@ use crate::range::TimeRange;
 /// read is the planner's job, not this request's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// What to read: a named tape over a millisecond window.
-/// 
+///
 /// The symbol travels as a string so an unknown symbol refuses with its
 /// name attached ([`PlanError::UnknownSymbol`](crate::error::PlanError)).
 /// Open range ends mean "no bound on that side"; bounding an unbounded
@@ -98,7 +98,7 @@ impl Validate for ReadRequest {
 /// read with nothing in it, distinctly from a refused one.
 #[derive(Debug, Clone, PartialEq)]
 /// The bars a read served, ascending by `ts`.
-/// 
+///
 /// `served` is the bounded window this read answered — the request's range
 /// with every open end resolved through its limit. How much of that window
 /// was actually covered is [`provenance`](Self::provenance)'s to report,

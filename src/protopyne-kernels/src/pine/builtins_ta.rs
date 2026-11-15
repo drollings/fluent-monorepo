@@ -426,11 +426,9 @@ impl TaBridge {
                             f64::NAN
                         } else {
                             match smoothed.last() {
-                                Some(prev) if prev.is_finite() => crate::math::wilder_step(
-                                    *prev,
-                                    raw[raw.len() - 1],
-                                    length,
-                                ),
+                                Some(prev) if prev.is_finite() => {
+                                    crate::math::wilder_step(*prev, raw[raw.len() - 1], length)
+                                }
                                 _ => crate::math::window_mean(window),
                             }
                         }
@@ -486,11 +484,13 @@ impl TaBridge {
                 // evaluated `offset` bars back. A single-point window is
                 // flat by definition, so it serves its own value.
                 let len = length as f64;
-                let (sum_x, sum_y, sum_xx, sum_xy) =
-                    window.iter().rev().enumerate().fold((0.0, 0.0, 0.0, 0.0), |(sx, sy, sxx, sxy), (back, value)| {
+                let (sum_x, sum_y, sum_xx, sum_xy) = window.iter().rev().enumerate().fold(
+                    (0.0, 0.0, 0.0, 0.0),
+                    |(sx, sy, sxx, sxy), (back, value)| {
                         let per = back as f64 + 1.0;
                         (sx + per, sy + value, sxx + per * per, sxy + per * value)
-                    });
+                    },
+                );
                 let denominator = len * sum_xx - sum_x * sum_x;
                 if denominator == 0.0 {
                     return Ok(window.last().copied().map(PineValue::Float));

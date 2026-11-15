@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 /// -- Charts (DAG workflow library) configuration --------------------------
 /// Chart store configuration - the `charts` section of `RouterConfig`.
-/// 
+///
 /// The store is owned by `fluent-router` (see `coral-router`/`charts/`): a
 /// directory of human-authored chart JSON files, a router-side
 /// `workflow_library` HNSW/SQLite path for retrieval, and the model key
@@ -88,7 +88,7 @@ const fn default_charts_entity_context() -> bool {
 /// -- Post-processing configuration ---------------------
 /// Post-processing configuration - the `post_process` section of
 /// `RouterConfig`.
-/// 
+///
 /// Controls the VISION learning loop: whether a *successful* dispatch is
 /// distilled into a reusable draft chart. Per VISION -"Post-processing:
 /// audit + workflow extraction", extraction is opt-in and the produced chart

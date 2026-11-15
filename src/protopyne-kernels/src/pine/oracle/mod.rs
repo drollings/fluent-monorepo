@@ -16,13 +16,14 @@ use super::engine::{
     module_key, BarColorCapture, BarSnapshot, FillCapture, HlineCapture, LinkedModule,
     PlotCandleCapture, PlotCapture, PlotShapeCapture, MAX_CALL_DEPTH, MAX_LOOP_ITERATIONS,
 };
-use super::semantics::{array_index_out_of_bounds, array_negative_index, barstate_flag, binary,
-    branch_of, builtin_name, call_depth_over_limit, call_wall_part, cannot_rebind_this,
+use super::semantics::{
+    array_index_out_of_bounds, array_negative_index, barstate_flag, binary, branch_of,
+    builtin_name, call_depth_over_limit, call_wall_part, cannot_rebind_this,
     capture_fallback_title, chart_ms, destructure_arity_mismatch, destructure_non_array,
     field_needs_object, field_read_on_na, fill_plot_site_without_capture,
     fill_variable_without_plot_tag, float_cast, for_in_absent, for_in_not_array, for_in_over_limit,
-    for_range_over_limit, for_step_non_positive, history_negative_offset, int_cast, is_absent, is_hidden_series,
-    leg_or_nan, method_arg_missing, method_called_on_na, method_needs_object,
+    for_range_over_limit, for_step_non_positive, history_negative_offset, int_cast, is_absent,
+    is_hidden_series, leg_or_nan, method_arg_missing, method_called_on_na, method_needs_object,
     method_too_many_positionals, method_unknown_argument, read_leg, read_leg_slice,
     reassign_undeclared, refused, security_column, security_leg, serve_security, session_time_of,
     switch_eq, this_unbound, trailing_type, unary, undefined_variable, unknown_dotted_field,
@@ -729,8 +730,7 @@ impl EngineState {
                 };
                 // The range limit counts strided visits, exactly like the
                 // compiled loop: unit strides keep the historical count.
-                let count =
-                    (i128::from(last) - i128::from(first)).abs() / i128::from(stride) + 1;
+                let count = (i128::from(last) - i128::from(first)).abs() / i128::from(stride) + 1;
                 if count > MAX_LOOP_ITERATIONS as i128 {
                     return Err(for_range_over_limit(first, last));
                 }
@@ -897,10 +897,7 @@ impl EngineState {
                             self.eval_expr(&member.value, ctx, legs, builtins)?,
                         );
                     }
-                    builtins.register_enum(
-                        name.clone(),
-                        table.keys().cloned().collect(),
-                    );
+                    builtins.register_enum(name.clone(), table.keys().cloned().collect());
                     self.enums.insert(name.clone(), table);
                 }
                 Ok(())
@@ -1122,10 +1119,8 @@ impl EngineState {
                     current.fields.insert(field.to_owned(), value);
                     return Ok(true);
                 }
-                let Some(PineValue::Object(next)) = current
-                    .fields
-                    .get_mut(field)
-                    .and_then(|slot| slot.as_mut())
+                let Some(PineValue::Object(next)) =
+                    current.fields.get_mut(field).and_then(|slot| slot.as_mut())
                 else {
                     return Ok(false);
                 };
@@ -1154,10 +1149,8 @@ impl EngineState {
                 self.put_object(ctx, &home, instance, true)?;
                 return Ok(true);
             }
-            let Some(PineValue::Object(next)) = current
-                .fields
-                .get_mut(field)
-                .and_then(|slot| slot.as_mut())
+            let Some(PineValue::Object(next)) =
+                current.fields.get_mut(field).and_then(|slot| slot.as_mut())
             else {
                 self.put_object(ctx, &home, instance, true)?;
                 return Ok(false);
@@ -3337,9 +3330,7 @@ impl EngineState {
                             let bridge = match &receiver {
                                 Some(PineValue::Array(_)) => Some("array"),
                                 Some(PineValue::Matrix(_)) => Some("matrix"),
-                                Some(PineValue::IntMap(_) | PineValue::Map(_)) => {
-                                    Some("map")
-                                }
+                                Some(PineValue::IntMap(_) | PineValue::Map(_)) => Some("map"),
                                 _ => None,
                             };
                             let Some(bridge) = bridge else {
@@ -3372,9 +3363,7 @@ impl EngineState {
                                 ctx.inputs_mut(),
                             )
                         }
-                        Err(_) => Err(refused(format!(
-                            "unknown method '{namespace}.{method}'"
-                        ))),
+                        Err(_) => Err(refused(format!("unknown method '{namespace}.{method}'"))),
                     }
                 }
             },
@@ -4182,9 +4171,7 @@ impl EngineState {
                         let written = self.eval_expr(expr, ctx, legs, builtins)?;
                         let key = if bridge == "map" && method == "remove" {
                             match args.first() {
-                                Some(arg) => {
-                                    Some(self.eval_expr(&arg.value, ctx, legs, builtins)?)
-                                }
+                                Some(arg) => Some(self.eval_expr(&arg.value, ctx, legs, builtins)?),
                                 None => None,
                             }
                         } else {
@@ -4198,9 +4185,7 @@ impl EngineState {
                         )?
                         .unwrap_or(written.clone());
                         if !self.assign_nested(ctx, namespace, stored)? {
-                            return Err(refused(format!(
-                                "unknown method '{namespace}.{method}'"
-                            )));
+                            return Err(refused(format!("unknown method '{namespace}.{method}'")));
                         }
                         return Ok(written);
                     }

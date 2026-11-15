@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::fix::Suggestion;
 
 /// One clippy/rustc diagnostic attributed to a file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// One clippy/rustc diagnostic attributed to a file.
 pub struct ClippyDiag {
     /// File path as reported (often package-relative).
@@ -23,16 +23,32 @@ pub struct ClippyDiag {
     pub message: String,
     /// Severity (`warning`, `error`, …).
     pub level: String,
+    /// Rendered rustc diagnostic with the source snippet.
+    pub rendered: Option<String>,
     /// Machine-applicable replacements with byte spans.
     pub suggestions: Vec<Suggestion>,
 }
 
 /// One package invocation's diagnostics.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 /// One package invocation's diagnostics.
 pub struct ClippyReport {
     /// Parsed diagnostics in output order.
     pub diagnostics: Vec<ClippyDiag>,
+    /// Whether cargo exited successfully.
+    pub exit_ok: bool,
+    /// Cargo's stderr (transport or build failure detail).
+    pub stderr: String,
+}
+
+impl Default for ClippyReport {
+    fn default() -> Self {
+        Self {
+            diagnostics: Vec::new(),
+            exit_ok: true,
+            stderr: String::new(),
+        }
+    }
 }
 
 /// Resource shaping for build invocations.
@@ -122,7 +138,10 @@ pub fn run_clippy(package_dir: &Path, ctx: &ClippyCtx) -> std::io::Result<Clippy
     }
     let output = command.output()?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    Ok(parse_clippy_json(&stdout))
+    let mut report = parse_clippy_json(&stdout);
+    report.exit_ok = output.status.success();
+    report.stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    Ok(report)
 }
 
 /// Parse `cargo clippy --message-format=json` output: compiler messages
@@ -152,6 +171,10 @@ pub fn parse_clippy_json(output: &str) -> ClippyReport {
             .and_then(|message| message.as_str())
             .unwrap_or("")
             .to_string();
+        let rendered = message
+            .and_then(|message| message.get("rendered"))
+            .and_then(|rendered| rendered.as_str())
+            .map(str::to_string);
         let level = message
             .and_then(|message| message.get("level"))
             .and_then(|level| level.as_str())
@@ -195,10 +218,15 @@ pub fn parse_clippy_json(output: &str) -> ClippyReport {
             code,
             message: text,
             level,
+            rendered,
             suggestions,
         });
     }
-    ClippyReport { diagnostics }
+    ClippyReport {
+        diagnostics,
+        exit_ok: true,
+        stderr: String::new(),
+    }
 }
 
 /// Attribute diagnostics to files: package-relative names resolve

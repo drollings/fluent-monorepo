@@ -251,7 +251,7 @@ pub fn tape_canonical_bytes(bars: &[Bar], provenance: &[SpanPlan]) -> Vec<u8> {
 /// down zero.
 #[must_use]
 /// Peak-to-trough drawdown of an equity curve in account-currency units.
-/// 
+///
 /// Axis: **(correctness)** invariant input, not a tunable. Empty curves draw
 /// down zero.
 pub fn max_drawdown(equity: &[Decimal]) -> Decimal {
@@ -277,7 +277,7 @@ pub fn max_drawdown(equity: &[Decimal]) -> Decimal {
 /// losses. Empty or single-point curves report zero.
 #[must_use]
 /// Worst single-step equity decline (tail-loss proxy for the prototype).
-/// 
+///
 /// Negative-or-zero steps are floored at zero: flat or rising steps are not
 /// losses. Empty or single-point curves report zero.
 pub fn worst_step_loss(equity: &[Decimal]) -> Decimal {
@@ -303,7 +303,7 @@ pub fn worst_step_loss(equity: &[Decimal]) -> Decimal {
 /// Total cumulative return of an equity curve: `last / base - 1` where the
 /// base is the first deployed (nonzero) capital, the summary analog of the
 /// reference skipping nulls to its first print.
-/// 
+///
 /// Returns `None` when no capital was ever deployed (empty, single-point,
 /// or all-zero curves): there is no base to compound from, and a zero is
 /// not manufactured. Mid-curve zeros report `-1` (total loss), which is
@@ -323,7 +323,7 @@ pub fn cum_return(equity: &[Decimal]) -> Option<Decimal> {
 /// carries absence instead.
 #[must_use]
 /// Simple rate to log rate: `ln(1 + r)`.
-/// 
+///
 /// Returns `None` when the log is undefined (`1 + r <= 0`) or the input is
 /// non-finite: the reference yields `-inf`/`NaN` there, and the report
 /// carries absence instead.
@@ -342,7 +342,7 @@ pub fn simple_to_log_return(rate: Decimal) -> Option<Decimal> {
 /// `f64` range): honest absence, never an infinite decimal.
 #[must_use]
 /// Log rate to simple rate: `exp(r) - 1`.
-/// 
+///
 /// Returns `None` on non-finite input or overflow (the exponential leaves
 /// `f64` range): honest absence, never an infinite decimal.
 pub fn log_to_simple_return(rate: Decimal) -> Option<Decimal> {
@@ -357,7 +357,7 @@ pub fn log_to_simple_return(rate: Decimal) -> Option<Decimal> {
 /// than a misleading zero-over-zero).
 #[must_use]
 /// Capital efficiency proxy: filled notional per unit of reserved notional.
-/// 
+///
 /// Returns `None` when nothing was reserved (no efficiency to report rather
 /// than a misleading zero-over-zero).
 pub fn capital_efficiency(filled_notional: Decimal, reserved_notional: Decimal) -> Option<f64> {
@@ -379,7 +379,7 @@ pub fn capital_efficiency(filled_notional: Decimal, reserved_notional: Decimal) 
 /// `greeks_note` says so explicitly instead of shipping invented curves.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// The honest report for one backtest run.
-/// 
+///
 /// Metrics sit beside the assumptions and limits that qualify them. Greeks
 /// need option-chain data the prototype has no feed for, so
 /// `greeks_note` says so explicitly instead of shipping invented curves.

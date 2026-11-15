@@ -241,7 +241,7 @@ fn m5b_ef_sweep_holds_recall_and_k0_probes_nothing() {
         })
         .collect();
     for ef in [k * 2, k * 4, k * 8] {
-        let h = fluent_db::sqlite::make_hnsw(&common_core::constants::HnswParams::default(), n);
+        let h = fluent_db::hnsw::make_hnsw(&common_core::constants::HnswParams::default(), n);
         for (i, emb) in corpus.iter().enumerate() {
             h.insert((emb, i));
         }

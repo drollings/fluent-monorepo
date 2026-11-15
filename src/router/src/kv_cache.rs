@@ -86,7 +86,7 @@ pub fn kv_snapshot_path(
 /// the next dispatch sends as the `snapshot` / `instance` request fields.
 #[derive(Debug, Clone)]
 /// A KV cache snapshot - metadata and the fork-layout filesystem path only.
-/// 
+///
 /// The actual KV bytes live in the fork's slot memory and on disk under
 /// `--slot-save-path`; the router records this metadata record pointing at the
 /// resulting file. Snapshot identity for the index is `(model, adapter,
@@ -472,11 +472,11 @@ impl SnapshotStore {
 /// attached to many `DependencySession`s.
 #[derive(Clone)]
 /// Two-tier KV cache index: checks hot tier first, falls back to cold tier.
-/// 
+///
 /// Hot tier tracks sessions with actively-loaded fork slots (metadata only).
 /// Cold tier is the durable metadata index keyed by `(model, adapter, session)`.
 /// On a cold-tier hit, the metadata is promoted to the hot tier.
-/// 
+///
 /// Clone is cheap (both tiers are `Arc`-shared), so a single manager can be
 /// attached to many `DependencySession`s.
 pub struct SnapshotStore {

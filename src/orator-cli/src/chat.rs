@@ -336,9 +336,7 @@ pub fn ptt_for_mic(mode: MicMode) -> crate::ptt::PttMode {
 #[must_use]
 /// See [`initial_voice_mode`]: narration starts, same fallback rule.
 /// Single source lives in `narration`; this re-exports it for the loop.
-pub fn initial_narration_mode(
-    config: &orator::OratorConfig,
-) -> crate::narration::NarrationLevel {
+pub fn initial_narration_mode(config: &orator::OratorConfig) -> crate::narration::NarrationLevel {
     crate::narration::initial_narration_mode(config)
 }
 
@@ -582,7 +580,11 @@ impl BargeSustain {
     #[must_use]
     pub fn new(config: &orator::OratorConfig) -> Self {
         Self {
-            driver: orator_voice::turn::TurnDriver::with_config(orator::Epoch(1), "en", &config.turn),
+            driver: orator_voice::turn::TurnDriver::with_config(
+                orator::Epoch(1),
+                "en",
+                &config.turn,
+            ),
             prev_len: 0,
             latched: false,
         }

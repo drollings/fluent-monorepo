@@ -951,7 +951,7 @@ impl LiveReplay {
 /// The terminal's central state store: active symbol, selectors, hot-slot
 /// stack, pane plan, pane cache, the 2D interaction machine, and the Material
 /// dock (left navigation drawer) with its cached gateway views.
-/// 
+///
 /// One place owns all terminal state so the Material top bar, the symbol and
 /// indicator modals, the upper-left hot-slot legend, the multi-pane canvas,
 /// and the dock's collapsible subpanes read and write the same truth.

@@ -164,7 +164,7 @@ pub const DEFAULT_PAGE_BARS: usize = 1_024;
 /// tests covering this provider are unchanged by that promotion.
 #[derive(Debug, Clone)]
 /// One CSV file for one tape, read eagerly and served from memory.
-/// 
+///
 /// The file is read and parsed once, at construction — fixtures and one-off
 /// backfills do not change under a repair pass, so a snapshot is the honest
 /// shape, and serving from memory keeps `fetch` free of blocking I/O on any
@@ -291,7 +291,7 @@ impl HistoryProvider for FileHistory {
 /// the producer is absent.
 #[derive(Debug, Clone, Copy, Default)]
 /// The unwired network reader: trait-shaped, data-free.
-/// 
+///
 /// Every fetch reports [`HistoryError::Unavailable`] naming the missing
 /// producer, so a repair pass over this provider terminates instead of
 /// backing off on a connection that will never exist. Reachability stays at

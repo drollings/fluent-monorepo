@@ -7,7 +7,7 @@
 /// One runner offer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// KRunner runner: `orator` plus a question asks the assistant.
-/// 
+///
 /// The runner parses the typed query and offers follow-up actions
 /// (ask, start a meeting, dictate) without executing anything: offers
 /// are suggestions the user picks, never ambient effects.
@@ -53,7 +53,11 @@ pub fn parse_query(text: &str) -> Option<RunnerQuery> {
             return None;
         }
     }
-    let question = rest.trim().trim_start_matches([':', '-', ' ']).trim().to_string();
+    let question = rest
+        .trim()
+        .trim_start_matches([':', '-', ' '])
+        .trim()
+        .to_string();
     let mut offers = Vec::new();
     if !question.is_empty() {
         offers.push(RunnerOffer::Ask(question.clone()));

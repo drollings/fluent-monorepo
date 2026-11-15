@@ -510,7 +510,10 @@ fn ensure_tries_audio_candidates_in_order_and_stops_after_success() {
         "owned loopback endpoint: {url}"
     );
     assert!(marker1.exists(), "first candidate ran");
-    assert!(!marker3.exists(), "third candidate never runs after success");
+    assert!(
+        !marker3.exists(),
+        "third candidate never runs after success"
+    );
     owner.shutdown();
 
     match prior_audio {
@@ -563,10 +566,16 @@ fn ensure_maps_all_failed_candidates_to_boot_last_error() {
     for dir in [&dir1, &dir2] {
         std::fs::create_dir(dir).expect("candidate dir");
     }
-    std::fs::write(dir1.join(orator_voice::s2s::AUDIO_SERVER_BIN), "not an executable\n")
-        .expect("exec-format stub writes");
-    std::fs::write(dir2.join(orator_voice::s2s::AUDIO_SERVER_BIN), "#!/bin/sh\nexit 1\n")
-        .expect("immediate-exit stub writes");
+    std::fs::write(
+        dir1.join(orator_voice::s2s::AUDIO_SERVER_BIN),
+        "not an executable\n",
+    )
+    .expect("exec-format stub writes");
+    std::fs::write(
+        dir2.join(orator_voice::s2s::AUDIO_SERVER_BIN),
+        "#!/bin/sh\nexit 1\n",
+    )
+    .expect("immediate-exit stub writes");
     for dir in [&dir1, &dir2] {
         std::fs::set_permissions(
             dir.join(orator_voice::s2s::AUDIO_SERVER_BIN),
@@ -670,23 +679,16 @@ fn ensure_does_not_boot_while_ejected_or_contending() {
     }
     let error = common_core::runtime::block_on_shared(owner.ensure()).expect_err("ejected");
     assert_eq!(error.kind(), "Ejected");
-    assert!(
-        !marker.exists(),
-        "ejected ensure boots nothing"
-    );
+    assert!(!marker.exists(), "ejected ensure boots nothing");
     owner.shutdown();
 
     // Contention: a sibling boot owns the flag, so ensure answers
     // contention without touching any candidate.
     let owner = VoiceOwner::new(&config);
     owner.set_booting_for_tests(true);
-    let error =
-        common_core::runtime::block_on_shared(owner.ensure()).expect_err("contending");
+    let error = common_core::runtime::block_on_shared(owner.ensure()).expect_err("contending");
     assert_eq!(error, VoiceError::BootContention);
-    assert!(
-        !marker.exists(),
-        "contending ensure boots nothing"
-    );
+    assert!(!marker.exists(), "contending ensure boots nothing");
     {
         let mut state = common_core::sync::lock(&owner.state);
         state.booting = false;

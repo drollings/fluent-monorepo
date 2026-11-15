@@ -259,8 +259,7 @@ fn daemon_call_round_trips_through_shared_framing() {
     }
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept");
-        let frame =
-            orator::SocketFrame::read_from(&mut stream).expect("server reads one frame");
+        let frame = orator::SocketFrame::read_from(&mut stream).expect("server reads one frame");
         assert_eq!(frame.kind, orator::MessageType::Request);
         let reply = serde_json::to_vec(&serde_json::json!({
             "id": 1,

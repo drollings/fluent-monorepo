@@ -342,46 +342,48 @@ impl ServerGateway {
     /// gate or its refusal); a structurally refused load fails loudly with its
     /// own reason instead of degrading into a wrong-market read.
     fn root_ticker_bars(&self, symbol: &str) -> Result<Option<Vec<Bar>>, GatewayError> {
-    let Some(root) = self.state.history_root.as_ref() else {
-        return Ok(None);
-    };
-    if let Some(bars) = self
-        .state
-        .root_bars
-        .lock()
-        .expect("root-bar cache locks")
-        .get(symbol)
-    {
-        return Ok(Some(bars.clone()));
+        let Some(root) = self.state.history_root.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(bars) = self
+            .state
+            .root_bars
+            .lock()
+            .expect("root-bar cache locks")
+            .get(symbol)
+        {
+            return Ok(Some(bars.clone()));
+        }
+        let tickers = root
+            .tickers()
+            .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
+        let Some(listed) = tickers
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case(symbol))
+        else {
+            return Ok(None);
+        };
+        let load = root
+            .load_ticker(listed)
+            .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
+        if !load.skipped.is_empty() || load.skipped_rows > 0 {
+            tracing::warn!(
+                ticker = symbol,
+                skipped_files = load.skipped.len(),
+                skipped_rows = load.skipped_rows,
+                "history months excluded rows; the series carries the holes"
+            );
+        }
+        if load.bars.is_empty() {
+            return Ok(None);
+        }
+        self.state
+            .root_bars
+            .lock()
+            .expect("root-bar cache locks")
+            .insert(symbol.to_owned(), load.bars.clone());
+        Ok(Some(load.bars))
     }
-    let tickers = root
-        .tickers()
-        .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
-    let Some(listed) = tickers.iter().find(|name| name.eq_ignore_ascii_case(symbol)) else {
-        return Ok(None);
-    };
-    let load = root
-        .load_ticker(listed)
-        .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
-    if !load.skipped.is_empty() || load.skipped_rows > 0 {
-        tracing::warn!(
-            ticker = symbol,
-            skipped_files = load.skipped.len(),
-            skipped_rows = load.skipped_rows,
-            "history months excluded rows; the series carries the holes"
-        );
-    }
-    if load.bars.is_empty() {
-        return Ok(None);
-    }
-    self.state
-        .root_bars
-        .lock()
-        .expect("root-bar cache locks")
-        .insert(symbol.to_owned(), load.bars.clone());
-    Ok(Some(load.bars))
-}
-
 }
 
 impl TerminalGateway for ServerGateway {

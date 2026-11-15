@@ -68,11 +68,9 @@ pub fn resolve_tts_binary() -> Option<PathBuf> {
     match explicit.path.clone() {
         Some(path) if path.is_absolute() => {
             let fingerprint = orator::paths::binary_fingerprint(&path);
-            if let Err(error) = orator::paths::validate_server_binary(
-                &path,
-                orator::paths::current_uid(),
-                false,
-            ) {
+            if let Err(error) =
+                orator::paths::validate_server_binary(&path, orator::paths::current_uid(), false)
+            {
                 eprintln!(
                     "orator: explicit tts binary {} ({fingerprint}) bypasses the gate with a warning: {error}",
                     path.display()

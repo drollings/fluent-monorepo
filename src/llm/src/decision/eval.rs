@@ -13,7 +13,7 @@
 /// travels with the case so a corpus can prove its labels are human-family.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Threshold calibration harness (no new sweep math).
-/// 
+///
 /// Every per-point threshold earns gate/cache trust through the shared
 /// `common_core::calibration` harness: `sweep_thresholds` over labeled cases,
 /// `passes_gate` (precision ≥ 0.90, FPR ≤ 0.05), plus a must-NOT-fire control
@@ -46,10 +46,10 @@ pub struct ScoredCase {
 /// ```
 #[must_use]
 /// Sweep `thresholds` over `cases`, composing the shared harness.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{evaluate_point, CaseProvenance, ScoredCase};
-/// 
+///
 /// let provenance = CaseProvenance::human("example", "2026-11-08");
 /// let cases = vec![
 /// ScoredCase { score: 0.9, expected: true, control: false, provenance: provenance.clone() },
@@ -78,10 +78,10 @@ pub fn evaluate_point(
 /// ```
 #[must_use]
 /// Control fires at `threshold`: control cases scoring at or above it.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{control_fires, CaseProvenance, ScoredCase};
-/// 
+///
 /// let provenance = CaseProvenance::human("example", "2026-11-08");
 /// let cases = vec![
 /// ScoredCase { score: 0.95, expected: false, control: true, provenance },
@@ -117,10 +117,10 @@ pub fn control_fires(cases: &[ScoredCase], threshold: f64) -> usize {
 /// when the sweep is clean — confidence never stands in for correctness —
 /// and a never-firing threshold (vacuous precision, zero recall) proves
 /// nothing, so it cannot pass either.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{gate_for_point, CaseProvenance, ScoredCase};
-/// 
+///
 /// let provenance = CaseProvenance::human("example", "2026-11-08");
 /// let cases = vec![
 /// ScoredCase { score: 0.9, expected: true, control: false, provenance: provenance.clone() },

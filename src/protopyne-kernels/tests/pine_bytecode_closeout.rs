@@ -305,7 +305,11 @@ fn corpus_has_no_fallback_emissions() {
         ("alexgrover_QuadraticRegression", &[]),
         (
             "BigBeluga_GradientRange",
-            &[("call_argument", 1), ("dotted_name", 1), ("outside_builtin", 1)],
+            &[
+                ("call_argument", 1),
+                ("dotted_name", 1),
+                ("outside_builtin", 1),
+            ],
         ),
         (
             "ChartPrime_ZoneShift",
@@ -328,7 +332,11 @@ fn corpus_has_no_fallback_emissions() {
         ),
         (
             "TradingIQ_LiquidityWalls_ASAP",
-            &[("call_argument", 3), ("dotted_name", 2), ("outside_builtin", 1)],
+            &[
+                ("call_argument", 3),
+                ("dotted_name", 2),
+                ("outside_builtin", 1),
+            ],
         ),
         (
             "TradingIQ_VolumeSupplyAndDemand",
@@ -1409,9 +1417,7 @@ fn single_pathway_is_total() {
     // The production body with the loop: compile, link, run, or refuse
     // typed — with no mention of the selection or the retired engine.
     let marker = "#[cfg(all(not(any(test, feature = \"oracle\")), feature = \"bytecode\"))]";
-    let start = engine
-        .find(marker)
-        .expect("the production body is marked");
+    let start = engine.find(marker).expect("the production body is marked");
     let body_start = engine[start..]
         .find("fn run_linked_inner(")
         .expect("the production body follows its gate");
@@ -1504,4 +1510,3 @@ fn capability_limits_are_documented() {
     }
     assert!(probes >= 7, "every limit row names its probes");
 }
-

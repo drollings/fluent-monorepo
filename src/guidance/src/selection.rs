@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 use common_core::walk::{walk_files_filtered, SkipReason, WalkEntry, WalkFilter};
 
 use crate::offload::is_test_path;
-use crate::query::glob::path_pattern_matches;
+use crate::query::glob::{
+    compile_path_glob, has_path_glob, is_absolute_path_pattern, normalize_path_for_match,
+    normalize_path_pattern,
+};
 use crate::search_constants::{
     MAX_CODE_FILE_SIZE_BYTES, MAX_DATA_FILE_SIZE_BYTES, MAX_IMAGE_FILE_SIZE_BYTES,
     MAX_TEXT_FILE_SIZE_BYTES,
@@ -21,6 +24,8 @@ use crate::search_types::FileKind;
 #[derive(Debug, Clone)]
 /// Selection roots + filters for one index pass.
 pub struct FileSelection {
+    /// Workspace root used for the display/citation/glob identity.
+    pub workspace_root: PathBuf,
     /// Workspace roots (files or directories).
     pub roots: Vec<PathBuf>,
     /// Include globs (rg-style); empty selects everything.
@@ -31,6 +36,9 @@ pub struct FileSelection {
     pub extra_skip_dirs: Vec<String>,
     /// Honor `.gitignore` files.
     pub honor_gitignore: bool,
+    /// Include checked-in fixture trees in this selection (tests and
+    /// scorecard staging only; production retrieval never opts in).
+    pub include_fixtures: bool,
     /// Override every per-kind size cap (tests).
     pub max_bytes_override: Option<u64>,
 }
@@ -51,6 +59,8 @@ pub struct SelectedFile {
     pub modified_ms: i64,
     /// Kind tag.
     pub kind: FileKind,
+    /// Shared retrieval/maintenance scope.
+    pub scope: crate::source_scope::SourceScope,
     /// Format tag.
     pub format: String,
 }
@@ -159,9 +169,11 @@ pub fn select_files(
 ) -> Result<Vec<SelectedFile>, SelectionError> {
     validate_roots(selection)?;
     let mut out = Vec::new();
+    // Glob matchers compile once per selection, not once per file.
+    let compiled = compile_selection(selection);
     for root in &selection.roots {
         if root.is_file() {
-            select_single_file(selection, root, root, diag, &mut out);
+            select_single_file(selection, &compiled, root, root, diag, &mut out);
             continue;
         }
         let filter = WalkFilter {
@@ -182,7 +194,7 @@ pub fn select_files(
             root,
             &filter,
             &mut |entry: WalkEntry| {
-                select_walk_entry(selection, root, &entry, diag, &mut out);
+                select_walk_entry(selection, &compiled, root, &entry, diag, &mut out);
             },
             &mut |path: &Path, reason: SkipReason| {
                 skipped.push((path.to_path_buf(), reason));
@@ -202,6 +214,7 @@ pub fn select_files(
 
 fn select_single_file(
     selection: &FileSelection,
+    compiled: &CompiledGlobs,
     root: &Path,
     path: &Path,
     diag: &mut ScanDiagnostics,
@@ -221,11 +234,12 @@ fn select_single_file(
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_millis() as i64),
     };
-    select_walk_entry(selection, root, &entry, diag, out);
+    select_walk_entry(selection, compiled, root, &entry, diag, out);
 }
 
 fn select_walk_entry(
     selection: &FileSelection,
+    compiled: &CompiledGlobs,
     root: &Path,
     entry: &WalkEntry,
     diag: &mut ScanDiagnostics,
@@ -244,7 +258,7 @@ fn select_walk_entry(
     };
     let relative = entry
         .path
-        .strip_prefix(root)
+        .strip_prefix(&selection.workspace_root)
         .unwrap_or(&entry.path)
         .to_string_lossy()
         .replace('\\', "/");
@@ -261,18 +275,28 @@ fn select_walk_entry(
     } else {
         relative
     };
+    if crate::eval::is_eval_path(&relative) || is_benchmark_corpus_path(&relative) {
+        diag.skipped_ignored += 1;
+        return;
+    }
+    let scope = crate::source_scope::classify(&relative, Some(kind));
+    if scope == crate::source_scope::SourceScope::Fixture && !selection.include_fixtures {
+        diag.skipped_test += 1;
+        return;
+    }
     let display = format!("{}/{}", root.display(), relative);
     // Glob matching runs against the root-relative path (rg-style
     // relative patterns); absolute patterns match the absolute path.
-    let match_path = |pattern: &str| {
-        if crate::query::glob::is_absolute_path_pattern(pattern) {
-            path_pattern_matches(pattern, &display)
-        } else {
-            path_pattern_matches(pattern, &relative)
-        }
+    // Both candidates normalize once per file; the compiled matchers
+    // built for this selection do the rest with no per-file regex
+    // construction.
+    let relative_match = normalize_path_for_match(&relative);
+    let display_match = normalize_path_for_match(&display);
+    let match_compiled = |set: &[CompiledGlob]| {
+        set.iter()
+            .any(|glob| compiled_glob_matches(glob, &relative_match, &display_match))
     };
-    let explicit = !selection.include_globs.is_empty()
-        && selection.include_globs.iter().any(|g| match_path(g));
+    let explicit = !compiled.include.is_empty() && match_compiled(&compiled.include);
     if !explicit {
         if matches_default_dir(&relative) {
             diag.skipped_ignored += 1;
@@ -289,13 +313,11 @@ fn select_walk_entry(
             diag.skipped_ignored += 1;
             return;
         }
-        if !selection.include_globs.is_empty()
-            && !selection.include_globs.iter().any(|g| match_path(g))
-        {
+        if !selection.include_globs.is_empty() && !match_compiled(&compiled.include) {
             diag.skipped_glob += 1;
             return;
         }
-        if selection.exclude_globs.iter().any(|g| match_path(g)) {
+        if match_compiled(&compiled.exclude) {
             diag.skipped_glob += 1;
             return;
         }
@@ -322,6 +344,7 @@ fn select_walk_entry(
         size_bytes: entry.size_bytes,
         modified_ms: entry.modified_ms,
         kind,
+        scope,
         format,
     });
 }
@@ -352,10 +375,82 @@ fn is_binary_extensionless(path: &Path) -> bool {
 /// Hidden-file check mirroring the walker's hidden-directory rule
 /// (`common_core::walk::should_skip_dir`): a leading `.` on the file
 /// name. Explicit `include_globs` bypass this (discoverability).
+/// One glob pattern compiled once per selection: regex for
+/// metacharacter patterns, prefix fold otherwise — the same two
+/// branches as the per-call path, but the regex builds once instead
+/// of once per file.
+struct CompiledGlob {
+    regex: Option<regex::Regex>,
+    prefix: String,
+    absolute: bool,
+}
+
+/// Selection globs compiled once and shared by every walked file.
+struct CompiledGlobs {
+    include: Vec<CompiledGlob>,
+    exclude: Vec<CompiledGlob>,
+}
+
+fn compile_selection_globs(patterns: &[String]) -> Vec<CompiledGlob> {
+    patterns
+        .iter()
+        .filter_map(|pattern| {
+            let normalized = normalize_path_pattern(pattern);
+            // Empty patterns never match (same early-false as the
+            // per-call path) — dropped at build, not per file.
+            if normalized.is_empty() {
+                return None;
+            }
+            let absolute = is_absolute_path_pattern(pattern);
+            let regex = if has_path_glob(&normalized) {
+                Some(compile_path_glob(pattern, false))
+            } else {
+                None
+            };
+            Some(CompiledGlob {
+                regex,
+                prefix: normalized,
+                absolute,
+            })
+        })
+        .collect()
+}
+
+fn compiled_glob_matches(compiled: &CompiledGlob, relative: &str, display: &str) -> bool {
+    let candidate = if compiled.absolute { display } else { relative };
+    match &compiled.regex {
+        Some(matcher) => matcher.is_match(candidate),
+        None => {
+            candidate == compiled.prefix || candidate.starts_with(&format!("{}/", compiled.prefix))
+        }
+    }
+}
+
+fn compile_selection(selection: &FileSelection) -> CompiledGlobs {
+    CompiledGlobs {
+        include: compile_selection_globs(&selection.include_globs),
+        exclude: compile_selection_globs(&selection.exclude_globs),
+    }
+}
+
 fn is_hidden_file(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.starts_with('.'))
+}
+
+/// Measurement fixtures are not retrieval inputs: the benchmark task
+/// corpus must never be indexed, answered from, or cited. The eval
+/// corpus has its own owner (`eval::is_eval_path`); this covers the
+/// benchmark side. Workspace-relative, forward slashes.
+#[must_use]
+/// Measurement fixtures are not retrieval inputs: the benchmark task
+/// corpus must never be indexed, answered from, or cited. The eval
+/// corpus has its own owner (`eval::is_eval_path`); this covers the
+/// benchmark side. Workspace-relative, forward slashes.
+pub fn is_benchmark_corpus_path(relative: &str) -> bool {
+    let normalized = relative.trim_start_matches("./").replace('\\', "/");
+    normalized == "src/guidance/corpora" || normalized.starts_with("src/guidance/corpora/")
 }
 
 /// Directory rules apply to the root-relative path (never the absolute
@@ -375,10 +470,10 @@ fn matches_default_file_pattern(relative: &str) -> bool {
     let matchers = DEFAULT_IGNORED_MATCHERS.get_or_init(|| {
         DEFAULT_IGNORED_FILE_PATTERNS
             .iter()
-            .map(|pattern| crate::query::glob::compile_path_glob(pattern, false))
+            .map(|pattern| compile_path_glob(pattern, false))
             .collect()
     });
-    let candidate = crate::query::glob::normalize_path_for_match(relative);
+    let candidate = normalize_path_for_match(relative);
     // The defaults all carry glob metacharacters, so the per-call path
     // (`path_pattern_matches`) always took the regex branch — the cached
     // equivalent below matches it exactly, compiled once.
@@ -469,3 +564,7 @@ const DEFAULT_IGNORED_FILE_PATTERNS: &[&str] = &[
 #[cfg(test)]
 #[path = "../tests/index_selection.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/eval_exclusion.rs"]
+mod eval_exclusion_tests;

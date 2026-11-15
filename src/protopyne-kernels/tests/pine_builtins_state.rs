@@ -125,11 +125,7 @@ fn stateful_builtins_have_one_owner() {
         source.matches("RunBuiltins::new()").count()
             + source.matches("RunBuiltins::with_requests(").count()
     };
-    assert_eq!(
-        owners(tree),
-        1,
-        "the whole run creates exactly one owner"
-    );
+    assert_eq!(owners(tree), 1, "the whole run creates exactly one owner");
     assert_eq!(
         owners(loop_source),
         2,

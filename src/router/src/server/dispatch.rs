@@ -49,7 +49,7 @@ pub struct DispatchOutcome {
 #[derive(Clone)]
 /// The shared, request-invariant dependencies threaded through
 /// `handle_dispatch` → `dispatch_real` → `dispatch_to_single_target`.
-/// 
+///
 /// Pure struct bundling: collapses the former 14/12/9-argument dispatch
 /// signatures into one `&DispatchDeps` (the fields `ServerDeps` already
 /// bundles for the HTTP handler). Zero runtime cost — no vtable, no behavior

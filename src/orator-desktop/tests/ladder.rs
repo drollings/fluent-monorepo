@@ -19,8 +19,8 @@ impl ChordSender for DeadChord {
 #[test]
 fn clipboard_rung_wins_when_chord_lands() {
     let clip = InMemoryClipboard::new();
-    let outcome = inject(&clip, &DeadChord, "hi", &mut LadderMemory::default())
-        .expect("ladder runs");
+    let outcome =
+        inject(&clip, &DeadChord, "hi", &mut LadderMemory::default()).expect("ladder runs");
     // RemoteDesktop is unwired; the clipboard rung pastes into the fake and
     // the still clipboard restores: still a successful injection.
     assert_eq!(outcome, InjectOutcome::Injected(Rung::ClipboardPaste));
@@ -49,16 +49,20 @@ fn fatal_aborts_the_ladder() {
         }
     }
     let clip = InMemoryClipboard::new();
-    inject(&clip, &FatalChord, "hi", &mut LadderMemory::default())
-        .expect_err("fatal must abort");
+    inject(&clip, &FatalChord, "hi", &mut LadderMemory::default()).expect_err("fatal must abort");
 }
 
 #[test]
 fn headless_reports_output_only_distinctly() {
     use crate::clipboard::NoChord;
     let clip = InMemoryClipboard::new();
-    let outcome = inject(&clip, &NoChord, "hello headless", &mut LadderMemory::default())
-        .expect("ladder runs");
+    let outcome = inject(
+        &clip,
+        &NoChord,
+        "hello headless",
+        &mut LadderMemory::default(),
+    )
+    .expect("ladder runs");
     assert_eq!(
         outcome,
         InjectOutcome::OutputOnly("hello headless".to_string()),
@@ -119,8 +123,8 @@ fn each_failing_rung_falls_back_to_output_only() {
             last_working: Some(rung.clone()),
             last_inject: None,
         };
-        let outcome = inject(&clip, &NoChord, "forced down", &mut memory)
-            .expect("ladder always resolves");
+        let outcome =
+            inject(&clip, &NoChord, "forced down", &mut memory).expect("ladder always resolves");
         assert_eq!(
             outcome,
             InjectOutcome::OutputOnly("forced down".to_string()),
@@ -144,8 +148,13 @@ fn failed_paste_skips_to_output_only() {
         }
     }
     let clip = InMemoryClipboard::new();
-    let outcome = inject(&clip, &LostChord, "lost chord", &mut LadderMemory::default())
-        .expect("failed paste still resolves");
+    let outcome = inject(
+        &clip,
+        &LostChord,
+        "lost chord",
+        &mut LadderMemory::default(),
+    )
+    .expect("failed paste still resolves");
     assert!(
         matches!(outcome, InjectOutcome::OutputOnly(_)),
         "lost chord must skip to output-only: {outcome:?}"

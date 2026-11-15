@@ -699,8 +699,7 @@ pub fn link(program: &CompiledProgram, order: &[&str]) -> Result<VmProgram, Link
                             Some(PineValue::ColorHandle(ColorHandle::new(*packed)))
                         }
                         Some(ConstValue::Enum { namespace, member }) => {
-                            let namespace =
-                                module.symbols.resolve(*namespace).unwrap_or("?");
+                            let namespace = module.symbols.resolve(*namespace).unwrap_or("?");
                             let member = module.symbols.resolve(*member).unwrap_or("?");
                             Some(PineValue::EnumHandle(EnumHandle::new(namespace, member)))
                         }
@@ -2066,9 +2065,7 @@ impl Run {
                 let value = self.frame_get(*src);
                 let display = (*display).and_then(|slot| self.frame_get(slot));
                 let title = match title {
-                    super::bytecode::PlotTitle::Const(id) => {
-                        CaptureTitle::Const(Some(*id))
-                    }
+                    super::bytecode::PlotTitle::Const(id) => CaptureTitle::Const(Some(*id)),
                     super::bytecode::PlotTitle::Slot(slot) => {
                         CaptureTitle::Value(self.frame_get(*slot))
                     }
@@ -2258,10 +2255,7 @@ impl Run {
                 }
                 self.frame_set(*counter, Some(PineValue::Int(first)));
                 let direction = if first <= last { 1 } else { -1 };
-                self.frame_set(
-                    *step,
-                    Some(PineValue::Int(direction * stride)),
-                );
+                self.frame_set(*step, Some(PineValue::Int(direction * stride)));
                 self.frame_set(*ascending, Some(PineValue::Bool(first <= last)));
             }
             Instruction::WhileTick { trip } => {
@@ -2399,11 +2393,8 @@ impl Run {
                             if let Some(bound) = instance.fields.get(field_text) {
                                 bound.clone()
                             } else {
-                                let head =
-                                    name_text.rsplit_once('.').map_or(name_text, |(h, _)| h);
-                                return Err(super::eval::unknown_dotted_field(
-                                    head, field_text,
-                                ));
+                                let head = name_text.rsplit_once('.').map_or(name_text, |(h, _)| h);
+                                return Err(super::eval::unknown_dotted_field(head, field_text));
                             }
                         }
                         Some(_) | None => {
@@ -2506,9 +2497,9 @@ impl Run {
                                         self.completed
                                             .checked_sub(back)
                                             .and_then(|at| {
-                                                self.columns.get(column).and_then(|col| {
-                                                    col.get(at).cloned()
-                                                })
+                                                self.columns
+                                                    .get(column)
+                                                    .and_then(|col| col.get(at).cloned())
                                             })
                                             .flatten()
                                     }
@@ -2729,13 +2720,12 @@ impl Run {
         self.written_namespace()
     }
 
-
     /// Execute the current block to completion (jumps stay inside) or
     /// until a `Return` carries the value out.
     fn exec_block(
         &mut self,
         ctx: &mut RunCtx<'_>,
-        builtins: &mut RunBuiltins
+        builtins: &mut RunBuiltins,
     ) -> Result<Option<PineValue>, KernelError> {
         // One handle for the whole block: the borrow is of the local handle,
         // never of `self`, so the instruction borrow below never conflicts
@@ -3079,10 +3069,8 @@ impl Run {
                                     .to_owned(),
                             ));
                         };
-                        let value = self.history_read(
-                            *column,
-                            i32::try_from(index).unwrap_or(i32::MAX),
-                        )?;
+                        let value =
+                            self.history_read(*column, i32::try_from(index).unwrap_or(i32::MAX))?;
                         self.frame_set(*dst, value);
                         self.pc += 1;
                         continue;
@@ -3985,7 +3973,9 @@ impl Run {
             ),
             CallTarget::Block(index) => {
                 let module = self.module;
-                self.exec_user_call(program, module, *index, args, homes, site, dst, ctx, builtins)
+                self.exec_user_call(
+                    program, module, *index, args, homes, site, dst, ctx, builtins,
+                )
             }
             CallTarget::Resolved { module, block } => self.exec_user_call(
                 program,
@@ -4157,7 +4147,6 @@ impl Run {
         }
         Ok(())
     }
-
 
     /// Take one method receiver out of its home. Variable roots follow the
     /// engine's take order (live alias, caller frame, per-instance cell,
@@ -4932,80 +4921,84 @@ impl Run {
         Ok(Some(()))
     }
 
-/// Read one method-home receiver value through its home without
-/// taking: the nested routes leave the `recv` temp unwritten, so the
-/// home chain is the authoritative read on every route. Mirrors the take
-/// order; `None` on any miss.
-fn read_home_value(run: &Run, home: &super::bytecode::CallHome) -> Option<PineValue> {
-    use super::bytecode::CallHome;
-    let program = run.program_handle();
-    let program: &VmProgram = &program;
-    let text = |id: super::bytecode::SymbolId| {
-        program.modules[run.module]
-            .symbols
-            .resolve(id)
-            .unwrap_or("")
-            .to_owned()
-    };
-    match home {
-        CallHome::Innermost => None,
-        CallHome::ThisField { field } => {
-            let field = text(*field);
-            run.receiver
-                .last()
-                .and_then(|slot| slot.instance.fields.get(&field))
-                .cloned()
-                .flatten()
-        }
-        CallHome::Var { name, var_ordinal } => run.read_root_value(&text(*name), *var_ordinal),
-        CallHome::VarPath {
-            name,
-            var_ordinal,
-            path,
-        } => {
-            let name_text = text(*name);
-            let fields: Vec<String> = path.iter().map(|field| text(*field)).collect();
-            let root = run.read_root_value(&name_text, *var_ordinal)?;
-            let mut current = &root;
-            for field in &fields {
-                let PineValue::Object(instance) = current else {
-                    return None;
-                };
-                let next = instance.fields.get(field).and_then(|slot| slot.as_ref())?;
-                current = next;
+    /// Read one method-home receiver value through its home without
+    /// taking: the nested routes leave the `recv` temp unwritten, so the
+    /// home chain is the authoritative read on every route. Mirrors the take
+    /// order; `None` on any miss.
+    fn read_home_value(run: &Run, home: &super::bytecode::CallHome) -> Option<PineValue> {
+        use super::bytecode::CallHome;
+        let program = run.program_handle();
+        let program: &VmProgram = &program;
+        let text = |id: super::bytecode::SymbolId| {
+            program.modules[run.module]
+                .symbols
+                .resolve(id)
+                .unwrap_or("")
+                .to_owned()
+        };
+        match home {
+            CallHome::Innermost => None,
+            CallHome::ThisField { field } => {
+                let field = text(*field);
+                run.receiver
+                    .last()
+                    .and_then(|slot| slot.instance.fields.get(&field))
+                    .cloned()
+                    .flatten()
             }
-            Some(current.clone())
+            CallHome::Var { name, var_ordinal } => run.read_root_value(&text(*name), *var_ordinal),
+            CallHome::VarPath {
+                name,
+                var_ordinal,
+                path,
+            } => {
+                let name_text = text(*name);
+                let fields: Vec<String> = path.iter().map(|field| text(*field)).collect();
+                let root = run.read_root_value(&name_text, *var_ordinal)?;
+                let mut current = &root;
+                for field in &fields {
+                    let PineValue::Object(instance) = current else {
+                        return None;
+                    };
+                    let next = instance.fields.get(field).and_then(|slot| slot.as_ref())?;
+                    current = next;
+                }
+                Some(current.clone())
+            }
         }
     }
-}
 
-/// Set one leaf through an object chain, creating nothing: every level
-/// must already hold an object with the named field, exactly like the
-/// tree-walk's chain walk. Returns `false` on any miss. Recursion (not a
-/// loop) threads the mutable borrow through the chain levels.
-fn set_nested_value(current: &mut PineValue, fields: &[String], value: Option<PineValue>) -> bool {
-    let Some((field, rest)) = fields.split_first() else {
-        return false;
-    };
-    let PineValue::Object(instance) = current else {
-        return false;
-    };
-    if rest.is_empty() {
-        if !instance.fields.contains_key(field) {
+    /// Set one leaf through an object chain, creating nothing: every level
+    /// must already hold an object with the named field, exactly like the
+    /// tree-walk's chain walk. Returns `false` on any miss. Recursion (not a
+    /// loop) threads the mutable borrow through the chain levels.
+    fn set_nested_value(
+        current: &mut PineValue,
+        fields: &[String],
+        value: Option<PineValue>,
+    ) -> bool {
+        let Some((field, rest)) = fields.split_first() else {
             return false;
+        };
+        let PineValue::Object(instance) = current else {
+            return false;
+        };
+        if rest.is_empty() {
+            if !instance.fields.contains_key(field) {
+                return false;
+            }
+            instance.fields.insert(field.clone(), value);
+            return true;
         }
-        instance.fields.insert(field.clone(), value);
-        return true;
+        match instance
+            .fields
+            .get_mut(field)
+            .and_then(|slot| slot.as_mut())
+        {
+            Some(next) => Self::set_nested_value(next, rest, value),
+            None => false,
+        }
     }
-    match instance
-        .fields
-        .get_mut(field)
-        .and_then(|slot| slot.as_mut())
-    {
-        Some(next) => Self::set_nested_value(next, rest, value),
-        None => false,
-    }
-}
 
     /// Write one collection-call result back through a method-call home,
     /// in take order (live alias skipped: alias slots hold instances, so
@@ -5079,11 +5072,7 @@ fn set_nested_value(current: &mut PineValue, fields: &[String], value: Option<Pi
     /// alias, current frame, caller frames, per-instance cells, shared
     /// columns. No take, no log — the caller takes or writes through the
     /// same order.
-    fn read_root_value(
-        &self,
-        name_text: &str,
-        var_ordinal: Option<u32>,
-    ) -> Option<PineValue> {
+    fn read_root_value(&self, name_text: &str, var_ordinal: Option<u32>) -> Option<PineValue> {
         let program = self.program_handle();
         let program: &VmProgram = &program;
         if let Some(depth) = self
@@ -5091,9 +5080,7 @@ fn set_nested_value(current: &mut PineValue, fields: &[String], value: Option<Pi
             .iter()
             .rposition(|slot| slot.alias == name_text)
         {
-            return Some(PineValue::Object(
-                self.receiver[depth].instance.clone(),
-            ));
+            return Some(PineValue::Object(self.receiver[depth].instance.clone()));
         }
         if let Some(slot) = program.modules[self.module].blocks[self.block]
             .frame_names
@@ -5476,7 +5463,7 @@ fn probe_of(run: &Run, program: &VmProgram) -> ProbeReport {
 /// tick lengths checked), with per-bar evaluation through the compiled
 /// blocks. Refusals name the same reasons as the tree-walk; a program
 /// the linker rejects runs tree-walk instead (see [`link`]).
-/// 
+///
 /// The probe twin of [`run_linked`]: same outcome, plus a [`ProbeReport`]
 /// counting tier-up, path hits, and T2 deopts for calibration. The plain
 /// entry point delegates here and drops the report.

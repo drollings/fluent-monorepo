@@ -31,7 +31,7 @@ pub enum Channel {
 /// capture backend; this type only orders and measures audio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 /// Media timestamp: a sample count on the capture clock.
-/// 
+///
 /// Mic and system channels carry a measured offset so words from both can be
 /// merged by media time. The mapping to wall-clock time is applied by the
 /// capture backend; this type only orders and measures audio.
@@ -230,7 +230,7 @@ pub struct DuplexOut {
 /// advancing a reconnect cursor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// A sequenced daemon event.
-/// 
+///
 /// `seq` is monotonic per writer for durable events. Negative `seq` values
 /// are live-only ephemeral events: never persisted, never replayed, never
 /// advancing a reconnect cursor.

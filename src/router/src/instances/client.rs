@@ -175,7 +175,7 @@ pub struct SnapshotInfo {
 /// Typed management client against one spawned `llama-server`'s `/instances`
 /// API. Talks DIRECTLY to the pool's server - no router routing, so no `model`
 /// field is carried (each server owns exactly one model's weights).
-/// 
+///
 /// Mirrors the raw-reqwest pattern of `OpenAiChatBackend`: a plain
 /// `reqwest::Client` and explicit status classification via `HttpClass`.
 pub struct InstanceClient {

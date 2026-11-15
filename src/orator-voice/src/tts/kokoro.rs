@@ -255,8 +255,7 @@ static CUDA_AVAILABLE: std::sync::LazyLock<std::sync::Mutex<Option<bool>>> =
 fn cuda_usable_cached() -> bool {
     #[cfg(target_os = "linux")]
     {
-        *common_core::sync::lock(&CUDA_AVAILABLE)
-            .get_or_insert_with(orator::gpu::nvidia_present)
+        *common_core::sync::lock(&CUDA_AVAILABLE).get_or_insert_with(orator::gpu::nvidia_present)
     }
     #[cfg(not(target_os = "linux"))]
     {

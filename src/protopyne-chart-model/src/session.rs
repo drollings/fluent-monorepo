@@ -56,7 +56,7 @@ pub trait SessionProvider: Send + Sync {
 /// bar grids without session-clock metadata still split correctly.
 #[derive(Debug, Clone)]
 /// Daily boundaries at calendar-day changes (UTC).
-/// 
+///
 /// The hour/minute fields record the intended break clock time for display
 /// purposes; detection itself keys on the calendar-day change so intraday
 /// bar grids without session-clock metadata still split correctly.
@@ -203,7 +203,7 @@ impl SessionProvider for MonthlySessionProvider {
 /// parse, preserved here by construction.
 #[derive(Debug, Clone, Copy)]
 /// Exchange-session day boundaries on the ET wall clock.
-/// 
+///
 /// Detection keys on the ET calendar date
 /// ([`TradingSession::session_date`]): two bars whose ET dates differ
 /// straddle a session break. The date math (including the daylight rules)
@@ -317,7 +317,7 @@ impl SessionProvider for CompositeSessionProvider {
 /// share one pairwise core instead of two scans.
 #[must_use]
 /// Scan closed bars for session boundaries.
-/// 
+///
 /// Returns `(index, break)` pairs where `index` is the first bar of the new
 /// session. Timestamps are the only input read: the scan delegates to
 /// [`session_breaks_between`], so timestamp slices (display rows) and bars

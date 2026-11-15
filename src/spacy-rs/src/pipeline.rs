@@ -850,7 +850,7 @@ fn default_unresolved_token_threshold() -> f64 {
 #[allow(clippy::struct_excessive_bools)]
 /// The decision policy for when the model refiners run after the
 /// deterministic base parse. Pure data — no I/O, no side effects.
-/// 
+///
 /// Four independent serde-configured toggles; folding them into a bitflags
 /// word would break the config schema for no gain.
 pub struct RefinePolicy {
@@ -1145,7 +1145,7 @@ pub fn should_refine_aggregated(
 /// structurally present but unresolved role.
 #[must_use]
 /// Aggregated `RefineReason` for a multi-sentence document.
-/// 
+///
 /// See [`refine_reason`] for trigger order. The `UnresolvedPropn` threshold
 /// is evaluated **aggregated across the whole document**; the
 /// `UnresolvedCriticalRole` check triggers if *any* sentence has a
@@ -1889,7 +1889,7 @@ impl AnnotationRung for LlmRung {
 /// closure maps the doc's orth/idx onto LFM predictions and returns an
 /// [`AnnotationSet`] aligned by construction. Accepted only if it passes the
 /// gate; any failure falls through to the deterministic rungs (never empty).
-/// 
+///
 /// The closure is a blocking CPU call (an ort session run). The async rung
 /// calls it inline — a single ms-scale forward — because the closure itself is
 /// expected to be internally bounded (the router builds it with a swarm-wide
@@ -2841,17 +2841,6 @@ fn refiner_order(
 ///    validated, non-regressing result is adopted; otherwise the base is
 ///    kept.
 #[allow(clippy::too_many_arguments)]
-/// The two-phase annotation ladder:
-/// 
-/// 1. **Base phase** (deterministic, unconditional): `first_accept_in_order`
-/// over `[ArcEager, Rule]`. Always produces a validated `AnnotationResult`.
-/// 2. **Refine phase** (model, conditional): when `should_refine` (its
-/// frame-completeness view taken via [`parse_view`] over the base), runs
-/// `first_accept_in_order` over the model refiners `[Encoder, Llm]` —
-/// focused variants when the [`RefineSeams`] are wired and the mode is
-/// `OnUncertain`, full re-annotation otherwise. A refiner that returns a
-/// validated, non-regressing result is adopted; otherwise the base is
-/// kept.
 async fn run_ladder_for(
     doc: &Doc,
     eager: &Arc<ArcEagerAnnotator>,
@@ -3071,17 +3060,6 @@ fn run_sync_refiner(
 /// the same code the async walk runs. The sync ladder never errors / never
 /// exhausts (the rule rung is infallible).
 #[allow(clippy::too_many_arguments)]
-/// The synchronous two-phase ladder walk:
-/// 
-/// 1. **Base phase**: `first_accept_in_order_sync` over `[ArcEager, Rule]`.
-/// 2. **Refine phase** (conditional): when `should_refine`, tries model
-/// refiners via `first_accept_in_order_sync` with the same adoption gate.
-/// 
-/// Reuses `should_refine` / `refine_slots` / `refine_focus` /
-/// `frame_coverage` / `parse_view` / `refine_llm_scoped` — no duplicated
-/// decision logic; the slot selection and the focused-refinement body are
-/// the same code the async walk runs. The sync ladder never errors / never
-/// exhausts (the rule rung is infallible).
 fn run_ladder_sync(
     doc: &Doc,
     eager: &Arc<ArcEagerAnnotator>,

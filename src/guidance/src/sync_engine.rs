@@ -11,7 +11,6 @@ use crate::sync::comments;
 use crate::sync::json_store;
 use crate::sync::staleness;
 use crate::walk;
-use search_vector::GuidanceDb;
 
 /// Extensions the member/mirror pipeline can parse. The fragment index
 /// still selects markdown via `SOURCE_EXTENSIONS`.
@@ -32,13 +31,6 @@ pub enum SyncEngineError {
 }
 
 common_core::impl_from_io_error!(SyncEngineError);
-
-#[derive(Debug, Clone, Default)]
-pub struct GenConfig {
-    pub db_sync: bool,
-    pub db_path: Option<PathBuf>,
-    pub json_base: Option<PathBuf>,
-}
 
 pub struct SyncEngine {
     pub ast_parser: AstParser,
@@ -62,7 +54,6 @@ struct SyncContext {
     doc: GuidanceDoc,
     source_path: PathBuf,
     source: String,
-    config: GenConfig,
     source_dir: PathBuf,
     guidance_dir: PathBuf,
     comments_wrote_source: bool,
@@ -154,14 +145,6 @@ impl SyncEngine {
     }
 
     pub fn gen(&mut self, source_path: &Path) -> Result<GuidanceDoc, SyncEngineError> {
-        self.gen_with_config(source_path, &GenConfig::default())
-    }
-
-    pub fn gen_with_config(
-        &mut self,
-        source_path: &Path,
-        config: &GenConfig,
-    ) -> Result<GuidanceDoc, SyncEngineError> {
         // Absolutize up front: discovery may hand us a relative path
         // while `source_dir`/`workspace_root` are absolute (or the
         // reverse) — relativization must compare like with like, or
@@ -211,7 +194,6 @@ impl SyncEngine {
             doc,
             source_path,
             source,
-            config: config.clone(),
             source_dir: self.source_dir.clone(),
             guidance_dir: self.guidance_dir.clone(),
             comments_wrote_source: false,
@@ -219,7 +201,7 @@ impl SyncEngine {
             granularity: self.timestamp_granularity,
         };
 
-        let mut pipeline = Self::build_pipeline(&mut self.ast_parser, config.db_sync);
+        let mut pipeline = Self::build_pipeline(&mut self.ast_parser);
         pipeline.run(&mut ctx)?;
         // The pipeline borrows the parser; release it before touching self.
         drop(pipeline);
@@ -233,11 +215,8 @@ impl SyncEngine {
         Ok(ctx.doc)
     }
 
-    fn build_pipeline(
-        ast_parser: &mut AstParser,
-        db_sync: bool,
-    ) -> Pipeline<'_, SyncContext, SyncEngineError> {
-        let mut p = Pipeline::new()
+    fn build_pipeline(ast_parser: &mut AstParser) -> Pipeline<'_, SyncContext, SyncEngineError> {
+        let p = Pipeline::new()
             .step(|ctx: &mut SyncContext| {
                 let json_path =
                     guidance_json_path(&ctx.source_path, &ctx.source_dir, &ctx.guidance_dir);
@@ -266,28 +245,6 @@ impl SyncEngine {
                     .map_err(common_core::error::IoError)?;
                 Ok(())
             });
-
-        if db_sync {
-            p = p.maybe(
-                |_ctx: &SyncContext| true,
-                move |ctx: &mut SyncContext| {
-                    let db_path = ctx
-                        .config
-                        .db_path
-                        .clone()
-                        .unwrap_or_else(|| ctx.guidance_dir.join("..").join(".guidance.db"));
-                    let json_base = ctx
-                        .config
-                        .json_base
-                        .clone()
-                        .unwrap_or_else(|| ctx.guidance_dir.join("src"));
-                    if let Ok(db) = GuidanceDb::open(&db_path) {
-                        let _ = db.sync_from_dir(&json_base);
-                    }
-                    Ok(())
-                },
-            );
-        }
 
         p
     }
@@ -434,6 +391,8 @@ impl SyncEngine {
         use crate::selection::{select_files, FileSelection};
         let mut diag = crate::selection::ScanDiagnostics::default();
         let selection = FileSelection {
+            workspace_root: self.workspace_root.clone(),
+            include_fixtures: false,
             roots: vec![path.to_path_buf()],
             include_globs: Vec::new(),
             exclude_globs: Vec::new(),

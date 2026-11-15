@@ -135,7 +135,7 @@ pub fn summary_coverage(ready: usize, documented: usize) -> f64 {
 /// Hit rate of current cache keys against a previous pass: the share of
 /// nodes needing no model call.
 pub fn summary_cache_hit_rate(
-    previous: &std::collections::HashSet<String>,
+    previous: &std::collections::HashSet<String, impl std::hash::BuildHasher + Clone>,
     current: &[String],
 ) -> f64 {
     if current.is_empty() {
@@ -776,13 +776,13 @@ fn project_summaries(
                 symbol.name.as_deref() == Some(name)
                     && symbol.scope.as_deref().unwrap_or("") == scope
             });
-            if !known {
-                None
-            } else {
+            if known {
                 match db.symbol_fragment(file_id, name, Some(scope)) {
                     Ok(Some((id, _))) => Some(id),
                     _ => None,
                 }
+            } else {
+                None
             }
         };
         let Some(fragment_id) = fragment_id else {
@@ -795,8 +795,7 @@ fn project_summaries(
         };
         let owned = db
             .fragments_for_entity(&fragment_id)
-            .map(|rows| !rows.is_empty())
-            .unwrap_or(false);
+            .is_ok_and(|rows| !rows.is_empty());
         if !owned {
             gaps.push(SummaryGap {
                 node_key: node_key.clone(),
@@ -833,6 +832,5 @@ fn project_summaries(
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0)
+        .map_or(0, |duration| duration.as_millis() as i64)
 }

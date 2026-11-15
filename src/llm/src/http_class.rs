@@ -5,7 +5,7 @@
 /// coral-router dispatch path) for their own retry loops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// HTTP status classification for LLM API retry decisions.
-/// 
+///
 /// Consumed by `LlmClient` to produce the correct `LlmError` variant, and by
 /// callers that talk directly to LLM endpoints via raw `reqwest` (e.g. the
 /// coral-router dispatch path) for their own retry loops.

@@ -16,12 +16,12 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 #[error("I/O error: {0}")]
 /// I/O error wrapper.
-/// 
+///
 /// Single-variant tuple struct that wraps `std::io::Error`. Consumers can use
 /// the `IoError(e)` constructor directly (or, equivalently, `e.into()` thanks
 /// to the `#[from]` derive). `kind()` mirrors `std::io::Error::kind()` so
 /// callers do not need to unwrap an `Option` to inspect the I/O error kind.
-/// 
+///
 /// The older `FileTooLarge` / `PathNotFound` / `InvalidPath` variants were
 /// dead and have been removed; the `MAX_FILE_SIZE` guard in
 /// `crate::io::read_to_string_err` emits a plain `io::Error` with

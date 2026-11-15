@@ -156,14 +156,7 @@ fn ta_surface_covered_both_directions() {
         .filter(|row| row.construct.starts_with("ta.") && row.verdict == ParityVerdict::Refuse)
         .filter_map(|row| row.construct.strip_prefix("ta."))
         .collect();
-    for missing in [
-        "adx",
-        "sar",
-        "kc",
-        "dc",
-        "mode",
-        "percentrank",
-    ] {
+    for missing in ["adx", "sar", "kc", "dc", "mode", "percentrank"] {
         assert!(
             refused.contains(&missing),
             "unbridged ta.{missing} has a refuse row"
@@ -210,4 +203,3 @@ fn lookup_finds_rows_by_construct() {
     assert_eq!(row.verdict, ParityVerdict::MatchByInspection);
     assert!(parity_for("no.such.construct").is_none());
 }
-

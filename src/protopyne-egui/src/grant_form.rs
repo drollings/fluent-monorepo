@@ -679,7 +679,7 @@ impl GrantFormState {
 /// verb, so a rendered click can never fan out into a second write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One operator grant action: re-attest the live grant.
-/// 
+///
 /// The action carries only the id; applying it invokes exactly one gateway
 /// verb, so a rendered click can never fan out into a second write.
 pub enum GrantAction {

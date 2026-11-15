@@ -159,6 +159,8 @@ fn bench_counters_on_converged_trees() {
     }
     let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
     let selection = FileSelection {
+        workspace_root: root.to_path_buf(),
+        include_fixtures: false,
         roots: vec![root.to_path_buf()],
         include_globs: Vec::new(),
         exclude_globs: Vec::new(),

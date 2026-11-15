@@ -105,7 +105,7 @@ fn alpha_u8_reproduces_the_pinned_spelling_bit_exact() {
         -0.0,
         f32::MIN_POSITIVE,
         f32::EPSILON,
-        1.0 - f32::EPSILON,
+        f32::from_bits(1.0_f32.to_bits() - 1),
     ]);
     for alpha in sweep {
         assert_eq!(

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 /// Typed metadata value for `WorkContext`.
-/// 
+///
 /// Replaces the old `Vec<(String, String)>` with a type-safe, structured
 /// representation. Supports string, integer, float, boolean, and null values.
 pub enum MetadataValue {

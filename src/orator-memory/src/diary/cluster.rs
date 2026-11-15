@@ -8,7 +8,7 @@
 /// band; the calibration corpus pins them, not this struct.
 #[derive(Debug, Clone, PartialEq)]
 /// Agglomerative clustering on cosine distance, plus smoothing.
-/// 
+///
 /// Thresholds arrive as configuration on every run (never cached per
 /// meeting, never baked into a checkpoint): the same audio with a new
 /// expected speaker count re-runs from the diarize step.
@@ -53,7 +53,8 @@ pub fn cluster(vectors: &[Vec<f32>], config: &DiarConfig) -> Vec<usize> {
                 if labels[first] == labels[second] {
                     continue;
                 }
-                let distance = 1.0 - vector_math::cosine_similarity_f32(&vectors[first], &vectors[second]);
+                let distance =
+                    1.0 - vector_math::cosine_similarity_f32(&vectors[first], &vectors[second]);
                 if distance < config.cluster_threshold
                     && best.is_none_or(|(known, _, _)| distance < known)
                 {
@@ -64,7 +65,10 @@ pub fn cluster(vectors: &[Vec<f32>], config: &DiarConfig) -> Vec<usize> {
         let Some((_, first, second)) = best else {
             break;
         };
-        let (keep, drop) = (labels[first].min(labels[second]), labels[first].max(labels[second]));
+        let (keep, drop) = (
+            labels[first].min(labels[second]),
+            labels[first].max(labels[second]),
+        );
         for label in &mut labels {
             if *label == drop {
                 *label = keep;
@@ -85,7 +89,12 @@ pub fn cluster(vectors: &[Vec<f32>], config: &DiarConfig) -> Vec<usize> {
     distinct.dedup();
     labels
         .iter()
-        .map(|label| distinct.iter().position(|known| known == label).expect("known"))
+        .map(|label| {
+            distinct
+                .iter()
+                .position(|known| known == label)
+                .expect("known")
+        })
         .collect()
 }
 
@@ -151,9 +160,7 @@ pub fn diarization_error(got: &[usize], want: &[usize]) -> f32 {
     let errors = got
         .iter()
         .enumerate()
-        .filter(|(index, label)| {
-            index >= &want.len() || mapping.get(label) != want.get(*index)
-        })
+        .filter(|(index, label)| index >= &want.len() || mapping.get(label) != want.get(*index))
         .count();
     errors as f32 / want.len() as f32
 }

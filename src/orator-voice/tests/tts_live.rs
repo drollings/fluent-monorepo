@@ -15,8 +15,11 @@ fn live_kokoro_synthesizes_a_sentence() {
         return;
     }
     let started = std::time::Instant::now();
-    let backend =
-        orator_voice::tts::KokoroBackend::new(PathBuf::from(model), PathBuf::from(voices), "af_heart");
+    let backend = orator_voice::tts::KokoroBackend::new(
+        PathBuf::from(model),
+        PathBuf::from(voices),
+        "af_heart",
+    );
     let samples = backend
         .synth_blocking("Hello world, this is a live voice check.")
         .expect("live synth completes");

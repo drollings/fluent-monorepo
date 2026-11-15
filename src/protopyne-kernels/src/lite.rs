@@ -207,7 +207,7 @@ pub fn leg_refusal(kind: &str) -> Option<&'static str> {
 #[builder(start_fn = new)]
 /// Indicator dials the market-leg batch reads: the same field names and
 /// defaults the strategy and terminal have always carried.
-/// 
+///
 /// Strategy triggers and filters live in the strategy configuration; this
 /// type carries only the market legs.
 pub struct LiteParams {
@@ -414,7 +414,7 @@ pub fn squash_raw(value: f64, offset: f64, slope: f64, scale: f64) -> f64 {
 /// silently changes a decision.
 #[derive(Debug, Clone)]
 /// Every evaluated leg over one closed tape, index-aligned with its bars.
-/// 
+///
 /// The decision path indexes this once per run; the display maps it into its
 /// own pane shapes. `atr_risk` is the stop/trailing span, `atr_long` and
 /// `stdev` are the regime's squeeze surface — dropping any of the three

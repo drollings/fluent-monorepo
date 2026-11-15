@@ -890,9 +890,9 @@ fn summary_route_corpus_measures_zero_control_fires() {
         report.control_fires, 0,
         "controls must never fire: {report:?}"
     );
-    assert_eq!(report.fpr, 0.0, "{report:?}");
-    assert_eq!(report.precision, 1.0, "{report:?}");
-    assert_eq!(report.recall, 1.0, "{report:?}");
+    assert!(report.fpr.abs() < f64::EPSILON, "{report:?}");
+    assert!((report.precision - 1.0).abs() < f64::EPSILON, "{report:?}");
+    assert!((report.recall - 1.0).abs() < f64::EPSILON, "{report:?}");
     assert!(report.support > 0, "{report:?}");
 }
 
@@ -922,4 +922,57 @@ fn summary_route_stale_hash_fails_freshness() {
         "code-hash-a",
         "test-model"
     ));
+}
+
+#[test]
+fn no_forced_symbol_route_on_mechanism_queries() {
+    // M8.1 contract at the recall seam: a mechanism intent builds no
+    // symbol-filtered routes. The plan's `prefer_symbol` comes from
+    // intent (Symbol/Graph only), so a mechanism query with the flag
+    // set still issues zero symbol-scoped storage calls.
+    use crate::query::strategy::QueryIntent;
+    use crate::read::intent::classify as classify_intent;
+    let query = "how does the router decide where to rank code hits";
+    assert_eq!(classify_intent(query), QueryIntent::HowTo);
+    let scoped = matches!(
+        classify_intent(query),
+        QueryIntent::SingleIdentifier | QueryIntent::Graph
+    );
+    let storage = FakeStorage::new();
+    let plan = SearchPlan {
+        routes: vec![route(SearchPlanRouteMode::Fts, query)],
+        prefer_symbol: Some(scoped),
+        limit: Some(5),
+        ..Default::default()
+    };
+    run_recall(&plan, &storage, None, None).expect("recall");
+    let calls = storage.calls.lock().expect("calls");
+    assert!(
+        calls
+            .fts
+            .iter()
+            .all(|(_, _, filter)| filter.symbol_names.is_empty()),
+        "mechanism queries issue no symbol-scoped calls: {:?}",
+        calls.fts
+    );
+    // Symbol intent keeps its filtered route through the same seam.
+    let storage = FakeStorage::new();
+    let plan = SearchPlan {
+        routes: vec![route(SearchPlanRouteMode::Fts, "clean_build_cache")],
+        prefer_symbol: Some(matches!(
+            classify_intent("clean_build_cache"),
+            QueryIntent::SingleIdentifier | QueryIntent::Graph
+        )),
+        limit: Some(5),
+        ..Default::default()
+    };
+    run_recall(&plan, &storage, None, None).expect("recall");
+    let calls = storage.calls.lock().expect("calls");
+    assert!(
+        calls
+            .fts
+            .iter()
+            .any(|(_, _, filter)| !filter.symbol_names.is_empty()),
+        "symbol queries keep the filtered route"
+    );
 }

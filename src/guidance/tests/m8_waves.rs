@@ -33,6 +33,7 @@ fn code_diags(root: &Path, code: &str) -> Arc<Mutex<HashMap<PathBuf, Vec<ClippyD
                 code: Some(code.to_string()),
                 message: "this diagnostic never clears".to_string(),
                 level: "warning".to_string(),
+                rendered: None,
                 suggestions: vec![Suggestion {
                     start: 11,
                     end: 12,
@@ -82,6 +83,7 @@ fn diag(file: &str) -> ClippyDiag {
         code: Some("needless_borrow".to_string()),
         message: "needless borrow".to_string(),
         level: "warning".to_string(),
+        rendered: None,
         suggestions: vec![Suggestion {
             start: 21,
             end: 22,
@@ -118,7 +120,7 @@ fn ctx(journal: PathBuf, wal: PathBuf, clippy: ClippyRunner, protected: &[String
 }
 
 #[test]
-fn one_clippy_per_package_per_wave() {
+fn clippy_once_per_package_per_wave_plus_witness() {
     let dir = fluent_wvr_testutil::tempdir();
     let p1 = package_with(dir.path(), "p1", &["a.rs", "b.rs"]);
     let p2 = package_with(dir.path(), "p2", &["c.rs", "d.rs"]);
@@ -137,9 +139,9 @@ fn one_clippy_per_package_per_wave() {
         .collect(),
     ));
     // First wave fixes p1 (p2 reports clean and converges); the second
-    // wave diagnoses only the still-dirty package as its witness, then
-    // the loop finds nothing dirty. Two packages, two diagnose waves
-    // but only three invocations — never per file.
+    // wave diagnoses only the still-dirty package, then the final
+    // witness rechecks both packages. Five invocations total — never
+    // per file.
     let journal = dir.path().join("journal");
     let wal = dir.path().join("wal");
     let report = run_fix_waves(
@@ -152,7 +154,7 @@ fn one_clippy_per_package_per_wave() {
         ),
     );
     assert_eq!(report.fixed, 2, "{report:?}");
-    assert_eq!(report.clippy_invocations, 3, "{report:?}");
+    assert_eq!(report.clippy_invocations, 5, "{report:?}");
     assert!(report.stopped.is_none(), "{report:?}");
     assert!(report.escalated.is_empty(), "{report:?}");
 }
@@ -173,6 +175,7 @@ fn ladder_converges_and_fingerprints_escalations() {
                 code: Some("mystery_lint".to_string()),
                 message: "mystery".to_string(),
                 level: "warning".to_string(),
+                rendered: None,
                 suggestions: Vec::new(),
             }],
         )]
@@ -200,6 +203,7 @@ fn ladder_converges_and_fingerprints_escalations() {
                 code: Some("mystery_lint".to_string()),
                 message: "mystery".to_string(),
                 level: "warning".to_string(),
+                rendered: None,
                 suggestions: Vec::new(),
             }],
         )]
@@ -241,6 +245,7 @@ fn systemic_fingerprint_halts_with_cause_named() {
                     code: Some("mystery_lint".to_string()),
                     message: "mystery".to_string(),
                     level: "warning".to_string(),
+                    rendered: None,
                     suggestions: Vec::new(),
                 })
                 .collect(),
@@ -281,6 +286,7 @@ fn exit_code_contract_prioritizes_halt_over_stuck() {
             file: "a.rs".to_string(),
             fingerprint: "f".to_string(),
             reason: "attempts exhausted".to_string(),
+            ..Escalation::default()
         }],
         witness_clean: false,
         ..WaveReport::default()
@@ -292,6 +298,7 @@ fn exit_code_contract_prioritizes_halt_over_stuck() {
             file: "a.rs".to_string(),
             fingerprint: "f".to_string(),
             reason: "x".to_string(),
+            ..Escalation::default()
         }],
         ..WaveReport::default()
     };

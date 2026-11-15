@@ -45,12 +45,9 @@ pub async fn probe_models(base: &str, client: &reqwest::Client) -> Result<ProbeI
                     models,
                     via_v1_fallback: path == "/v1/models",
                 })),
-                Err(ProbeError::Unreachable(_, _)) if path == "/models" => {
-                    Err(ProbeError::Unreachable(
-                        base.to_string(),
-                        "connection failed".to_string(),
-                    ))
-                }
+                Err(ProbeError::Unreachable(_, _)) if path == "/models" => Err(
+                    ProbeError::Unreachable(base.to_string(), "connection failed".to_string()),
+                ),
                 Err(error) => Err(error),
             }
         },

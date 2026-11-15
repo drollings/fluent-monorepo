@@ -68,7 +68,7 @@ pub struct SnapshotRecord {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 /// The file-backed manifest: every sealed artifact's row, keyed by
 /// `(symbol_id, timeframe, path)`.
-/// 
+///
 /// Loaded once per seal operation from `<seals>/manifest.json` (or empty
 /// when no seal has committed yet); [`upsert`](Self::upsert) replaces any
 /// row for the same key, and [`save`](Self::save) persists atomically.

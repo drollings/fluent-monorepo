@@ -141,7 +141,7 @@ fn approved_for(intent: &OrderIntent) -> Result<protopyne_strategy::RiskApproved
 /// reconcile half observes a scripted drift.
 #[must_use]
 /// The deterministic fault schedule every soak run executes, in order.
-/// 
+///
 /// Three fault episodes behind the existing [`Fault`] queue, one per
 /// submitted intent: a dropped connection the protocol retries into a fill,
 /// four 5xx answers that exhaust the retry budget into a deterministic

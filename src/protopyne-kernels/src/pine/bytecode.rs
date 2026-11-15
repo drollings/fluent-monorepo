@@ -1179,7 +1179,7 @@ impl Instruction {
 /// construct may not hide behind a "retained" label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// What closeout decided about one fallback family.
-/// 
+///
 /// The audit is exhaustive: every `FallbackReason` variant is classified
 /// here, and the closeout suite asserts the registry, the compiler's
 /// emission sites, and the fixture ledger agree. A deterministic-headless
@@ -4247,7 +4247,7 @@ pub fn decode_symbols(bytes: &[u8]) -> Result<SymbolTable, DecodeError> {
 #[cfg(test)]
 /// Test-only disassembler: one line per instruction with resolved
 /// constants, for reviewed output shape (never a runtime path).
-/// 
+///
 /// Display helpers shared by every capture arm below (hoisted from
 /// per-arm closures so all families spell the same shapes).
 fn show_const(consts: &ConstPool, id: ConstId) -> String {

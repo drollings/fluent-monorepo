@@ -181,7 +181,7 @@ impl Slippage {
 #[builder(start_fn = new)]
 /// Commission schedule: a flat per-contract charge plus an optional
 /// percentage of notional.
-/// 
+///
 /// The two arms exist because venues and reference strategies charge
 /// differently, and a run must be able to state which model it assumed. A
 /// percentage of `0` is not merely small — it reproduces the per-contract-only

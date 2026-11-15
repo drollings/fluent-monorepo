@@ -39,7 +39,7 @@ pub fn now_ns() -> u64 {
 #[must_use]
 /// Modification time of `metadata`, in nanoseconds since the UNIX epoch, or
 /// 0 when the platform reports none.
-/// 
+///
 /// Nanoseconds, not milliseconds: these stamps are used as a *change signal*,
 /// so they must out-resolve the interval between two edits. A millisecond
 /// stamp cannot tell a same-size rewrite that lands one millisecond after a
@@ -60,7 +60,7 @@ pub fn mtime_ns(metadata: &fs::Metadata) -> u64 {
 /// Status-change time of `metadata` (inode metadata change, distinct from
 /// `mtime`) in nanoseconds since the UNIX epoch, or 0 on platforms that do
 /// not report one.
-/// 
+///
 /// Kept as a separate signal from [`mtime_ns`]: a same-size, same-mtime
 /// content swap performed through a path that preserves mtime still moves
 /// ctime, so the pair catches more than mtime alone.
@@ -95,7 +95,7 @@ pub fn ctime_ns(metadata: &fs::Metadata) -> u64 {
 /// Whether a nanosecond stamp carries enough resolution to be trusted as a
 /// change signal: it must be non-zero *and* have a sub-millisecond
 /// remainder.
-/// 
+///
 /// A stamp sitting exactly on a millisecond boundary is what a millisecond-
 /// truncated read produces, and is also what a filesystem storing coarse
 /// timestamps reports — in both cases two rewrites inside one millisecond are
@@ -295,17 +295,17 @@ pub fn ensure_dir_or_panic(path: impl AsRef<Path>) {
 #[cfg(unix)]
 #[derive(thiserror::Error, Debug)]
 /// Bounded stale-Unix-socket reclaim: probe → unlink → bind retry.
-/// 
+///
 /// A `UnixListener::bind` that fails with `AddrInUse` either means a
 /// live holder (a `connect` succeeds — stop with the original error)
 /// or a stale socket file (no listener — unlink and retry, bounded by
 /// `max_reclaims`). The only loop in the tree; both callers compose it
 /// instead of hand-rolling their own.
-/// 
+///
 /// ```no_run
 /// use std::path::Path;
 /// use common_core::io::bind_unix_listener_with_stale_reclaim;
-/// 
+///
 /// let listener = bind_unix_listener_with_stale_reclaim(
 /// Path::new("/run/orator/orator.sock"),
 /// 3,
@@ -313,7 +313,7 @@ pub fn ensure_dir_or_panic(path: impl AsRef<Path>) {
 /// )?;
 /// # Ok::<(), common_core::io::ReclaimBindError>(())
 /// ```
-/// 
+///
 /// OS calls run through a small private operations seam
 /// (`ReclaimOps`/`reclaim_with_ops`) so the walk is unit-testable
 /// without a race; the public function uses the real std operations.
@@ -407,7 +407,7 @@ fn reclaim_with_ops<O: ReclaimOps>(
 /// binds return the standard listener unchanged.
 #[cfg(unix)]
 /// Bind a Unix socket with bounded stale-file reclaim (Unix-only).
-/// 
+///
 /// `max_reclaims` bounds the probe → unlink → retry loop (both
 /// callers pass `3` — a racing starter may win the unlink window, so
 /// retry instead of failing the first boot). `validate_after_unlink`

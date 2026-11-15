@@ -38,7 +38,7 @@ pub(crate) struct WrappedJob<T, R, E> {
 /// worker loop every public pool type parameterizes.
 #[allow(clippy::needless_pass_by_value)]
 /// Spawn `cap` worker tasks running one shared worker core.
-/// 
+///
 /// Each worker loops: `next_job().await` resolves to `Some(job)` when work is
 /// available or `None` when the pool is shutting down, and `handle(job).await`
 /// processes it. `next_job` encapsulates the pool's queue discipline — the

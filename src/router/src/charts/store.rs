@@ -36,7 +36,7 @@ pub(crate) const CHART_SUBSUME_THRESHOLD: f32 = 0.9;
 /// a runtime property of the store, not a declarative fact about the DAG.
 #[derive(Debug, Clone, Default)]
 /// Per-chart runtime health — the staleness/demotion policy.
-/// 
+///
 /// Kept *out* of the persisted `ChartDef` content model: a chart's health is
 /// a runtime property of the store, not a declarative fact about the DAG.
 pub struct ChartHealth {

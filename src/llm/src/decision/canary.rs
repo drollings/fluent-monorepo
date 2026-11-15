@@ -37,10 +37,10 @@ pub struct CanaryCase {
 #[must_use]
 /// The fixed two-case suite. Prompts force single tokens the logprobs path
 /// discriminates; expectations are tight majorities, not model output.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::canary_suite;
-/// 
+///
 /// let suite = canary_suite();
 /// assert_eq!(suite.len(), 2);
 /// assert!(suite.iter().all(|c| c.options.len() >= 2));
@@ -149,10 +149,10 @@ pub fn verify_canary(decision: &Decision, case: &CanaryCase) -> Result<(), Canar
 /// Fingerprint a verified canary set: blake3 over framed (label, mass to
 /// two decimals) pairs. Same response bytes fingerprint identically;
 /// weight changes move masses and the fingerprint follows.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{canary_signature, Decision};
-/// 
+///
 /// let mk = |mass: f64| {
 /// Decision::from_distribution(
 /// "A",

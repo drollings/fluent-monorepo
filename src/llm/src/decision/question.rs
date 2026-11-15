@@ -31,10 +31,10 @@ use fluent_wvr::{ArcIntern, WorkContext, WorkError, WorkOutput, WorkUnit};
 #[builder(start_fn = new)]
 /// Control-plane question spec: id, version, kind, prompt template,
 /// single-token option list, per-point thresholds, timeout, cache flag.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::QuestionSpec;
-/// 
+///
 /// let spec = QuestionSpec::new()
 /// .id("intent".to_string())
 /// .version(1)
@@ -272,10 +272,10 @@ pub const MAX_DECISION_OPTIONS: usize = 10;
 /// Order `options` for one rendering under `mode` (`none`/`rotate`/
 /// `shuffle`), deterministically from `(seed, salt)`. Unknown modes pass
 /// through declared order (fail-open rendering; `validate` refuses them).
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::rotated_options;
-/// 
+///
 /// let options = vec!["A".to_string(), "B".to_string(), "C".to_string()];
 /// assert_eq!(rotated_options(&options, "none", 7, 3), options);
 /// assert_eq!(
@@ -328,10 +328,10 @@ pub fn rotated_options(options: &[String], mode: &str, seed: u64, salt: u64) -> 
 /// ```
 #[must_use]
 /// Render state-first/question-last without a spec (shared layout core).
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::render_prompt;
-/// 
+///
 /// let out = render_prompt("ST", "Q?", &["A", "B"]);
 /// assert!(out.starts_with("ST") && out.ends_with("Q?"));
 /// ```

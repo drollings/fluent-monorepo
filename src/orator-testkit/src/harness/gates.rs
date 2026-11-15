@@ -122,9 +122,7 @@ pub fn gate(
         return Err(GateError::EndToEnd(total, envelope));
     }
     if processing_ms > 0 && audio_ms < processing_ms {
-        return Err(GateError::Realtime(format!(
-            "{audio_ms}/{processing_ms}"
-        )));
+        return Err(GateError::Realtime(format!("{audio_ms}/{processing_ms}")));
     }
     if drops > 0 {
         return Err(GateError::Drops(drops));

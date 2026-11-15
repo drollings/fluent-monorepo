@@ -24,7 +24,7 @@ pub struct VadOutput {
 /// narrowband noise that is loud but not speech-like.
 #[derive(Debug, Clone)]
 /// Energy + zero-crossing detector.
-/// 
+///
 /// Speech starts when the RMS probability crosses the high mark for
 /// `attack_frames` consecutive frames, and ends when it stays below the low
 /// mark for `hangover_frames`. The zero-crossing ceiling rejects tonal and

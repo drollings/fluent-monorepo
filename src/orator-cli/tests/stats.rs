@@ -49,8 +49,7 @@ fn empty_stat_file_renders_empty_log() {
     let path = dir.path().join("empty.jsonl");
     std::fs::write(&path, "\n").expect("fixture writes");
     let rendered = render_stat_file(&path).expect("empty file renders");
-    let expected = orator::bench::render_stats(&orator::bench::histograms(
-        &orator::bench::BenchLog::new(),
-    ));
+    let expected =
+        orator::bench::render_stats(&orator::bench::histograms(&orator::bench::BenchLog::new()));
     assert_eq!(rendered, expected);
 }

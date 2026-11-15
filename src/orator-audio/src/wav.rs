@@ -37,7 +37,7 @@ pub fn decode_wav_bytes(bytes: &[u8]) -> Result<WavPcm, SttError> {
 /// `common_core::pcm::wav_frame_header`.
 #[must_use]
 /// Encode mono f32 samples as 16-bit PCM WAV bytes at `sample_rate`.
-/// 
+///
 /// The writer mirrors the parser: the payload quantizes with the
 /// (32767, TowardZero) convention shared with the s2s frame encoder
 /// (`common_core::pcm`), so `decode_wav_bytes(encode_wav_mono(x))`

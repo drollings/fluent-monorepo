@@ -10,6 +10,8 @@ use tempfile::TempDir;
 
 fn selection_for(root: &std::path::Path) -> FileSelection {
     FileSelection {
+        workspace_root: root.to_path_buf(),
+        include_fixtures: false,
         roots: vec![root.to_path_buf()],
         include_globs: Vec::new(),
         exclude_globs: Vec::new(),

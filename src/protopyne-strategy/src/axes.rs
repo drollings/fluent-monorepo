@@ -33,7 +33,7 @@ use crate::error::StrategyError;
 /// knowing the field by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Which axis a field, gate, or threshold measures.
-/// 
+///
 /// Carried in a gate's schema as `x-axis` so a consumer — a terminal badge, an
 /// audit, a test — can tell a confidence reading from a trade decision without
 /// knowing the field by name.
@@ -84,7 +84,7 @@ impl std::fmt::Display for GateAxis {
 /// statement; code that needs a trade judgement must ask for [`Merit`].
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 /// A producer's confidence in its own reading, bounded to `[0, 1]`.
-/// 
+///
 /// Constructors are the only ways in, and neither one starts from another
 /// axis: there is deliberately no `From<f64>` (a bare number has no axis) and
 /// no conversion from [`Merit`]. A confidence value is a *producer's*
@@ -137,7 +137,7 @@ impl Confidence {
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// A task-value reading: the merit of the outcome, in the axes a policy may
 /// threshold.
-/// 
+///
 /// `activity` is the observed opportunity (options participation today);
 /// `edge` is an estimated per-unit edge when a signal measures one. Absence is
 /// not zero: `edge: None` means "not measured", which a policy that needs it
@@ -181,7 +181,7 @@ mod tests;
 /// running uncalibrated.
 #[must_use]
 /// Heuristics whose control/treatment calibration is frozen in-tree.
-/// 
+///
 /// A heuristic id lands here only with a frozen corpus (treatment
 /// must-fire, controls must-not-fire) and measured precision/recall. Cache,
 /// persist, and sizing paths must consult [`require_calibrated`] before

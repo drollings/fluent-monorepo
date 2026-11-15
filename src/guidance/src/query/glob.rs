@@ -86,11 +86,7 @@ pub fn normalize_selection_glob(glob: &str, src_dir_names: &[&str]) -> String {
     if !first.is_empty() && src_dir_names.contains(&first) {
         let rest: String = parts.collect::<Vec<_>>().join("/");
         if !rest.is_empty() {
-            return if negated {
-                format!("!{rest}")
-            } else {
-                rest
-            };
+            return if negated { format!("!{rest}") } else { rest };
         }
     }
     normalized
@@ -163,7 +159,30 @@ fn glob_pattern_matches(pattern: &str, path: &str, case_insensitive: bool) -> bo
 /// the per-call path: normalized pattern, case flag fixed at build).
 /// Used for static pattern lists matched once per file.
 pub(crate) fn compile_path_glob(pattern: &str, case_insensitive: bool) -> regex::Regex {
+    #[cfg(test)]
+    COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     glob_to_regex(&normalize_path_pattern(pattern), case_insensitive)
+}
+
+/// Test-only count of `compile_path_glob` constructions: the
+/// precompile-once contract pins this to the pattern count, not the
+/// file count.
+#[cfg(test)]
+static COMPILE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Test-only reset for the compile counter.
+#[cfg(test)]
+/// Test-only reset for the compile counter.
+pub(crate) fn reset_compile_count() {
+    COMPILE_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Test-only read for the compile counter.
+#[cfg(test)]
+#[must_use]
+/// Test-only read for the compile counter.
+pub(crate) fn compile_count() -> usize {
+    COMPILE_COUNT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 fn glob_to_regex(pattern: &str, case_insensitive: bool) -> regex::Regex {

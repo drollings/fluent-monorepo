@@ -58,7 +58,10 @@ impl NameSuggestions {
     /// stable `Speaker N` attribution.
     #[must_use]
     pub fn display(&self, label: usize) -> String {
-        self.names.get(&label).cloned().unwrap_or_else(|| speaker_name(label))
+        self.names
+            .get(&label)
+            .cloned()
+            .unwrap_or_else(|| speaker_name(label))
     }
 }
 

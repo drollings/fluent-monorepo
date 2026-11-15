@@ -190,7 +190,7 @@ pub fn paint_unsupported_chip(ui: &mut egui::Ui, refusal: &ProjectionRefusal) {
 /// second coordinate translation.
 #[must_use]
 /// Shift pane-local overlay geometry into UI space by a pane origin.
-/// 
+///
 /// Every primitive kind is pane-local ([`overlay_geoms`] maps against the
 /// pane's own viewport); the overlay emitter draws exactly these pixels, so
 /// the caller shifts the whole batch by its pane rect's origin first. Series

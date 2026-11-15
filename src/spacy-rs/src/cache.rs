@@ -62,7 +62,7 @@ pub type SpanCacheInvalidate = Arc<dyn Fn(u64) + Send + Sync>;
 /// cheap.
 #[derive(Clone)]
 /// The dependency-free span-cache seam the ladder consults (M2b).
-/// 
+///
 /// A bundle of closures in the same idiom as the fetch seams
 /// ([`LlmRefineFetchSync`](crate::pipeline::LlmRefineFetchSync),
 /// [`EncoderResidualFetch`](crate::pipeline::EncoderResidualFetch)):
@@ -120,7 +120,7 @@ impl std::fmt::Debug for SpanCacheSeam {
 /// yields `0` (never cached — the ladder skips refine when focus is empty).
 #[must_use]
 /// Hash the focused span's lowercased orths into a content key.
-/// 
+///
 /// The key is `hash_utf8(lowercased_focus_tokens joined by 0x1F)`. The 0x1F
 /// separator prevents `"ab"+"c"` colliding with `"a"+"bc"`. An empty focus
 /// yields `0` (never cached — the ladder skips refine when focus is empty).

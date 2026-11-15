@@ -15,7 +15,7 @@
 /// stated choice, not an ambient default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// The complete-bucket rule, one home.
-/// 
+///
 /// A bucket is whole when its children tile the bucket grid contiguously:
 /// the first child opens the bucket, every child gap is the same span, and
 /// the children count out the full bucket span. Anything else — a short

@@ -24,7 +24,7 @@ use crate::error::StrategyError;
 /// once (the signal's fast path) rather than re-extracting them per call.
 #[derive(Debug, Clone, Copy)]
 /// A caller-assembled point-in-time view of one underlying's decision inputs.
-/// 
+///
 /// `bars` and `closes` are the same window: the caller derives the closes
 /// once (the signal's fast path) rather than re-extracting them per call.
 pub struct MarketData<'a> {
@@ -87,7 +87,7 @@ impl MarketView<'_> {
 /// defensively at read time as well.
 #[derive(Debug, Clone, Copy)]
 /// A point-in-time slice of one underlying's option chain.
-/// 
+///
 /// Construction refuses a quote stamped after `as_of`, so a caller bug
 /// (`chain_snapshot` for the wrong instant) cannot leak the future into a
 /// decision. [`quotes_at_or_before`](Self::quotes_at_or_before) re-filters

@@ -24,13 +24,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 /// A stage of the frontier escalation ladder.
-/// 
+///
 /// Each stage is a discrete policy governing how much context, data, and
 /// agency the frontier model receives (doc/router/VISION.md §"The four
 /// modes"). Stages escalate filter → question → team → turnover: the
 /// less-permissive stages are tried first so frontier calls are
 /// progressively more expensive, never all-or-nothing.
-/// 
+///
 /// `serde` is derived so a configured `roles.<role>.escalation.modes`
 /// list deserializes from config.
 pub enum EscalationMode {

@@ -551,7 +551,8 @@ fn voiced_turns_feed_the_first_audio_histogram() {
 fn speak_text_via_tts_decodes_wav_and_reports_missing_route() {
     common_core::runtime::block_on_shared(async {
         let server = httpmock::MockServer::start();
-        let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], crate::s2s::config::AUDIO_OUT_RATE);
+        let wav =
+            orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], crate::s2s::config::AUDIO_OUT_RATE);
         server.mock(|when, then| {
             when.method("POST").path("/tts");
             then.status(200)
@@ -588,7 +589,8 @@ fn speak_text_via_tts_decodes_wav_and_reports_missing_route() {
 fn speak_via_tts_sends_model_for_router_mode() {
     common_core::runtime::block_on_shared(async {
         let server = httpmock::MockServer::start();
-        let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], crate::s2s::config::AUDIO_OUT_RATE);
+        let wav =
+            orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], crate::s2s::config::AUDIO_OUT_RATE);
         let voiced = server.mock(|when, then| {
             when.method("POST")
                 .path("/tts")

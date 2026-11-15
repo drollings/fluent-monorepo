@@ -1,28 +1,17 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::ast_parser::AstParser;
+use crate::sync_engine::{SyncEngine, SyncEngineError};
 use fluent_concurrency::pool::{global_pool_config, ResultPool};
 use fluent_concurrency::runtime::tokio::TokioRuntime;
 use fluent_concurrency::thread_resource::with_tlr;
-use fluent_db::wvr::{DbWorkUnit, StoreUnitOp};
-use fluent_wvr::{WorkContext, WorkError, WorkOutput, WorkUnit};
-
-use crate::ast_parser::AstParser;
-use crate::sync_engine::{GenConfig, SyncEngine, SyncEngineError};
-use search_vector::GuidanceDb;
 
 /// A file for AST generation in the result pool.
 pub struct AstGenPayload {
     pub source_path: PathBuf,
     pub source_dir: PathBuf,
     pub guidance_dir: PathBuf,
-    pub config: GenConfig,
-}
-
-/// A database sync job for the result pool.
-pub struct DbSyncPayload {
-    pub json_dir: PathBuf,
-    pub db_path: PathBuf,
 }
 
 use fluent_types::GuidanceDoc;
@@ -47,51 +36,13 @@ pub fn ast_pool() -> Arc<ResultPool<AstGenPayload, GuidanceDoc, SyncEngineError>
                         job.source_dir,
                         std::mem::take(parser),
                     );
-                    let r = engine.gen_with_config(&job.source_path, &job.config);
+                    let r = engine.gen(&job.source_path);
                     *parser = engine.ast_parser;
                     r
                 })
             })
             .await
             .unwrap_or_else(|e| Err(SyncEngineError::Parse(e.to_string())))
-        },
-    ))
-}
-
-/// Build the `DbWorkUnit` that performs a guidance DB sync.
-///
-/// The op runs on a dedicated blocking thread via `DbWorkUnit::execute`'s
-/// offload, so the `ResultPool` worker never blocks on the rusqlite work.
-/// The database opens per job (R.5: the `SHARED_DB` static is gone); writes
-/// stay serialized by the single-worker pool built in [`db_pool`].
-fn db_sync_work_unit(job: DbSyncPayload) -> DbWorkUnit<StoreUnitOp> {
-    DbWorkUnit::builder()
-        .name("db.sync")
-        .op(Box::new(move |_ctx: &WorkContext| {
-            let db =
-                GuidanceDb::open(&job.db_path).map_err(|e| WorkError::Execution(e.to_string()))?;
-            let count = db
-                .sync_from_dir(&job.json_dir)
-                .map_err(|e| WorkError::Execution(e.to_string()))?;
-            WorkOutput::typed("synced guidance db", &count)
-                .map_err(|e| WorkError::Execution(e.to_string()))
-        }) as StoreUnitOp)
-        .build()
-}
-
-/// Build a database sync pool — serializes writes to avoid SQLite
-/// contention. Owned per call (R.5: the `DB_POOL` static is gone).
-pub fn db_pool() -> Arc<ResultPool<DbSyncPayload, usize, String>> {
-    Arc::new(ResultPool::new(
-        Arc::new(TokioRuntime),
-        1,
-        100,
-        |job: DbSyncPayload| async move {
-            let unit = db_sync_work_unit(job);
-            let output = unit
-                .execute(&WorkContext::default())
-                .map_err(|e| e.to_string())?;
-            output.data_take::<usize>().map_err(|e| e.to_string())
         },
     ))
 }
@@ -128,9 +79,7 @@ mod tests {
     #[tokio::test]
     async fn test_ast_pool_owned_lifecycle() {
         let pool = ast_pool();
-        let db_pool = db_pool();
         assert!(Arc::strong_count(&pool) >= 1);
-        assert!(Arc::strong_count(&db_pool) >= 1);
     }
 
     #[test]

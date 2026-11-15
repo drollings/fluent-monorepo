@@ -79,10 +79,10 @@ impl Drop for Retire<'_> {
 /// can grow (fingerprint today) without another signature break. `key()`
 /// frames each part with its length; an absent fingerprint contributes
 /// nothing, so legacy callers hash exactly as before.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::CacheKeyInput;
-/// 
+///
 /// let input = CacheKeyInput {
 /// state: "s".to_string(),
 /// question: "q?".to_string(),
@@ -155,10 +155,10 @@ impl CacheKeyInput {
 #[allow(clippy::too_many_arguments)]
 /// Legacy constructor: identical bytes to the struct form with no
 /// fingerprint. Prefer `CacheKeyInput` for new callers.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::decision_cache_key;
-/// 
+///
 /// let extras = serde_json::json!({});
 /// let a = decision_cache_key("s", "q?", "id", 1, "m", "http://a", &extras, None);
 /// let b = decision_cache_key("s", "q!", "id", 1, "m", "http://a", &extras, None);

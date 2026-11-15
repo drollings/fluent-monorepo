@@ -114,7 +114,7 @@ pub fn strip_model_prefix(name: &str) -> Option<&str> {
 /// through the binding. Resolution to a concrete `base:qualifier` target
 /// happens per request at dispatch time, never at boot, so lazy models load
 /// correctly.
-/// 
+///
 /// A role owns its run configuration: `params` is the role's "how a model
 /// is run" block (launch knobs plus flat sampling keys — never a nested
 /// `params` object; the fleet block lives as `roles.default.params`).
@@ -125,7 +125,7 @@ pub fn strip_model_prefix(name: &str) -> Option<&str> {
 /// resolves from the route, which selects a model from the role's models,
 /// and the model's entry default supplies the point (explicit `base:point`
 /// still wins).
-/// 
+///
 /// `max_parallel` is the per-role admission cap: how many simultaneous
 /// dispatches the role admits, enforced per-role globally at the dispatch
 /// gate. `None` (the default) leaves the role unbounded. A zero cap would
@@ -444,7 +444,7 @@ pub fn fleet_default_member(models: &HashMap<String, ModelEntry>) -> Option<Stri
 #[allow(clippy::implicit_hasher)]
 /// Viability-ordered member selection over expanded members — the shared core
 /// behind static role resolution and every availability-sentinel fallback.
-/// 
+///
 /// Ordering (task-value, never producer confidence): resident members first
 /// (via `is_resident` over the base key; `None` treats every candidate as
 /// resident), then intelligence-passing members (`intelligence >=
@@ -456,7 +456,7 @@ pub fn fleet_default_member(models: &HashMap<String, ModelEntry>) -> Option<Stri
 /// template excluded) — the runtime recency expansion supersedes that
 /// whenever the target-match ladder runs. Returns the full member key
 /// (possibly qualified).
-/// 
+///
 /// Resident-first is the whole point of `last`: work with whatever model is
 /// loaded rather than load another. No pool filtering: a loaded member that
 /// fails the intelligence bar still outranks a cold passer — a cold load
@@ -1164,27 +1164,6 @@ pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
 /// expected boot-materialized (pools composed); pre-boot entries resolve
 /// through step 3.
 #[allow(clippy::implicit_hasher)]
-/// Resolve the inference point a role or model key serves, as the qualifier
-/// of the dispatch `base:qualifier` id (`None` = bare `<base>`). The single
-/// qualifier resolver — every construction path and adapter composes it, so
-/// the precedence is documented once, here:
-/// 
-/// 1. Explicit qualifier — embedded (`base:point`) or parametric — wins,
-/// except `latest`, which normalizes away and falls through.
-/// 2. The entry default over the boot-materialized effective pool (the
-/// `default: true` profile's group, else the cheapest pinned group, else
-/// the single shared group — `default_inference_point`).
-/// 3. Bare key (`None`): no pool materialized, or no rule matched.
-/// 
-/// A role carries no qualifier of its own: it resolves from the route, which
-/// selects a model from a group, and the selected model's entry default
-/// supplies the backend inference point (the caller resolves *what* serves
-/// via [`role_head_key`], then this function resolves *where* on it).
-/// Dispatch targets qualify separately through `apply_terminal_role` — every
-/// dispatch names the role's window (`<base>:<role>`), never the entry
-/// default. Unknown roles and keys fail closed (`None`). Entries are
-/// expected boot-materialized (pools composed); pre-boot entries resolve
-/// through step 3.
 pub fn resolve_inference_point(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,

@@ -36,7 +36,7 @@ pub const TRADING_DAYS_PER_YEAR: u32 = 252;
 /// Returns [`None`] on empty input: no observations, no mean.
 #[must_use]
 /// Arithmetic mean of a series.
-/// 
+///
 /// Returns [`None`] on empty input: no observations, no mean.
 pub fn mean(values: &[Decimal]) -> Option<Decimal> {
     if values.is_empty() {
@@ -55,7 +55,7 @@ pub fn mean(values: &[Decimal]) -> Option<Decimal> {
 /// callers map zero dispersion to [`None`] where a ratio needs it.
 #[must_use]
 /// Population standard deviation of a series (divides by N).
-/// 
+///
 /// Returns [`None`] on empty input or unrepresentable intermediate math. A
 /// single observation (or a constant series) yields zero, which is defined —
 /// callers map zero dispersion to [`None`] where a ratio needs it.
@@ -77,7 +77,7 @@ pub fn population_std(values: &[Decimal]) -> Option<Decimal> {
 /// step overflows decimal range.
 #[must_use]
 /// Annualized Sharpe ratio of per-step returns.
-/// 
+///
 /// `(mean - risk_free_per_step) / population_std * sqrt(periods_per_year)`.
 /// Returns [`None`] when the series is empty, the dispersion is zero, or any
 /// step overflows decimal range.
@@ -106,7 +106,7 @@ pub fn sharpe(
 /// short of target (no downside to price), or math overflows.
 #[must_use]
 /// Annualized Sortino ratio of per-step returns.
-/// 
+///
 /// `(mean - target) / downside_deviation * sqrt(periods_per_year)`, where
 /// the downside deviation roots the mean squared shortfall below `target`
 /// over *all* N steps (population-style, matching [`population_std`]).
@@ -148,7 +148,7 @@ pub fn sortino(
 /// overflow decimal range are skipped rather than panicking.
 #[must_use]
 /// Per-step simple returns of an equity curve, skipping pre-deployment zeros.
-/// 
+///
 /// Steps whose base is zero (the flat-zero prefix before capital deploys)
 /// have no rate to report and are skipped, the summary analog of the
 /// first-nonzero-base rule in the cumulative-return helper. Steps that
@@ -179,12 +179,12 @@ pub fn step_returns(equity: &[Decimal]) -> Vec<Decimal> {
 /// portfolio-drawdown breaker divide identically.
 #[must_use]
 /// Peak-to-trough drawdown as a fraction of the running peak.
-/// 
+///
 /// Returns [`None`] when the curve never prints a positive peak (empty,
 /// all-zero, or all-negative curves): there is no peak to fall from. A flat
 /// positive curve reports zero, which is defined — callers map it to
 /// [`None`] where a ratio needs it.
-/// 
+///
 /// The per-step division lives in `protopyne_kernels::drawdown_of_peak` —
 /// the one home for peak-to-trough arithmetic — so this fold and the
 /// portfolio-drawdown breaker divide identically.
@@ -209,7 +209,7 @@ pub fn drawdown_fraction(equity: &[Decimal]) -> Option<Decimal> {
 /// drawdown is zero or absent, or math overflows.
 #[must_use]
 /// Annualized Calmar-style ratio of an equity curve.
-/// 
+///
 /// `(mean_step_return - risk_free_per_step) * periods_per_year /
 /// drawdown_fraction`. Returns [`None`] when no step return exists, the
 /// drawdown is zero or absent, or math overflows.
@@ -236,7 +236,7 @@ pub fn calmar(
 /// loss. Returns [`None`] when no step moved.
 #[must_use]
 /// Win rate over per-step moves: winning steps over decisive steps.
-/// 
+///
 /// Flat (zero) steps are excluded — holding still is neither a win nor a
 /// loss. Returns [`None`] when no step moved.
 pub fn win_rate(step_moves: &[Decimal]) -> Option<Decimal> {
@@ -264,7 +264,7 @@ pub fn win_rate(step_moves: &[Decimal]) -> Option<Decimal> {
 /// ceiling). An all-loss book is genuinely zero and reports `Some(0)`.
 #[must_use]
 /// Profit factor over per-step moves: gross gains over gross losses.
-/// 
+///
 /// Returns [`None`] for an empty book (nothing to divide) and for an
 /// all-win book (unbounded upside is absence of a ratio, never an invented
 /// ceiling). An all-loss book is genuinely zero and reports `Some(0)`.

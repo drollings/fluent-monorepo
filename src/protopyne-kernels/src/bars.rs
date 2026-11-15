@@ -1861,7 +1861,7 @@ fn nonzero_or(value: f64, default: f64) -> f64 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// ---------------------------------------------------------------------------
 /// Native engine bridge: Pine `Bars` object field tables in and out.
-/// 
+///
 /// The engine keeps the Pine object as the single source of truth; native
 /// execution is a pure transition over its fields (hydrate, run, dehydrate),
 /// so snapshots, dumps, and later interpreted reads observe identical state
@@ -2641,7 +2641,7 @@ pub(crate) fn bucket_ranges_of(
 /// Close instant of each row's bucket at `span_ms`: the end of the bucket's
 /// own span, pulled back to the exchange session close when the span would
 /// cross one.
-/// 
+///
 /// A bucket that stays inside a session closes after its own span; the final
 /// bucket of a session closes at the bell; and a daily bucket stamped at UTC
 /// midnight closes at that trading day's bell rather than at the next bucket's
@@ -2745,7 +2745,7 @@ pub const MAX_EXACT_VOLUME: u64 = 1 << 53;
 /// Confirmed-bar gate: a bar may feed finalized output iff its whole span
 /// sits at or before `now` under [`Lookahead::Off`] — the close fence is
 /// `open + span <= now`, so a bar closing exactly at `now` counts.
-/// 
+///
 /// Gaps change no verdict (missing buckets neither confirm nor un-confirm
 /// their neighbors — the sparse default reports them instead of
 /// materializing them); [`Lookahead::On`] refuses outright, so future-bar
@@ -2800,7 +2800,7 @@ fn check_row(prev: Option<&Bar>, bar: &Bar) -> Result<ClosedBar, KernelError> {
 #[derive(Debug, Clone)]
 /// Backfill adapter over loaded history: confirmed rows plus the
 /// confirmed-bar gate and whole-suffix rebuild on correction.
-/// 
+///
 /// The server owns parsing and fallback (`load_history` over either history
 /// arm) and composes that output into [`from_bars`](Self::from_bars) — this
 /// adapter never parses, never falls back, and never reaches past the

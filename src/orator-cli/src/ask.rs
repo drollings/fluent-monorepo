@@ -31,8 +31,7 @@ pub enum AskFail {
 /// resolve byte-identically through either layer. Pure (no weights,
 /// no I/O) so resolution pins without hardware.
 pub fn resolve_ask_model(config: &orator::OratorConfig) -> String {
-    orator::resolve_role_model(&config.roles, "chat")
-        .unwrap_or_else(|| config.llm.model.clone())
+    orator::resolve_role_model(&config.roles, "chat").unwrap_or_else(|| config.llm.model.clone())
 }
 
 /// Effective LLM section for ask and boot: the leaf with the resolved
@@ -47,8 +46,7 @@ pub fn effective_llm_config(
 ) -> Result<orator::LlmEndpointConfig, String> {
     let mut llm = config.llm.clone();
     llm.model = resolve_ask_model(config);
-    let composed =
-        orator::compose_role_params(&config.models, &config.roles, "chat", &llm.model);
+    let composed = orator::compose_role_params(&config.models, &config.roles, "chat", &llm.model);
     if let Some(value) = composed.get("ctx") {
         llm.ctx = composed_u16("ctx", value, 1024)?;
     }

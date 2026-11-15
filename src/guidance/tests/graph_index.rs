@@ -10,6 +10,7 @@ use crate::graph_index::{
     ContextDirection, ContextFamily, GraphIndex, GraphQuerySignals, HarvestInput,
 };
 use crate::search_types::{FileKind, RrfScore};
+use std::fmt::Write as _;
 
 fn harvest(format: &str, text: &str) -> crate::extractor::code::HarvestedFile {
     let mut parser = AstParser::new();
@@ -1206,5 +1207,33 @@ fn tests_touching_files_resolves_changed_files() {
             .tests_touching_files(&["/repo/src/b.rs".to_string()])
             .is_empty(),
         "nothing exercises b.rs"
+    );
+}
+
+#[test]
+fn graph_records_call_sites_past_the_outline_display_cap() {
+    // M6.3 invariant: the harvest records every distinct call site for
+    // graph use, not the outline's 24-call display page. A function
+    // with 30 distinct callees persists all 30; the outline still
+    // renders the first page only.
+    let mut body = String::from("fn many() {\n");
+    for index in 0..30 {
+        let _ = writeln!(body, "    callee_{index:02}();");
+    }
+    body.push_str("}\n");
+    let harvested = harvest("rust", &body);
+    let calls: Vec<&String> = harvested
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name.as_deref() == Some("many"))
+        .map(|symbol| symbol.calls.iter().collect())
+        .unwrap_or_default();
+    assert_eq!(calls.len(), 30, "all call sites persist: {calls:?}");
+    // Display cap pins at the render site (`take(OUTLINE_MAX_CALLS)`),
+    // not in the harvest: 30 recorded calls render 24.
+    assert_eq!(
+        crate::search_constants::OUTLINE_MAX_CALLS,
+        24,
+        "display page size is the pinned constant"
     );
 }

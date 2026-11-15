@@ -57,22 +57,22 @@ use crate::stages::common::extract_user_message;
 /// contract and returns the raw §10.1 JSON array (or an error the ladders
 /// swallow in favor of the rule rung). Both twins share the prompt contract
 /// below, so async and sync callers always send identical requests.
-/// 
+///
 /// The async twin bridges the sync backend seam through `spawn_blocking`
 /// (the `ChatBackend` trait is sync-only by design — spacy-rs owns no
 /// runtime); the blocking pool is the correct sync→async direction, never
 /// `block_on` inside a task.
-/// 
+///
 /// The call goes through the extras seam carrying the `AnnotationSet` JSON
 /// schema as `response_format.schema` (ROADMAP M2.4), so a
 /// grammar-constrained backend (the onnx LLM) cannot emit a structurally
 /// invalid annotation array — `parse_json` cannot structurally fail. A backend
 /// without the extras seam (HTTP, stubs) ignores the extras unchanged, leaving
 /// the post-hoc validator as the backstop.
-/// 
+///
 /// spacy-rs seams are untouched: this only *constructs* its closure types,
 /// adding no dependency in either direction.
-/// 
+///
 /// The async twin has no production caller yet (the sync ladder is the only
 /// wired consumer) — it is the async seam with twin-agreement tests, waiting
 /// on an async-ladder wiring that does not exist today.

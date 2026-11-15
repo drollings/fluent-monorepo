@@ -120,12 +120,12 @@ fn default_source() -> String {
 #[builder(start_fn = new)]
 /// One Fast MAs overlay's configuration: the single schema-driven control
 /// truth behind its settings pane.
-/// 
+///
 /// Every field is a `Component` field, so the settings modal renders from the
 /// `describe()` schema and a new knob appears without a UI edit. The
 /// `*_ma_type` / `*_ma_length` fields route to the Inputs tab, the
 /// `*_style` theme keys to Style, and the `show_*` toggles to Visibility.
-/// 
+///
 /// The reference exposes four independent visibility toggles (first, second,
 /// the EMA group, and the SMA trio); splitting them into sub-structs would
 /// fragment the one settings schema the modal renders from.

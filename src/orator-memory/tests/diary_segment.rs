@@ -29,7 +29,9 @@ fn mic_channel_shortcuts_to_user() {
     let segments = segment(Channel::Mic, 48_000);
     assert!(!segments.is_empty());
     assert!(segments.iter().all(super::Segment::is_user_channel));
-    assert!(segments.iter().all(|segment| segment.midpoint() > segment.start_sample));
+    assert!(segments
+        .iter()
+        .all(|segment| segment.midpoint() > segment.start_sample));
 }
 
 #[test]

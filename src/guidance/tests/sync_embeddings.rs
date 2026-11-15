@@ -1,0 +1,356 @@
+//! Semantic-unit embed backfill: selector matrix, status rows,
+//! unchanged skip, no embedder, and partial failure. Included via
+//! `#[path]` forwarder from `index_pipeline.rs`, per repo convention.
+//! Hermetic: in-memory index, deterministic stub embedder, no endpoint.
+
+use super::*;
+use fluent_llm::embeddings::{BatchEmbedding, EmbeddingError, EmbeddingProvider};
+use search_vector::db::{FileRecord, FragmentRecord, FragmentRow, GuidanceDb};
+
+struct StubEmbedder {
+    dims: u32,
+    fail_on: std::sync::Mutex<Vec<String>>,
+    unavailable_on: std::sync::Mutex<Vec<String>>,
+    calls: std::sync::Mutex<usize>,
+}
+
+impl StubEmbedder {
+    fn new() -> Self {
+        Self {
+            dims: 4,
+            fail_on: std::sync::Mutex::new(Vec::new()),
+            unavailable_on: std::sync::Mutex::new(Vec::new()),
+            calls: std::sync::Mutex::new(0),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        *common_core::sync::lock(&self.calls)
+    }
+}
+
+impl EmbeddingProvider for StubEmbedder {
+    fn name(&self) -> &'static str {
+        "stub"
+    }
+
+    fn dimensions(&self) -> u32 {
+        self.dims
+    }
+
+    fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        Ok(vec![text.len() as f32; self.dims as usize])
+    }
+
+    fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        *common_core::sync::lock(&self.calls) += 1;
+        let fail_on = common_core::sync::lock(&self.fail_on);
+        let unavailable_on = common_core::sync::lock(&self.unavailable_on);
+        for text in texts {
+            if unavailable_on.iter().any(|marker| text.contains(marker)) {
+                return Err(EmbeddingError::RequestFailed("transport down".to_string()));
+            }
+            if fail_on.iter().any(|marker| text.contains(marker)) {
+                return Err(EmbeddingError::ParseError("poison input".to_string()));
+            }
+        }
+        let flat: Vec<f32> = texts
+            .iter()
+            .flat_map(|text| vec![text.len() as f32; self.dims as usize])
+            .collect();
+        Ok(BatchEmbedding {
+            flat,
+            count: texts.len(),
+            dims: self.dims as usize,
+        })
+    }
+}
+
+fn file_a() -> FileRecord {
+    FileRecord {
+        id: "file-a".to_string(),
+        absolute_path: "/repo/src/a.rs".to_string(),
+        relative_path: "src/a.rs".to_string(),
+        root_path: "/repo".to_string(),
+        size_bytes: 100,
+        last_modified_time: 100,
+        kind: Some("code".to_string()),
+        format: "rust".to_string(),
+        content_hash: None,
+        index_status: Some("indexed".to_string()),
+        fail_count: 0,
+        last_error: None,
+    }
+}
+
+fn frow(id: &str) -> FragmentRow {
+    FragmentRow {
+        id: id.to_string(),
+        group: None,
+        file_id: "file-a".to_string(),
+        range_json: "{\"kind\":\"item\"}".to_string(),
+        content_kind: "text".to_string(),
+        content_text: Some("fn alpha() {}".to_string()),
+        symbol_type: Some("function".to_string()),
+        symbol_name: Some("alpha".to_string()),
+        scope: None,
+        signature: Some("fn alpha()".to_string()),
+        doc: Some("Adds one.".to_string()),
+        modifiers: String::new(),
+        heading: None,
+        heading_level: None,
+    }
+}
+
+fn row(id: &str) -> FragmentRecord {
+    FragmentRecord {
+        id: id.to_string(),
+        group: None,
+        file_id: "file-a".to_string(),
+        range_json: "{\"kind\":\"item\"}".to_string(),
+        content_kind: "text".to_string(),
+        content_text: Some("fn alpha() {}".to_string()),
+        cjk_text: String::new(),
+        symbol_type: Some("function".to_string()),
+        symbol_name: Some("alpha".to_string()),
+        scope: None,
+        signature: Some("fn alpha()".to_string()),
+        doc: Some("Adds one.".to_string()),
+        modifiers: String::new(),
+        heading: None,
+        heading_level: None,
+        embedding: None,
+    }
+}
+
+fn seed(db: &GuidanceDb, fragments: &[FragmentRecord]) {
+    db.upsert_fragments(&file_a(), fragments, &[])
+        .expect("seed");
+    // upsert clears vectors by convention; backfill candidates must
+    // actually lack them.
+    assert_eq!(db.embedded_fragment_count().expect("count"), 0);
+}
+
+#[test]
+fn selector_matrix_pins_units_and_skip_reasons() {
+    let function = frow("fn");
+    let mut value = frow("value");
+    value.symbol_type = Some("value".to_string());
+    let mut pseudo = frow("pseudo");
+    pseudo.symbol_name = Some("$file".to_string());
+    let mut whole = frow("whole");
+    whole.symbol_type = None;
+    whole.symbol_name = None;
+    let mut markdown = frow("md");
+    markdown.symbol_type = None;
+    markdown.symbol_name = None;
+    markdown.heading = Some("Guide".to_string());
+    markdown.content_text = Some("Body text.".to_string());
+    let mut image = frow("img");
+    image.content_kind = "image".to_string();
+    let mut eval = frow("eval");
+    eval.file_id = "/repo/doc/guidance/eval/questions.jsonl".to_string();
+    let mut mirror = frow("mirror");
+    mirror.file_id = "/repo/.guidance/src/a.json".to_string();
+    let mut empty = frow("empty");
+    empty.symbol_type = None;
+    empty.symbol_name = None;
+    empty.heading = Some(String::new());
+    empty.content_text = None;
+    empty.doc = None;
+    for (kind, fragment) in [
+        ("module", "m"),
+        ("class", "c"),
+        ("interface", "i"),
+        ("function", "f"),
+        ("alias", "a"),
+    ] {
+        let mut unit = frow(kind);
+        unit.symbol_type = Some(kind.to_string());
+        unit.symbol_name = Some(kind.to_string());
+        assert!(
+            classify_embed_fragment(&unit).is_ok(),
+            "{kind} is a unit: {unit:?}"
+        );
+        let _ = (fragment, unit);
+    }
+    assert!(classify_embed_fragment(&function).is_ok());
+    assert!(classify_embed_fragment(&markdown).is_ok());
+    assert_eq!(
+        classify_embed_fragment(&value)
+            .expect_err("value skips")
+            .reason,
+        "non-unit-symbol"
+    );
+    assert_eq!(
+        classify_embed_fragment(&pseudo)
+            .expect_err("pseudo skips")
+            .reason,
+        "module-pseudo-symbol"
+    );
+    assert_eq!(
+        classify_embed_fragment(&whole)
+            .expect_err("whole-file skips")
+            .reason,
+        "whole-file"
+    );
+    assert_eq!(
+        classify_embed_fragment(&image)
+            .expect_err("image skips")
+            .reason,
+        "image"
+    );
+    assert_eq!(
+        classify_embed_fragment(&eval)
+            .expect_err("eval skips")
+            .reason,
+        "eval-fixture"
+    );
+    assert_eq!(
+        classify_embed_fragment(&mirror)
+            .expect_err("mirror skips")
+            .reason,
+        "derived-mirror"
+    );
+    assert_eq!(
+        classify_embed_fragment(&empty)
+            .expect_err("empty skips")
+            .reason,
+        "empty-input"
+    );
+}
+
+#[test]
+fn unit_input_carries_symbol_and_doc_shape() {
+    let unit = classify_embed_fragment(&frow("fn")).expect("unit");
+    assert!(
+        unit.input.contains("symbol: function alpha"),
+        "{}",
+        unit.input
+    );
+    assert!(unit.input.contains("doc: Adds one."), "{}", unit.input);
+    assert!(unit.input.contains("fn alpha() {}"), "{}", unit.input);
+    assert_eq!(unit.input_hash.len(), 64);
+}
+
+#[test]
+fn backfill_embeds_units_and_records_skips_with_reasons() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    let mut whole = row("whole");
+    whole.symbol_type = None;
+    whole.symbol_name = None;
+    seed(&db, &[row("fn"), whole]);
+    let provider = StubEmbedder::new();
+    let report = backfill_fragment_embeddings(&db, Some(&provider), &IndexOptions::default())
+        .expect("backfill");
+    assert_eq!(report.candidates, 2, "{report:?}");
+    assert_eq!(report.embedded, 1, "{report:?}");
+    assert_eq!(report.skipped_filtered, 1, "{report:?}");
+    assert_eq!(db.embedded_fragment_count().expect("count"), 1);
+    let statuses = db
+        .embedding_status_for_ids(&["fn".to_string(), "whole".to_string()])
+        .expect("status");
+    assert_eq!(statuses.len(), 2, "{statuses:?}");
+    let ready = statuses
+        .iter()
+        .find(|row| row.fragment_id == "fn")
+        .expect("fn status");
+    assert_eq!(ready.status, "ready");
+    assert_eq!(ready.embedder, "stub:4");
+    assert!(ready.reason.is_empty());
+    let skipped = statuses
+        .iter()
+        .find(|row| row.fragment_id == "whole")
+        .expect("skip status");
+    assert_eq!(skipped.status, "skipped");
+    assert_eq!(skipped.reason, "whole-file");
+}
+
+#[test]
+fn unchanged_inputs_skip_without_new_calls() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    seed(&db, &[row("fn")]);
+    let provider = StubEmbedder::new();
+    let options = IndexOptions::default();
+    let first = backfill_fragment_embeddings(&db, Some(&provider), &options).expect("first");
+    assert_eq!(first.embedded, 1, "{first:?}");
+    let calls = provider.calls();
+    assert!(calls > 0);
+    let second = backfill_fragment_embeddings(&db, Some(&provider), &options).expect("second");
+    assert_eq!(second.candidates, 0, "{second:?}");
+    assert_eq!(second.embedded, 0, "{second:?}");
+    assert_eq!(provider.calls(), calls, "no new embed calls");
+}
+
+#[test]
+fn changed_inputs_reembed_and_terminal_failures_wait() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    seed(&db, &[row("fn")]);
+    let provider = StubEmbedder::new();
+    let options = IndexOptions::default();
+    backfill_fragment_embeddings(&db, Some(&provider), &options).expect("first");
+    // New bytes, same id: the status hash disagrees, so the row re-embeds.
+    let mut edited = row("fn");
+    edited.content_text = Some("fn alpha_edited() {}".to_string());
+    db.upsert_fragments(&file_a(), &[edited], &[])
+        .expect("edit");
+    let calls = provider.calls();
+    let report = backfill_fragment_embeddings(&db, Some(&provider), &options).expect("re-embed");
+    assert_eq!(report.embedded, 1, "{report:?}");
+    assert!(provider.calls() > calls);
+    // Terminal failure with the same input and embedder waits: the next
+    // run skips without calling the backend again.
+    common_core::sync::lock(&provider.fail_on).push("alpha_edited".to_string());
+    let mut edited_again = row("fn");
+    edited_again.content_text = Some("fn alpha_edited_again() {}".to_string());
+    db.upsert_fragments(&file_a(), &[edited_again], &[])
+        .expect("edit");
+    let report = backfill_fragment_embeddings(&db, Some(&provider), &options).expect("fail");
+    assert_eq!(report.failed, 1, "{report:?}");
+    let failed_status = db
+        .embedding_status_for_ids(&["fn".to_string()])
+        .expect("status");
+    assert_eq!(failed_status[0].status, "failed");
+    assert!(!failed_status[0].reason.is_empty());
+    let calls = provider.calls();
+    let report = backfill_fragment_embeddings(&db, Some(&provider), &options).expect("wait");
+    assert_eq!(report.failed, 0, "{report:?}");
+    assert_eq!(report.skipped_unchanged, 1, "{report:?}");
+    assert_eq!(
+        provider.calls(),
+        calls,
+        "terminal failure waits for new input"
+    );
+}
+
+#[test]
+fn transport_failures_retry_next_run() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    seed(&db, &[row("fn")]);
+    let provider = StubEmbedder::new();
+    common_core::sync::lock(&provider.unavailable_on).push("alpha".to_string());
+    let options = IndexOptions::default();
+    let report = backfill_fragment_embeddings(&db, Some(&provider), &options).expect("backfill");
+    assert_eq!(report.unavailable, 1, "{report:?}");
+    assert_eq!(report.embedded, 0, "{report:?}");
+    assert_eq!(db.embedded_fragment_count().expect("count"), 0);
+    common_core::sync::lock(&provider.unavailable_on).clear();
+    let report = backfill_fragment_embeddings(&db, Some(&provider), &options).expect("retry");
+    assert_eq!(report.embedded, 1, "{report:?}");
+    assert_eq!(report.unavailable, 0, "{report:?}");
+}
+
+#[test]
+fn no_embedder_records_nothing() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    seed(&db, &[row("fn")]);
+    let report =
+        backfill_fragment_embeddings(&db, None, &IndexOptions::default()).expect("no backend");
+    assert!(report.backend_missing, "{report:?}");
+    assert_eq!(report.embedded, 0, "{report:?}");
+    assert_eq!(db.embedded_fragment_count().expect("count"), 0);
+    assert!(db
+        .embedding_status_for_ids(&["fn".to_string()])
+        .expect("status")
+        .is_empty());
+}

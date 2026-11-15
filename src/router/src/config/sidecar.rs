@@ -27,7 +27,7 @@ pub enum EvictionPolicy {
 /// `llama-server`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Sidecar instance-management policy.
-/// 
+///
 /// The sidecar task is the external VRAM-policy owner the fork's docs
 /// describe: it boot-reconciles configured instance profiles against
 /// `GET /instances`, polls `/memory`, and evicts least-recently-used unpinned

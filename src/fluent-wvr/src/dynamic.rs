@@ -40,7 +40,7 @@ pub type DynamicExecutor = Arc<
 #[allow(dead_code)]
 /// Compatibility surface (scaffold).
 /// A runtime-assembled `Component`.
-/// 
+///
 /// Fields are stored in an interior `Mutex<HashMap<String, String>>` so
 /// `set_field` works on `&mut self` after construction (matching `WasmComponent`).
 /// `field_names` returns the declared schema keys; unknown keys are still

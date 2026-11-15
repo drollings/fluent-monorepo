@@ -385,8 +385,7 @@ async fn shipped_root_serves_gld_months_by_symbol() {
     // End-to-end over the shipped data root: GLD parquet months serve GLD
     // reads with GLD closes (never the SPY boot bars), proving a picked
     // ticker loads instead of substituting or refusing.
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs/historical");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs/historical");
     if !root.join("GLD").is_dir() {
         eprintln!("shipped root has no GLD tree; skipping");
         return;
@@ -408,7 +407,8 @@ async fn shipped_root_serves_gld_months_by_symbol() {
     let spy_close = boot.last().map(|bar| bar.c);
     let gld_close = gld.rows.last().map(|row| row.close);
     assert_ne!(
-        gld_close, spy_close.map(|c| c.to_string().parse().unwrap_or(f64::NAN)),
+        gld_close,
+        spy_close.map(|c| c.to_string().parse().unwrap_or(f64::NAN)),
         "GLD serves its own closes: {gld_close:?} vs SPY {spy_close:?}"
     );
     handle.shutdown().await;

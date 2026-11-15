@@ -55,7 +55,7 @@ pub fn scale_divisor(scale: Scale16) -> f32 {
 /// zero (silence) under either rounding mode.
 #[must_use]
 /// Quantize one sample: clamp to `[-1.0, 1.0]`, scale, round, cast.
-/// 
+///
 /// NaN clamps to itself and the float-to-int cast saturates it to
 /// zero (silence) under either rounding mode.
 pub fn f32_to_i16_sample(sample: f32, scale: Scale16, rounding: Rounding) -> i16 {
@@ -89,7 +89,7 @@ pub fn encode_i16_le(samples: &[f32], scale: Scale16, rounding: Rounding) -> Vec
 /// A trailing partial sample is dropped, never fabricated.
 #[must_use]
 /// Decode little-endian `i16` bytes to samples.
-/// 
+///
 /// A trailing partial sample is dropped, never fabricated.
 pub fn decode_i16_le(bytes: &[u8], scale: Scale16) -> Vec<f32> {
     bytes
@@ -114,7 +114,7 @@ pub fn encode_f32_le(samples: &[f32]) -> Vec<u8> {
 /// A trailing partial sample is dropped, never fabricated.
 #[must_use]
 /// Decode little-endian `f32` bytes to samples.
-/// 
+///
 /// A trailing partial sample is dropped, never fabricated.
 pub fn decode_f32_le(bytes: &[u8]) -> Vec<f32> {
     bytes
@@ -150,7 +150,7 @@ pub const WAV_HEADER_LEN: usize = 44;
 /// exists anywhere.
 #[must_use]
 /// Assemble a mono PCM16 WAV frame: 44-byte header plus payload.
-/// 
+///
 /// Builds the payload through [`encode_i16_le`], allocates exactly
 /// `WAV_HEADER_LEN + payload.len()`, then appends [`wav_frame_header`]
 /// followed by the payload. Scale and rounding stay caller-chosen so
@@ -215,7 +215,7 @@ pub fn extend_mono_from_interleaved<T>(
 /// patterns through this function.
 #[must_use]
 /// Root mean square amplitude of one frame.
-/// 
+///
 /// Empty input reads as digital silence (`0.0`). Otherwise the exact
 /// `f32` accumulation order is the contract: sum of squares in input
 /// order as `f32`, divided by the length as `f32`, then `sqrt()`.

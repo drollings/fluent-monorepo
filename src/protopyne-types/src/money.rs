@@ -19,7 +19,7 @@ use crate::error::TypesError;
 /// refuse, so no serde path rounds excess precision into a decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 /// A monetary amount in account currency.
-/// 
+///
 /// Serializes through `Decimal`'s own shape (unchanged, so manifests stay
 /// byte-identical); deserializes strictly — strings route through the
 /// scale-guarded [`FromStr`](Money), integers convert exactly, and floats
@@ -203,7 +203,7 @@ impl FromStr for Money {
 /// `Decimal`'s own shape, deserialization never rounds into a count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 /// A share or contract count. Never mixed with [`Money`] by construction.
-/// 
+///
 /// Same strict-deserialization contract as [`Money`]: serialization is
 /// `Decimal`'s own shape, deserialization never rounds into a count.
 pub struct Qty(pub Decimal);

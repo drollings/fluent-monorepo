@@ -2306,7 +2306,8 @@ fn legacy_bare_tostring_routes_to_the_bridge() {
     // serves through the shared `str` namespace with the identical site
     // key a `str.`-qualified call builds.
     let bars = ramp_bars(3);
-    let modules = link_script("a = tostring(close)\nb = str.tostring(close)\nplot(close, title=\"V\")");
+    let modules =
+        link_script("a = tostring(close)\nb = str.tostring(close)\nplot(close, title=\"V\")");
     let program = compile_case(&modules);
     link_case(&program, &modules).expect("bare tostring links with full coverage");
     assert_eq!(
@@ -2348,8 +2349,14 @@ fn construction_binds_field_arguments_positionally_and_by_name() {
         outcome.plots[0].values
     );
     for (name, script) in [
-        ("extra positional", "type Pair\n    float first\np = Pair.new(1.0, 2.0)\nplot(p.first, title=\"V\")"),
-        ("unknown name", "type Pair\n    float first\np = Pair.new(nope=1.0)\nplot(p.first, title=\"V\")"),
+        (
+            "extra positional",
+            "type Pair\n    float first\np = Pair.new(1.0, 2.0)\nplot(p.first, title=\"V\")",
+        ),
+        (
+            "unknown name",
+            "type Pair\n    float first\np = Pair.new(nope=1.0)\nplot(p.first, title=\"V\")",
+        ),
     ] {
         let bad = link_script(script);
         let tree = run_tree_result(&bad, &bars).expect_err("tree refuses");
@@ -2454,8 +2461,16 @@ fn for_by_strides_the_counter_on_both_engines() {
     // on both engines.
     let bars = ramp_bars(3);
     for (name, script, want) in [
-        ("ascending stride", "t = 0\nfor i = 0 to 6 by 2\n    t := t + i\nplot(t, title=\"V\")", 12.0),
-        ("descending stride", "t = 0\nfor i = 10 to 4 by 3\n    t := t + i\nplot(t, title=\"V\")", 21.0),
+        (
+            "ascending stride",
+            "t = 0\nfor i = 0 to 6 by 2\n    t := t + i\nplot(t, title=\"V\")",
+            12.0,
+        ),
+        (
+            "descending stride",
+            "t = 0\nfor i = 10 to 4 by 3\n    t := t + i\nplot(t, title=\"V\")",
+            21.0,
+        ),
     ] {
         let modules = link_script(script);
         let program = compile_case(&modules);
@@ -2468,8 +2483,10 @@ fn for_by_strides_the_counter_on_both_engines() {
             "{name}: both engines agree"
         );
         assert!(
-            tree.plots[0].values.iter().all(|cell| *cell
-                == Some(crate::PineValue::Float(want))),
+            tree.plots[0]
+                .values
+                .iter()
+                .all(|cell| *cell == Some(crate::PineValue::Float(want))),
             "{name}: want {want}: {:?}",
             tree.plots[0].values
         );

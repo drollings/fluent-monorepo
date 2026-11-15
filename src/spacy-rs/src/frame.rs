@@ -216,7 +216,7 @@ impl FrameKey {
 /// pattern. Recorded in the ledger-owner `PreferredSenseIndex`
 /// (see `fluent-router` `ledger::frame_index`) and replayed deterministically
 /// so the next occurrence never re-triggers an LLM call.
-/// 
+///
 /// This value type stays in spacy-rs (pure, no store); only the trait tenancy
 /// moved to the router.
 pub struct Resolution {
@@ -295,12 +295,12 @@ impl FrameExtractor {
 /// enumeration.
 #[must_use]
 /// Deterministically derive a frame analysis from an attached `doc`.
-/// 
+///
 /// Sentence boundaries come from the `sent_start` markers (set by the
 /// sentencizer and by `set_children_from_heads` at each root). The frame tree
 /// reuses `Doc::children`/heads — the same dependency-tree discipline as
 /// validator checks 5/6, never a hand-rolled graph walk.
-/// 
+///
 /// `margins` (the parse's per-oracle-step margins) drives the
 /// [`AmbiguityKind::AttachmentNearTie`] signal; `resolver` supplies the
 /// predicate/role interlingua ids; `concept_store` backs polysemy candidate
@@ -418,15 +418,15 @@ pub fn extract_frames(
 /// `PreferredSenseIndex` (router `ledger::frame_index`): whether a resolved
 /// `(predicate, ambiguity_kind)` pattern may persist. Both legs must hold
 /// (never blended):
-/// 
+///
 /// - **valid**: the choice is a genuine sense id — nonzero (the `0` sentinel
-/// is the unparseable-output placeholder, never a sense) and, for
-/// sense-choice patterns, one of the offered candidates.
+///   is the unparseable-output placeholder, never a sense) and, for
+///   sense-choice patterns, one of the offered candidates.
 /// - **ambiguity-free**: the choice settles the pattern. Only
-/// `PredicatePolysemy` names a sense choice; tie/scope kinds carry no
-/// candidates, so no resolution can leave them unambiguous and they never
-/// promote.
-/// 
+///   `PredicatePolysemy` names a sense choice; tie/scope kinds carry no
+///   candidates, so no resolution can leave them unambiguous and they never
+///   promote.
+///
 /// Pure: no store, no model. The worker calls this before every promotion
 /// write; sense-promotion precision/recall over promoted patterns is measured
 /// separately (a well-formed choice can still be the wrong sense — the gate

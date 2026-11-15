@@ -130,10 +130,11 @@ fn fences_and_urls_never_reach_the_voice() {
 #[test]
 fn normalized_split_matches_direct_normalize_then_split() {
     let text = "# Hello\n\nSee `my_var` at https://example.com/a and ```\ncode()\n``` end.";
-    let expected: Vec<String> = orator_voice::tts::split_all(&orator_voice::tts::normalize_for_speech(text))
-        .into_iter()
-        .map(|chunk| chunk.text)
-        .collect();
+    let expected: Vec<String> =
+        orator_voice::tts::split_all(&orator_voice::tts::normalize_for_speech(text))
+            .into_iter()
+            .map(|chunk| chunk.text)
+            .collect();
     assert_eq!(normalized_chunks(text), expected);
 }
 

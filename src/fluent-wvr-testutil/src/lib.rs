@@ -95,12 +95,12 @@ impl_component_for_test!(PassthroughUnit);
 /// ```
 #[allow(clippy::type_complexity)]
 /// A configurable stub `Component` for tests that replaces ad‑hoc test structs.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use fluent_wvr_testutil::StubComponent;
-/// 
+///
 /// let ok_unit = StubComponent::ok("worker");
 /// let fail_unit = StubComponent::fail("flaky");
 /// let panic_unit = StubComponent::panic("crash");

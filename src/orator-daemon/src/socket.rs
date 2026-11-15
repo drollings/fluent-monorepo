@@ -326,9 +326,7 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
     match common_core::io::bind_unix_listener_with_stale_reclaim(path, 3, || {
         // Re-lstat after unlink: a swapped-in link refuses instead of
         // riding the retry.
-        if orator::paths::has_symlink_parent(path)
-            || std::fs::symlink_metadata(path).is_ok()
-        {
+        if orator::paths::has_symlink_parent(path) || std::fs::symlink_metadata(path).is_ok() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 format!(
@@ -349,12 +347,10 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
             | common_core::io::ReclaimBindError::Bind(error)
             | common_core::io::ReclaimBindError::Validate(error),
         ) => Err(error),
-        Err(common_core::io::ReclaimBindError::Remove(remove)) => {
-            Err(std::io::Error::new(
-                remove.kind(),
-                format!("stale socket {}: remove failed: {remove}", path.display()),
-            ))
-        }
+        Err(common_core::io::ReclaimBindError::Remove(remove)) => Err(std::io::Error::new(
+            remove.kind(),
+            format!("stale socket {}: remove failed: {remove}", path.display()),
+        )),
     }
 }
 

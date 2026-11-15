@@ -34,7 +34,7 @@ pub const MAX_UNDO_DEPTH: usize = 32;
 /// no redo: a retracted annotation re-enters only via [`append`](Self::append).
 #[derive(Debug, Clone, Default)]
 /// Append-only annotation store with bounded undo.
-/// 
+///
 /// Published entries are never edited or reordered; [`undo`](Self::undo)
 /// retracts the most recent append into a bounded retraction log. There is
 /// no redo: a retracted annotation re-enters only via [`append`](Self::append).
@@ -110,7 +110,7 @@ impl<'a> IntoIterator for &'a AnnotationSet {
 /// repeats in the window (duplicates bind nothing, never the first match),
 /// or when the price is unmappable or off-window — markers decorate published
 /// bars only, never neighbors.
-/// 
+///
 /// Linear scan, no map allocation: the single-resolve path stays cheaper
 /// than building a [`TimeIndex`] for one marker. The batch path
 /// ([`crate::paint::marker_dots`]) builds one index per frame instead.
@@ -144,7 +144,7 @@ pub fn resolve_annotation(
 /// stay unpainted rather than silently binding the first match.
 #[derive(Debug, Clone, Default)]
 /// One frame's timestamp-to-bar map, built once.
-/// 
+///
 /// The batch path ([`crate::paint::marker_dots`]) builds one of these per
 /// frame and resolves every annotation through it instead of scanning the
 /// window per marker. A timestamp with exactly one row maps to that row; a
@@ -221,7 +221,7 @@ impl TimeIndex {
 #[must_use]
 /// Click-to-annotate: a radius-confirmed pointer hit becomes an operator
 /// annotation, or `None` when the click names no bar.
-/// 
+///
 /// The hit radius answers "did the operator mean this candle" — doubt about
 /// intent, never about which bar is right. The candidate bar comes from the
 /// pointer's slot alone ([`hit_test`]); the radius only decides whether that

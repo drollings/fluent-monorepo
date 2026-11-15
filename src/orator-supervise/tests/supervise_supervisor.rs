@@ -56,8 +56,8 @@ fn validated_resolution_accepts_owner_only_hits() {
         &prior_path.clone().unwrap_or_default(),
     ));
     std::env::set_var("PATH", std::env::join_paths(paths).expect("join"));
-    let resolved = resolve_binary_validated(orator::paths::current_uid())
-        .expect("owner-only hit validates");
+    let resolved =
+        resolve_binary_validated(orator::paths::current_uid()).expect("owner-only hit validates");
     assert_eq!(resolved, candidate);
     match prior {
         Some(value) => std::env::set_var(LLAMA_SERVER_ENV, value),
@@ -144,8 +144,7 @@ fn symlinked_server_validates_through_its_target() {
     let evil = tmp.path().join("evil-server");
     std::fs::write(&evil, "#!/bin/sh\nexit 0\n").expect("stub writes");
     std::os::unix::fs::symlink(&evil, &link).expect("symlink");
-    resolve_binary_validated(orator::paths::current_uid())
-        .expect_err("link into /tmp is refused");
+    resolve_binary_validated(orator::paths::current_uid()).expect_err("link into /tmp is refused");
     match prior {
         Some(value) => std::env::set_var(LLAMA_SERVER_ENV, value),
         None => std::env::remove_var(LLAMA_SERVER_ENV),
@@ -475,10 +474,7 @@ mod warn_capture {
                 text: String::new(),
             };
             event.record(&mut visitor);
-            self.warnings
-                .lock()
-                .expect("warnings")
-                .push(visitor.text);
+            self.warnings.lock().expect("warnings").push(visitor.text);
         }
         fn enter(&self, _: &Id) {}
         fn exit(&self, _: &Id) {}
@@ -553,11 +549,16 @@ fn boot_tries_candidates_in_order_and_stops_after_success() {
     )
     .expect("unused stub writes");
     for dir in [&dir1, &dir2, &dir3] {
-        std::fs::set_permissions(dir.join("llama-server"), std::fs::Permissions::from_mode(0o755))
-            .expect("stub runs");
+        std::fs::set_permissions(
+            dir.join("llama-server"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .expect("stub runs");
     }
     let mut paths = vec![dir1.clone(), dir2.clone(), dir3.clone()];
-    paths.extend(std::env::split_paths(&prior_path.clone().unwrap_or_default()));
+    paths.extend(std::env::split_paths(
+        &prior_path.clone().unwrap_or_default(),
+    ));
     std::env::set_var("PATH", std::env::join_paths(paths).expect("join"));
 
     let port = free_port().expect("fixed free port");
@@ -571,16 +572,18 @@ fn boot_tries_candidates_in_order_and_stops_after_success() {
     let capture = warn_capture::Capture {
         warnings: std::sync::Arc::clone(&warnings),
     };
-    let server = tracing::dispatcher::with_default(
-        &tracing::Dispatch::new(capture),
-        || common_core::runtime::block_on(Supervisor::boot(config)),
-    );
+    let server = tracing::dispatcher::with_default(&tracing::Dispatch::new(capture), || {
+        common_core::runtime::block_on(Supervisor::boot(config))
+    });
     let Ok(server) = server else {
         panic!("second candidate serves");
     };
     assert!(server.is_live(), "boot waits for health");
     assert!(marker1.exists(), "first candidate ran");
-    assert!(!marker3.exists(), "third candidate never runs after success");
+    assert!(
+        !marker3.exists(),
+        "third candidate never runs after success"
+    );
     let warns = warnings.lock().expect("warnings").clone();
     assert_eq!(warns.len(), 1, "exactly one failure warns: {warns:?}");
     assert!(
@@ -630,8 +633,11 @@ fn boot_returns_last_error_when_all_candidates_fail() {
     std::fs::write(dir2.join("llama-server"), "#!/bin/sh\nexit 1\n")
         .expect("immediate-exit stub writes");
     for dir in [&dir1, &dir2] {
-        std::fs::set_permissions(dir.join("llama-server"), std::fs::Permissions::from_mode(0o755))
-            .expect("stub mode");
+        std::fs::set_permissions(
+            dir.join("llama-server"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .expect("stub mode");
     }
     let paths = vec![dir1.clone(), dir2.clone()];
     // Isolated PATH: the real `llama-server` on this machine must not
@@ -649,10 +655,9 @@ fn boot_returns_last_error_when_all_candidates_fail() {
     let capture = warn_capture::Capture {
         warnings: std::sync::Arc::clone(&warnings),
     };
-    let error = tracing::dispatcher::with_default(
-        &tracing::Dispatch::new(capture),
-        || common_core::runtime::block_on(Supervisor::boot(config)),
-    );
+    let error = tracing::dispatcher::with_default(&tracing::Dispatch::new(capture), || {
+        common_core::runtime::block_on(Supervisor::boot(config))
+    });
     let Err(error) = error else {
         panic!("all candidates fail");
     };

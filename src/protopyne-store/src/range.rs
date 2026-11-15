@@ -24,7 +24,7 @@ use crate::error::PlanError;
 /// bars' span.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 /// A half-open millisecond span with optional bounds.
-/// 
+///
 /// Stamps name instants; spans name coverage over them. A covered bar stamped
 /// `t` occupies the stamp-space point `t`, and a run of contiguous bars from
 /// `first` to `last` spans `[first, last + 1)`: the `+1` is what makes a

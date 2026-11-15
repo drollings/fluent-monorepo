@@ -21,10 +21,10 @@ use thiserror::Error;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 /// Which bounded shape a decision takes.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::DecisionKind;
-/// 
+///
 /// assert_eq!(DecisionKind::Choice.as_str(), "choice");
 /// assert_eq!(
 /// DecisionKind::parse("noul"),
@@ -80,10 +80,10 @@ impl DecisionKind {
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// One bounded judgment with its full distribution.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::Decision;
-/// 
+///
 /// let d = Decision::from_distribution(
 /// "B",
 /// vec![("B".to_string(), 0.8), ("A".to_string(), 0.2)],
@@ -205,14 +205,14 @@ impl From<crate::protocol::LlmError> for DecisionError {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 /// Per-decision-point thresholds mapping confidence to a verdict.
-/// 
+///
 /// `act`/`review` are producer-confidence gates; they earn task-value trust
 /// only through calibration on labeled cases plus a must-not-fire control
 /// group — never by assertion.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::ThresholdSet;
-/// 
+///
 /// assert!(ThresholdSet { act: 0.9, review: 0.7 }.validate().is_ok());
 /// assert!(ThresholdSet { act: 0.5, review: 0.8 }.validate().is_err());
 /// ```
@@ -270,10 +270,10 @@ pub enum Verdict {
 /// `Act`: it can ask for review, never act on invented confidence.
 #[must_use]
 /// Map a decision plus its own thresholds to a verdict (pure).
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{decide_verdict, Decision, ThresholdSet, Verdict};
-/// 
+///
 /// let d = Decision::from_distribution(
 /// "B",
 /// vec![("B".to_string(), 0.95), ("A".to_string(), 0.05)],
@@ -286,7 +286,7 @@ pub enum Verdict {
 /// let t = ThresholdSet { act: 0.9, review: 0.7 };
 /// assert_eq!(decide_verdict(&d, &t), Verdict::Act);
 /// ```
-/// 
+///
 /// A degraded decision (uncalibrated text-fallback prior) is capped below
 /// `Act`: it can ask for review, never act on invented confidence.
 pub fn decide_verdict(decision: &Decision, thresholds: &ThresholdSet) -> Verdict {
@@ -324,10 +324,10 @@ pub fn decide_verdict(decision: &Decision, thresholds: &ThresholdSet) -> Verdict
 #[must_use]
 /// P(yes) mass of a Noul decision: the normalized weight on the `Yes` label.
 /// `None` when the distribution names no `Yes` label.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{noul_p_yes, Decision};
-/// 
+///
 /// let d = Decision::from_distribution(
 /// "No",
 /// vec![("Yes".to_string(), 0.05), ("No".to_string(), 0.95)],
@@ -370,10 +370,10 @@ pub fn noul_p_yes(decision: &Decision) -> Option<f64> {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Ordinal moment of a Score distribution in rung-index units (`ScoreMoment`).
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{score_moment, Decision};
-/// 
+///
 /// let d = Decision::from_distribution(
 /// "4",
 /// vec![("3".to_string(), 0.2), ("4".to_string(), 0.8)],
@@ -456,10 +456,10 @@ pub fn score_moment(decision: &Decision) -> Option<ScoreMoment> {
 /// (`expected >= act_above`) or confident low (`expected <= act_below`),
 /// review the middle. Degraded decisions cap below `Act`, as in
 /// [`decide_verdict`]; invalid bounds or a moment-less decision escalate.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{decide_score_verdict, Decision, Verdict};
-/// 
+///
 /// let d = Decision::from_distribution(
 /// "5",
 /// vec![("4".to_string(), 0.1), ("5".to_string(), 0.9)],
@@ -518,10 +518,10 @@ pub fn decide_score_verdict(decision: &Decision, act_above: f64, act_below: f64)
 /// thresholds: act on a confident yes (`p >= accept`) or a confident no
 /// (`p <= reject`), review the middle. Top-1 confidence alone cannot do
 /// this — a 0.95-No and a 0.95-Yes look identical to it.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{decide_noul_verdict, Decision, Verdict};
-/// 
+///
 /// let d = Decision::from_distribution(
 /// "No",
 /// vec![("Yes".to_string(), 0.05), ("No".to_string(), 0.95)],
@@ -533,7 +533,7 @@ pub fn decide_score_verdict(decision: &Decision, act_above: f64, act_below: f64)
 /// .expect("decision");
 /// assert_eq!(decide_noul_verdict(&d, 0.9, 0.1), Verdict::Act);
 /// ```
-/// 
+///
 /// Boundaries fire (`>= accept`, `<= reject`), matching the Choice policy.
 /// A degraded decision is capped below `Act`, as in [`decide_verdict`].
 /// A decision with no `Yes` mass cannot be directed and escalates.

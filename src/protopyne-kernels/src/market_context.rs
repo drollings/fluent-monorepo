@@ -307,7 +307,7 @@ impl MarketContextKey {
 /// op order, same frozen constants): full-stack alignment scores through
 /// `fast_tanh`, counter-alignment mirrors negative, mixed stacks blend by
 /// distance share with a deadband.
-/// 
+///
 /// Absence mirrors Pine `na` structurally, never by early return: the
 /// oracle initializes its accumulators to zero, na comparisons read false,
 /// and only the deadband decides — so absent legs on an unaligned stack
@@ -422,7 +422,7 @@ fn regime_surfaces(
 /// disjunct needs no tie); `VOLATILE`/`RANGING` need all three present.
 /// All absent reads `LOW_VOLUME` — the fail-closed quiet label.
 /// Thresholds frozen, never tuned.
-/// 
+///
 /// `#[allow(clippy::float_cmp)]`: the `max == surface` ties mirror Pine
 /// `==` exactly — a tolerance band would reassign ties and diverge from
 /// the oracle on chop-shaped tapes.

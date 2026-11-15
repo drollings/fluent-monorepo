@@ -11,7 +11,7 @@
 /// Pinned embedding-model catalog: the single source of truth for model
 /// metadata (mirrors, per-artifact sha256/size, dims, metric, batch / context
 /// / concurrency limits).
-/// 
+///
 /// Every entry mirrors the upstream table field-for-field; the `catalog`
 /// integration test pins the values so mirror drift fails here instead of at
 /// download time.

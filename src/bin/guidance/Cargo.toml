@@ -22,6 +22,10 @@ name = "sync_propagate"
 path = "tests/sync_propagate.rs"
 
 [[test]]
+name = "sync_fix_harness"
+path = "tests/sync_fix_harness.rs"
+
+[[test]]
 name = "explain_cli"
 path = "tests/explain_cli.rs"
 

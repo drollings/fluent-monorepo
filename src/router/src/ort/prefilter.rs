@@ -23,7 +23,7 @@ use super::registry::OrtRegistry;
 /// an `EncoderFetchSync` closure that runs
 /// the trained-encoder annotation worker over the doc's orth/idx and produces
 /// an `AnnotationSet` aligned by construction (record `text` = spacy orth).
-/// 
+///
 /// `Ok(Some(closure))` when a registered `FillMask` encoder with declared
 /// `annotation_heads` is available; `Ok(None)` when no such encoder is
 /// configured (fail-open — the encoder rung is absent from the ladder, exactly
@@ -100,7 +100,7 @@ pub fn nlp_encoder_fetch(
 /// offset (`head_abs − i`); a `None` head (special / outside every spacy span)
 /// is decoded as ROOT (`dep="root"`, `head=0`); the lemma comes from the
 /// deterministic rule [`spacy_rs::Lemmatizer`].
-/// 
+///
 /// Returns `Err` on any `None`-aligned token or unknown label, so the ladder
 /// falls through to ArcEager — never a partial mix, never a wrong enum.
 pub(crate) fn map_annotations(
@@ -276,7 +276,7 @@ pub fn pii_prefilter(
 /// store's labels at boot, then returns an [`EntityLinkScorer`] closure that
 /// encodes a span via the retriever, looks it up against the baked index, and
 /// resolves each hit's canonical → `InterlinguaId` through the store.
-/// 
+///
 /// Fail-open: no model registered / not a `LateInteraction` task / no labels →
 /// an empty scorer (yields no candidates, identical to the pre-M3 stub). A
 /// lookup-time encoding error also degrades to "no candidates" (loud warn) —

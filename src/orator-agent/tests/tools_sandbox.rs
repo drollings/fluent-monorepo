@@ -312,7 +312,8 @@ fn within_rejects_dotdot_and_chained_escapes() {
     assert!(
         matches!(
             guard.within(std::path::Path::new("loop-a")),
-            Err(crate::tools::sandbox::WithinError::HopCap(_) | crate::tools::sandbox::WithinError::Escape(_))
+            Err(crate::tools::sandbox::WithinError::HopCap(_)
+                | crate::tools::sandbox::WithinError::Escape(_))
         ),
         "symlink loop must not resolve"
     );
@@ -331,7 +332,8 @@ fn open_within_is_fail_closed_without_fd_revalidation() {
     assert!(
         matches!(
             refused,
-            Err(crate::tools::sandbox::WithinError::Escape(_) | crate::tools::sandbox::WithinError::Missing(_))
+            Err(crate::tools::sandbox::WithinError::Escape(_)
+                | crate::tools::sandbox::WithinError::Missing(_))
         ),
         "unresolvable fd must refuse, never open the candidate: {refused:?}"
     );

@@ -135,3 +135,104 @@ fn summary_sourced_stages_cite_source_only() {
     assert_eq!(envelope.citations, vec!["src/a.rs:2".to_string()]);
     assert!(envelope.is_answerable());
 }
+
+#[test]
+fn synthesis_prompt_shows_only_shown_ids_and_drops_invented_paths() {
+    use crate::read::engine::{ExplainContext, ExplainRequest, ReadEngine};
+    // Shown set is the evidence set: an invented path from the model
+    // must not render, and the prompt carries ids for the shown rows.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("lib.rs"), "pub fn shown_fn() {}\n").expect("write");
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: "f".to_string(),
+            absolute_path: dir.path().join("lib.rs").to_string_lossy().into_owned(),
+            relative_path: "lib.rs".to_string(),
+            root_path: dir.path().to_string_lossy().into_owned(),
+            size_bytes: 10,
+            last_modified_time: 1,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "s".to_string(),
+            group: None,
+            file_id: "f".to_string(),
+            range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":1,\"start_offset\":0,\"end_offset\":5}".to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("pub fn shown_fn() {}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("shown_fn".to_string()),
+            scope: None,
+            signature: None,
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed");
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    struct Invented;
+    impl crate::read::engine::Synthesizer for Invented {
+        fn synthesize(&self, prompt: &str) -> Result<Option<String>, String> {
+            assert!(prompt.contains("shown_fn"), "{prompt}");
+            assert!(prompt.contains("Evidence:"), "{prompt}");
+            Ok(Some("Lives in invented.rs:99.".to_string()))
+        }
+    }
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "where is shown_fn".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: false,
+        },
+        &ctx,
+        Some(&Invented),
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(!rendered.contains("invented.rs:99"), "{rendered}");
+}
+
+#[test]
+fn envelope_intent_equals_routed_intent_and_coverage_mirrors() {
+    use crate::read::engine::{ExplainContext, ExplainRequest, ReadEngine};
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("lib.rs"), "pub fn env_fn() {}\n").expect("write");
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: Some(crate::read::readiness::Coverage::empty()),
+    };
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "env_fn".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+        },
+        &ctx,
+        None,
+    );
+    let envelope = crate::read::engine::route_for(answer.intent);
+    assert_eq!(envelope, answer.route);
+    assert!(answer.coverage.is_some());
+}

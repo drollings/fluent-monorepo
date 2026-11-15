@@ -41,7 +41,7 @@ pub struct AdjustedBounds {
 /// representable fetch, fail-closed instead of panicking past it.
 #[must_use]
 /// Widen fetch bounds by the warmup headroom.
-/// 
+///
 /// A provided start moves earlier by `headroom * timeframe`; a provided
 /// limit grows by `headroom`. `warmup` of 0 or 1 adds no headroom. The start
 /// is clamped at zero rather than wrapping, and extreme warmups saturate
@@ -73,7 +73,7 @@ pub fn adjust_fetch_bounds(
 /// laundered.
 #[must_use]
 /// Trim a full-length kernel output back to the user-requested window.
-/// 
+///
 /// Drops exactly the warmup headroom from the head, then keeps the trailing
 /// `original_limit` values when the window is longer. Trimming is positional:
 /// when the warmup was too small (or zero), leading `None`s from the kernel

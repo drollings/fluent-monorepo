@@ -1068,14 +1068,14 @@ pub struct FullTick {
 /// than silently rebuilding under the first kernel's feet.
 #[derive(Default)]
 /// One kernel's resolved scalars, memoised on its [`IndicatorState`].
-/// 
+///
 /// A state belongs to **one run of one kernel**, and a run's parameters are
 /// fixed for its lifetime, so the first resolution is the run's: later bars read
 /// a copy instead of re-reading the boundary [`ParamSet`] (a `HashMap` of
 /// `PineValue`s) once per bar. `T` is whatever the kernel's own resolver returns
 /// — a `usize` or a small tuple it already defines — never a shared bag of
 /// untyped slots.
-/// 
+///
 /// The cache is pure, so it never has to be kept in step: cloning a state drops
 /// it (the clone re-resolves on its first bar) and a failed resolution stores
 /// nothing (the next bar retries). Asking one state for a *different* `T` than
@@ -1448,7 +1448,7 @@ pub trait Indicator: Send + Sync {
 /// `ids()` returns sorted order via [`KeyedRegistry`].
 #[derive(Default)]
 /// Registry of indicators keyed by spec id.
-/// 
+///
 /// What the ownership rule actually forbids is **per-run state** in a shared
 /// place: accumulators, cursors, "last bar" — anything two concurrent runs could
 /// tread on. This type holds none. Its entries are `Arc<dyn Indicator>` over
@@ -1456,12 +1456,12 @@ pub trait Indicator: Send + Sync {
 /// [`IndicatorState`] for the incremental path, `params` for both), so a registry
 /// is a pure value: two of them built from [`builtin_registry`] are
 /// interchangeable, and caching one is not a second source of truth.
-/// 
+///
 /// That is why [`shared_registry`] may keep one in a `static`: the static is an
 /// **immutable cache of a pure value**, not shared mutable state. The owned
 /// constructor stays [`builtin_registry`], and a test that wants isolation can
 /// still build its own — nothing requires the shared handle.
-/// 
+///
 /// Duplicate policy: first-wins, duplicates refuse `Err(DuplicateIndicator)`.
 /// `ids()` returns sorted order via [`KeyedRegistry`].
 pub struct IndicatorRegistry {

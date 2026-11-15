@@ -703,6 +703,9 @@ health: ## Run cargo tarpaulin and verify 85% coverage
 .PHONY: guidance-scorecard
 guidance-scorecard: ## Fast hermetic scorecard (<60s): ≤40 lines + JSON in the log; exit 2 on a ratchet violation
 	$(Q)bin/gate-run.sh guidance-scorecard generic -- cargo run -q -p guidance -- scorecard
+.PHONY: guidance-eval
+guidance-eval: ## Eval ratchet over the shipping path (alias: same fast tier as scorecard, read.* metrics)
+	$(Q)bin/gate-run.sh guidance-eval generic -- cargo run -q -p guidance -- scorecard
 .PHONY: guidance-scorecard-deep
 guidance-scorecard-deep: ## Deep tier: fast tier + per-query breakdown
 	$(Q)bin/gate-run.sh guidance-scorecard-deep generic -- cargo run -q -p guidance -- scorecard --deep

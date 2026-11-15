@@ -29,7 +29,7 @@ use rust_decimal::Decimal;
 /// `AsRef`, `From`, or serde impl — any new exit must justify itself here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Fenced display float: provenance for values that came from `Decimal`.
-/// 
+///
 /// Construct at the display boundary with [`new`](Self::new); the value
 /// travels wrapped through display code and exits only via
 /// [`reveal`](Self::reveal). There is deliberately no `Deref`, `Borrow`,

@@ -176,11 +176,9 @@ pub fn resolve_binary() -> Option<PathBuf> {
     match explicit.path {
         Some(path) if path.is_absolute() => {
             let fingerprint = orator::paths::binary_fingerprint(&path);
-            if let Err(error) = orator::paths::validate_server_binary(
-                &path,
-                orator::paths::current_uid(),
-                false,
-            ) {
+            if let Err(error) =
+                orator::paths::validate_server_binary(&path, orator::paths::current_uid(), false)
+            {
                 eprintln!(
                     "orator: explicit llama-server {} ({fingerprint}) bypasses the gate with a warning: {error}",
                     path.display()

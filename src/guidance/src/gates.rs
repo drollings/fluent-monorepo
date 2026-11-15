@@ -684,6 +684,20 @@ fn check_edit_shape(file: &ChangedFile, ctx: &GateCtx) -> GateOutcome {
                 GateOutcome::Fail("mut patch is not exactly one insertion".to_string())
             }
         }
+        "style" => {
+            let strip = |text: &str| {
+                text.replace("return", "")
+                    .replace(';', "")
+                    .chars()
+                    .filter(|ch| !ch.is_whitespace())
+                    .collect::<String>()
+            };
+            if strip(&file.before) == strip(&file.after) && file.after.len() <= file.before.len() {
+                GateOutcome::Pass
+            } else {
+                GateOutcome::Fail("style patch changes more than return/semicolon".to_string())
+            }
+        }
         "removal" => {
             let added = added_lines(&file.before, &file.after);
             if added.is_empty() && file.after.len() < file.before.len() {

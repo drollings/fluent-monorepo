@@ -22,7 +22,7 @@ use crate::error::RegistryError;
 #[derive(Debug, Clone, Builder)]
 #[builder(start_fn = new)]
 /// Resolver-plane record: bitset capabilities plus identity.
-/// 
+///
 /// `depends`/`provides` are `BitVec` indexed by [`CapabilityRegistry`]
 /// bit index (compact, O(1) membership). Execution-plane [`WorkUnit`]s use
 /// `Vec<ArcIntern<str>>` for the same names instead — convert at the bridge

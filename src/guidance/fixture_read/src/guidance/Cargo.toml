@@ -1,0 +1,3 @@
+[package]
+name = "guidance-core"
+description = "Local code index for recall."

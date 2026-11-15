@@ -3226,7 +3226,7 @@ impl DepLabels {
 /// 0.05 * oracle_tie_count)`; ROOT detection uses the `root` dep label (F8),
 /// never `heads[i] == 0`; `role_coverage` is the fraction of `{nsubj, dobj}`
 /// argument slots filled.
-/// 
+///
 /// Honest about what it measures: oracle tie-count, role coverage, and
 /// PROPN-not-in-registry. It does **not** reveal *which* actions were tied —
 /// margin tells you *that* the oracle was uncertain, not *why*. Sufficient

@@ -8,12 +8,36 @@ use crate::harness::replay::run_scenario;
 
 fn turn() -> ScriptScenario {
     ScriptScenario::clean(vec![
-        ScriptStep { stage: "endpoint_hold".to_string(), latency_ms: 300, peak_bytes: 1024 },
-        ScriptStep { stage: "stt".to_string(), latency_ms: 80, peak_bytes: 2048 },
-        ScriptStep { stage: "llm_first_token".to_string(), latency_ms: 150, peak_bytes: 4096 },
-        ScriptStep { stage: "first_clause".to_string(), latency_ms: 120, peak_bytes: 1024 },
-        ScriptStep { stage: "tts_first_audio".to_string(), latency_ms: 100, peak_bytes: 2048 },
-        ScriptStep { stage: "playout".to_string(), latency_ms: 40, peak_bytes: 512 },
+        ScriptStep {
+            stage: "endpoint_hold".to_string(),
+            latency_ms: 300,
+            peak_bytes: 1024,
+        },
+        ScriptStep {
+            stage: "stt".to_string(),
+            latency_ms: 80,
+            peak_bytes: 2048,
+        },
+        ScriptStep {
+            stage: "llm_first_token".to_string(),
+            latency_ms: 150,
+            peak_bytes: 4096,
+        },
+        ScriptStep {
+            stage: "first_clause".to_string(),
+            latency_ms: 120,
+            peak_bytes: 1024,
+        },
+        ScriptStep {
+            stage: "tts_first_audio".to_string(),
+            latency_ms: 100,
+            peak_bytes: 2048,
+        },
+        ScriptStep {
+            stage: "playout".to_string(),
+            latency_ms: 40,
+            peak_bytes: 512,
+        },
     ])
 }
 
@@ -31,7 +55,10 @@ fn slow_fake_fails_the_gate() {
     let slow = SlowFake { factor: 10 }.scale(&turn());
     let (log, high_water) = run_scenario(&slow);
     let error = gate(&log, Profile::Gpu, 2000, 7900, 0, high_water).expect_err("10x must fail");
-    assert!(error.to_string().contains("took 3000 ms"), "first blown ceiling reports: {error}");
+    assert!(
+        error.to_string().contains("took 3000 ms"),
+        "first blown ceiling reports: {error}"
+    );
 }
 
 #[test]
@@ -56,8 +83,7 @@ fn late_breach_reports_its_own_ceiling_first() {
     let (log, high_water) = run_scenario(&late);
     let error = gate(&log, Profile::Gpu, 2000, 1290, 0, high_water).expect_err("late breach fails");
     assert!(
-        error.to_string().contains("tts_first_audio")
-            && error.to_string().contains("500 ms"),
+        error.to_string().contains("tts_first_audio") && error.to_string().contains("500 ms"),
         "earliest blown ceiling reports itself: {error}"
     );
 }

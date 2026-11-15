@@ -206,11 +206,11 @@ fluent_wvr::impl_component!(FixedDecisionUnit);
 /// ```
 #[must_use]
 /// Pure `rule → cache` prefix as a `ComponentCascade` for sync callers.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{prefix_cascade, Decision};
 /// use fluent_wvr::{WorkContext, WorkOutput};
-/// 
+///
 /// let rule = Decision::from_distribution(
 /// "RULE",
 /// vec![("RULE".to_string(), 1.0)],

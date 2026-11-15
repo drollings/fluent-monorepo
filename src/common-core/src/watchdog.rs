@@ -208,7 +208,7 @@ pub enum WatchdogEvent {
 /// provides label-safe variant keys suitable for `HashMap` keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Discriminant keys for watchdog event counters in metrics aggregation.
-/// 
+///
 /// Distinct from `WatchdogEvent` (which carries payload data); this enum
 /// provides label-safe variant keys suitable for `HashMap` keys.
 pub enum WatchdogEventType {

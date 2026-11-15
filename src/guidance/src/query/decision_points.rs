@@ -19,7 +19,11 @@ pub const EXCERPT_POINT: &str = "excerpt";
 pub const STALENESS_POINT: &str = "staleness";
 pub const SUMMARY_INDEX_POINT: &str = "summary_index";
 
-pub const INTENT_VERSION: u64 = 1;
+/// Question version 2: the options cover the ambiguous read-plane
+/// intents (`Graph`, `Ownership`, `Orientation`, `Provenance`
+/// added). The v1 vocabulary could not express the routes production
+/// uses, so a v1 entry must not authorize v2 questions.
+pub const INTENT_VERSION: u64 = 2;
 pub const SUFFICIENCY_VERSION: u64 = 1;
 pub const EXCERPT_VERSION: u64 = 1;
 pub const STALENESS_VERSION: u64 = 1;
@@ -51,15 +55,27 @@ fn spec(
 }
 
 /// Intent Choice over the `QueryIntent` labels (single tokens only).
+/// The options cover the ambiguous intents a model may ever see:
+/// exact symbol/path evidence short-circuits before any backend
+/// exists, so `SingleIdentifier` and `FilePath` are not options (the
+/// mapping below still decodes them for log readers). Nine options
+/// fit the single-token distribution cap; an eleventh label would
+/// force hierarchical routing.
 #[must_use]
 /// Intent Choice over the `QueryIntent` labels (single tokens only).
+/// The options cover the ambiguous intents a model may ever see:
+/// exact symbol/path evidence short-circuits before any backend
+/// exists, so `SingleIdentifier` and `FilePath` are not options (the
+/// mapping below still decodes them for log readers). Nine options
+/// fit the single-token distribution cap; an eleventh label would
+/// force hierarchical routing.
 pub fn intent_spec() -> QuestionSpec {
     spec(
         INTENT_POINT,
         INTENT_VERSION,
         "choice",
         "Classify the query by what the asker wants.",
-        "SingleIdentifier,CapabilityQuery,FilePath,HowTo,Conceptual,MultiKeyword,GeneralSearch",
+        "CapabilityQuery,HowTo,Conceptual,MultiKeyword,GeneralSearch,Graph,Ownership,Orientation,Provenance",
         0.9,
         0.7,
         2000,
@@ -271,6 +287,10 @@ pub fn intent_label_to_intent(label: &str) -> Option<super::strategy::QueryInten
         "Conceptual" => Some(QueryIntent::Conceptual),
         "MultiKeyword" => Some(QueryIntent::MultiKeyword),
         "GeneralSearch" => Some(QueryIntent::GeneralSearch),
+        "Graph" => Some(QueryIntent::Graph),
+        "Ownership" => Some(QueryIntent::Ownership),
+        "Orientation" => Some(QueryIntent::Orientation),
+        "Provenance" => Some(QueryIntent::Provenance),
         _ => None,
     }
 }

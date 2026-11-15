@@ -12,7 +12,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Weight-layout manifest for LFM3-Audio: which files a runtime
 /// needs, where they live, and what is actually on disk.
-/// 
+///
 /// Two layouts exist upstream: the HuggingFace bundle (safetensors,
 /// the only complete weights — text backbone + audio tower + codec)
 /// and the GGUF conversion (text backbone only; the `mmproj` entry

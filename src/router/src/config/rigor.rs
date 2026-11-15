@@ -13,7 +13,7 @@ use super::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 /// `RouterConfig` level leaves `/v1/rigor` present but unconfigured.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Rigor-route configuration - the `rigor` section of `RouterConfig`.
-/// 
+///
 /// Model keys select entries from `config.models`; backends are built **only**
 /// in `coral-router`'s `build_rigor_route` (DIP, mirroring
 /// `build_plan_route`/`default_adjudicator_backend`). `None` at the

@@ -804,9 +804,27 @@ fn dmi_reports_directional_triples() {
     // (0.75, 0, 1.375), so +DI is 54.54.., -DI is 0, and DX pins at 100
     // for both warmed bars, seeding ADX at 100.
     let ticks = vec![
-        BarTick { open: 9.5, high: 10.0, low: 9.0, close: 9.5, volume: 1_000.0 },
-        BarTick { open: 10.5, high: 11.0, low: 10.0, close: 10.5, volume: 1_000.0 },
-        BarTick { open: 11.5, high: 12.0, low: 11.0, close: 11.5, volume: 1_000.0 },
+        BarTick {
+            open: 9.5,
+            high: 10.0,
+            low: 9.0,
+            close: 9.5,
+            volume: 1_000.0,
+        },
+        BarTick {
+            open: 10.5,
+            high: 11.0,
+            low: 10.0,
+            close: 10.5,
+            volume: 1_000.0,
+        },
+        BarTick {
+            open: 11.5,
+            high: 12.0,
+            low: 11.0,
+            close: 11.5,
+            volume: 1_000.0,
+        },
     ];
     let mut bridge = TaBridge::new().expect("bridge builds");
     let mut out = Vec::new();

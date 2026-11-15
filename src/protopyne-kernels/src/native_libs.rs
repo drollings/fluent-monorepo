@@ -38,7 +38,7 @@ use crate::value::{EnumHandle, FieldTable, NativeCall, PineValue, UserInstance};
 /// way for every pinned version — matching how the import graph keys modules.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// Identity of one natively servable Pine library: publisher and name only.
-/// 
+///
 /// Versions never participate in identity — the same pair resolves the same
 /// way for every pinned version — matching how the import graph keys modules.
 pub struct NativeLibraryId {
@@ -85,7 +85,7 @@ impl From<&crate::pine::ModuleId> for NativeLibraryId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// One row of the native table: which `publisher/name` pair may be served
 /// natively, and whether serving is currently switched on.
-/// 
+///
 /// Rows for planned libraries are present but disabled, so the table
 /// documents intent while every lookup still refuses and Pine keeps serving.
 pub struct NativeLibraryEntry {
@@ -153,7 +153,7 @@ pub fn find_native(
 /// Prove that versions play no role for `publisher/name`: every pinned
 /// version from 1 to 99 plus an unpinned request resolves identically, and
 /// the pair names a row of the native table.
-/// 
+///
 /// Returns false for pairs outside the table — those are not version-ignored
 /// native candidates, they are unknown.
 pub fn version_is_ignored(publisher: &str, name: &str) -> bool {
@@ -192,7 +192,7 @@ impl fmt::Display for NativeServed {
 /// never branches on them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One audit row for a library link: what was requested against what served.
-/// 
+///
 /// The requested version and the Pine SHA travel as metadata only; serving
 /// never branches on them.
 pub struct NativeAudit {

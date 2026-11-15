@@ -1388,7 +1388,7 @@ pub fn broker_deal_of(venue: &str, account: &str, deal: &BrokerDeal) -> BrokerDe
 /// route and the gateway share these builders, so the HTTP body and the
 /// in-process read cannot drift. Every money value rides decimal text; every
 /// refusal names the field that refused.
-/// 
+///
 /// The composition description plus the registry enumerations a form picker
 /// must offer. Data only: no strategy type crosses into the view.
 pub fn backtest_schema_of() -> BacktestSchemaView {

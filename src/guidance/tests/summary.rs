@@ -478,8 +478,8 @@ async fn pass_summarizes_file_and_persists() {
 #[tokio::test]
 async fn pass_skips_cached_nodes_on_repass() {
     let backend = CountingBackend::echo();
-    let (dir, _db, gate) = pass_parts();
-    let mut pass = new_pass(&backend, &gate, &_db);
+    let (dir, db, gate) = pass_parts();
+    let mut pass = new_pass(&backend, &gate, &db);
     let sidecar = dir.path().join("lib.rs.json");
     let input = SummaryFileInput {
         file_id: "f",
@@ -497,8 +497,8 @@ async fn pass_skips_cached_nodes_on_repass() {
 #[tokio::test]
 async fn pass_reruns_only_edited_nodes() {
     let backend = CountingBackend::echo();
-    let (dir, _db, gate) = pass_parts();
-    let mut pass = new_pass(&backend, &gate, &_db);
+    let (dir, db, gate) = pass_parts();
+    let mut pass = new_pass(&backend, &gate, &db);
     let sidecar = dir.path().join("lib.rs.json");
     let input = SummaryFileInput {
         file_id: "f",
@@ -527,8 +527,8 @@ async fn pass_reruns_only_edited_nodes() {
 async fn pass_records_unavailable_without_retry() {
     let backend =
         CountingBackend::failing(fluent_llm::protocol::LlmError::Http("boom".to_string()));
-    let (dir, _db, gate) = pass_parts();
-    let mut pass = new_pass(&backend, &gate, &_db);
+    let (dir, db, gate) = pass_parts();
+    let mut pass = new_pass(&backend, &gate, &db);
     let sidecar = dir.path().join("lib.rs.json");
     let input = SummaryFileInput {
         file_id: "f",

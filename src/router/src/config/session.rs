@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// `None` (absent) keeps today's behavior - no session registry at boot.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 /// Session composition section - the `session` block of `RouterConfig`.
-/// 
+///
 /// `Some` opts the composition root into a `SessionRegistry` (canonical
 /// session home) so checkpoint/rewind state and rigor rewind exist at runtime.
 /// `None` (absent) keeps today's behavior - no session registry at boot.

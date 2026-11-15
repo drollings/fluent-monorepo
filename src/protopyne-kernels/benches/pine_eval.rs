@@ -13,7 +13,6 @@
 //! volatile live root.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use std::fmt::Write as _;
 #[cfg(feature = "bytecode")]
 use protopyne_kernels::BytecodeMode;
 use protopyne_kernels::{
@@ -21,6 +20,7 @@ use protopyne_kernels::{
     resolve_imports, InputSet, LinkedModule, ModuleGraph, PineEngine, PineRuntimeConfig,
 };
 use protopyne_types::Bar;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 fn fixture_root() -> PathBuf {

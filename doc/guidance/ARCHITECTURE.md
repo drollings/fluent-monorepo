@@ -21,7 +21,7 @@ argv, builds engines, prints reports, and maps exit codes.
 
 | Plane | Entry points | Owns |
 |---|---|---|
-| Read | `query_engine.rs` (`answer`, `explain`), `query/*` | Retrieval tiers, staged routing, envelopes, citations, packs, impact |
+| Read | `read::engine` (`ReadEngine::explain`), `read::planes/*`, `query/*` recall | Intent-routed answer assembly, per-plane retrieval, budgets, envelopes, citations |
 | Maintain | `pipeline.rs`, `waves.rs`, `fix.rs`, `index_pipeline.rs`, `sync_engine.rs` | Stage order, waves, fix rungs, gates, fragment/member indexes |
 | Control | `maintenance.rs`, `orchestrator.rs`, `plans.rs`, `policy.rs`, `triage.rs`, `journal.rs`, `scorecard.rs` | Queue, contracts, calibration, ledger, review, ratchets |
 
@@ -31,7 +31,7 @@ argv, builds engines, prints reports, and maps exit codes.
 |---|---|---|
 | Source tree | Truth; everything derives from it | — |
 | Sidecars (`<guidance>/src/**/*.json` with a header first line) | Per-file derived facts and receipts | `sync/json_store.rs`, `sync/json_writer.rs`, header codec in `fluent-types` |
-| Derived index (SQLite fragments/symbols/edges plus FTS, summaries, lemma dictionary, embedding status) | Disposable; refused on generation mismatch, rebuilt from sidecars | `search-vector` tables (`fragments` + FTS over content/symbol/doc, `fragment_summaries` + FTS, `fragment_lemmas` integer keys + `lemma_terms`, `fragment_embedding_status`, symbols/edges), writers in `query/ingest.rs`, `query/db_storage.rs`, `index_pipeline.rs`, guard in `index_generation.rs` |
+| Derived index (SQLite fragments/symbols/edges plus FTS, summaries, lemma dictionary, embedding status) | Disposable; refused on generation mismatch, rebuilt from sidecars | `search-vector` tables (`fragments` + FTS over content/symbol/doc, `fragment_summaries` + FTS, `fragment_lemmas` integer keys + `lemma_terms`, `fragment_embedding_status`, symbols/edges, `nodes` shared document store, `capabilities` + FTS over title/purpose/keywords + lemma postings, `project_cards` + FTS), writers in `query/ingest.rs`, `query/db_storage.rs`, `index_pipeline.rs`, card importers in `read/doc_cards.rs` + `read/project_map.rs`, guard in `index_generation.rs` |
 | Control state (queue snapshots, calibration registry, intent records, journal, escalation ledger, run reports) | Durable and not derivable; back it up | `maintenance.rs`, `journal.rs`, `orchestrator.rs`, `plans.rs` |
 
 Mtime is a cache over this layout; content hashes decide. The
@@ -47,7 +47,11 @@ change so callers rebuild instead of serving a mixed pair.
 
 | Module | Responsibility |
 |---|---|
-| `query_engine.rs` | Tiered-escalation dispatch over registered backends; `answer` verifies citations through the in-hand doc with an optional workspace root; `with_no_llm` short-circuit plus `NoopLlmFilter` default keep exact tiers inference-free; single home for the loaded calibration registry (`with_calibration`, `authorize*`) |
+| `read/engine.rs` (`ReadEngine`) | The shipping answer path: intent-routed assembly, per-plane retrieval, budgets, claims, v2 envelope. `explain --no-llm` is evidence-only with no model pipeline build |
+| `read/planes/{symbol,graph,code,docs,orientation}.rs` | Exact symbols, call/dependency edges + ownership, FTS/vector/lemma code recall with live re-resolution, capability cards with live-section proof, verbatim doc-section cards with code scopes, project cards |
+| `read/{intent,vocabulary,budget,claims,decide,calibration}.rs` | Rule-table intent (+measured labels), one query vocabulary, token budgets, claim support, generic candidate judge (shadow labels, authorized filtering), task-value bars |
+| `read/{source_ref,source_scope,evidence}.rs` | Workspace-relative source identity with live reads, one scope classifier (product/doc/capability/test/fixture/eval/data), deduplicated evidence set before budget caps |
+| `query_engine.rs` | Retained for the `search` command surface only (`format_stages`, `summary_mode`); no longer an answer path |
 | `query/strategy.rs` | Intent FSM plus the exact pre-check single home |
 | `query/envelope.rs` | Unified answer envelope: intent, axis-labeled confidence, citations, gaps, freshness summary, resolution with tiers |
 | `query/recall.rs`, `query/fusion.rs`, `query/hybrid.rs` | Fragment-index recall, RRF fusion, two-route hybrid assembly with trace provenance |
@@ -166,6 +170,7 @@ result stays authoritative until measurement says otherwise.
 | Ordering and proof trails | `fluent-dag` (`src/dag`) | Dependency and checkpointed step graphs |
 | Tokens, packing, embeddings, rerank parsing, decision ladder | `fluent-llm` (`src/llm`, `decision/` module) | Envelopes, packs, embed cache, ladder, registry, triage metrics |
 | SQLite, HNSW, FTS | `fluent-db` (`src/db`), `search-vector` (`src/search-vector`) | Fragment/symbol/edge tables, recall |
+| Embedded document-node store (change-gated JSON ingest via `sync_from_dir`, vector/keyword/HNSW search) | `search-vector` (`nodes` table, node APIs) | Shared generic primitive with its own goldens (`search-vector/tests/node_sync.rs`); guidance's live path reads the fragment index and does not depend on it |
 | Shared types (`GuidanceDoc`, `Member`, sidecar header codec) | `fluent-types` (`src/types`) | Mirror schema read by core, index, and binary alike |
 | Concept stores | `fluent-concept` (`src/concept`) | Rerank-only groundedness evidence |
 | Knowledge plumbing | `fluent-knowledge` (`src/knowledge`) | Query-engine dependency |

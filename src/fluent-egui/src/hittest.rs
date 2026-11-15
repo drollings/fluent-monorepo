@@ -32,7 +32,7 @@ pub const HIT_EPSILON_PX: f32 = 8.0;
 /// back to, so `hit -> data -> pixel` round-trips bit-for-bit.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// One pointer hit: the bar under the pointer plus the price under it.
-/// 
+///
 /// `x`/`y` are exactly what [`Viewport`] maps the stored `(index, price)`
 /// back to, so `hit -> data -> pixel` round-trips bit-for-bit.
 pub struct Hit {
@@ -63,7 +63,7 @@ pub struct Crosshair {
 /// read infinite distance (fail-closed: never claim a hit).
 #[must_use]
 /// Distance from a point to a line segment, in pixels.
-/// 
+///
 /// The projection clamps to the segment, so past-end pointers read the nearer
 /// tip; a zero-length segment reads the point distance. Non-finite inputs
 /// read infinite distance (fail-closed: never claim a hit).
@@ -98,7 +98,7 @@ pub fn point_to_segment_distance(px: f32, py: f32, x0: f32, y0: f32, x1: f32, y1
 /// anywhere a bar and a price both resolve.
 #[must_use]
 /// Read the crosshair under a pointer: nearest bar plus price.
-/// 
+///
 /// Slots below zero or past `row_count` name no bar (ties round up: a pointer
 /// exactly between two bars reads the higher index, deterministically);
 /// off-pane pixels name no price. The readout takes no epsilon — it answers
@@ -143,7 +143,7 @@ pub fn crosshair_pixel(crosshair: &Crosshair, viewport: &Viewport) -> Option<(f3
 /// miss.
 #[must_use]
 /// Hit the candle under a pointer, or `None` for a miss.
-/// 
+///
 /// The candidate bar comes from [`crosshair_data`]; the hit additionally
 /// requires the pointer within [`HIT_EPSILON_PX`] of the bar's high-low wick
 /// segment. A bar whose high/low leg is unmappable falls back to its close

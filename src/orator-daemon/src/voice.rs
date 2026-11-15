@@ -477,11 +477,8 @@ impl VoiceOwner {
                 self.config.s2s.model,
             )));
         }
-        let bundle = orator::bundle_from_s2s(
-            &self.config.s2s,
-            &self.config.models,
-            &self.config.gguf_dir,
-        );
+        let bundle =
+            orator::bundle_from_s2s(&self.config.s2s, &self.config.models, &self.config.gguf_dir);
         if !bundle.present() {
             return Err(VoiceError::Boot(format!(
                 "audio bundle incomplete: {}",
@@ -1208,8 +1205,8 @@ fn build_meeting_pipeline(meeting: &str) -> Result<(), String> {
             Ok(())
         })
         .map_err(|error| error.to_string())?;
-    let pipeline =
-        orator_memory::diary::MeetingPipeline::new(store, meeting).map_err(|error| error.to_string())?;
+    let pipeline = orator_memory::diary::MeetingPipeline::new(store, meeting)
+        .map_err(|error| error.to_string())?;
     if !pipeline.ready().contains(&"finalize_audio".to_string()) {
         return Err("meeting pipeline did not open at finalize_audio".to_string());
     }

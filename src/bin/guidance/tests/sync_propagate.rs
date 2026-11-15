@@ -26,7 +26,13 @@ use common::sync;
 
 /// Scoped `sync --file`: member gen plus the derived-index half for one
 /// file only. Returns the command stdout.
-fn sync_file(dir: &Path, db_name: &str, file: &Path, verbose: bool) -> String {
+fn sync_file_with(
+    dir: &Path,
+    db_name: &str,
+    file: &Path,
+    verbose: bool,
+    extra: &[&str],
+) -> std::process::Output {
     let root = dir.to_str().unwrap().to_string();
     let json_dir = dir.join(".guidance").to_str().unwrap().to_string();
     let db = dir.join(db_name).to_str().unwrap().to_string();
@@ -45,7 +51,12 @@ fn sync_file(dir: &Path, db_name: &str, file: &Path, verbose: bool) -> String {
     if verbose {
         args.push("--verbose");
     }
-    let out = common::run(dir, &args);
+    args.extend(extra.iter().copied());
+    common::run(dir, &args)
+}
+
+fn sync_file(dir: &Path, db_name: &str, file: &Path, verbose: bool) -> String {
+    let out = sync_file_with(dir, db_name, file, verbose, &[]);
     assert!(out.status.success(), "sync --file failed: {out:?}");
     common::stdout(&out)
 }
@@ -366,7 +377,7 @@ fn deleted_file_drops_rows_sidecar_and_reprocesses_dependents() {
     let out = std::process::Command::new("sqlite3")
         .args([
             db.to_str().unwrap(),
-            "SELECT COUNT(*) FROM guidance_nodes WHERE source LIKE '%importee.rs'",
+            "SELECT COUNT(*) FROM nodes WHERE source LIKE '%importee.rs'",
         ])
         .output()
         .expect("sqlite3");
@@ -523,10 +534,9 @@ fn autonomy_l0_skips_fix_but_still_syncs() {
 }
 
 #[test]
-fn oversized_dirty_set_skips_fix_but_still_syncs() {
-    // Scale guard: beyond the pre-pass budget the fix loop is skipped
-    // (whole-tree convergence belongs to `run`), and indexing proceeds
-    // on unmodified bytes.
+fn large_dirty_set_is_fully_fixed() {
+    // No pre-pass cap: every stale file reaches the fix loop. The
+    // attempt and wave budgets bound retries, not the file count.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     for i in 0..33 {
@@ -556,12 +566,12 @@ fn oversized_dirty_set_skips_fix_but_still_syncs() {
     );
     assert!(out.status.success(), "sync converges: {out:?}");
     let text = common::stdout(&out);
-    assert!(text.contains("pre-pass budget"), "{text}");
-    let untouched = std::fs::read_to_string(root.join("m00.rs")).expect("read");
+    let formatted = std::fs::read_to_string(root.join("m00.rs")).expect("read");
     assert!(
-        untouched.contains("x:u32"),
-        "over-budget files keep their bytes: {untouched}"
+        formatted.contains("x: u32"),
+        "every stale file reaches the fix loop: {formatted}"
     );
+    assert!(text.contains("33 fixed"), "{text}");
     assert!(text.contains("Ingested 33 files"), "{text}");
 }
 
@@ -609,26 +619,25 @@ fn full_sync_scales_past_pool_queue_without_drops() {
 }
 
 #[test]
-fn sync_quiet_by_default_on_clean_tree() {
-    // Agent-CLI contract: a converged sync prints nothing on stdout.
-    // Progress lines are a `--verbose` surface; only unfixed errors
-    // speak by default.
+fn sync_reports_clean_by_default_on_clean_tree() {
+    // Agent-CLI contract: one decisive summary line, not silence and
+    // not the per-stage chatter (that stays behind `--verbose`).
     let dir = fixture();
     let root = dir.path();
     sync(root, ".sync.db", false);
     let text = sync(root, ".sync.db", false);
     assert!(
-        text.trim().is_empty(),
-        "clean sync must be quiet, got: {text:?}"
+        text.contains("sync: clean"),
+        "clean sync must report its verdict, got: {text:?}"
     );
 }
 
 #[test]
 fn sync_escalation_handoff_prints_complete_error() {
     // Unfixable files are never silent: the handoff names the file, the
-    // reason the loop stopped, and the draft failure detail. Exit stays
-    // 0 (the index converged); the stuck verdict re-surfaces the same
-    // handoff on the next sync until a human or agent fixes the file.
+    // reason the loop stopped, and the compiler detail. The stuck verdict
+    // exits 2 and re-surfaces on the next sync until a human or agent
+    // fixes the file.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     // Draft rung disabled: hermetic (no dialing); waves alone own this.
@@ -639,11 +648,14 @@ fn sync_escalation_handoff_prints_complete_error() {
     )
     .expect("write");
     std::fs::write(root.join("broken.rs"), "fn broken( {\n").expect("write");
-    let out = sync_file(root, ".sync.db", &root.join("broken.rs"), false);
+    let first = sync_file_with(root, ".sync.db", &root.join("broken.rs"), false, &[]);
+    assert_eq!(first.status.code(), Some(2), "stuck exits 2: {first:?}");
+    let out = common::stdout(&first);
     assert!(out.contains("attention"), "{out}");
     assert!(out.contains("broken.rs"), "{out}");
-    assert!(!out.contains("Sync complete"), "{out}");
-    let again = sync_file(root, ".sync.db", &root.join("broken.rs"), false);
+    let again = sync_file_with(root, ".sync.db", &root.join("broken.rs"), false, &[]);
+    assert_eq!(again.status.code(), Some(2), "stuck stays stuck: {again:?}");
+    let again = common::stdout(&again);
     assert!(
         again.contains("attention"),
         "stuck verdict must re-surface: {again}"
@@ -664,9 +676,34 @@ fn sync_draft_failure_detail_reaches_handoff() {
     )
     .expect("write");
     std::fs::write(root.join("broken.rs"), "fn broken( {\n").expect("write");
-    let out = sync_file(root, ".sync.db", &root.join("broken.rs"), false);
-    assert!(out.contains("attention"), "{out}");
-    assert!(out.contains("model unreachable"), "{out}");
+    let out = sync_file_with(
+        root,
+        ".sync.db",
+        &root.join("broken.rs"),
+        false,
+        &["--autonomy", "L3"],
+    );
+    assert_eq!(out.status.code(), Some(2), "stuck exits 2: {out:?}");
+    let text = common::stdout(&out);
+    assert!(text.contains("attention"), "{text}");
+    assert!(text.contains("model unreachable"), "{text}");
+}
+
+#[test]
+fn sync_at_l2_skips_model_drafts() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join(".guidance")).expect("mkdir");
+    std::fs::write(
+        root.join(".guidance").join("guidance-config.json"),
+        r#"{"generative": {"enabled": true, "base_url": "http://127.0.0.1:1", "model": "code", "timeout_ms": 1000}}"#,
+    )
+    .expect("write");
+    std::fs::write(root.join("broken.rs"), "fn broken( {\n").expect("write");
+    let out = sync_file_with(root, ".sync.db", &root.join("broken.rs"), false, &[]);
+    let text = common::stdout(&out);
+    assert!(text.contains("model drafts: 1 skipped"), "{text}");
+    assert!(!text.contains("model unreachable"), "{text}");
 }
 
 #[test]

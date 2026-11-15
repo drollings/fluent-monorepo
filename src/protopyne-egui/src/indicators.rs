@@ -73,7 +73,7 @@ const INTEGRATION_LITE_NODES: [&str; 4] = [
 /// [`entry_category`](Self::entry_category) maps them to `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// One catalog tab: the two selector tabs plus the three entry categories.
-/// 
+///
 /// `All` and `Favorites` are selectors, not entry categories — the generic
 /// catalog renders its own All tab and Favorites checkbox, so
 /// [`entry_category`](Self::entry_category) maps them to `None`.

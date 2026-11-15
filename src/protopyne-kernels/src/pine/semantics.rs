@@ -773,7 +773,9 @@ pub(crate) fn iff_of(values: &[Option<PineValue>]) -> Result<Option<PineValue>, 
         Some(PineValue::Bool(true)) => Ok(then_branch.clone()),
         Some(PineValue::Bool(false)) => Ok(else_branch.clone()),
         None => Ok(None),
-        Some(other) => Err(refused(format!("'iff' takes a bool condition, got {other}"))),
+        Some(other) => Err(refused(format!(
+            "'iff' takes a bool condition, got {other}"
+        ))),
     }
 }
 
@@ -790,7 +792,10 @@ pub(crate) fn true_range_at(legs: &Legs, cursor: usize) -> Option<PineValue> {
     let low = finite(legs.named("low"))?;
     let prev = cursor
         .checked_sub(1)
-        .and_then(|back| legs.named("close").and_then(|values| values.get(back).copied()))
+        .and_then(|back| {
+            legs.named("close")
+                .and_then(|values| values.get(back).copied())
+        })
         .and_then(crate::indicator::fin_or_none);
     Some(PineValue::Float(crate::volatility::true_range(
         high, low, prev,
@@ -798,7 +803,8 @@ pub(crate) fn true_range_at(legs: &Legs, cursor: usize) -> Option<PineValue> {
 }
 
 /// Absence on legs and in memory: `None`, or a `NaN` float.
-pub(crate) fn is_absent(value: Option<&PineValue>) -> bool {    match value {
+pub(crate) fn is_absent(value: Option<&PineValue>) -> bool {
+    match value {
         None => true,
         Some(PineValue::Float(v)) => v.is_nan(),
         Some(_) => false,
@@ -898,7 +904,12 @@ pub(crate) fn barstate_flag_at(
     }
 }
 
-pub(crate) fn barstate_flag(member: &str, ctx: &RunCtx<'_>, legs: &Legs, tick_mode: bool) -> Option<bool> {
+pub(crate) fn barstate_flag(
+    member: &str,
+    ctx: &RunCtx<'_>,
+    legs: &Legs,
+    tick_mode: bool,
+) -> Option<bool> {
     barstate_flag_at(member, ctx.cursor(), ctx.bar_count(), &legs.time, tick_mode)
 }
 
@@ -1260,7 +1271,6 @@ pub(crate) fn unary(
     }
 }
 
-
 /// Visitor verdict at one AST node: descend into children, skip the
 /// subtree, or stop the whole walk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1358,7 +1368,11 @@ pub(crate) fn walk_stmt<V: PartitionVisit>(
             WalkVisit::Recurse
         }
         PineStmt::For {
-            start, end, step, body, ..
+            start,
+            end,
+            step,
+            body,
+            ..
         } => {
             if walk_expr(start, visit, state) == WalkVisit::Stop {
                 return WalkVisit::Stop;
@@ -1438,7 +1452,11 @@ pub(crate) fn walk_switch<V: PartitionVisit>(
 /// Walk one expression and, unless pruned or stopped, its children in
 /// evaluation order: receivers before arguments, conditions before
 /// branches, arrays before indices.
-pub(crate) fn walk_expr<V: PartitionVisit>(expr: &PineExpr, visit: &mut V, state: &mut V::State) -> WalkVisit {
+pub(crate) fn walk_expr<V: PartitionVisit>(
+    expr: &PineExpr,
+    visit: &mut V,
+    state: &mut V::State,
+) -> WalkVisit {
     match visit.expr(expr, state) {
         WalkVisit::Stop => return WalkVisit::Stop,
         WalkVisit::Prune => return WalkVisit::Recurse,

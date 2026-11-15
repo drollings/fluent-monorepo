@@ -109,7 +109,7 @@ impl Drop for ChartFeed {
 /// dependents in the batch and nothing else.
 #[derive(Debug, Clone, FieldAccess, Describable)]
 /// One pane's recompute wave as a supervised unit.
-/// 
+///
 /// `execute` recounts kept display points (finite `Some` legs) — the
 /// skip-policy recompute in miniature — and reports the kept/total tally.
 /// `fault` injects a deterministic failure (fault-injection surface, never
@@ -447,7 +447,7 @@ impl TransportRetry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One owned async binding: a single in-flight pool submission whose latest
 /// outcome the frame polls.
-/// 
+///
 /// `Idle` is the rest state, `Pending` the in-flight state, `Finished` the
 /// delivered result, `Failed` the delivered taxonomy. Failures carry the
 /// `WorkError` taxonomy, never strings: a timed-out or refused job routes to

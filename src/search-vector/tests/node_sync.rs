@@ -106,3 +106,20 @@ fn node_sync_empty_dir_clears_stale_nodes() {
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 0);
     assert_eq!(db.get_node_count().expect("count"), 0);
 }
+
+#[test]
+fn legacy_guidance_nodes_table_migrates_to_nodes() {
+    // Pre-rename databases keep their rows: open renames the shared
+    // node table in place, and the generic API reads through.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("legacy.db");
+    let conn = rusqlite::Connection::open(&db_path).expect("open");
+    conn.execute_batch(
+        "CREATE TABLE guidance_nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, source TEXT NOT NULL, signature TEXT, comment TEXT, module TEXT NOT NULL, language TEXT NOT NULL DEFAULT 'zig', embedding BLOB, created_at TEXT DEFAULT (datetime('now'))); INSERT INTO guidance_nodes (name, source, module) VALUES ('a', 's', 'm');",
+    )
+    .expect("seed legacy");
+    drop(conn);
+    let db = GuidanceDb::open(&db_path).expect("open migrates");
+    assert_eq!(db.get_node_count().expect("count"), 1);
+    assert_eq!(db.sync_from_dir(dir.path()).expect("sync empty dir"), 0);
+}

@@ -45,18 +45,27 @@ fn as_usize(value: &serde_json::Value) -> Option<usize> {
 fn mel_contract_matches_the_reference() {
     let contract = &recorded()["mel_contract"];
     assert_eq!(as_usize(&contract["feature_size"]), Some(N_MELS));
-    assert_eq!(contract["sampling_rate"].as_u64(), Some(u64::from(SAMPLE_RATE_IN)));
+    assert_eq!(
+        contract["sampling_rate"].as_u64(),
+        Some(u64::from(SAMPLE_RATE_IN))
+    );
     assert_eq!(as_usize(&contract["n_fft"]), Some(MEL_WIN));
     assert_eq!(as_usize(&contract["hop_length"]), Some(MEL_HOP));
     assert_eq!(as_usize(&contract["win_length"]), Some(MEL_WIN));
-    assert_eq!(as_usize(&contract["encoder_stride"]), Some(DOWNSAMPLE_STRIDE));
+    assert_eq!(
+        as_usize(&contract["encoder_stride"]),
+        Some(DOWNSAMPLE_STRIDE)
+    );
 }
 
 #[test]
 fn token_ids_match_the_reference() {
     let ids = &recorded()["token_ids"];
     assert_eq!(ids["audio"].as_u64(), Some(u64::from(AUDIO_TOKEN_ID)));
-    assert_eq!(ids["audio_out"].as_u64(), Some(u64::from(AUDIO_OUT_TOKEN_ID)));
+    assert_eq!(
+        ids["audio_out"].as_u64(),
+        Some(u64::from(AUDIO_OUT_TOKEN_ID))
+    );
     assert_eq!(ids["bos"].as_u64(), Some(u64::from(BOS_TOKEN_ID)));
     assert_eq!(ids["eos"].as_u64(), Some(u64::from(EOS_TOKEN_ID)));
     assert_eq!(ids["pad"].as_u64(), Some(u64::from(PAD_TOKEN_ID)));
@@ -64,7 +73,10 @@ fn token_ids_match_the_reference() {
 
 #[test]
 fn text_turn_framing_matches_the_reference() {
-    let framed = recorded()["framed_text_turn"].as_str().expect("framed string").to_string();
+    let framed = recorded()["framed_text_turn"]
+        .as_str()
+        .expect("framed string")
+        .to_string();
     let turn = TextTurn {
         role: "user".to_string(),
         text: "hello".to_string(),
@@ -79,10 +91,19 @@ fn text_turn_framing_matches_the_reference() {
 #[test]
 fn encoder_counts_match_the_reference_on_all_fixtures() {
     let fixtures = recorded()["fixtures"].as_array().expect("fixtures").clone();
-    assert!(fixtures.len() >= 3, "two mel fixtures plus the edge: {fixtures:?}");
+    assert!(
+        fixtures.len() >= 3,
+        "two mel fixtures plus the edge: {fixtures:?}"
+    );
     for fixture in &fixtures {
-        let mel = fixture["mel_frames"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("mel frames");
-        let tokens = fixture["encoder_tokens"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("tokens");
+        let mel = fixture["mel_frames"]
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok())
+            .expect("mel frames");
+        let tokens = fixture["encoder_tokens"]
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok())
+            .expect("tokens");
         assert_eq!(
             crate::lfm::arch::encoder_tokens_for_frames(mel),
             tokens,
@@ -95,8 +116,14 @@ fn encoder_counts_match_the_reference_on_all_fixtures() {
 #[test]
 fn audio_expansion_matches_the_reference_end_to_end() {
     let expansion = &recorded()["audio_expansion"];
-    let mel = expansion["mel_frames"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("mel frames");
-    let tokens = expansion["encoder_tokens"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("tokens");
+    let mel = expansion["mel_frames"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("mel frames");
+    let tokens = expansion["encoder_tokens"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("tokens");
     assert_eq!(
         expansion["audio_token_id"].as_u64(),
         Some(u64::from(AUDIO_TOKEN_ID))
@@ -113,14 +140,24 @@ fn audio_expansion_matches_the_reference_end_to_end() {
         expansion["framed_turn"].as_str().expect("framed turn"),
         "framing and expansion byte-identical"
     );
-    assert_eq!(ids, vec![AUDIO_TOKEN_ID; tokens], "one id per encoder token");
+    assert_eq!(
+        ids,
+        vec![AUDIO_TOKEN_ID; tokens],
+        "one id per encoder token"
+    );
 }
 
 #[test]
 fn audio_out_expansion_matches_the_reference_end_to_end() {
     let out = &recorded()["audio_out"];
-    let frames = out["codec_frames"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("codec frames");
-    let placeholders = out["placeholders"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("placeholders");
+    let frames = out["codec_frames"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("codec frames");
+    let placeholders = out["placeholders"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("placeholders");
     assert_eq!(placeholders, frames + 1, "every clip carries the EOS frame");
     assert_eq!(out["eos_code"].as_u64(), Some(u64::from(AUDIO_EOS_CODE)));
     assert_eq!(

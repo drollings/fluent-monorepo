@@ -455,8 +455,16 @@ fn code_entity_outline(entity: &OwnedEntity, max_chars: usize) -> String {
     } else if entity.symbol_type == crate::search_types::CodeSymbolType::Function
         && !entity.calls.is_empty()
     {
+        // Display cap only: the graph input above is unbounded, the
+        // outline shows the first page.
         lines.push(String::new());
-        lines.push(format!("calls: {}", entity.calls.join(", ")));
+        let shown: Vec<&str> = entity
+            .calls
+            .iter()
+            .take(OUTLINE_MAX_CALLS)
+            .map(String::as_str)
+            .collect();
+        lines.push(format!("calls: {}", shown.join(", ")));
     }
     truncate_outline(lines.join("\n").trim(), max_chars)
 }
@@ -621,6 +629,9 @@ fn collect_members(
     visitor.members
 }
 
+/// All call names under one node: the graph input. Unbounded by
+/// construction — the outline's `OUTLINE_MAX_CALLS` display cap applies
+/// at render, never here, so graph consumers see every call site.
 fn collect_call_names(node: NodeView<'_>) -> Vec<String> {
     const CALL_TYPES: &[&str] = &[
         "call",
@@ -633,9 +644,6 @@ fn collect_call_names(node: NodeView<'_>) -> Vec<String> {
     let mut calls = Vec::new();
     let mut seen = HashSet::new();
     fn visit(view: NodeView<'_>, calls: &mut Vec<String>, seen: &mut HashSet<String>) {
-        if calls.len() >= OUTLINE_MAX_CALLS {
-            return;
-        }
         if CALL_TYPES.contains(&view.kind()) {
             if let Some(name) = extract_call_name(view) {
                 if seen.insert(name.clone()) {

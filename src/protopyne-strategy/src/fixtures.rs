@@ -29,7 +29,7 @@ use crate::proposal::StructureKind;
 /// differs.
 #[must_use]
 /// The baseline grant, with `tweak` applied after construction.
-/// 
+///
 /// The baseline is the permissive *rehearsal* shape the server's targets share:
 /// wide budgets, both directions, every entry/exit permission, thresholds at
 /// zero, a 2025–2027 window. A test that needs a narrower object names only what
@@ -89,7 +89,7 @@ pub fn grant_exit_only() -> Grant {
 #[must_use]
 /// The fixed tier order [`evaluate_grant`](crate::grant::evaluate_grant) uses,
 /// one representative reason per stage.
-/// 
+///
 /// Revoked → window → attestation → scope → budgets → signal → trade →
 /// portfolio → breaker: authority before liveness before operator authority
 /// before fit before capacity before merit, with the producer-confidence

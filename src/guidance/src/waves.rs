@@ -158,12 +158,9 @@ pub fn run_model_draft_rung(
     let mut client = fluent_llm::client::LlmClient::new(&endpoint.base_url, &endpoint.model);
     client.config.timeout_ms = endpoint.timeout_ms;
     for (path, reason) in files {
-        let source = match common_core::io::read_to_string_err(path) {
-            Ok(text) => text,
-            Err(_) => {
-                report.failed += 1;
-                continue;
-            }
+        let Ok(source) = common_core::io::read_to_string_err(path) else {
+            report.failed += 1;
+            continue;
         };
         if source.len() > MAX_DRAFT_INPUT_CHARS {
             report.skipped += 1;
@@ -222,7 +219,6 @@ pub fn run_model_draft_rung(
                 }
                 Ok(applied) if applied.changed => {
                     detail = capped_gate_output(&applied.gate_output);
-                    continue;
                 }
                 Ok(_) => {
                     detail = String::from("draft identical to source; no progress");
@@ -230,7 +226,6 @@ pub fn run_model_draft_rung(
                 }
                 Err(error) => {
                     detail = format!("draft refused: {error}");
-                    continue;
                 }
             }
         }
@@ -267,7 +262,7 @@ pub fn live_runner(ctx: crate::clippy::ClippyCtx) -> ClippyRunner {
 }
 
 /// One escalated file with its requeue fingerprint.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// One escalated file with its requeue fingerprint.
 pub struct Escalation {
     /// File path, as passed in.
@@ -277,6 +272,28 @@ pub struct Escalation {
     /// Why the ladder stopped (`attempts exhausted`, `fmt_conflict`,
     /// `no_progress`).
     pub reason: String,
+    /// Rendered compiler/lint diagnostics for the handoff.
+    pub detail: String,
+}
+
+/// Per-file residual diagnostics after the last fix attempt.
+#[derive(Debug, Clone, Default)]
+pub struct FileFeedback {
+    /// File path, as passed in.
+    pub file: String,
+    /// Diagnostic codes seen for this file.
+    pub codes: Vec<String>,
+    /// Rendered diagnostics, each with its source snippet.
+    pub rendered: Vec<String>,
+}
+
+/// Package-level failure that could not be attributed to one file.
+#[derive(Debug, Clone, Default)]
+pub struct PackageFailure {
+    /// Package directory.
+    pub package: String,
+    /// Rendered compiler/lint detail.
+    pub detail: String,
 }
 
 /// Wave-loop inputs.
@@ -319,7 +336,7 @@ pub struct WaveCtx<'a> {
 #[derive(Debug, Clone, Default)]
 /// Wave-loop outcome for the run report.
 pub struct WaveReport {
-    /// Waves executed (the last is always the clean witness).
+    /// Waves executed.
     pub waves_run: usize,
     /// Files formatted and kept.
     pub formatted: usize,
@@ -329,6 +346,14 @@ pub struct WaveReport {
     pub escalated: Vec<Escalation>,
     /// Clippy invocations spent (one per affected package per wave).
     pub clippy_invocations: usize,
+    /// Compiler-error fixes kept (mutability, imports).
+    pub compile_fixed: usize,
+    /// Files with residual diagnostics after the final witness.
+    pub residual: Vec<String>,
+    /// Per-file diagnostic detail for the handoff.
+    pub feedback: Vec<FileFeedback>,
+    /// Package-level failures not attributable to one file.
+    pub package_failures: Vec<PackageFailure>,
     /// Stop reason when the loop did not reach the fixpoint.
     pub stopped: Option<String>,
     /// Explicit witness verdict: the final wave kept nothing and
@@ -350,7 +375,7 @@ impl WaveReport {
         {
             return ExitCode::Halted;
         }
-        if !self.escalated.is_empty() {
+        if !self.escalated.is_empty() || !self.package_failures.is_empty() {
             return ExitCode::Stuck;
         }
         if self.stopped.is_some() || !self.witness_clean {
@@ -540,8 +565,8 @@ pub fn run_fix_waves(files: &[PathBuf], ctx: &WaveCtx) -> WaveReport {
                 continue;
             }
             match apply_suggestions_for(path, &live, &diags, &reports, ctx, &mut ast_parser) {
-                Act::Kept(patch) => {
-                    if kept_patch.get(path).is_some_and(|last| *last == patch) {
+                Act::Kept { text, class } => {
+                    if kept_patch.get(path).is_some_and(|last| *last == text) {
                         escalate(
                             &mut report,
                             path,
@@ -551,8 +576,11 @@ pub fn run_fix_waves(files: &[PathBuf], ctx: &WaveCtx) -> WaveReport {
                         attempts.insert(path.clone(), ctx.max_attempts);
                     } else {
                         report.fixed += 1;
+                        if matches!(class, "mut" | "import") {
+                            report.compile_fixed += 1;
+                        }
                         kept_this_wave = true;
-                        kept_patch.insert(path.clone(), patch);
+                        kept_patch.insert(path.clone(), text);
                     }
                 }
                 Act::None => {
@@ -624,7 +652,121 @@ pub fn run_fix_waves(files: &[PathBuf], ctx: &WaveCtx) -> WaveReport {
         .count();
     report.witness_clean =
         crate::pipeline::witness_clean(last_wave_kept, unowned, report.stopped.is_some());
+    if !files.is_empty() {
+        witness_after_waves(files, ctx, &mut report);
+    }
     report
+}
+
+/// Final clippy witness: re-runs the toolchain after the budget and
+/// turns every remaining diagnostic into owned feedback.
+fn witness_after_waves(files: &[PathBuf], ctx: &WaveCtx, report: &mut WaveReport) {
+    let mut packages: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+    for path in files {
+        if let Some(root) = crate::clippy::package_root(path) {
+            packages.entry(root).or_default().push(path.clone());
+        }
+    }
+    let mut package_names: Vec<PathBuf> = packages.keys().cloned().collect();
+    package_names.sort();
+    let mut residual: Vec<String> = Vec::new();
+    for package in &package_names {
+        report.clippy_invocations += 1;
+        let parsed = match (ctx.clippy)(package) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                report.package_failures.push(PackageFailure {
+                    package: package.to_string_lossy().into_owned(),
+                    detail: format!("clippy could not run: {error}"),
+                });
+                for path in &packages[package] {
+                    residual.push(path.to_string_lossy().into_owned());
+                }
+                continue;
+            }
+        };
+        let mut attributed: Vec<(String, Vec<usize>)> =
+            attribute_diagnostics(&parsed).into_iter().collect();
+        attributed.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut error_attributed = false;
+        for (name, indices) in attributed {
+            let reported = resolve_reported(package, &name);
+            let Some(path) = packages[package]
+                .iter()
+                .find(|candidate| same_path(candidate, &reported))
+            else {
+                continue;
+            };
+            let mut feedback = FileFeedback {
+                file: path.to_string_lossy().into_owned(),
+                ..FileFeedback::default()
+            };
+            for index in indices {
+                let Some(diag) = parsed.diagnostics.get(index) else {
+                    continue;
+                };
+                if diag.level == "error" {
+                    error_attributed = true;
+                }
+                if let Some(code) = &diag.code {
+                    feedback.codes.push(code.clone());
+                }
+                let rendered = diag
+                    .rendered
+                    .clone()
+                    .unwrap_or_else(|| format!("{}: {}", diag.level, diag.message));
+                feedback.rendered.push(rendered);
+            }
+            feedback.codes.sort();
+            feedback.codes.dedup();
+            if feedback.codes.is_empty() && feedback.rendered.is_empty() {
+                continue;
+            }
+            let detail = feedback.rendered.join("\n");
+            let codes = feedback.codes.clone();
+            escalate_detail(
+                report,
+                path,
+                &codes,
+                format!("residual diagnostics: {}", codes.join(",")),
+                detail,
+            );
+            residual.push(feedback.file.clone());
+            report.feedback.push(feedback);
+        }
+        if !parsed.exit_ok && !error_attributed {
+            let detail = parsed
+                .diagnostics
+                .iter()
+                .find_map(|diag| diag.rendered.clone())
+                .unwrap_or_else(|| parsed.stderr.trim().to_string());
+            report.package_failures.push(PackageFailure {
+                package: package.to_string_lossy().into_owned(),
+                detail,
+            });
+            for path in &packages[package] {
+                residual.push(path.to_string_lossy().into_owned());
+            }
+        }
+    }
+    residual.sort();
+    residual.dedup();
+    report.residual = residual;
+    if !report.feedback.is_empty() || !report.package_failures.is_empty() {
+        report.witness_clean = false;
+    }
+}
+
+/// Path equality after normalization: clippy reports package-relative
+/// names while the wave set may carry absolute or `./`-prefixed paths.
+fn same_path(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
 }
 
 fn bump(attempt: &mut u32) {
@@ -653,8 +795,21 @@ fn file_codes(
 }
 
 fn escalate(report: &mut WaveReport, path: &Path, codes: &[String], reason: String) {
+    escalate_detail(report, path, codes, reason, String::new());
+}
+
+fn escalate_detail(
+    report: &mut WaveReport,
+    path: &Path,
+    codes: &[String],
+    reason: String,
+    detail: String,
+) {
     let file = path.to_string_lossy().into_owned();
-    if report.escalated.iter().any(|esc| esc.file == file) {
+    if let Some(existing) = report.escalated.iter_mut().find(|esc| esc.file == file) {
+        if existing.detail.is_empty() {
+            existing.detail = detail;
+        }
         return;
     }
     let fingerprint = fingerprint(&file, codes, &reason);
@@ -662,6 +817,7 @@ fn escalate(report: &mut WaveReport, path: &Path, codes: &[String], reason: Stri
         file,
         fingerprint,
         reason,
+        detail,
     });
 }
 
@@ -778,8 +934,8 @@ fn triage_hold(
 
 /// D2 outcome for one file in one wave.
 enum Act {
-    /// A patch was kept; carries the kept text for no-progress checks.
-    Kept(String),
+    /// A patch was kept; carries the kept text and its fix class.
+    Kept { text: String, class: &'static str },
     /// Nothing acted (no shaped suggestions, or converged).
     None,
     /// Suggestions existed but certification refused them.
@@ -833,7 +989,10 @@ fn apply_suggestions_for(
             continue;
         }
         if apply_kept(path, &outcome.text, class, "D2", ctx) {
-            return Act::Kept(outcome.text);
+            return Act::Kept {
+                text: outcome.text,
+                class,
+            };
         }
         return Act::NeedsCert;
     }

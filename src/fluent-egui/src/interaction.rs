@@ -153,7 +153,7 @@ pub enum PointerInput {
 /// time-axis coasting stay inside the data envelope.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Pure interaction state: elastic data bounds plus kinetic velocity.
-/// 
+///
 /// Construct with the data extent the window may roam (plus its elastic
 /// margin); advance a viewport with [`step`](Self::step). The window itself
 /// stays caller-held, so replay only needs the event script. The machine
@@ -628,7 +628,7 @@ pub fn zoom_range_around(range: PriceRange, anchor: f64, factor: f64) -> Option<
 #[must_use]
 /// Rebuild a window of `span` with the price `anchor` sitting at fraction
 /// `frac` of it (`0` is the window's lower edge, `1` its upper edge).
-/// 
+///
 /// A cursor-anchored zoom keeps the anchor price at a fixed pixel, so its
 /// fraction is invariant under [`zoom_range_around`]. When the span must be
 /// clamped (a pane's design band, or the elastic wall) this rebuilds the

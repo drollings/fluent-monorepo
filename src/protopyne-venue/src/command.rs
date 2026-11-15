@@ -611,7 +611,7 @@ pub fn cancel_all_detail(portfolio: &str) -> String {
 /// client-ID prefix and therefore close as one package). Prototype grouping,
 /// documented as such: mixed-ratio books close the minimum whole-unit count,
 /// and exact ties on dominant side break toward the first leg in OCC order.
-/// 
+///
 /// The one grouping implementation: the command unit reads its paper book
 /// through here, and the live loop reads its registry book through here —
 /// never a second grouping.

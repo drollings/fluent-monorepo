@@ -56,7 +56,7 @@ pub type ModuleKey = String;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// One call expression on the path that reached a body: the module owning the
 /// expression and the expression's node.
-/// 
+///
 /// Node ids are numbered per parsed program, so the module is part of the
 /// identity — two modules' expression number 7 are different call sites.
 pub struct CallSite {
@@ -85,7 +85,7 @@ impl CallSite {
 /// Identity of one persistent cell: the module whose body declares it, the
 /// call expressions that reached that body (outermost first, empty at a
 /// module's top level), and the declaration node.
-/// 
+///
 /// A call expression is one instance, so a function called from two places
 /// owns two cells, and a `var` declared at the top level belongs to the
 /// module's root scope.

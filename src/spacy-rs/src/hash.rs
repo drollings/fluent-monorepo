@@ -21,7 +21,7 @@ pub const HASH_SEED: u64 = 1;
 /// finalizes with two `h ^= h >> 47` rounds. Pure, allocation-free, and safe.
 #[must_use]
 /// MurmurHash64A, matching `murmurhash.mrmr.hash64(data, len, seed)`.
-/// 
+///
 /// Reads 8-byte blocks little-endian (matching the little-endian fast path of
 /// the C `getblock`), mixes the 1..7-byte tail with a fall-through switch, and
 /// finalizes with two `h ^= h >> 47` rounds. Pure, allocation-free, and safe.

@@ -442,7 +442,7 @@ fn bar_menu_button(
 #[allow(clippy::too_many_arguments)]
 /// Paint the terminal Material top bar; returns the one action this frame
 /// raised, if any.
-/// 
+///
 /// Left to right: dock toggle, ticker, save layout, the timeframe selector,
 /// display-mode pulldown, refresh button, and the label-free pan cluster
 /// (rewind-to-beginning, rewind, play/pause, replay-speed menu, forward,
@@ -452,12 +452,12 @@ fn bar_menu_button(
 /// Every control draws at [`TOP_BAR_BUTTON_HEIGHT`] with the shared bold
 /// [`bar_text`] style, so the app bar reads as one material row.
 /// An untouched frame raises nothing.
-/// 
+///
 /// The picker buttons (ticker, bookmarks, indicators, jump) record their
 /// button rects into the anchor outs on click: the workspace paints the
 /// corresponding titlebar-less popup anchored below the button, like the
 /// Candles pulldown, so no picker needs its own window chrome.
-/// 
+///
 /// Range picking lives in the dock drawer, not here: the bar carries no
 /// dialog state, so a preset or calendar day can never blank the pane
 /// mid-gesture.

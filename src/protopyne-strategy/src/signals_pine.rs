@@ -38,7 +38,7 @@ use crate::view::MarketView;
 /// `Correct` row records the accepted divergence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Constructs a Pine signal declares it relies on.
-/// 
+///
 /// Construction refuses an unknown construct (the matrix cannot vouch for
 /// it) and a `Refuse` row (the construct is knowingly unsupported); naming a
 /// `Correct` row records the accepted divergence.
@@ -101,7 +101,7 @@ impl ParityClaim {
 #[cfg(feature = "bytecode")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 /// Execution selection for one Pine signal.
-/// 
+///
 /// The compiled loop is the default: a signal that does not ask for the
 /// tree-walk evaluates on the one shipping path. The tree-walk opt-out
 /// exists only where the oracle does (test and `oracle` builds), so

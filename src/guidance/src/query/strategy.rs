@@ -1,6 +1,6 @@
 use super::identifier;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryIntent {
     SingleIdentifier,
     CapabilityQuery,
@@ -9,15 +9,29 @@ pub enum QueryIntent {
     Conceptual,
     MultiKeyword,
     GeneralSearch,
+    /// Graph navigation (`callers of`, `callees of`, `dependents of`,
+    /// `owner of`). Produced only by the read-plane rule table; the
+    /// legacy word-count ladder never emits it.
+    Graph,
+    /// Crate/file ownership (`which crate owns`, `who owns`).
+    /// Read-plane only.
+    Ownership,
+    /// Repository orientation (`major components`, `member projects`,
+    /// `what is this repo`). Read-plane only.
+    Orientation,
+    /// Card/doc provenance (`where do X come from`, `what consumes X`).
+    /// Read-plane only.
+    Provenance,
 }
 
 impl QueryIntent {
     pub fn priority(&self) -> u8 {
         match self {
             Self::SingleIdentifier => 0,
-            Self::FilePath => 1,
+            Self::FilePath | Self::Graph => 1,
             Self::CapabilityQuery => 2,
-            Self::HowTo | Self::Conceptual => 4,
+            Self::Ownership | Self::Orientation => 3,
+            Self::HowTo | Self::Conceptual | Self::Provenance => 4,
             Self::MultiKeyword => 5,
             Self::GeneralSearch => 6,
         }
@@ -167,15 +181,21 @@ impl FsmEngine {
         (verdict, record)
     }
 
-    /// Route classifier — determines which search primitive to use
+    /// Route classifier — determines which search primitive to use.
+    /// The four read-plane intents map to the closest legacy primitive;
+    /// the read engine routes by plane instead and never calls this.
     pub fn route(&self, qc: &QueryClass) -> &'static str {
         match qc.intent {
-            QueryIntent::SingleIdentifier => "word_index",
+            QueryIntent::SingleIdentifier | QueryIntent::Graph => "word_index",
             QueryIntent::FilePath => "anchor_lookup",
-            QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword => "fts",
+            QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword | QueryIntent::Provenance => {
+                "fts"
+            }
             QueryIntent::HowTo => "hybrid",
             QueryIntent::Conceptual => "vector",
-            QueryIntent::GeneralSearch => "keyword",
+            QueryIntent::Ownership | QueryIntent::Orientation | QueryIntent::GeneralSearch => {
+                "keyword"
+            }
         }
     }
 

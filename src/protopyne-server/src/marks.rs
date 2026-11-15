@@ -45,7 +45,7 @@ pub fn mark_basis_note(basis: MarkBasis) -> String {
 #[must_use]
 /// The per-unit mark of a *position*: `legs` describing one package, held
 /// `package_units` times over.
-/// 
+///
 /// [`mark_per_unit`] divides the position's value by its package count, so
 /// the legs must describe the whole position; this scales one package's legs
 /// to the size and delegates, so callers holding a book's legs never scale
@@ -108,7 +108,7 @@ impl MarkPoint<'_> {
 /// empty leg set or zero units has no mark at all.
 #[must_use]
 /// The per-package-unit mark for `legs` at `at`, and its basis.
-/// 
+///
 /// `legs` are one package's executed legs (`quantity` is already scaled by its
 /// ratio); `package_units` is the package count the position books. A
 /// [`MarkBasis::ChainMid`] mark needs a non-crossed quote at-or-before `at`

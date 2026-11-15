@@ -65,7 +65,12 @@ fn intent_labels_round_trip_through_spec_options() {
         assert!(!mapped.contains(&intent), "distinct intents");
         mapped.push(intent);
     }
-    assert_eq!(mapped.len(), 7);
+    // Nine model-eligible labels: the two exact arms resolve before
+    // any backend exists, so the spec cannot name them (the mapping
+    // still decodes them for log readers).
+    assert_eq!(mapped.len(), 9);
+    assert!(!mapped.contains(&QueryIntent::SingleIdentifier));
+    assert!(!mapped.contains(&QueryIntent::FilePath));
     assert!(intent_label_to_intent("Nope").is_none());
     assert!(intent_label_to_intent("").is_none());
 }
@@ -122,4 +127,26 @@ fn seed_corpus_passes_gate_at_point_threshold() {
     );
     // The 8 intents stay routable: every spec option maps somewhere.
     assert_eq!(QueryIntent::SingleIdentifier.priority(), 0);
+}
+
+#[test]
+fn read_intent_path_token_does_not_steal_ownership_or_mechanism() {
+    use crate::read::intent::classify as classify_read;
+    assert_eq!(
+        classify_read("What owns the build cache under .guidance/target, and is clean safe?"),
+        QueryIntent::Ownership
+    );
+    assert_eq!(
+        classify_read("How does guidance sync decide what to reprocess after an edit?"),
+        QueryIntent::HowTo
+    );
+    assert_eq!(classify_read("src/main.rs"), QueryIntent::FilePath);
+    assert_eq!(
+        classify_read("where is src/guidance/src/sync_engine.rs"),
+        QueryIntent::FilePath
+    );
+    assert_eq!(
+        classify_read("callers of src/guidance/src/main.rs"),
+        QueryIntent::Graph
+    );
 }

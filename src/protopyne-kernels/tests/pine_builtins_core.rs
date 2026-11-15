@@ -889,10 +889,7 @@ fn color_channel_readers_report_packed_channels() {
     let mut one = |method: &str, args: &[CoreArg]| {
         call("color", method, "s", args, &[], &mut inputs).expect("valid color call")
     };
-    let color = one(
-        "rgb",
-        &[int_arg(10), int_arg(20), int_arg(30), int_arg(40)],
-    );
+    let color = one("rgb", &[int_arg(10), int_arg(20), int_arg(30), int_arg(40)]);
     assert_eq!(
         one("t", &[pos(color.clone())]),
         Some(PineValue::Int(40)),
@@ -913,20 +910,9 @@ fn color_channel_readers_report_packed_channels() {
         Some(PineValue::Int(30)),
         "blue lane reads 0-255"
     );
-    assert_eq!(
-        one("t", &[pos(None)]),
-        None,
-        "absent color propagates"
-    );
-    let err = call(
-        "color",
-        "t",
-        "s",
-        &[float_arg(1.5)],
-        &[],
-        &mut inputs,
-    )
-    .expect_err("a non-color refuses");
+    assert_eq!(one("t", &[pos(None)]), None, "absent color propagates");
+    let err = call("color", "t", "s", &[float_arg(1.5)], &[], &mut inputs)
+        .expect_err("a non-color refuses");
     assert!(
         err.to_string().contains("color.t takes a color"),
         "the refusal names the call: {err}"
@@ -1016,7 +1002,10 @@ fn plot_styles_resolve_bare_and_qualified() {
     ] {
         let dotted = format!("plot.{member}");
         let got = resolve_constant(bare).expect("bare style resolves");
-        assert_eq!(got, resolve_constant(&dotted).expect("dotted style resolves"));
+        assert_eq!(
+            got,
+            resolve_constant(&dotted).expect("dotted style resolves")
+        );
         assert!(matches!(got, PineValue::EnumHandle(_)), "{bare} is opaque");
     }
     assert_eq!(resolve_constant("plot.style_something"), None);

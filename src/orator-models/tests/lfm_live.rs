@@ -29,7 +29,10 @@ fn frozen() -> serde_json::Value {
 fn probe_output() -> Option<serde_json::Value> {
     let dir = reference_dir();
     if !dir.is_dir() {
-        eprintln!("live: reference tree missing at {}, skipping", dir.display());
+        eprintln!(
+            "live: reference tree missing at {}, skipping",
+            dir.display()
+        );
         return None;
     }
     let probe = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/probe_reference.py");
@@ -41,12 +44,13 @@ fn probe_output() -> Option<serde_json::Value> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("No module named") || stderr.contains("ModuleNotFoundError") {
-            eprintln!("live: reference stack incomplete, skipping ({})", stderr.lines().next().unwrap_or(""));
+            eprintln!(
+                "live: reference stack incomplete, skipping ({})",
+                stderr.lines().next().unwrap_or("")
+            );
             return None;
         }
-        panic!(
-            "live: probe ran but failed (the reference is present but broken):\n{stderr}"
-        );
+        panic!("live: probe ran but failed (the reference is present but broken):\n{stderr}");
     }
     serde_json::from_slice(&output.stdout).ok()
 }
@@ -84,9 +88,18 @@ fn fresh_reference_outputs_match_our_assembly() {
     };
     // Audio expansion: framing and ids against fresh reference output.
     let expansion = &fresh["audio_expansion"];
-    let mel = expansion["mel_frames"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("mel frames");
-    let tokens = expansion["encoder_tokens"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("tokens");
-    assert_eq!(orator_models::lfm::arch::encoder_tokens_for_frames(mel), tokens);
+    let mel = expansion["mel_frames"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("mel frames");
+    let tokens = expansion["encoder_tokens"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("tokens");
+    assert_eq!(
+        orator_models::lfm::arch::encoder_tokens_for_frames(mel),
+        tokens
+    );
     let turn = TextTurn {
         role: "user".to_string(),
         text: expansion["text"].as_str().expect("text").to_string(),
@@ -94,12 +107,21 @@ fn fresh_reference_outputs_match_our_assembly() {
         audio_out: None,
     };
     let (text, ids) = assemble_prompt(&turn).expect("assembles");
-    assert_eq!(text, expansion["framed_turn"].as_str().expect("framed turn"));
+    assert_eq!(
+        text,
+        expansion["framed_turn"].as_str().expect("framed turn")
+    );
     assert_eq!(ids, vec![AUDIO_TOKEN_ID; tokens]);
     // Audio-out: frames plus the EOS frame, fresh from the codec.
     let out = &fresh["audio_out"];
-    let frames = out["codec_frames"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("codec frames");
-    let placeholders = out["placeholders"].as_u64().and_then(|v| usize::try_from(v).ok()).expect("placeholders");
+    let frames = out["codec_frames"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("codec frames");
+    let placeholders = out["placeholders"]
+        .as_u64()
+        .and_then(|v| usize::try_from(v).ok())
+        .expect("placeholders");
     assert_eq!(placeholders, frames + 1, "every clip carries the EOS frame");
     let turn = TextTurn {
         role: "assistant".to_string(),
@@ -119,11 +141,15 @@ fn generation_defaults_match_the_reference_config() {
 
     let dir = reference_dir();
     if !dir.is_dir() {
-        eprintln!("live: reference tree missing at {}, skipping", dir.display());
+        eprintln!(
+            "live: reference tree missing at {}, skipping",
+            dir.display()
+        );
         return;
     }
     let generation: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.join("generation_config.json")).expect("generation config reads"),
+        &std::fs::read_to_string(dir.join("generation_config.json"))
+            .expect("generation config reads"),
     )
     .expect("generation config parses");
     let model: serde_json::Value = serde_json::from_str(
@@ -141,30 +167,49 @@ fn generation_defaults_match_the_reference_config() {
             "{key}: {actual} vs {expected}"
         );
     }
-    assert_eq!(generation["do_sample"], serde_json::json!(defaults.text.do_sample));
-    close(generation["temperature"].as_f64(), defaults.text.temperature, "temperature");
-    assert_eq!(generation["top_k"].as_u64(), Some(u64::from(defaults.text.top_k)));
+    assert_eq!(
+        generation["do_sample"],
+        serde_json::json!(defaults.text.do_sample)
+    );
+    close(
+        generation["temperature"].as_f64(),
+        defaults.text.temperature,
+        "temperature",
+    );
+    assert_eq!(
+        generation["top_k"].as_u64(),
+        Some(u64::from(defaults.text.top_k))
+    );
     close(
         generation["audio_temperature"].as_f64(),
         defaults.audio.temperature,
         "audio_temperature",
     );
-    assert_eq!(generation["audio_top_k"].as_u64(), Some(u64::from(defaults.audio.top_k)));
+    assert_eq!(
+        generation["audio_top_k"].as_u64(),
+        Some(u64::from(defaults.audio.top_k))
+    );
     close(
         generation["audio_repetition_penalty"].as_f64(),
         defaults.audio.repetition_penalty,
         "audio_repetition_penalty",
     );
     assert_eq!(
-        generation["audio_repetition_window"].as_u64().and_then(|v| usize::try_from(v).ok()),
+        generation["audio_repetition_window"]
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok()),
         Some(defaults.audio.repetition_window)
     );
     assert_eq!(
-        model["interleaved_n_text"].as_u64().and_then(|v| usize::try_from(v).ok()),
+        model["interleaved_n_text"]
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok()),
         Some(defaults.interleave.text_slots)
     );
     assert_eq!(
-        model["interleaved_n_audio"].as_u64().and_then(|v| usize::try_from(v).ok()),
+        model["interleaved_n_audio"]
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok()),
         Some(defaults.interleave.audio_frames)
     );
     // `maskgit_schedule` is absent from the config: the reference

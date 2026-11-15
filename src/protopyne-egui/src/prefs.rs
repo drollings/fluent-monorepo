@@ -157,7 +157,7 @@ pub struct BacktestPrefs {
 /// The persisted terminal state: per-ticker layouts (written only by the Save
 /// Layout button), the session selection, the starred entries, and the
 /// per-ticker bookmarks.
-/// 
+///
 /// Every field is optional so an absent or partial file leaves the live
 /// defaults in place; a present field wins. Nothing is written unless the
 /// operator presses Save Layout — the composition root gates the write on
@@ -254,7 +254,7 @@ pub const PREFS_FILE: &str = "protopyne.json";
 /// The `protopyne.json` path for a history entry point: the nearest ancestor
 /// directory that carries an `indicators` or `libraries` sibling (the data
 /// root), else the entry's own parent.
-/// 
+///
 /// The composition root owns the path so the workspace never does file I/O;
 /// this keeps the search rule in one place shared by every shell.
 pub fn prefs_path(history: &Path) -> PathBuf {

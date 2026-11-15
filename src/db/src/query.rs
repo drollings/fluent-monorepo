@@ -25,7 +25,7 @@ use crate::error::DbError;
 /// One owned bind parameter for the async pool path — a small enum per
 /// param instead of one `Box<dyn ToSql>` trait object per param (no
 /// per-param box, no vtable dispatch at bind time).
-/// 
+///
 /// The async `SqlitePool` helpers (`execute`/`query_row`/`query_rows`)
 /// collect `Vec<OwnedValue>` to cross the `spawn_blocking` boundary, where
 /// borrowed `rusqlite::Params` cannot go. The borrowed variants

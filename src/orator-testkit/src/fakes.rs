@@ -7,7 +7,7 @@
 /// Deterministic millisecond clock.
 #[derive(Debug, Clone, Default)]
 /// Deterministic fakes: scripted clocks, scenarios, and faults.
-/// 
+///
 /// Every fake runs on logical time: the clock advances only when the
 /// scenario says so, so replays are bit-identical across machines and
 /// CI gates measure the script, never the scheduler.
@@ -62,7 +62,10 @@ impl ScriptScenario {
     /// Scenario with no faults.
     #[must_use]
     pub fn clean(steps: Vec<ScriptStep>) -> Self {
-        Self { steps, fault_every: 0 }
+        Self {
+            steps,
+            fault_every: 0,
+        }
     }
 
     /// Whether step `index` faults.

@@ -49,12 +49,12 @@ pub fn sha256_hex(data: &[u8]) -> String {
 #[must_use]
 /// sha256 hex of a string's bytes (file-id domain: ids hash path strings,
 /// not file contents).
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use common_core::hash::sha256_str;
-/// 
+///
 /// assert_eq!(
 /// sha256_str("hello"),
 /// "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
@@ -85,13 +85,13 @@ pub fn sha256_str(data: &str) -> String {
 /// current). Streams through the shared [`hash_file`] engine, so the
 /// digest is byte-identical to [`sha256_hex`] over the full contents.
 /// See also [`sha256_digest`] for the raw-byte (non-hex) form.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```no_run
 /// use std::path::Path;
 /// use common_core::hash::sha256_file;
-/// 
+///
 /// let hash = sha256_file(Path::new("Cargo.toml"));
 /// assert!(hash.is_some());
 /// ```

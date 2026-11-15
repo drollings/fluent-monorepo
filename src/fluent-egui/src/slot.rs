@@ -51,7 +51,7 @@ pub enum SlotAttachment {
 /// than a substituted number.
 #[derive(Debug, Clone, PartialEq)]
 /// One live readout on a slot card: a named display value.
-/// 
+///
 /// Values are display `f64` rendered as text; holes render as a dash rather
 /// than a substituted number.
 pub struct ReadoutValue {

@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::s2s::voice::{
     audio_server_home, audio_supervisor_config, managed_binary, resolve_audio_server,
-    resolve_audio_server_candidates, voice_server_args, AUDIO_SERVER_BIN,
-    AUDIO_SERVER_ENV, VOICE_BOOT_TIMEOUT,
+    resolve_audio_server_candidates, voice_server_args, AUDIO_SERVER_BIN, AUDIO_SERVER_ENV,
+    VOICE_BOOT_TIMEOUT,
 };
 use orator::AudioBundle;
 

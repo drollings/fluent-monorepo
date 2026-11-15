@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fluent_concurrency::stream::StreamAbort;
-use orator_audio::Codec as _;
 use orator::TtsStream as _;
+use orator_audio::Codec as _;
 use orator_voice::s2s::AudioSession;
 
 use crate::harness::{BenchKind, BenchLog};
@@ -71,10 +71,7 @@ impl ScriptSeam {
 }
 
 impl orator_voice::tts::pipeline::SynthSeam for ScriptSeam {
-    fn synth(
-        &self,
-        text: &str,
-    ) -> Result<orator_voice::tts::pipeline::SynthOut, orator::TtsError> {
+    fn synth(&self, text: &str) -> Result<orator_voice::tts::pipeline::SynthOut, orator::TtsError> {
         let mut calls = common_core::sync::lock(&self.calls);
         *calls += 1;
         if *calls == 1 {
@@ -90,7 +87,10 @@ impl orator_voice::tts::pipeline::SynthSeam for ScriptSeam {
 
 fn render(log: &BenchLog, label: &str) {
     let stats = crate::harness::histograms(log);
-    eprintln!("bench scenario {label}:\n{}", crate::harness::render_stats(&stats));
+    eprintln!(
+        "bench scenario {label}:\n{}",
+        crate::harness::render_stats(&stats)
+    );
 }
 
 #[test]
@@ -110,8 +110,16 @@ fn single_turn_latency_completes_in_shape() {
         }
     }
     assert!(hot > 0, "the synthetic utterance opens the gate");
-    log.push(BenchKind::SendPcm, "vad", began.elapsed().as_millis() as u64);
-    log.push(BenchKind::InputPcm, "stt_llm_audio", began.elapsed().as_millis() as u64);
+    log.push(
+        BenchKind::SendPcm,
+        "vad",
+        began.elapsed().as_millis() as u64,
+    );
+    log.push(
+        BenchKind::InputPcm,
+        "stt_llm_audio",
+        began.elapsed().as_millis() as u64,
+    );
     let abort = StreamAbort::new();
     let turn = session
         .chat_turn(None, Some(&utterance), &abort)
@@ -138,7 +146,11 @@ fn single_turn_latency_completes_in_shape() {
         orator::Epoch(1),
     );
     let first_began = Instant::now();
-    log.push(BenchKind::InputPcm, "tts_first_audio", first_began.elapsed().as_millis() as u64);
+    log.push(
+        BenchKind::InputPcm,
+        "tts_first_audio",
+        first_began.elapsed().as_millis() as u64,
+    );
     pipe.push_text(
         "Hello world, this is the opening line. How are you doing today? Quite well, thank you.",
         orator::Epoch(1),
@@ -239,10 +251,7 @@ fn n_session_contention_measures_refusal_and_completion() {
         let _ = index;
     }
     for ms in refused.iter() {
-        assert!(
-            *ms < 2_000,
-            "refusal stays banded: {ms}ms"
-        );
+        assert!(*ms < 2_000, "refusal stays banded: {ms}ms");
         log.push(BenchKind::InputPcm, "contention_refusal", 0);
         log.push(BenchKind::SendPcm, "contention_refusal", *ms);
     }

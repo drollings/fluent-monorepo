@@ -174,6 +174,50 @@ pub fn capability_judge_shadow(
     )
 }
 
+/// Finding-relevance shadow: one record per judged finding for the
+/// judge corpus. The label is the verdict; rank order is
+/// authoritative — shadow records never reorder or filter, so the
+/// deterministic rank travels in `authoritative` for audit.
+#[must_use]
+/// Finding-relevance shadow: one record per judged finding for the
+/// judge corpus. The label is the verdict; rank order is
+/// authoritative — shadow records never reorder or filter, so the
+/// deterministic rank travels in `authoritative` for audit.
+pub fn finding_judge_shadow(
+    finding_id: &str,
+    label: &str,
+    confidence: f64,
+    deterministic_rank: usize,
+) -> ShadowRecord {
+    let counter = match label {
+        "relevant" => "irrelevant",
+        _ => "relevant",
+    };
+    let decision = Decision {
+        label: label.to_string(),
+        distribution: vec![
+            (label.to_string(), confidence.clamp(0.0, 1.0)),
+            (counter.to_string(), (1.0 - confidence).clamp(0.0, 1.0)),
+        ],
+        confidence: confidence.clamp(0.0, 1.0),
+        margin: (2.0 * confidence - 1.0).abs(),
+        degraded: false,
+        model: "finding-judge".to_string(),
+        question_version: 1,
+        latency_ms: 0,
+        cached: false,
+    };
+    record(
+        "finding",
+        &decision,
+        &ThresholdSet {
+            act: 0.9,
+            review: 0.7,
+        },
+        format!("finding:{finding_id} rank:{deterministic_rank}"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,7 +318,7 @@ mod tests {
 /// verdict. Recorded through the recall loop; the deterministic result
 /// stays authoritative.
 pub fn summary_route_shadow(
-    authoritative: &std::collections::HashSet<&str>,
+    authoritative: &std::collections::HashSet<&str, impl std::hash::BuildHasher>,
     summary: &[&str],
 ) -> ShadowRecord {
     let mut would_add: Vec<&str> = summary

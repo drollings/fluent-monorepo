@@ -671,7 +671,11 @@ fn tick_time_matches_tree() {
     let got = plotted_floats(&outcome, "V");
     let want: Vec<Option<f64>> = (0..10)
         .map(|bar| {
-            Some((1_700_000_000_i64 + i64::from(bar) * 60) as f64 * 1_000.0 + 102.0 + f64::from(bar) * 0.5)
+            Some(
+                (1_700_000_000_i64 + i64::from(bar) * 60) as f64 * 1_000.0
+                    + 102.0
+                    + f64::from(bar) * 0.5,
+            )
         })
         .collect();
     assert_eq!(got, want, "tick stamps are milliseconds: {outcome:?}");

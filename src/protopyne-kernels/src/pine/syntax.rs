@@ -1492,8 +1492,7 @@ impl PineParser {
                 }
             }
         }
-        if (name == "indicator" || name == "study")
-            && self.current_kind() == &TokenKind::LeftParen
+        if (name == "indicator" || name == "study") && self.current_kind() == &TokenKind::LeftParen
         {
             self.advance();
             let args = self.parse_call_args()?;
@@ -1833,11 +1832,8 @@ impl PineParser {
                 {
                     probe += 1;
                 }
-                let continues = self
-                    .tokens
-                    .get(probe)
-                    .map(|token| &token.kind)
-                    == Some(&TokenKind::Dot);
+                let continues =
+                    self.tokens.get(probe).map(|token| &token.kind) == Some(&TokenKind::Dot);
                 if !continues {
                     break;
                 }

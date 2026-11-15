@@ -113,6 +113,13 @@ pub const ROLE_EPSILON: f64 = 1e-4;
 /// `fuse_candidates` both compose this seam instead of calling
 /// `fluent_db::vector::rrf_merge_n` themselves.
 pub fn score_postings(postings: Vec<(String, usize)>, k: f64) -> HashMap<String, f64> {
+    // Canonical summation order: identical multisets sum bitwise
+    // identically however the caller collected them. Recall
+    // candidates ride per-call hash maps, so collection order is
+    // never stable — without this, tie order would flap run to run
+    // and answers would never be byte-identical.
+    let mut postings = postings;
+    postings.sort();
     fluent_db::vector::rrf_merge_n(
         postings
             .into_iter()

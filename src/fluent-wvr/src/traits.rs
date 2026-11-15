@@ -38,7 +38,7 @@ pub trait Describable {
 /// Canonical [`Describable::describe`] document from `name`/`depends`/`provides`.
 /// Replaces hand-written literals; differs from pre-migration
 /// `{type, description}` by design.
-/// 
+///
 /// `purity` is [`None`] for audit-only stages (`{name, depends, provides}`).
 pub fn describe_work_unit(
     name: &str,

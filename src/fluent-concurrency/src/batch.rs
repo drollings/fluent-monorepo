@@ -133,15 +133,15 @@ pub struct SupervisedBatchSummary {
 #[must_use = "SupervisedBatch must be awaited to completion to get a SupervisedBatchSummary"]
 /// A SupervisedBatch that manages a group of `WorkUnit` tasks with retry, timeout,
 /// and dependency-based cancellation. Implements `Future` to drive task completion.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```no_run
 /// use std::sync::Arc;
 /// use fluent_concurrency::batch::SupervisedBatch;
 /// use fluent_wvr::{CapabilitySet, WorkContext};
 /// use fluent_wvr::wrapper::ComponentAdapter;
-/// 
+///
 /// # async fn example() {
 /// let rt: Arc<dyn fluent_wvr::Runtime> = Arc::new(fluent_concurrency::runtime::tokio::TokioRuntime);
 /// let mut batch = SupervisedBatch::new(rt, CapabilitySet::new());

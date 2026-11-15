@@ -191,10 +191,10 @@ pub async fn decide_all(
 /// The label is the merged argmax; latency sums (total spend); the
 /// aggregate is degraded when any input is (mixed evidence is never
 /// presented as a clean majority). `None` on empty input.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{aggregate_rotations, Decision};
-/// 
+///
 /// let mk = |top: f64| {
 /// Decision::from_distribution(
 /// "A",
@@ -278,10 +278,10 @@ pub fn aggregate_rotations(decisions: &[Decision]) -> Option<Decision> {
 /// ```
 #[must_use]
 /// True when a non-empty rotation set names one label throughout.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{rotation_agreement, Decision};
-/// 
+///
 /// let mk = |label: &str| {
 /// Decision::from_distribution(
 /// label,
@@ -709,10 +709,10 @@ pub async fn rank_score(
 #[must_use]
 /// Indices whose verdict is `Act` or `Review` at the spec's own thresholds.
 /// Invalid thresholds fail closed to empty: no verdict is trustworthy.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{bulk_filter, Decision, QuestionSpec};
-/// 
+///
 /// # let spec = QuestionSpec::new()
 /// #     .id("q".to_string()).version(1).kind("choice".to_string())
 /// #     .prompt_template("Pick.".to_string()).options_csv("A,B".to_string())
@@ -769,10 +769,10 @@ pub fn bulk_filter(spec: &QuestionSpec, decisions: &[Decision]) -> Vec<usize> {
 /// ```
 #[must_use]
 /// Indices ordered by confidence descending (stable).
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{bulk_rerank, Decision};
-/// 
+///
 /// let mk = |top: f64| {
 /// Decision::from_distribution(
 /// "A",
@@ -822,10 +822,10 @@ pub fn bulk_rerank(decisions: &[Decision]) -> Vec<usize> {
 /// Invalid thresholds fail closed to `None`.
 #[must_use]
 /// Highest-confidence non-escalated decision with its index, if any.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{bulk_route, Decision, QuestionSpec};
-/// 
+///
 /// # let spec = QuestionSpec::new()
 /// #     .id("q".to_string()).version(1).kind("choice".to_string())
 /// #     .prompt_template("Pick.".to_string()).options_csv("A,B".to_string())

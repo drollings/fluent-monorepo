@@ -81,7 +81,16 @@ fn fast_tier_passes_on_fixtures() {
     assert_eq!(first.len(), second.len());
     // Outcome measures (real behavior over goldens, not
     // perfect-by-construction pins) read in range, never exactly 1.0.
-    let measured_in_range = ["decision.triage_precision", "decision.triage_recall"];
+    // The read tier measures the shipping path over eval goldens, so
+    // its recall metrics join that class.
+    let measured_in_range = [
+        "decision.triage_precision",
+        "decision.triage_recall",
+        "read.fact_recall.tune",
+        "read.fact_recall.heldout",
+        "read.file_recall_at_5.tune",
+        "read.file_recall_at_5.heldout",
+    ];
     for metric in &first {
         if metric.higher_is_better {
             if metric.name.contains(".mrr.") || measured_in_range.contains(&metric.name.as_str()) {

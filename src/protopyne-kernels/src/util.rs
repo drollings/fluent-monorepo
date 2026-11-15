@@ -30,24 +30,24 @@
 #[must_use]
 /// Two-series and window utilities: `crossover`, `crossunder`, `highest`,
 /// `lowest`, `change`, `mom`, plus the statistic-operator combinators.
-/// 
+///
 /// These are pure slice functions rather than registry indicators: crossings
 /// combine two arbitrary series (no single scheduling id fits), and the
 /// window helpers are combinators kernels build on. Each carries its warmup
 /// so fetch planning treats them like any kernel. Crossings are strict
 /// (`a[1] <= b[1] && a > b`); equality never fires. `NaN` on either side
 /// yields `None`, never a phantom signal.
-/// 
+///
 /// Rolling extremes delegate to the shared `math` core; the names here stay
 /// so existing callers are byte-identical.
-/// 
+///
 /// Intentional fork: the strict windows below (`max/min/sum_window` and the
 /// private `strict_window` loop) gate on `!is_nan` and allow `inf`, while
 /// [`math::strict_window`](crate::math::strict_window) gates on `is_finite`
 /// and refuses `inf`. Pinned by
 /// `strict_window_refuses_inf_while_util_allows_it`; unifying the predicate
 /// is a behavior proposal, not a DRY cleanup.
-/// 
+///
 /// The `*_expr` operator maps mirror the reference's horizontal/rolling
 /// combinators with strict null semantics: any `NaN` leg poisons its position
 /// (warmup included), except the null-ignoring `add_expr`/`mul_expr`, which
@@ -79,7 +79,7 @@ pub enum Crossing {
 /// missing or non-finite side yields `None` rather than a phantom crossing.
 #[must_use]
 /// The one scalar crossing core.
-/// 
+///
 /// `level` is held constant across the pair (the level-crossing shape); use
 /// [`crossed_between`] when both sides move. The contract is the existing
 /// one: the previous side may touch the level (`<=` / `>=`), the current side

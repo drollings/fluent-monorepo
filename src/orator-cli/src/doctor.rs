@@ -351,8 +351,7 @@ pub fn roles_lines(config: &orator::OratorConfig) -> Vec<String> {
         } else {
             backends
         };
-        let composed =
-            orator::compose_role_params(&config.models, &config.roles, role, &model);
+        let composed = orator::compose_role_params(&config.models, &config.roles, role, &model);
         let params = composed
             .as_object()
             .filter(|map| !map.is_empty())

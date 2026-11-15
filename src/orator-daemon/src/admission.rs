@@ -129,7 +129,7 @@ impl Drop for AdmissionGuard<'_> {
 /// turn failures eject; any responsive turn re-enters. Responsive
 /// includes voiceless (`NoAudio`) — the server answered, it just had
 /// nothing to voice — so only true transport failures count.
-/// 
+///
 /// Single consumer (`VoiceOwner`); stays in the daemon per
 /// no-speculative-promotion. Promote to a shared home when a second
 /// consumer appears — the candidate trigger is the s2s

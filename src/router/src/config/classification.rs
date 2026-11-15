@@ -167,7 +167,7 @@ pub struct ClassificationChild {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 #[allow(clippy::large_enum_variant)]
 /// One node in the classification tree.
-/// 
+///
 /// | `type` | Role | LLM call? |
 /// |--------|------|-----------|
 /// | `classifier` | LLM call that picks one child branch; prompt auto-built from children | Yes |

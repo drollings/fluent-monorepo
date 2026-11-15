@@ -23,7 +23,7 @@ use fluent_wvr::{
     WorkUnit,
 };
 use internment::ArcIntern;
-use search_vector::db::GuidanceDb;
+use search_vector::db::{EmbeddingStatusRecord, FragmentRow, GuidanceDb};
 
 use crate::ast_parser::{AstParser, CommentBlock};
 use crate::diff::{compute_diff, hash_file, make_file_id, ScannedFile};
@@ -38,7 +38,9 @@ pub const INDEX_WAVE_FILES: usize = 64;
 /// Fragment-index schema version enforced by the `SyncEngine` gate.
 /// v5 stores item chunks from both writers: old whole-file live rows are
 /// refused and rebuilt from sidecars.
-pub const INDEX_SCHEMA_VERSION: u32 = 6;
+/// v7 stores workspace-relative file paths for citations, globs, and
+/// scope classification; v6 rows are refused and rebuilt from sidecars.
+pub const INDEX_SCHEMA_VERSION: u32 = 7;
 /// Default cross-file embed packing size.
 pub const INDEX_EMBED_BATCH: usize = 32;
 /// Transient embed retry budget (zvec C.4: 3×500ms).
@@ -1101,7 +1103,7 @@ fn embedding_input_for_fragment(
         ),
         _ => return None,
     };
-    if name.is_empty() && doc.map_or(true, |doc| doc.trim().is_empty()) {
+    if name.is_empty() && doc.is_none_or(|doc| doc.trim().is_empty()) {
         return None;
     }
     let node_key = if scope.is_empty() {
@@ -1409,8 +1411,8 @@ fn record_embedding_status(
     use search_vector::db::EmbeddingStatusRecord;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0);
+        .map_or(0, |duration| duration.as_millis() as i64);
+
     let status = if embedded {
         "ready"
     } else if unavailable {
@@ -1426,6 +1428,7 @@ fn record_embedding_status(
             input_hash: common_core::hash::blake3_hex(text.as_bytes()),
             embedder: embedder.to_string(),
             status: status.to_string(),
+            reason: String::new(),
             updated_at: now_ms,
         })
         .collect();
@@ -1455,6 +1458,399 @@ fn commit_graph(db: &GuidanceDb, path: &str, harvest: &HarvestedFile) -> Result<
         .map_err(|e| format!("graph: {e}"))
 }
 
+/// Semantic-unit embedding backfill: the live sync's embed phase.
+///
+/// The batch pipeline (`IndexWaveUnit`) embeds in-memory fragments at
+/// commit; live sync commits rows without vectors, so this phase runs
+/// after ingestion over stored rows. Batching, retry, and the
+/// singles fallback mirror `embed_ready_files` — one pipeline, not two.
+/// Status rows carry the reason for every state; unchanged inputs skip
+/// on content hash, failures retry only on input or embedder change,
+/// and transport failures (`unavailable`) retry next run.
+///
+/// Symbol types that form semantic units (stored lowercase, mirroring
+/// `CodeSymbolType`). `value` is excluded: constants embed as whole-file
+/// noise, never as answerable units.
+pub const EMBED_UNIT_SYMBOL_TYPES: &[&str] = &["module", "class", "interface", "function", "alias"];
+
+/// One fragment selected for embedding plus its hashed input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// One fragment selected for embedding plus its hashed input.
+pub struct EmbedUnit {
+    /// Fragment id.
+    pub id: String,
+    /// Embedding input text (metadata-prefixed, capped).
+    pub input: String,
+    /// Blake3 of the input (the unchanged gate).
+    pub input_hash: String,
+}
+
+/// One fragment that never becomes a vector, with its reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// One fragment that never becomes a vector, with its reason.
+pub struct EmbedSkip {
+    /// Fragment id.
+    pub id: String,
+    /// Selector reason (`image`, `eval-fixture`, `derived-mirror`,
+    /// `module-pseudo-symbol`, `whole-file`, `non-unit-symbol`,
+    /// `empty-input`).
+    pub reason: String,
+    /// Blake3 over the row's content: the unchanged gate for skips,
+    /// which have no embedding input to hash.
+    pub content_fingerprint: String,
+}
+
+/// Embedding input for one stored row: metadata-prefixed content in
+/// the `vector_content` shape (symbol/heading lines, capped). Empty
+/// unless some text exists.
+fn embed_input_for_row(fragment: &FragmentRow) -> Option<String> {
+    let mut lines = Vec::new();
+    if let Some(name) = fragment.symbol_name.as_deref() {
+        let kind = fragment.symbol_type.as_deref().unwrap_or("symbol");
+        lines.push(format!("symbol: {kind} {name}"));
+        if let Some(scope) = fragment.scope.as_deref().filter(|scope| !scope.is_empty()) {
+            lines.push(format!("scope: {scope}"));
+        }
+        if let Some(signature) = fragment
+            .signature
+            .as_deref()
+            .filter(|text| !text.is_empty())
+        {
+            lines.push(format!("signature: {}", one_line(signature)));
+        }
+        if let Some(doc) = fragment
+            .doc
+            .as_deref()
+            .filter(|text| !text.trim().is_empty())
+        {
+            lines.push(format!("doc: {}", one_line(doc)));
+        }
+    } else if let Some(heading) = fragment.heading.as_deref().filter(|text| !text.is_empty()) {
+        lines.push(format!("heading: {heading}"));
+    }
+    if let Some(text) = fragment
+        .content_text
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+    {
+        lines.push(text.trim().to_string());
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let mut text = lines.join("\n");
+    if text.len() > MAX_EMBEDDING_INPUT_CHARS {
+        let mut end = MAX_EMBEDDING_INPUT_CHARS;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    Some(text)
+}
+
+/// One-line rendering for embedding metadata (mirrors the extractor).
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Whether a stored file path is index metadata rather than source:
+/// sidecar mirrors and the eval corpus never embed.
+fn is_unembeddable_path(file_id: &str) -> Option<&'static str> {
+    let normalized = file_id.replace('\\', "/");
+    if normalized.contains("doc/guidance/eval/") {
+        return Some("eval-fixture");
+    }
+    if normalized.contains("/.guidance/") || normalized.starts_with(".guidance/") {
+        return Some("derived-mirror");
+    }
+    None
+}
+
+/// Classify one stored fragment: semantic units embed, everything
+/// else records a skip reason. Pure over the row — no I/O.
+pub fn classify_embed_fragment(fragment: &FragmentRow) -> Result<EmbedUnit, EmbedSkip> {
+    let fingerprint = common_core::hash::blake3_hex(
+        format!(
+            "{}\n{}",
+            fragment.content_text.as_deref().unwrap_or_default(),
+            fragment.doc.as_deref().unwrap_or_default()
+        )
+        .as_bytes(),
+    );
+    let skip = |reason: &str| {
+        Err(EmbedSkip {
+            id: fragment.id.clone(),
+            reason: reason.to_string(),
+            content_fingerprint: fingerprint.clone(),
+        })
+    };
+    if fragment.content_kind == "image" {
+        return skip("image");
+    }
+    if let Some(reason) = is_unembeddable_path(&fragment.file_id) {
+        return skip(reason);
+    }
+    if fragment.symbol_name.as_deref() == Some("$file") {
+        return skip("module-pseudo-symbol");
+    }
+    let is_unit = match (&fragment.symbol_name, &fragment.heading) {
+        (Some(_), _) => fragment
+            .symbol_type
+            .as_deref()
+            .is_some_and(|kind| EMBED_UNIT_SYMBOL_TYPES.contains(&kind)),
+        (None, Some(_)) => true,
+        (None, None) => false,
+    };
+    if !is_unit {
+        if fragment.symbol_name.is_some() {
+            return skip("non-unit-symbol");
+        }
+        return skip("whole-file");
+    }
+    match embed_input_for_row(fragment) {
+        Some(input) => Ok(EmbedUnit {
+            id: fragment.id.clone(),
+            input_hash: common_core::hash::blake3_hex(input.as_bytes()),
+            input,
+        }),
+        None => skip("empty-input"),
+    }
+}
+
+/// Select semantic units from stored rows: code symbols plus markdown
+/// sections; whole-file duplicates, images, `$file` pseudo-symbols,
+/// eval fixtures, and derived-mirror rows skip with reasons.
+#[must_use]
+/// Select semantic units from stored rows: code symbols plus markdown
+/// sections; whole-file duplicates, images, `$file` pseudo-symbols,
+/// eval fixtures, and derived-mirror rows skip with reasons.
+pub fn select_embed_units(fragments: &[FragmentRow]) -> (Vec<EmbedUnit>, Vec<EmbedSkip>) {
+    let mut units = Vec::new();
+    let mut skips = Vec::new();
+    for fragment in fragments {
+        match classify_embed_fragment(fragment) {
+            Ok(unit) => units.push(unit),
+            Err(skip) => skips.push(skip),
+        }
+    }
+    (units, skips)
+}
+
+/// Totals for one backfill run (stored data, never thrown).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Totals for one backfill run (stored data, never thrown).
+pub struct EmbedBackfillStats {
+    /// Candidate rows read (no vector stored).
+    pub candidates: usize,
+    /// Fragments embedded this run.
+    pub embedded: usize,
+    /// Units skipped on matching status (unchanged input, same embedder,
+    /// or terminal failure awaiting new input).
+    pub skipped_unchanged: usize,
+    /// Rows skipped by the selector, recorded with reasons.
+    pub skipped_filtered: usize,
+    /// Fragments that failed terminally this run.
+    pub failed: usize,
+    /// Fragments that failed on transport this run (retry next run).
+    pub unavailable: usize,
+    /// No backend configured: nothing attempted, nothing recorded.
+    pub backend_missing: bool,
+}
+
+/// Embed one batch with the wave retry contract: fail-fast aborts the
+/// run, retryable errors retry to the attempt budget, then fall through
+/// to singles. Same helper shape as `embed_with_retry`, minus the
+/// in-memory cache wrapper (backfill inputs embed once per change).
+fn embed_batch_with_retry(
+    provider: &dyn EmbeddingProvider,
+    texts: &[&str],
+    options: &IndexOptions,
+) -> Result<BatchEmbedding, EmbedFailure> {
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match provider.embed_batch(texts) {
+            Ok(batch) => return Ok(batch),
+            Err(error) if is_fail_fast(&error) => {
+                return Err(EmbedFailure::FailFast(error.to_string()));
+            }
+            Err(error) if attempt >= options.retry_max_attempts.max(1) => {
+                return Err(EmbedFailure::Retryable(EmbedFileFailure {
+                    reason: error.to_string(),
+                    unavailable: is_unavailable(&error),
+                }));
+            }
+            Err(_) => {
+                let delay = backoff_ms(options.retry_base_ms, attempt, EMBED_RETRY_JITTER_PCT);
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
+        }
+    }
+}
+
+/// Backfill vectors for stored fragments without any: select semantic
+/// units, gate on the status table, embed in wave-sized packs with the
+/// singles fallback, and store vectors plus status rows. Terminal
+/// failures record and continue; fail-fast config errors abort loudly.
+pub fn backfill_fragment_embeddings(
+    db: &GuidanceDb,
+    provider: Option<&dyn EmbeddingProvider>,
+    options: &IndexOptions,
+) -> Result<EmbedBackfillStats, String> {
+    let Some(provider) = provider else {
+        return Ok(EmbedBackfillStats {
+            backend_missing: true,
+            ..EmbedBackfillStats::default()
+        });
+    };
+    let embedder = format!("{}:{}", provider.name(), provider.dimensions());
+    let stored = db
+        .fragments_without_vectors(None)
+        .map_err(|error| format!("embed candidates: {error}"))?;
+    let mut stats = EmbedBackfillStats {
+        candidates: stored.len(),
+        ..EmbedBackfillStats::default()
+    };
+    if stored.is_empty() {
+        return Ok(stats);
+    }
+    let (units, skips) = select_embed_units(&stored);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as i64);
+
+    let mut status_ids: Vec<String> = units.iter().map(|unit| unit.id.clone()).collect();
+    status_ids.extend(skips.iter().map(|skip| skip.id.clone()));
+    let status_of: std::collections::HashMap<String, EmbeddingStatusRecord> = db
+        .embedding_status_for_ids(&status_ids)
+        .map_err(|error| format!("embed status: {error}"))?
+        .into_iter()
+        .map(|row| (row.fragment_id.clone(), row))
+        .collect();
+    let mut due = Vec::new();
+    for unit in units {
+        let unchanged = status_of.get(&unit.id).is_some_and(|row| {
+            row.input_hash == unit.input_hash
+                && row.embedder == embedder
+                && (row.status == "ready" || row.status == "failed" || row.status == "skipped")
+        });
+        if unchanged {
+            stats.skipped_unchanged += 1;
+        } else {
+            due.push(unit);
+        }
+    }
+    let mut vectors: Vec<(String, Vec<f32>)> = Vec::with_capacity(due.len());
+    let mut outcomes: Vec<EmbeddingStatusRecord> = Vec::with_capacity(due.len());
+    let mut index = 0;
+    while index < due.len() {
+        let end = (index + options.max_embed_batch.max(1)).min(due.len());
+        let pack = &due[index..end];
+        index = end;
+        let texts: Vec<&str> = pack.iter().map(|unit| unit.input.as_str()).collect();
+        match embed_batch_with_retry(provider, &texts, options) {
+            Ok(batch) => {
+                for (unit, vector) in pack.iter().zip(batch_vectors(&batch)) {
+                    vectors.push((unit.id.clone(), vector));
+                    outcomes.push(EmbeddingStatusRecord {
+                        fragment_id: unit.id.clone(),
+                        input_hash: unit.input_hash.clone(),
+                        embedder: embedder.clone(),
+                        status: "ready".to_string(),
+                        reason: String::new(),
+                        updated_at: now_ms,
+                    });
+                }
+            }
+            Err(EmbedFailure::FailFast(reason)) => return Err(reason),
+            Err(EmbedFailure::Retryable(_)) => {
+                for unit in pack {
+                    match embed_batch_with_retry(
+                        provider,
+                        std::slice::from_ref(&unit.input.as_str()),
+                        options,
+                    ) {
+                        Ok(batch) => {
+                            let Some(vector) = batch.try_vector(0) else {
+                                let reason = "single embed returned no vector".to_string();
+                                stats.failed += 1;
+                                outcomes.push(EmbeddingStatusRecord {
+                                    fragment_id: unit.id.clone(),
+                                    input_hash: unit.input_hash.clone(),
+                                    embedder: embedder.clone(),
+                                    status: "failed".to_string(),
+                                    reason,
+                                    updated_at: now_ms,
+                                });
+                                continue;
+                            };
+                            vectors.push((unit.id.clone(), vector.to_vec()));
+                            outcomes.push(EmbeddingStatusRecord {
+                                fragment_id: unit.id.clone(),
+                                input_hash: unit.input_hash.clone(),
+                                embedder: embedder.clone(),
+                                status: "ready".to_string(),
+                                reason: String::new(),
+                                updated_at: now_ms,
+                            });
+                        }
+                        Err(EmbedFailure::FailFast(reason)) => return Err(reason),
+                        Err(EmbedFailure::Retryable(failure)) => {
+                            let status = if failure.unavailable {
+                                stats.unavailable += 1;
+                                "unavailable"
+                            } else {
+                                stats.failed += 1;
+                                "failed"
+                            };
+                            outcomes.push(EmbeddingStatusRecord {
+                                fragment_id: unit.id.clone(),
+                                input_hash: unit.input_hash.clone(),
+                                embedder: embedder.clone(),
+                                status: status.to_string(),
+                                reason: failure.reason,
+                                updated_at: now_ms,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for skip in &skips {
+        let known = status_of.get(&skip.id).is_some_and(|row| {
+            row.input_hash == skip.content_fingerprint
+                && row.embedder == embedder
+                && row.status == "skipped"
+                && row.reason == skip.reason
+        });
+        if known {
+            stats.skipped_unchanged += 1;
+            continue;
+        }
+        outcomes.push(EmbeddingStatusRecord {
+            fragment_id: skip.id.clone(),
+            input_hash: skip.content_fingerprint.clone(),
+            embedder: embedder.clone(),
+            status: "skipped".to_string(),
+            reason: skip.reason.clone(),
+            updated_at: now_ms,
+        });
+        stats.skipped_filtered += 1;
+    }
+    if !vectors.is_empty() {
+        db.store_fragment_vectors(&vectors)
+            .map_err(|error| format!("embed store: {error}"))?;
+        stats.embedded = vectors.len();
+    }
+    if !outcomes.is_empty() {
+        db.replace_embedding_status(&outcomes)
+            .map_err(|error| format!("embed status: {error}"))?;
+    }
+    Ok(stats)
+}
+
 #[cfg(test)]
 #[path = "../tests/index_pipeline.rs"]
 mod tests;
@@ -1466,3 +1862,7 @@ mod m4_cutoff_tests;
 #[cfg(test)]
 #[path = "../tests/lemma_provenance.rs"]
 mod lemma_provenance_tests;
+
+#[cfg(test)]
+#[path = "../tests/sync_embeddings.rs"]
+mod sync_embeddings_tests;

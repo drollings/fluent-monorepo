@@ -169,7 +169,7 @@ fn log_classifier_raw_response(response: &str) {
 /// ([`prose_as_respond`]). `Ok((output, true))` = pristine parse;
 /// `Ok((output, false))` = recovered; `Err(reason)` = total parse failure (the
 /// caller applies the `ClassifierFailurePolicy`).
-/// 
+///
 /// `direct_answer_allowed` gates the prose-as-respond rung: only routes that
 /// permit the classifier to answer directly (`always_route: false`) may treat
 /// a pure-prose response as a direct answer. On `always_route` routes the

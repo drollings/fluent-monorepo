@@ -97,7 +97,7 @@ impl AssetClass {
 #[builder(start_fn = new)]
 /// Decimal digits a market's prices may carry past the point: the
 /// representability bound the append path enforces.
-/// 
+///
 /// A price fits when its stored form — [`Decimal::normalize` text, which is
 /// what the tape keeps — carries no more fraction digits than this. Trailing
 /// zeros carry no information, so `100.50` fits a scale of 1 exactly as

@@ -219,3 +219,27 @@ fn rrf_fuse_order_agrees_with_shared_merge_on_corpus() {
         );
     }
 }
+
+#[test]
+fn score_postings_sum_identically_regardless_of_collection_order() {
+    // Per-call hash maps collect postings in unstable order; the
+    // kernel must not leak that into scores. Same multiset in three
+    // shuffles sums bitwise identically.
+    let base = vec![
+        ("b".to_string(), 2),
+        ("a".to_string(), 1),
+        ("c".to_string(), 3),
+        ("a".to_string(), 2),
+    ];
+    let first = score_postings(base.clone(), 60.0);
+    let mut reversed = base.clone();
+    reversed.reverse();
+    let second = score_postings(reversed, 60.0);
+    let mut rotated = base.clone();
+    rotated.rotate_left(2);
+    let third = score_postings(rotated, 60.0);
+    for id in ["a", "b", "c"] {
+        assert_eq!(first[id].to_bits(), second[id].to_bits(), "{id}");
+        assert_eq!(first[id].to_bits(), third[id].to_bits(), "{id}");
+    }
+}

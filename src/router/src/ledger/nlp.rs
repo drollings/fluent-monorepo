@@ -70,7 +70,7 @@ pub fn parse_node(
 /// parse nodes without the field behave exactly as before.
 #[must_use]
 /// [`parse_node`] plus the C1 confidence summary and an eager review status.
-/// 
+///
 /// `token_confidence` (optional, serde-default) is the per-token confidence
 /// vector the review endpoint reads back so a later review rebuilds the parse
 /// with per-token fidelity rather than a flat overall (L3). Additive — old

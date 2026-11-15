@@ -63,7 +63,7 @@ pub const fn local_id_of(full_hash: i64) -> i64 {
 /// This is the single truncation seam — per-kind helpers delegate here.
 #[must_use]
 /// Generic helper: derive an `InterlinguaId` for `ns` from a full-width content hash.
-/// 
+///
 /// This is the single truncation seam — per-kind helpers delegate here.
 pub fn id_for_namespace(hash: i64, ns: InterlinguaNamespace) -> InterlinguaId {
     InterlinguaId::new(ns, local_id_of(hash))
@@ -143,7 +143,7 @@ fn hash_iri(iri: &str) -> i64 {
 #[must_use]
 /// ─── Per-kind helpers (the primary public API) ─────────────────────────────
 /// `SpacyLemma` id for a lemma string (MurmurHash64A seed 1, 48-bit truncation).
-/// 
+///
 /// `node_id` (the full 64-bit graph key) is **not** derived from this — it is a
 /// stored `ConceptMetadata.node_id` cross-reference (F5). This helper is for the
 /// 48-bit `InterlinguaId` only.
@@ -282,7 +282,7 @@ impl std::fmt::Display for InterlinguaId {
 /// The disambiguation record for a concept: identity (`id`), the canonical
 /// string (which resolves collisions), the origin, and the cross-reference to
 /// the concept's node in Coral's durable graph.
-/// 
+///
 /// F5 discipline: `node_id` (the **full 64-bit** `hash_iri`) is *stored,
 /// never derived* from `id.local_id()` (the **truncated 48-bit** value) — the
 /// 16 truncated-away bits cannot be recovered. The bridge from an

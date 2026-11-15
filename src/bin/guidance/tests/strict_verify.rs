@@ -70,7 +70,9 @@ fn strict_refuses_a_stale_tree_naming_files() {
         "report names files: {}",
         stderr(&out)
     );
-    // Without --strict the same tree still serves, labelled.
+    // Without --strict the same fully-stale tree is blocked (exit 3,
+    // repair hint) — a 100%-stale mirror is an unsearched state, not
+    // an empty result. --allow-degraded serves it labelled.
     let out = run(
         dir.path(),
         &[
@@ -82,7 +84,30 @@ fn strict_refuses_a_stale_tree_naming_files() {
             &db_arg(dir.path()),
         ],
     );
-    assert!(out.status.success(), "non-strict must serve: {out:?}");
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "fully-stale must block: {out:?}"
+    );
+    assert!(
+        stderr(&out).contains("repair: guidance sync"),
+        "block names the repair: {}",
+        stderr(&out)
+    );
+    let out = run(
+        dir.path(),
+        &[
+            "search",
+            "e2e_anchor_fn",
+            "--workspace",
+            &root,
+            "--db",
+            &db_arg(dir.path()),
+            "--allow-degraded",
+        ],
+    );
+    assert!(out.status.success(), "degraded must serve: {out:?}");
+    assert!(stdout(&out).contains("e2e_anchor_fn"), "{}", stdout(&out));
 }
 
 #[test]

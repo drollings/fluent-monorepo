@@ -45,7 +45,7 @@ pub struct WriteReq {
 /// credit-gated order by `credit_gated_writes_land_in_order`.
 #[must_use]
 /// Feed sizing for the single writer.
-/// 
+///
 /// M9 audit (why these numbers differ from the archive's): items here
 /// are small `WriteReq` JSON events, so the queue holds counts not
 /// bytes (256, credit 64, top-up 8). The handler is serial
@@ -172,8 +172,7 @@ impl InstanceLock {
         match common_core::io::bind_unix_listener_with_stale_reclaim(&path, 3, || {
             // Re-lstat after unlink: a swapped-in link refuses instead
             // of riding the retry.
-            if orator::paths::has_symlink_parent(&path)
-                || std::fs::symlink_metadata(&path).is_ok()
+            if orator::paths::has_symlink_parent(&path) || std::fs::symlink_metadata(&path).is_ok()
             {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
@@ -192,18 +191,16 @@ impl InstanceLock {
             Err(common_core::io::ReclaimBindError::LiveHolder(_)) => {
                 Err(OpenError::AlreadyRunning(path.display().to_string()))
             }
-            Err(common_core::io::ReclaimBindError::Remove(remove)) => {
-                Err(OpenError::Store(format!(
-                    "stale socket {}: remove failed: {remove}",
-                    path.display()
-                )))
-            }
+            Err(common_core::io::ReclaimBindError::Remove(remove)) => Err(OpenError::Store(
+                format!("stale socket {}: remove failed: {remove}", path.display()),
+            )),
             Err(common_core::io::ReclaimBindError::Validate(error)) => {
                 Err(OpenError::Store(error.to_string()))
             }
-            Err(common_core::io::ReclaimBindError::Bind(error)) => {
-                Err(OpenError::Store(format!("bind {}: {error}", path.display())))
-            }
+            Err(common_core::io::ReclaimBindError::Bind(error)) => Err(OpenError::Store(format!(
+                "bind {}: {error}",
+                path.display()
+            ))),
         }
     }
 }

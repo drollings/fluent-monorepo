@@ -1,8 +1,8 @@
 //! `params` pins: generation defaults and the MaskGIT schedule
 //! cover every codebook exactly once.
 
-use crate::lfm::params::{maskgit_schedule_covers_codebooks, GenerationDefaults};
 use crate::lfm::arch::{CODEBOOKS, MASKGIT_STEPS};
+use crate::lfm::params::{maskgit_schedule_covers_codebooks, GenerationDefaults};
 
 #[test]
 fn defaults_match_the_reference_configs() {

@@ -99,7 +99,7 @@ impl From<CapabilityError> for std::io::Error {
 /// type. Nothing here substitutes a value for a failed join.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Why a capability-scoped blocking operation failed to produce a value.
-/// 
+///
 /// A panic on the dedicated worker thread is the only failure: the closure's
 /// own result (including any error it carries) travels inside `R`, so each
 /// caller keeps its own error taxonomy instead of funnelling it through this
@@ -211,17 +211,17 @@ pub trait Capability: Send + Sync + 'static {
 /// ```
 #[derive(Default, Debug)]
 /// A type-map of capability tokens, used to gate access to resources.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use fluent_wvr::{Capability, CapabilitySet};
-/// 
+///
 /// struct FsCapability;
 /// impl Capability for FsCapability {
 /// fn name(&self) -> &'static str { "fs" }
 /// }
-/// 
+///
 /// let caps = CapabilitySet::new().with(FsCapability);
 /// assert!(caps.get::<FsCapability>().is_some());
 /// ```

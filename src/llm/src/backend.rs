@@ -431,7 +431,7 @@ impl InferenceCapability {
 /// A detected PII span: byte offsets into the scanned text, the label (the
 /// regex pattern name or the token-classification label, e.g.
 /// `"credential.password"`), and the detector's confidence.
-/// 
+///
 /// `label` stays `String` on the wire so open-vocabulary producers keep
 /// working. `score` is confidence (regex `1.0`, classifier average), never
 /// redaction task-value.

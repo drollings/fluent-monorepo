@@ -32,10 +32,10 @@ pub type AuditSink = Arc<dyn Fn(DecisionAudit) + Send + Sync>;
 /// ```
 #[must_use]
 /// The canonical redaction hook over the single `anonymize` entry.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::anonymize_hook;
-/// 
+///
 /// assert_eq!(anonymize_hook()("server 192.168.1.1"), "server [IP_ADDRESS]");
 /// ```
 pub fn anonymize_hook() -> RedactHook {

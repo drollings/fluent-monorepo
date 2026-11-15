@@ -79,7 +79,7 @@ pub fn rolling_slope(highs: &[f64], lows: &[f64], end: usize, n: usize) -> Optio
 /// The last defined RSRS score: identical to
 /// `rsrs(highs, lows, n, m).into_iter().flatten().next_back()`, without
 /// building the whole series.
-/// 
+///
 /// The full vector exists for the offline research surface; the report
 /// path only reads the last score, so materializing 10k slopes and 9.4k
 /// z-windows to keep one value is pure waste (profiled at over a third

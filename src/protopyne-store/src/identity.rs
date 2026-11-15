@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// production code names its bytes and lets `of` hash them.
 #[derive(Clone)]
 /// A 64-bit content hash of a canonical byte encoding, **plus** the bytes.
-/// 
+///
 /// Construct through [`of`](Self::of): the hash always matches the bytes it
 /// was built with, so equality (hash and bytes) is consistent with hashing
 /// (the digest), and a map keyed on identities never aliases distinct

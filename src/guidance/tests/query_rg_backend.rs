@@ -247,3 +247,30 @@ fn rg_explicit_limit_still_bounds_match_lines() {
     let hits = with_caps(|| backend_for(dir.path()).search("ManyNeedle", 2)).expect("search");
     assert_eq!(hits.len(), 2, "explicit limit still bounds output");
 }
+
+#[test]
+fn rg_include_globs_scope_the_exhaustive_arm() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+    std::fs::create_dir_all(dir.path().join("doc")).expect("mkdir");
+    std::fs::write(dir.path().join("src/lib.rs"), "GlobNeedle\n").expect("write");
+    std::fs::write(dir.path().join("doc/guide.md"), "GlobNeedle\n").expect("write");
+    let options = RgOptions {
+        include_globs: vec!["src/**".to_string()],
+        ..Default::default()
+    };
+    let hits =
+        with_caps(|| backend_for(dir.path()).search_with_options("GlobNeedle", 10, &options))
+            .expect("search");
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert_eq!(hits[0].path, "src/lib.rs");
+    let options = RgOptions {
+        include_globs: vec!["doc/**".to_string()],
+        ..Default::default()
+    };
+    let hits =
+        with_caps(|| backend_for(dir.path()).search_with_options("GlobNeedle", 10, &options))
+            .expect("search");
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert_eq!(hits[0].path, "doc/guide.md");
+}

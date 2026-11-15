@@ -122,7 +122,10 @@ pub const UNSEEN_CHANNELS: &[&str] = &[
 #[must_use]
 /// Join the graph closure with the component gate map. Pure: no I/O.
 pub fn impact_report(graph: &GraphIndex, changed: &[String]) -> ImpactReport {
-    let dependents = graph.dependents_closure(changed);
+    let all = graph.dependents_closure(changed);
+    let (test_paths, dependents): (Vec<String>, Vec<String>) = all
+        .into_iter()
+        .partition(|path| crate::offload::is_test_path(std::path::Path::new(path)));
     let mut owners: Vec<(String, ComponentGate)> = dependents
         .iter()
         .map(|path| (path.clone(), component_gate_for_path(path)))
@@ -152,13 +155,17 @@ pub fn impact_report(graph: &GraphIndex, changed: &[String]) -> ImpactReport {
         .collect();
     tiers.sort();
     tiers.dedup();
+    let mut tests = graph.tests_touching_files(changed);
+    tests.extend(test_paths);
+    tests.sort();
+    tests.dedup();
     ImpactReport {
         changed: changed.to_vec(),
         dependents,
         owners,
         gates,
         tiers,
-        tests: graph.tests_touching_files(changed),
+        tests,
     }
 }
 

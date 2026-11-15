@@ -123,7 +123,7 @@ fn default_kind_gain() -> f64 {
 )]
 #[builder(start_fn = new)]
 /// One oscillator kind's defaults: the panel's input row for that kind.
-/// 
+///
 /// Bounds mirror the MA period contract (the same 2..200 window every
 /// length dial shares); smoothing follows the leg-smoothing rules (only
 /// length-taking families arm); gain stays positive and finite; the triple

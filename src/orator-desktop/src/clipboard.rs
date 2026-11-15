@@ -286,12 +286,15 @@ impl Clipboard for ExternalClipboard {
         }
         let raw = drain.join().ok()?;
         let text = String::from_utf8_lossy(&raw).into_owned();
-        if text.is_empty() { None } else { Some(text) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     }
     fn write(&self, text: &str) -> Result<(), InjectError> {
-        let copy = which_copy().ok_or_else(|| {
-            InjectError::Unavailable("wl-copy not found on PATH".to_string())
-        })?;
+        let copy = which_copy()
+            .ok_or_else(|| InjectError::Unavailable("wl-copy not found on PATH".to_string()))?;
         // `wl-copy` reads stdin; shell out through a piped child instead
         // of a here-string (no interpolation). `--foreground` keeps the
         // selection held by our child — ordered and observable — while
@@ -305,9 +308,10 @@ impl Clipboard for ExternalClipboard {
             .spawn()
             .map_err(|error| InjectError::Failed(format!("wl-copy spawn: {error}")))?;
         std::io::Write::write_all(
-            child.stdin.as_mut().ok_or_else(|| {
-                InjectError::Failed("wl-copy stdin unavailable".to_string())
-            })?,
+            child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| InjectError::Failed("wl-copy stdin unavailable".to_string()))?,
             text.as_bytes(),
         )
         .map_err(|error| InjectError::Failed(format!("wl-copy write: {error}")))?;

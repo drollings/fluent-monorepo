@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-
 #[cfg(any(test, feature = "oracle"))]
 use super::builtins_state::RunBuiltins;
 
@@ -794,15 +793,6 @@ impl PineEngine {
         )
     }
 
-
-
-
-
-
-
-
-
-
     #[cfg(any(test, feature = "oracle"))]
     fn run_linked_inner(
         &mut self,
@@ -910,25 +900,23 @@ impl PineEngine {
         if let Some(outcome) = self.try_bytecode(modules, bars, Some(&tick_times), inputs) {
             return outcome;
         }
-            // The link refused: re-run it uncached to name the construct.
-            // `try_bytecode` refused first, so the re-link below refuses
-            // too — the fallback diagnostic below is unreachable unless
-            // linking stops being deterministic, and it refuses rather
-            // than guessing.
-            let program = Self::compile_modules(modules);
-            let order: Vec<&str> =
-                modules.iter().map(|module| module.key.as_str()).collect();
-            let Err(refusal) = super::bytecode_exec::link(&program, &order)
-            else {
-                return Err(refused(
-                    "re-link succeeded after a refused try_bytecode; refusing fail-closed",
-                ));
-            };
-            let module = refusal.module_name().to_owned();
-            return Err(KernelError::Uncompilable {
-                module,
-                construct: refusal.to_string(),
-            });
+        // The link refused: re-run it uncached to name the construct.
+        // `try_bytecode` refused first, so the re-link below refuses
+        // too — the fallback diagnostic below is unreachable unless
+        // linking stops being deterministic, and it refuses rather
+        // than guessing.
+        let program = Self::compile_modules(modules);
+        let order: Vec<&str> = modules.iter().map(|module| module.key.as_str()).collect();
+        let Err(refusal) = super::bytecode_exec::link(&program, &order) else {
+            return Err(refused(
+                "re-link succeeded after a refused try_bytecode; refusing fail-closed",
+            ));
+        };
+        let module = refusal.module_name().to_owned();
+        return Err(KernelError::Uncompilable {
+            module,
+            construct: refusal.to_string(),
+        });
     }
 
     /// No-oracle build shape without the compiled loop: neither engine
@@ -959,7 +947,6 @@ impl PineEngine {
     pub fn exported_names(&self) -> Vec<String> {
         Vec::new()
     }
-
 
     /// Commit-vs-fallback telemetry for the leased `fetch` seam over the
     /// last run (resets with each run). For the acceptance record and

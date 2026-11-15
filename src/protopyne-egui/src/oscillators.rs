@@ -25,7 +25,7 @@ use fluent_egui::{affine_squash, band_squash, map_series_optional, EguiError};
 /// the default constants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Oscillator identity for the normalization catalog.
-/// 
+///
 /// Mirrors the reference oscillator enum; the `Raw` variant covers
 /// pass-through sources (Pine `Smoothings.NA` / unlisted types), which share
 /// the default squash constants. `Cdv` is a listed Pine oscillator with no
@@ -63,7 +63,7 @@ pub enum OscillatorKind {
 /// multi-leg families (Aroon and Voss).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Which leg of a multi-leg oscillator `normalizeOsc` selects.
-/// 
+///
 /// The Pine `which` axis picks the window length for single-leg families
 /// (`1 => fastLen`, otherwise `slowLen`) and the leg content for the two
 /// multi-leg families (Aroon and Voss).
@@ -394,7 +394,7 @@ pub const DISPLAY_EXTREME_BAND: f64 = 200.0;
 #[must_use]
 /// One mapped display leg: the dialed catalog squash constrained into the
 /// extremes band.
-/// 
+///
 /// Total over finite inputs: the catalog affine squash under `params`,
 /// scaled by `gain`, centered by `trim`, then squeezed toward the ±200
 /// asymptotes. Length-preserving with holes preserved; an out-of-band or
@@ -425,7 +425,7 @@ pub fn display_mapped_series(
 /// series-level callers turn that into a hole).
 #[must_use]
 /// Compress an unbounded reading onto the zero-centered `(-100, +100)` band.
-/// 
+///
 /// Strictly monotonic and bijective from `(-∞, +∞)` onto
 /// `(-BOUNDED_OSC_SCALE, +BOUNDED_OSC_SCALE)` through the shared generic
 /// sigmoid; maps `0.0 → 0.0` and `±SQUASH_100_DIVISOR →
@@ -441,7 +441,7 @@ pub fn squash_to_100(value: f64) -> f64 {
 /// becomes a hole rather than a substituted value.
 #[must_use]
 /// Compress a series onto the bounded band, preserving warmup holes.
-/// 
+///
 /// Length-preserving: `None` stays `None`, and a non-finite squash result
 /// becomes a hole rather than a substituted value.
 pub fn squash_series_to_100(series: &[Option<f64>]) -> Vec<Option<f64>> {
@@ -495,7 +495,7 @@ pub fn normalize_series_bounded(
 #[must_use]
 /// One kernel output's display mapping: the catalog kind plus the leg whose
 /// window the kernel's length matches, or `None` for a leg that paints raw.
-/// 
+///
 /// This is the taxonomy the shared pane gates on: single-output catalog
 /// kernels map their `value` leg, the stochastic family maps both legs
 /// (the %D leg lives in the same bounded 0..100 space, and the SRSI relay
@@ -534,7 +534,7 @@ pub fn oscillator_mapping_for_output(
 /// runs.
 #[must_use]
 /// Rescale native aroon fractions into the catalog's 0..100 arm.
-/// 
+///
 /// The kernel emits window fractions (`back/length`); the catalog row is
 /// calibrated for Pine-scale percentages, so the bridge maps each fraction
 /// to its 0..100 arm: `100 * (P * r - 1) / (P - 1)`. The bridge is exact:

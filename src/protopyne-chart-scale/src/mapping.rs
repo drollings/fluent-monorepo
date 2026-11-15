@@ -102,7 +102,7 @@ impl PriceRange {
 /// per frame per bar.
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Index/price mapping over one pane of fixed pixel geometry.
-/// 
+///
 /// `bar_spacing` is pixels per bar, `height` the pane height in pixels, and
 /// `base_value` the first-visible reference for percentage/indexed modes.
 /// Construct once per visible window; recompute only on scroll/zoom, never

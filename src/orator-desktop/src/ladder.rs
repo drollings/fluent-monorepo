@@ -157,9 +157,7 @@ fn attempt_rung(
         )),
         Rung::ClipboardPaste => match paste_with_restore(clip, chord, text, 180) {
             Ok(PasteOutcome::Pasted | PasteOutcome::PastedRestored) => Ok(Some(())),
-            Err(InjectError::Unavailable(reason)) => {
-                Err(InjectError::Unavailable(reason))
-            }
+            Err(InjectError::Unavailable(reason)) => Err(InjectError::Unavailable(reason)),
             Err(other) => Err(other),
         },
         Rung::VirtualKeyboard => Err(InjectError::Unavailable(
@@ -173,7 +171,7 @@ fn attempt_rung(
             // `--stdout`/sink policy, so headless and headed paths
             // print exactly once through the same gate.
             Ok(Some(()))
-        },
+        }
     }
 }
 

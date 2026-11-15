@@ -6,7 +6,9 @@
 
 use common_core::calibration::calibrate_threshold;
 
-use crate::vad::gate::{speech_present_16k, speech_present_16k_with_config, stationary_tone_present};
+use crate::vad::gate::{
+    speech_present_16k, speech_present_16k_with_config, stationary_tone_present,
+};
 
 const RATE: usize = 16_000;
 

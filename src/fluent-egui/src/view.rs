@@ -37,7 +37,7 @@ pub enum PaneKind {
 /// `"bull"`, `"bear"`, `"fast"`, `"slow"`), never a color literal.
 #[derive(Debug, Clone, PartialEq)]
 /// A named display series with warmup holes preserved.
-/// 
+///
 /// `values` uses `None` for warmup/unavailable bars; every constructor in
 /// this module preserves input length element-wise, so a series lines up
 /// with its source rows index-for-index. `style` is a theme key (for example
@@ -179,7 +179,7 @@ pub fn ribbon_style_key(bullish: bool) -> &'static str {
 /// [`ribbon_style_key`] keeps candle trend polarity.
 #[must_use]
 /// Theme style key for one ribbon *fill* run.
-/// 
+///
 /// The shaded band resolves to the dedicated `ribbon_bull`/`ribbon_bear`
 /// slots (teal/purple), never the candle `bull`/`bear` slots — a filled band
 /// and a candle body are different chart shapes with their own theme colors.
@@ -348,7 +348,7 @@ pub fn unit_squash(x: f64) -> f64 {
 /// band's constants.
 #[must_use]
 /// Map one reading through an affine input shift plus a scaled sigmoid.
-/// 
+///
 /// Computes `unit_squash((value + offset) * slope) * scale` in exactly that
 /// op order: shift, scale, squash, then widen to the display band. The
 /// per-series calibration (`offset`, `slope`, `scale`) stays with the
@@ -366,7 +366,7 @@ pub fn affine_squash(value: f64, offset: f64, slope: f64, scale: f64) -> f64 {
 /// [`map_series_optional`]).
 #[must_use]
 /// Compress one reading onto a symmetric band through the shared sigmoid.
-/// 
+///
 /// Computes `unit_squash(value / divisor) * scale`: `0 → 0`, `±divisor →`
 /// `±scale / 2`, finite inputs stay strictly inside `±scale`. Non-finite
 /// inputs yield `NaN` (series callers turn that into a hole via

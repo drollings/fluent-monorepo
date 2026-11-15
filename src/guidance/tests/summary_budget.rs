@@ -142,7 +142,7 @@ fn summary_budget_coverage_counts_documented_nodes() {
         }
     }
     assert_eq!(ready, 2);
-    assert_eq!(summary_coverage(ready, planned), 2.0 / 3.0);
+    assert!((summary_coverage(ready, planned) - 2.0 / 3.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -163,10 +163,9 @@ fn summary_budget_cache_hit_rate_on_repass() {
         .iter()
         .map(|r| summary_cache_key(&r.comment_hash, "model-x"))
         .collect();
-    assert_eq!(summary_cache_hit_rate(&previous, &current), 0.9);
-    assert_eq!(
-        summary_cache_hit_rate(&previous, &[]),
-        1.0,
+    assert!((summary_cache_hit_rate(&previous, &current) - 0.9).abs() < f64::EPSILON);
+    assert!(
+        (summary_cache_hit_rate(&previous, &[]) - 1.0).abs() < f64::EPSILON,
         "nothing to do is a full hit"
     );
 }

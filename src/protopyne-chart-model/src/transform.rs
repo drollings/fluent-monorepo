@@ -19,7 +19,7 @@ use crate::error::ChartModelError;
 /// over unchanged.
 #[must_use]
 /// Smoothed heikin-ashi candles over closed bars.
-/// 
+///
 /// `ha_close = (o + h + l + c) / 4`; `ha_open` seeds at `(o + c) / 2` of the
 /// first bar then recurs as `(prev_open + prev_close) / 2`; wicks stretch to
 /// cover the source high/low. Timestamps, volumes, and adjustments carry

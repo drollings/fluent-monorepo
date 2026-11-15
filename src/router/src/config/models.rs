@@ -181,7 +181,7 @@ impl ModelEntry {
 /// sparse sampling update, thinking policy, and a `max_ctx` cap) and no
 /// membership fields, so a model can be tuned for a task without joining
 /// (or redefining) the role's serving set.
-/// 
+///
 /// Unknown fields are rejected: `models` belongs on the role side
 /// (`roles.<role>.models`), and silently dropping it here would look like a
 /// per-task tune while actually being ignored — fail loud with a pointer at

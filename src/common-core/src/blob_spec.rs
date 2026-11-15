@@ -150,7 +150,7 @@ pub fn validate_sha(payload: &[u8], expected: &[u8; 16]) -> Result<(), BlobError
 /// roadmap M2): the single shared spelling of the `rd_u16` / `rd_u32` /
 /// `rd_usize` / `rd_str` / `slice` readers previously hand-rolled per blob
 /// (`spacy-rs` lemma + ortho loaders).
-/// 
+///
 /// Advancing reads (`u16_le`, `u32_le`, `usize_le`, `sized_str`, `take`) move
 /// the cursor; absolute reads (`peek_u16`, `peek_u32`, `slice`) do not — the
 /// two call shapes (directory loops vs. header/section fixups) coexist on one

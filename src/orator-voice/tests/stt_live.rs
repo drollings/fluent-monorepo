@@ -16,11 +16,8 @@ use orator_models::{whisper_entries, ModelKind, ModelManifest};
 #[test]
 fn live_moonshine_medium_decodes_tone_to_completion() {
     let config = orator::OratorConfig::default();
-    let path = orator::resolve_model_weights(
-        &config.models,
-        &config.gguf_dir,
-        orator::DEFAULT_ASR_MODEL,
-    );
+    let path =
+        orator::resolve_model_weights(&config.models, &config.gguf_dir, orator::DEFAULT_ASR_MODEL);
     let Some(path) = path.filter(|path| path.exists()) else {
         eprintln!("live: moonshine weights missing, skipping");
         return;

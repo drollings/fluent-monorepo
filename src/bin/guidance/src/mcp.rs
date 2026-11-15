@@ -705,12 +705,11 @@ impl McpServer {
         let explain_class = explain_fsm.run(&params.queries.join(" "));
         let explain_route = explain_fsm.route(&explain_class).to_string();
         let explain_stages = guidance_core::query::hybrid::stages_from_hits(&merged);
-        let explain_envelope =
-            guidance_core::query::envelope::AnswerEnvelope::from_stages(
-                &explain_class,
-                &explain_route,
-                explain_stages,
-            );
+        let explain_envelope = guidance_core::query::envelope::AnswerEnvelope::from_stages(
+            &explain_class,
+            &explain_route,
+            explain_stages,
+        );
         // Optional graph context through the shared context assembly
         // (same builder the CLI explain uses): anchors from the merged
         // hits, provenance lines verbatim, no fabricated hits, no score
@@ -960,7 +959,7 @@ mod tests {
     #[test]
     fn status_counts_derive_from_fragments_not_nodes() {
         use search_vector::db::{FileRecord, FragmentRecord};
-        // No guidance_nodes rows at all: counts must come from the
+        // No `nodes` rows at all: counts must come from the
         // fragment index, with the same JSON keys as before.
         let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
         let file = FileRecord {

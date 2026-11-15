@@ -58,7 +58,7 @@ pub struct LevelPoint {
 /// this shape, so renaming either side would move pinned bytes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// One closed equity trade, in close order.
-/// 
+///
 /// Deliberately not the session book's trade record: this run is
 /// single-symbol (no `underlying`), prices in `f64`, carries `bars_held`,
 /// and reuses this same record for partial fills, while the session book
@@ -306,7 +306,7 @@ pub(crate) fn mark_equity(cash: f64, position: Option<&OpenPosition>, close: f64
 #[derive(Debug, Clone, Copy, Default)]
 /// Running closed-cycle tally: the per-bar status row's win rate and net
 /// P&L without refolding every closed trade on every bar.
-/// 
+///
 /// Updated once per full close, in close order (the same order
 /// [`cycles_of`] folds): a cycle's P&L is its closing slice plus every
 /// partial sharing its entry bar and side. Later partials can never join

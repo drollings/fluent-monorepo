@@ -295,12 +295,14 @@ pub fn fit_stages_to_budget(stages: &[Stage], max_tokens: usize) -> Vec<Stage> {
 /// model-backed concept recall. Pure naming over the classified intent.
 pub fn tier_for_intent(intent: QueryIntent) -> RetrievalTier {
     match intent {
-        QueryIntent::SingleIdentifier | QueryIntent::FilePath => {
+        QueryIntent::SingleIdentifier | QueryIntent::FilePath | QueryIntent::Graph => {
             RetrievalTier::Exact
         }
+        QueryIntent::Ownership | QueryIntent::Orientation => RetrievalTier::Exact,
         QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword | QueryIntent::GeneralSearch => {
             RetrievalTier::Lexical
         }
+        QueryIntent::Provenance => RetrievalTier::Lexical,
         QueryIntent::HowTo | QueryIntent::Conceptual => RetrievalTier::Semantic,
     }
 }

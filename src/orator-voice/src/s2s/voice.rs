@@ -107,11 +107,9 @@ pub fn resolve_audio_server() -> Option<PathBuf> {
     if candidates.len() == 1 && std::env::var_os(AUDIO_SERVER_ENV).is_some() {
         let path = &candidates[0];
         let fingerprint = orator::paths::binary_fingerprint(path);
-        if let Err(error) = orator::paths::validate_server_binary(
-            path,
-            orator::paths::current_uid(),
-            false,
-        ) {
+        if let Err(error) =
+            orator::paths::validate_server_binary(path, orator::paths::current_uid(), false)
+        {
             eprintln!(
                 "orator: explicit audio server {} ({fingerprint}) bypasses the gate with a warning: {error}",
                 path.display()

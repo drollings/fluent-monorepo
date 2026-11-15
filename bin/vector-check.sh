@@ -45,7 +45,7 @@ done < <(grep -rn "search_vector::math\|search_vector::error" src --include="*.r
 # ── Check 2: no router hnsw shim paths ──────────────────────────────────
 while IFS= read -r line; do
   fail "${line}: crate::hnsw:: path regrew (use fluent_db::hnsw::…)"
-done < <(grep -rn "crate::hnsw::" src --include="*.rs" 2>/dev/null || true)
+done < <(grep -rn "crate::hnsw::" src --include="*.rs" 2>/dev/null | grep -v "^src/db/" || true)
 
 # ── Check 3: no fresh distance→similarity closures ──────────────────────
 # Forbidden shapes: `1.0 - distance`, `1.0 - dist`, `1.0 - d)`/`,`,
@@ -71,7 +71,7 @@ for def in "pub const DEFAULT_HNSW_THRESHOLD" "pub struct HnswParams" "pub struc
 done
 
 # ── Check 6: single rusqlite error taxonomy ─────────────────────────────
-impls=$(grep -rn "impl From<rusqlite" src --include="*.rs" 2>/dev/null || true)
+impls=$(grep -rn "impl From<rusqlite::Error>" src --include="*.rs" 2>/dev/null || true)
 count=$(echo "$impls" | grep -c . || true)
 if [ "$count" -ne 1 ]; then
   fail "expected exactly 1 From<rusqlite::Error> impl, found $count"

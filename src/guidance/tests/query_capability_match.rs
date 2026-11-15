@@ -153,7 +153,7 @@ fn rank_prefers_svo_overlap_then_fts_then_id() {
     assert_eq!(ranked[1].overlap.rank_key(), (1, 0));
     assert_eq!(ranked[2].id, "b-role");
     assert_eq!(ranked[2].overlap.rank_key(), (0, 1));
-    assert_eq!(ranked[2].fts_score, 5.0);
+    assert!((ranked[2].fts_score - 5.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn rank_empty_predicate_never_head_matches() {
     );
     assert_eq!(ranked.len(), 1);
     assert!(ranked[0].overlap.is_empty());
-    assert_eq!(ranked[0].fts_score, 0.0);
+    assert!(ranked[0].fts_score.abs() < f64::EPSILON);
     assert_eq!(ranked[0].rank, 1);
 }
 #[test]
@@ -227,4 +227,69 @@ fn overlap_rank_prefers_predicate_over_role_coverage() {
     };
     assert!(head > coverage);
     assert_eq!(head.rank_key(), (1, 0));
+}
+
+#[test]
+fn judge_labels_do_not_reorder_or_filter_before_calibration() {
+    // M7.7/M10 contract: the native judge returns labels only. Rank
+    // order comes from SVO+FTS alone; nothing is dropped and nothing
+    // moves, however the labels read — promotion waits on the
+    // calibrated capability point.
+    use super::{rank_briefs, BriefCandidate};
+    let signals = crate::graph_index::GraphQuerySignals {
+        predicate: vec!["route".to_string()],
+        roles: vec!["request".to_string()],
+    };
+    let candidate = |id: &str, predicate: &str, fts: Option<f64>| BriefCandidate {
+        id: id.to_string(),
+        purpose: format!("Purpose {id}."),
+        predicate: predicate.to_string(),
+        roles: vec!["request".to_string()],
+        crate_name: "c".to_string(),
+        domain: "d".to_string(),
+        source_path: "doc/a.md".to_string(),
+        anchor: id.to_string(),
+        fts_score: fts,
+    };
+    let ranked = rank_briefs(
+        &signals,
+        &[
+            candidate("b", "", Some(1.0)),
+            candidate("a", "route", Some(0.5)),
+        ],
+    );
+    // SVO head match outranks the FTS leader regardless of any label.
+    assert_eq!(
+        ranked
+            .iter()
+            .map(|brief| brief.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
+    let labels = ["strong", "considered"];
+    for label in labels {
+        let _ = label;
+        let reranked = rank_briefs(
+            &signals,
+            &[
+                candidate("b", "", Some(1.0)),
+                candidate("a", "route", Some(0.5)),
+            ],
+        );
+        assert_eq!(
+            reranked
+                .iter()
+                .map(|brief| brief.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"],
+            "label {label} must not reorder"
+        );
+    }
+    // No filtering: every candidate ranks, even with empty overlap.
+    let signals = crate::graph_index::GraphQuerySignals::default();
+    let ranked = rank_briefs(
+        &signals,
+        &[candidate("a", "", None), candidate("b", "", None)],
+    );
+    assert_eq!(ranked.len(), 2);
 }

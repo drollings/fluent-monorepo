@@ -125,7 +125,7 @@ pub fn strip_think_block(text: &str) -> String {
 #[derive(Default)]
 /// ── Streaming think-block filter ──────────────────────────────────────
 /// Streaming think-block filter for token-chunked LLM output.
-/// 
+///
 /// Feeds delta chunks via [`Self::push`] and returns only the text safe to
 /// emit. Trailing text that is a proper prefix of a think open/close tag
 /// (e.g. `<thi`) is held back until the next chunk completes it, so a tag

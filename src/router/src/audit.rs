@@ -18,7 +18,7 @@ pub const AUDIT_TARGET: &str = "router.audit";
 /// string via `as_str()` so the wire shape stays byte-identical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Typed audit kinds — the single source of truth for the `kind` field.
-/// 
+///
 /// Every `emit` used to hand-type `"route"` / `"filter"` etc. — a typo drifts
 /// silently. `AuditKind` makes the kind compiler-checked and derives the
 /// string via `as_str()` so the wire shape stays byte-identical.
@@ -61,7 +61,7 @@ impl From<AuditKind> for &'static str {
 /// flat and machine-readable.
 #[derive(Debug, Clone, serde::Serialize)]
 /// One durable audit record: a `kind` plus a JSON payload of detail fields.
-/// 
+///
 /// `detail` carries the event-specific fields (e.g. `chart`/`target`/`score`
 /// for chart runs, `pattern` for filter verdicts, `model`/`url` for dispatch
 /// attempts). It is rendered as a single JSON field so the audit file stays
@@ -183,7 +183,7 @@ impl AuditRecord {
 /// record class (e.g. `"chart_target"`, `"filter"`, `"route"`, `"escalation"`).
 #[allow(clippy::needless_pass_by_value)]
 /// Emit a durable audit record to [`AUDIT_TARGET`].
-/// 
+///
 /// `fields` is the event's JSON payload. The `kind` field distinguishes the
 /// record class (e.g. `"chart_target"`, `"filter"`, `"route"`, `"escalation"`).
 pub fn emit(kind: &'static str, fields: serde_json::Value) {

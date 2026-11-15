@@ -903,17 +903,20 @@ fn literal_arithmetic_folds_to_const_at_compile_time() {
     let module = compile_script("plot(1.0 + 2.0, \"F\")\nplot(-3.0, \"G\")");
     let block = entry(&module);
     assert!(
-        !block.instrs.iter().any(|instr| matches!(
-            instr,
-            Instruction::BinOp { .. } | Instruction::UnOp { .. }
-        )),
+        !block
+            .instrs
+            .iter()
+            .any(|instr| matches!(instr, Instruction::BinOp { .. } | Instruction::UnOp { .. })),
         "folded block has no arithmetic: {:?}",
         block.instrs
     );
     let module = compile_script("x = 1.0 + true\nplot(x, \"F\")");
     let block = entry(&module);
     assert!(
-        block.instrs.iter().any(|instr| matches!(instr, Instruction::BinOp { .. })),
+        block
+            .instrs
+            .iter()
+            .any(|instr| matches!(instr, Instruction::BinOp { .. })),
         "a refusing pair keeps its BinOp: {:?}",
         block.instrs
     );

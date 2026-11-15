@@ -11,7 +11,10 @@ fn no_rungs_returns_none() {
 
 #[test]
 fn all_declines_returns_none() {
-    assert_eq!(first_some_in_order_sync([1u32, 2, 3], |_| None::<u32>), None);
+    assert_eq!(
+        first_some_in_order_sync([1u32, 2, 3], |_| None::<u32>),
+        None
+    );
 }
 
 #[test]

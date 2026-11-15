@@ -7,14 +7,20 @@ fn row(id: &str, purpose: &str) -> CapabilityRecord {
         project: "monorepo".to_string(),
         crate_name: "guidance-core".to_string(),
         domain: "guidance".to_string(),
+        title: "Index".to_string(),
         purpose: purpose.to_string(),
         predicate: "index".to_string(),
         roles_json: r#"["fragment"]"#.to_string(),
+        keywords_json: r#"["recall"]"#.to_string(),
+        code_paths_json: r#"["src/guidance/src/query/recall.rs"]"#.to_string(),
+        symbols_json: "[]".to_string(),
         source_path: "doc/guidance/index.md".to_string(),
         anchor: "index".to_string(),
         content_hash: "hash-a".to_string(),
         model: "test-model".to_string(),
         prompt_version: 1,
+        origin: "test".to_string(),
+        corpus_hash: String::new(),
         status: "ready".to_string(),
         gap_reason: None,
         generated_at: 1700000000000,
@@ -58,12 +64,8 @@ fn capability_ready_count_covers_only_ready_rows() {
     held.status = "held".to_string();
     let mut gap = row("c#gap", "Brief that failed validation.");
     gap.status = "gap".to_string();
-    db.replace_capabilities(&[
-        row("a#index", "Indexes fragments for recall."),
-        held,
-        gap,
-    ])
-    .expect("replace");
+    db.replace_capabilities(&[row("a#index", "Indexes fragments for recall."), held, gap])
+        .expect("replace");
     assert_eq!(db.capability_ready_count().expect("count"), 1);
 }
 
@@ -120,6 +122,47 @@ fn capability_replace_updates_fts_rows() {
     let hits = db.search_capabilities("summarizes", 10).expect("search");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].id, "a#index");
+}
+
+#[test]
+fn capability_title_and_keywords_are_lexically_reachable() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    let mut card = row("a#card", "Indexes fragments for recall.");
+    card.title = "Zebra routing".to_string();
+    card.keywords_json = r#"["quuxalpha"]"#.to_string();
+    db.replace_capabilities(&[card]).expect("replace");
+    let hits = db.search_capabilities("zebra", 10).expect("search");
+    assert_eq!(hits.len(), 1, "title participates: {hits:?}");
+    let hits = db.search_capabilities("quuxalpha", 10).expect("search");
+    assert_eq!(hits.len(), 1, "keywords participate: {hits:?}");
+}
+
+#[test]
+fn project_cards_round_trip_in_key_order() {
+    use crate::db::ProjectCard;
+    let db = GuidanceDb::open_in_memory().expect("db");
+    assert_eq!(db.project_card_count().expect("count"), 0);
+    let card = |key: &str, kind: &str| ProjectCard {
+        key: key.to_string(),
+        kind: kind.to_string(),
+        title: format!("{kind} {key}"),
+        body: format!("facts about {key}"),
+        source_path: "README.md".to_string(),
+        anchor: String::new(),
+        aliases_json: "[]".to_string(),
+        code_paths_json: "[]".to_string(),
+        symbols_json: "[]".to_string(),
+        content_hash: format!("hash-{key}"),
+        generated_at: 1700000000000,
+    };
+    db.replace_project_cards(&[card("crate:b", "crate"), card("crate:a", "crate")])
+        .expect("replace");
+    assert_eq!(db.project_card_count().expect("count"), 2);
+    let stored = db.project_cards_all().expect("read");
+    assert_eq!(stored.len(), 2);
+    assert_eq!(stored[0].key, "crate:a");
+    assert_eq!(stored[1].key, "crate:b");
+    assert_eq!(stored[0].content_hash, "hash-crate:a");
 }
 
 #[test]

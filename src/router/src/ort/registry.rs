@@ -92,17 +92,17 @@ pub fn disambiguation_overlays<S: std::hash::BuildHasher>(
 /// `None` is returned.
 #[cfg(feature = "onnx")]
 /// Build the `OrtSessionRegistry` from the role-based ONNX fleet in `config`.
-/// 
+///
 /// Each configured role (`encoder`/`pii`/`router`/`policy`/`colbert`) is
 /// registered under its stable `OnnxRole::registry_key()` with the task implied
 /// by the role. Lifecycle semantics parallel the llama.cpp fleet:
-/// 
+///
 /// - `resident: true` (Always) roles load at boot (loud error on a missing
 /// model file — the registry refuses to boot half-configured).
 /// - `resident: false` (Unloadable) roles register lazily and load on first
 /// use.
 /// - Task-vs-`config.json` mismatches are loud boot errors.
-/// 
+///
 /// Absent ONNX config yields `None` (fully fail-open — the pipeline is
 /// pure-deterministic). When the crate is built without the `onnx` feature,
 /// `None` is returned.

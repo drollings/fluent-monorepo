@@ -57,10 +57,10 @@ impl CaseProvenance {
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Explicit per-point gate floors. Defaults mirror the shared harness gate
 /// (precision ≥ 0.90, FPR ≤ 0.05) plus nonzero recall and zero control fires.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::GateParams;
-/// 
+///
 /// let params = GateParams::default();
 /// assert!((params.min_precision - 0.90).abs() < 1e-12);
 /// assert_eq!(params.max_control_fires, 0);
@@ -99,10 +99,10 @@ impl Default for GateParams {
 #[must_use]
 /// Gate a threshold with explicit floors (recall strictly above the floor —
 /// a never-firing threshold proves nothing).
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{gate_for_point_with, GateParams, CaseProvenance, ScoredCase};
-/// 
+///
 /// let provenance = CaseProvenance::human("example", "2026-11-08");
 /// let cases = vec![
 /// ScoredCase { score: 0.9, expected: true, control: false, provenance: provenance.clone() },
@@ -136,22 +136,11 @@ pub fn gate_for_point_with(
 ///     source: "hand labels".to_string(),
 ///     labeller: "team".to_string(),
 ///     date: "2026-11-08".to_string(),
+///     dataset: String::new(),
 /// };
 /// assert_eq!(provenance.labeller, "team");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// Corpus-level provenance (`CorpusProvenance`) for a labelled set.
-/// 
-/// ```rust
-/// use fluent_llm::decision::CorpusProvenance;
-/// 
-/// let provenance = CorpusProvenance {
-/// source: "hand labels".to_string(),
-/// labeller: "team".to_string(),
-/// date: "2026-11-08".to_string(),
-/// };
-/// assert_eq!(provenance.labeller, "team");
-/// ```
 pub struct CorpusProvenance {
     pub source: String,
     pub labeller: String,
@@ -193,7 +182,7 @@ pub struct GateReport {
 /// round trip is exercised in `tests/decision_registry.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Thresholds plus the gate that earned them, keyed for lookup (`RegistryEntry`).
-/// 
+///
 /// Calibrate over a [`Corpus`] (see `RegistryEntry::calibrate`); the
 /// round trip is exercised in `tests/decision_registry.rs`.
 pub struct RegistryEntry {
@@ -318,11 +307,11 @@ impl CalibrationStatus {
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 /// Owned threshold registry with JSON persistence.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::CalibrationRegistry;
 /// use std::path::PathBuf;
-/// 
+///
 /// let registry = CalibrationRegistry::empty();
 /// assert!(registry.entries.is_empty());
 /// ```
@@ -414,10 +403,10 @@ impl CalibrationRegistry {
 #[must_use]
 /// Authorize a decision point: passing entry on all three keys yields its
 /// thresholds, anything else is shadow-only with the reason named.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::{authorize, CalibrationRegistry};
-/// 
+///
 /// let status = authorize(&CalibrationRegistry::empty(), "intent", "fp", 1);
 /// assert!(status.is_shadow_only());
 /// ```
@@ -477,11 +466,11 @@ pub fn authorize_pinned(
     dataset: &str,
 ) -> CalibrationStatus {
     match registry.lookup(point, model_fingerprint, question_version) {
-        Some(entry) if entry.dataset == dataset => {
-            CalibrationStatus::Calibrated(entry.thresholds)
-        }
+        Some(entry) if entry.dataset == dataset => CalibrationStatus::Calibrated(entry.thresholds),
         Some(_) => CalibrationStatus::ShadowOnly {
-            reason: format!("dataset rotated for ({point}, {model_fingerprint}, v{question_version})"),
+            reason: format!(
+                "dataset rotated for ({point}, {model_fingerprint}, v{question_version})"
+            ),
         },
         None => CalibrationStatus::ShadowOnly {
             reason: format!(

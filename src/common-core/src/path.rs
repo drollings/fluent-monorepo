@@ -52,7 +52,7 @@ pub const MAX_SYMLINK_HOPS: u32 = 40;
 /// cleaners (which must NOT resolve `.`/`..` — pattern syntax, not paths).
 #[must_use]
 /// Replace `\` with `/` and collapse runs of `/` to one.
-/// 
+///
 /// Pure separator step shared by [`normalize_lexical`] and the glob-pattern
 /// cleaners (which must NOT resolve `.`/`..` — pattern syntax, not paths).
 pub fn collapse_separators(path: &str) -> String {
@@ -113,7 +113,7 @@ pub fn normalize_lexical(path: &str) -> String {
 /// No filesystem access: symlinks are not examined here.
 #[must_use]
 /// Lexically normalize a `std::path::Path` through its platform components.
-/// 
+///
 /// `..` pops exactly one component, `.` is ignored, every other component is
 /// appended verbatim (including a root/prefix), and duplicate or trailing
 /// separators collapse because `components()` already yields them once.
@@ -122,7 +122,7 @@ pub fn normalize_lexical(path: &str) -> String {
 /// [`normalize_lexical`], whose string algorithm drops a leading relative
 /// `..` (so `normalize_std_path("../a")` is `None` while
 /// `normalize_lexical("../a")` is `"a"`).
-/// 
+///
 /// No filesystem access: symlinks are not examined here.
 pub fn normalize_std_path(path: &Path) -> Option<PathBuf> {
     let mut normal = PathBuf::new();

@@ -129,12 +129,12 @@ pub fn build_concept_store_boot(ledger: &ContentNodeStore) -> Result<ConceptStor
 /// 48-bit collision must not read as drift, red-team M5/L6).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 /// Reconciliation statistics.
-/// 
+///
 /// The reconciliation seam (13.10) is exercised hermetically by the tests in
 /// this module and composed into the live boot (`main.rs`), which opens the
 /// coral graph home and the router's `SqliteConceptStore` over the shared
 /// ledger connection.
-/// 
+///
 /// `coral_nodes` / `router_concepts` are **membership counts**: how many of
 /// the loader's concepts resolve in each home (never raw row counts — a
 /// 48-bit collision must not read as drift, red-team M5/L6).

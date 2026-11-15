@@ -201,7 +201,7 @@ fn rebuild_reply(
 /// Every other failure shape advances no audio fallback.
 #[must_use]
 /// Whether the endpoint reports it cannot encode audio input.
-/// 
+///
 /// Pinned by transcript goldens: the reference text-only gateway
 /// answers 400 with `audio input is not supported` in the body.
 /// Every other failure shape advances no audio fallback.
@@ -218,7 +218,7 @@ pub fn audio_input_unsupported(error: &S2sError) -> bool {
 /// this gate; callers return them before consulting it.
 #[must_use]
 /// Whether a voice failure advances the fallback chain.
-/// 
+///
 /// Advances on voiceless turns (`NoAudio`) and on transport failures
 /// that produced no audio (`Backend`/`Overflow` with empty buffers).
 /// Terminal on cancellation (`Aborted`): an interrupted turn never
