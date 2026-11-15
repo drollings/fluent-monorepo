@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use common_core::ensure_dir_or_panic;
+use common_core::profile;
 use common_core::shell::run_command;
 use fluent_concurrency::pool::ResultPoolError;
 use guidance_core::config;
@@ -16,9 +17,9 @@ use search_vector::GuidanceDb;
 
 mod benchmark;
 mod embed;
+mod freshen;
 mod index_cmd;
 mod mcp;
-mod profile;
 mod search;
 mod structure;
 mod summarize_cmd;
@@ -107,6 +108,10 @@ enum Commands {
         #[arg(long)]
         no_llm: bool,
 
+        /// Include fixture-scope rows (default excludes them).
+        #[arg(long)]
+        include_fixtures: bool,
+
         #[arg(long)]
         allow_degraded: bool,
 
@@ -121,6 +126,11 @@ enum Commands {
         /// Compact output: omit the duplicated Coverage section (Envelope keeps it).
         #[arg(long)]
         compact: bool,
+
+        /// Converge the stale files behind the citations over bounded runs.
+        /// Sidecars plus index only: no fix waves.
+        #[arg(long)]
+        freshen: bool,
 
         #[arg(long, default_value = "auto")]
         filter: String,
@@ -311,6 +321,15 @@ enum Commands {
 
         #[arg(long)]
         allow_degraded: bool,
+
+        /// Include fixture-scope rows (default excludes them).
+        #[arg(long)]
+        include_fixtures: bool,
+
+        /// Converge the stale files behind the hits over bounded re-runs.
+        /// Sidecars plus index only; live-byte `--rg` ignores this.
+        #[arg(long)]
+        freshen: bool,
     },
     Index {
         #[arg(default_value = ".")]
@@ -460,6 +479,10 @@ enum Commands {
 
         #[arg(short = 'w', long, default_value = ".")]
         workspace: String,
+
+        /// Include fixture-scope callers (default excludes them).
+        #[arg(long)]
+        include_fixtures: bool,
     },
     /// Post one unit of work to the queue (validated; never touches
     /// running items). Prints the resulting queue snapshot as JSON.
@@ -600,10 +623,12 @@ async fn main() {
             workspace,
             limit,
             no_llm,
+            include_fixtures,
             allow_degraded,
             budget,
             decision_fingerprint,
             compact,
+            freshen,
             filter: _,
         }) => {
             if cli.strict && strict_refuse(workspace) {
@@ -618,6 +643,7 @@ async fn main() {
                 workspace,
                 *limit,
                 *no_llm,
+                *include_fixtures,
                 *budget,
                 cli.show_prompts,
                 cli.strict,
@@ -625,6 +651,8 @@ async fn main() {
                 started,
                 decision_fingerprint.clone(),
                 *compact,
+                *allow_degraded,
+                *freshen,
             );
         }
         Some(Commands::Test) => cmd_test(),
@@ -720,6 +748,8 @@ async fn main() {
             mtime_after,
             mtime_before,
             allow_degraded,
+            include_fixtures,
+            freshen,
         }) => {
             if cli.strict && strict_refuse(workspace) {
                 std::process::exit(2);
@@ -749,6 +779,8 @@ async fn main() {
                 glob,
                 symbol_type,
                 &rg_options,
+                *include_fixtures,
+                *freshen,
             );
         }
         Some(Commands::Index {
@@ -811,7 +843,11 @@ async fn main() {
             json_dir,
             db,
         }) => cmd_summarize(workspace, json_dir, db).await,
-        Some(Commands::Impact { target, workspace }) => cmd_impact(target, workspace),
+        Some(Commands::Impact {
+            target,
+            workspace,
+            include_fixtures,
+        }) => cmd_impact(target, workspace, *include_fixtures),
         Some(Commands::QueuePost {
             id,
             scope,
@@ -896,6 +932,8 @@ async fn main() {
                         mtime_after_ms: None,
                         mtime_before_ms: None,
                     },
+                    false,
+                    false,
                 );
             } else {
                 eprintln!("No command given. Try `guidance --help` or `guidance <query>`.");
@@ -916,8 +954,31 @@ async fn main() {
     }
 }
 
-fn load_project_config(workspace: &Path) -> config::ProjectConfig {
+pub(crate) fn load_project_config(workspace: &Path) -> config::ProjectConfig {
     config::load_config(workspace).unwrap_or_default()
+}
+
+#[allow(clippy::too_many_arguments)]
+/// `explain`: thin adapter over `ReadEngine`. Assembly, budgets,
+/// claims, and the envelope live in the engine; this only injects
+/// the workspace, the index, and the code-model synthesizer, then
+/// renders. `--no-llm` builds no model pipeline at all (no spaCy,
+/// no synthesis): evidence-only answers need none.
+fn answer_once(
+    engine: &guidance_core::read::engine::ReadEngine,
+    request: &guidance_core::read::engine::ExplainRequest,
+    ctx: &guidance_core::read::engine::ExplainContext<'_>,
+    synth: Option<&dyn guidance_core::read::engine::Synthesizer>,
+    judge: Option<&guidance_core::read::engine::JudgeCtx<'_>>,
+) -> guidance_core::read::engine::ReadAnswer {
+    match (synth, judge) {
+        (None, None) => engine.explain(request, ctx, None),
+        (None, Some(judge)) => engine.explain_with_judge(request, ctx, None, Some(judge)),
+        (Some(synth), None) => engine.explain(request, ctx, Some(synth)),
+        (Some(synth), Some(judge)) => {
+            engine.explain_with_judge(request, ctx, Some(synth), Some(judge))
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -928,11 +989,12 @@ fn load_project_config(workspace: &Path) -> config::ProjectConfig {
 /// no synthesis): evidence-only answers need none.
 fn cmd_explain(
     query: &str,
-    _guidance_dir: &str,
+    guidance_dir: &str,
     db_path: &str,
     workspace: &str,
     limit: usize,
     no_llm: bool,
+    include_fixtures: bool,
     budget: Option<usize>,
     show_prompts: bool,
     strict: bool,
@@ -940,7 +1002,10 @@ fn cmd_explain(
     started: std::time::Instant,
     decision_fingerprint_flag: Option<String>,
     compact: bool,
+    allow_degraded: bool,
+    freshen: bool,
 ) {
+    let _explain = profile::Phase::new("explain.total");
     use guidance_core::read::engine::{ExplainContext, ExplainRequest, ReadEngine, Synthesizer};
     let workspace_root = PathBuf::from(workspace);
     let cfg = load_project_config(&workspace_root);
@@ -972,6 +1037,7 @@ fn cmd_explain(
         limit,
         budget_override: budget,
         no_llm,
+        include_fixtures,
     };
     struct CodeSynth<'a> {
         backend: &'a dyn fluent_llm::client::ChatBackend,
@@ -1009,38 +1075,70 @@ fn cmd_explain(
             fluent_llm::decision::DecisionTransport::local_only(),
         ))
     };
-    let answer = if no_llm || !cfg.generative.enabled {
-        match judge_backend.as_ref() {
-            None => engine.explain(&request, &ctx, None),
-            Some(backend) => {
-                let judge = guidance_core::read::engine::JudgeCtx {
-                    backend,
-                    model: cfg.decision.model.clone(),
-                    timeout_ms: cfg.decision.timeout_ms,
-                    fingerprint,
-                };
-                engine.explain_with_judge(&request, &ctx, None, Some(&judge))
-            }
-        }
-    } else {
+    let judge = judge_backend
+        .as_ref()
+        .map(|backend| guidance_core::read::engine::JudgeCtx {
+            backend,
+            model: cfg.decision.model.clone(),
+            timeout_ms: cfg.decision.timeout_ms,
+            fingerprint: fingerprint.clone(),
+        });
+    let client = if !no_llm && cfg.generative.enabled {
         let role = &cfg.generative;
         let mut client = fluent_llm::client::LlmClient::new(&role.base_url, &role.model);
         client.config.timeout_ms = role.timeout_ms;
         client.config.show_prompts = show_prompts;
-        let synth = CodeSynth { backend: &client };
-        match judge_backend.as_ref() {
-            None => engine.explain(&request, &ctx, Some(&synth)),
-            Some(backend) => {
-                let judge = guidance_core::read::engine::JudgeCtx {
-                    backend,
-                    model: cfg.decision.model.clone(),
-                    timeout_ms: cfg.decision.timeout_ms,
-                    fingerprint,
-                };
-                engine.explain_with_judge(&request, &ctx, Some(&synth), Some(&judge))
+        Some(client)
+    } else {
+        None
+    };
+    let code_synth = client.as_ref().map(|backend| CodeSynth { backend });
+    let synth: Option<&dyn Synthesizer> = code_synth
+        .as_ref()
+        .map(|code_synth| code_synth as &dyn Synthesizer);
+    let mut answer = answer_once(&engine, &request, &ctx, synth, judge.as_ref());
+    if freshen {
+        // Bounded converge loop (max 3): refreshed recall can surface
+        // new stale files each round; failures keep the stale answer.
+        for _ in 0..3 {
+            let stale = crate::freshen::stale_citation_files(&answer, &workspace_root);
+            if stale.is_empty() {
+                break;
+            }
+            let src_dirs = src_dirs_from_config_with(&workspace_root, &cfg);
+            let guidance_path = if Path::new(guidance_dir).is_absolute() {
+                PathBuf::from(guidance_dir)
+            } else {
+                workspace_root.join(guidance_dir)
+            };
+            match crate::freshen::freshen_files(
+                &workspace_root,
+                &guidance_path,
+                &db,
+                &db_file,
+                &src_dirs,
+                &stale,
+            ) {
+                Ok((0, 0)) => break,
+                Ok(_) => {
+                    let readiness = readiness_preflight(workspace, db_path, allow_degraded);
+                    let ctx = ExplainContext {
+                        workspace: &workspace_root,
+                        db: &db,
+                        nlp,
+                        coverage: Some(readiness.coverage().clone()),
+                    };
+                    answer = answer_once(&engine, &request, &ctx, synth, judge.as_ref());
+                }
+                Err(error) => {
+                    answer.gaps.push(format!(
+                        "freshen failed ({error}); serving indexed evidence"
+                    ));
+                    break;
+                }
             }
         }
-    };
+    }
     if compact {
         let mut compact_answer = answer.clone();
         compact_answer
@@ -1968,7 +2066,10 @@ fn import_derived_cards(workspace_path: &Path, guidance_dir: &Path, db_path: &st
     }
 }
 
-fn src_dirs_from_config_with(workspace_path: &Path, cfg: &config::ProjectConfig) -> Vec<PathBuf> {
+pub(crate) fn src_dirs_from_config_with(
+    workspace_path: &Path,
+    cfg: &config::ProjectConfig,
+) -> Vec<PathBuf> {
     if cfg.src_dirs.is_empty() {
         guidance_core::read::project_map::default_source_roots(workspace_path)
     } else {
@@ -2589,7 +2690,7 @@ fn remove_sidecars(guidance_dir: &Path, src_dirs: &[PathBuf], prefix: &Path) {
     }
 }
 
-fn find_source_dir(path: &Path, src_dirs: &[PathBuf]) -> Option<PathBuf> {
+pub(crate) fn find_source_dir(path: &Path, src_dirs: &[PathBuf]) -> Option<PathBuf> {
     // Sidecar mapping roots are directories: absolutize both sides so a
     // relative workspace (`-w .`) still prefixes absolute walks. A file
     // entry never matches — it scopes an ingest, not a source tree.
@@ -2699,7 +2800,7 @@ fn cmd_seal(workspace: &str) {
 
 /// Report what a change touches: dependents, owners, narrowest gates,
 /// edge tiers, and the tests exercising it.
-fn cmd_impact(target: &str, workspace: &str) {
+fn cmd_impact(target: &str, workspace: &str, include_fixtures: bool) {
     use guidance_core::fidelity::safe_to_delete;
     use guidance_core::graph_index::GraphIndex;
     use guidance_core::query::context_pack::{impact_report, tests_touching, UNSEEN_CHANNELS};
@@ -2746,7 +2847,13 @@ fn cmd_impact(target: &str, workspace: &str) {
     };
     // Index first: committed edges over token guesses. The mention
     // heuristic only fills an empty index result, labelled as such.
-    let report = impact_report(&graph, &changed);
+    let mut report = impact_report(&graph, &changed);
+    if !include_fixtures {
+        let is_fixture = |path: &str| guidance_core::source_scope::is_fixture_path(path);
+        report.dependents.retain(|path| !is_fixture(path));
+        report.owners.retain(|(path, _)| !is_fixture(path));
+        report.tests.retain(|path| !is_fixture(path));
+    }
     let mut tests = report.tests.clone();
     let mut heuristic = false;
     if tests.is_empty() {
@@ -3248,15 +3355,316 @@ fn cmd_calibrate(
         );
         println!("support: {support} control fires: {control_fires}");
         println!("verdict: HELD (below the bars; nothing stored)");
+    } else if point == guidance_core::query::decision_points::SCOPE_POINT {
+        let Some(fingerprint) = model_fingerprint.as_deref() else {
+            eprintln!("calibrate: --model-fingerprint is required for --point scope");
+            std::process::exit(2);
+        };
+        let rows = match guidance_core::read::calibration::load_labeled_scopes(Path::new(dataset)) {
+            Ok(rows) => rows,
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        };
+        let dataset_bytes = std::fs::read(dataset).unwrap_or_default();
+        let dataset_hash = common_core::hash::blake3_hex(&dataset_bytes);
+        let backend = fluent_llm::decision::SystemOneBackend::new(
+            "http://localhost:8080",
+            fluent_llm::decision::DecisionTransport::local_only(),
+        );
+        if let Err(reason) = pin_fingerprint_via_canary(&backend, fingerprint) {
+            println!("point: {point}");
+            println!("verdict: HELD ({reason}; nothing stored)");
+            return;
+        }
+        // Candidate crates mirror serving: distinct expected crates,
+        // sorted and truncated to the bounded option cap.
+        let mut crates: Vec<String> = rows
+            .iter()
+            .filter(|row| !row.control)
+            .map(|row| row.expected_crate.clone())
+            .collect();
+        crates.sort();
+        crates.dedup();
+        crates.truncate(10);
+        let mut support = 0usize;
+        let mut control_fires = 0usize;
+        let mut scores = Vec::new();
+        for row in &rows {
+            let funnel = guidance_core::query::funnel::funnel_terms(
+                &row.query,
+                &search_vector::SemanticAliases::new(),
+                None,
+            );
+            let spec = guidance_core::query::decision_points::scope_spec(&crates);
+            let state = guidance_core::query::decision_points::scope_state(
+                &row.query,
+                &funnel.significant,
+                &crates,
+            );
+            let prompt = fluent_llm::decision::Question {
+                spec: &spec,
+                state: &state,
+                question: &row.query,
+            }
+            .render();
+            let request = fluent_llm::decision::DecideRequest {
+                prompt,
+                state,
+                question: row.query.clone(),
+                options: spec
+                    .options()
+                    .into_iter()
+                    .map(|label| fluent_llm::decision::DecisionOption {
+                        label,
+                        description: String::new(),
+                    })
+                    .collect(),
+                kind: fluent_llm::decision::DecisionKind::Choice,
+                version: guidance_core::query::decision_points::SCOPE_VERSION,
+                timeout_ms: 2000,
+                model: "decision".to_string(),
+            };
+            // Fail-closed: transport down scores zero, never a verdict.
+            let label = {
+                use fluent_llm::decision::DecideBackend;
+                fluent_llm::client::block_on(backend.decide(request))
+            }
+            .map(|decision| decision.label)
+            .unwrap_or_else(|_| "unknown".to_string());
+            let score = guidance_core::read::calibration::scope_label_score(
+                &label,
+                &row.expected_crate,
+                row.control,
+            );
+            if row.control && score >= guidance_core::read::calibration::SCOPE_THRESHOLD {
+                control_fires += 1;
+            }
+            if !row.control {
+                support += 1;
+            }
+            scores.push(fluent_llm::decision::ScoredCase {
+                score,
+                expected: !row.control,
+                control: row.control,
+                provenance: fluent_llm::decision::CaseProvenance::human(
+                    "guidance-eval",
+                    "2026-11-15",
+                ),
+            });
+        }
+        let verdict = guidance_core::read::calibration::gate_scored_cases(
+            &scores,
+            guidance_core::read::calibration::SCOPE_THRESHOLD,
+            &guidance_core::read::calibration::SCOPE_BARS,
+        );
+        println!("point: {point}");
+        println!(
+            "precision: {:.3} recall: {:.3} fpr: {:.3}",
+            verdict.precision, verdict.recall, verdict.fpr
+        );
+        println!("support: {support} control fires: {control_fires}");
+        if verdict.passed && control_fires == 0 {
+            let corpus = guidance_core::read::calibration::scope_corpus(
+                scores,
+                fingerprint,
+                &dataset_hash,
+                dataset,
+            );
+            let entry = match fluent_llm::decision::RegistryEntry::calibrate_with(
+                guidance_core::query::decision_points::SCOPE_POINT,
+                fingerprint,
+                guidance_core::query::decision_points::SCOPE_VERSION,
+                &corpus,
+                guidance_core::read::calibration::SCOPE_THRESHOLD,
+                None,
+            ) {
+                Ok(entry) => entry,
+                Err(detail) => {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+            };
+            let path = Path::new(state_dir).join("calibration.json");
+            match guidance_core::read::calibration::store_entry_if_passed(&path, entry, true, "") {
+                Ok(guidance_core::read::calibration::StoreOutcome::Authorized { path }) => {
+                    println!("verdict: AUTHORIZED (entry stored at {path})");
+                }
+                Ok(guidance_core::read::calibration::StoreOutcome::Held { reason }) => {
+                    println!("verdict: HELD ({reason}; nothing stored)");
+                }
+                Err(detail) => {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+            }
+        } else {
+            println!("verdict: HELD (below the bars; nothing stored)");
+        }
+    } else if point == guidance_core::query::decision_points::RERANK_POINT {
+        let Some(fingerprint) = model_fingerprint.as_deref() else {
+            eprintln!("calibrate: --model-fingerprint is required for --point rerank");
+            std::process::exit(2);
+        };
+        let rows = match guidance_core::read::calibration::load_labeled_findings(Path::new(dataset))
+        {
+            Ok(rows) => rows,
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        };
+        let dataset_bytes = std::fs::read(dataset).unwrap_or_default();
+        let dataset_hash = common_core::hash::blake3_hex(&dataset_bytes);
+        let backend = fluent_llm::decision::SystemOneBackend::new(
+            "http://localhost:8080",
+            fluent_llm::decision::DecisionTransport::local_only(),
+        );
+        if let Err(reason) = pin_fingerprint_via_canary(&backend, fingerprint) {
+            println!("point: {point}");
+            println!("verdict: HELD ({reason}; nothing stored)");
+            return;
+        }
+        // Score the real judge (fail-closed when the endpoint is down):
+        // one single-candidate judgment per row, in query order.
+        let judge =
+            guidance_core::read::decide::FindingJudge::new(&backend, "decision".to_string(), 2000);
+        let mut scores = Vec::new();
+        let mut support = 0usize;
+        let mut control_fires = 0usize;
+        for row in &rows {
+            let verdicts =
+                judge.judge(&row.query, &[(row.finding_id.clone(), row.excerpt.clone())]);
+            let score = verdicts.first().map_or(0.5, |v| {
+                guidance_core::read::calibration::finding_label_score(&v.label)
+            });
+            if row.control && score >= guidance_core::read::calibration::RERANK_THRESHOLD {
+                control_fires += 1;
+            }
+            if !row.control {
+                support += 1;
+            }
+            scores.push(fluent_llm::decision::ScoredCase {
+                score,
+                expected: row.expected_relevant,
+                control: row.control,
+                provenance: fluent_llm::decision::CaseProvenance::human(
+                    "guidance-eval",
+                    "2026-11-15",
+                ),
+            });
+        }
+        let verdict = guidance_core::read::calibration::gate_scored_cases(
+            &scores,
+            guidance_core::read::calibration::RERANK_THRESHOLD,
+            &guidance_core::read::calibration::RERANK_BARS,
+        );
+        println!("point: {point}");
+        println!(
+            "precision: {:.3} recall: {:.3} fpr: {:.3}",
+            verdict.precision, verdict.recall, verdict.fpr
+        );
+        println!("support: {support} control fires: {control_fires}");
+        if verdict.passed && control_fires == 0 {
+            let corpus = guidance_core::read::calibration::rerank_corpus(
+                scores,
+                fingerprint,
+                &dataset_hash,
+                dataset,
+            );
+            let entry = match fluent_llm::decision::RegistryEntry::calibrate_with(
+                guidance_core::query::decision_points::RERANK_POINT,
+                fingerprint,
+                guidance_core::query::decision_points::RERANK_VERSION,
+                &corpus,
+                guidance_core::read::calibration::RERANK_THRESHOLD,
+                None,
+            ) {
+                Ok(entry) => entry,
+                Err(detail) => {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+            };
+            let path = Path::new(state_dir).join("calibration.json");
+            match guidance_core::read::calibration::store_entry_if_passed(&path, entry, true, "") {
+                Ok(guidance_core::read::calibration::StoreOutcome::Authorized { path }) => {
+                    println!("verdict: AUTHORIZED (entry stored at {path})");
+                }
+                Ok(guidance_core::read::calibration::StoreOutcome::Held { reason }) => {
+                    println!("verdict: HELD ({reason}; nothing stored)");
+                }
+                Err(detail) => {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+            }
+        } else {
+            println!("verdict: HELD (below the bars; nothing stored)");
+        }
     } else {
         eprintln!(
-            "calibrate: unknown point {point} ({TRIAGE_POINT}, {ROUTE_POINT}, {}, {}, {})",
+            "calibrate: unknown point {point} ({TRIAGE_POINT}, {ROUTE_POINT}, {}, {}, {}, {}, {})",
             guidance_core::capability::CAPABILITY_POINT,
             guidance_core::read::calibration::FINDING_POINT,
-            guidance_core::read::calibration::SUPPORT_POINT
+            guidance_core::read::calibration::SUPPORT_POINT,
+            guidance_core::query::decision_points::SCOPE_POINT,
+            guidance_core::query::decision_points::RERANK_POINT
         );
         std::process::exit(2);
     }
+}
+
+/// Pin the model fingerprint to live weights before any run: every
+/// canary case must verify, and the probed signature must equal the
+/// claimed fingerprint. Drift, mismatch, or an unreachable endpoint
+/// holds without storing.
+fn pin_fingerprint_via_canary(
+    backend: &fluent_llm::decision::SystemOneBackend,
+    fingerprint: &str,
+) -> Result<String, String> {
+    use fluent_llm::decision::{
+        canary_signature, canary_suite, verify_canary, DecideBackend, DecideRequest, DecisionKind,
+        DecisionOption,
+    };
+    let mut probed = Vec::new();
+    for case in canary_suite() {
+        let request = DecideRequest {
+            prompt: case.prompt.clone(),
+            state: String::new(),
+            question: case.prompt.clone(),
+            options: case
+                .options
+                .iter()
+                .map(|label| DecisionOption {
+                    label: label.clone(),
+                    description: String::new(),
+                })
+                .collect(),
+            kind: DecisionKind::Choice,
+            version: 1,
+            timeout_ms: 2000,
+            model: "decision".to_string(),
+        };
+        match fluent_llm::client::block_on(backend.decide(request)) {
+            Ok(decision) => match verify_canary(&decision, &case) {
+                Ok(()) => probed.push(decision),
+                Err(drift) => {
+                    return Err(format!(
+                        "canary drift on {}: {}",
+                        drift.case_id, drift.detail
+                    ));
+                }
+            },
+            Err(error) => return Err(format!("canary unreachable: {error}")),
+        }
+    }
+    let probed_fingerprint = canary_signature(&probed);
+    if probed_fingerprint != fingerprint {
+        return Err(format!("fingerprint mismatch: probed {probed_fingerprint}"));
+    }
+    Ok(probed_fingerprint)
 }
 
 /// Preflight a read against shared readiness. Blocked state exits 3 unless
@@ -3289,10 +3697,11 @@ fn readiness_preflight(
             if allow_degraded {
                 eprintln!("degraded: blocked readiness allowed explicitly ({repairs:?})");
             } else {
-                eprintln!("refused: read state is not trustworthy");
+                eprintln!("refused: read state is not trustworthy ({repairs:?})");
                 for repair in repairs {
                     eprintln!("repair: {}", repair.command());
                 }
+                eprintln!("hint: re-run with --allow-degraded to read labelled degraded state");
                 std::process::exit(3);
             }
         }
@@ -3907,6 +4316,8 @@ fn print_fix_handoff(
 /// One decisive summary for humans and agents. The counts are the
 /// contract; `--verbose` adds the per-stage progress lines.
 #[allow(clippy::too_many_arguments)]
+/// One decisive summary for humans and agents. The counts are the
+/// contract; `--verbose` adds the per-stage progress lines.
 fn print_sync_summary(
     files: usize,
     generated: usize,

@@ -84,11 +84,12 @@ fn undefined_callee_labels_unresolved() {
 #[test]
 fn self_only_callee_labels_unique() {
     // One definition site exists (the caller itself): resolution is
-    // certain even though no file edge is contributed, exactly as before.
+    // certain and the definition file stays listed, so same-file
+    // callers resolve instead of dropping on the empty file list.
     let graph = build(&[("/repo/solo.rs", "fn s() {\n    s();\n}\n")]);
     let (resolution, files) = edge_resolution(&graph, "s");
     assert_eq!(resolution, ResolutionMethod::Unique);
-    assert!(files.is_empty());
+    assert_eq!(files, vec!["/repo/solo.rs".to_string()]);
 }
 
 #[test]

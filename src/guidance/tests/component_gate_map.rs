@@ -122,3 +122,41 @@ fn paths_for_package_uses_the_single_entry_table() {
     let paths = crate::component_map::paths_for_package("guidance");
     assert!(paths.contains(&"src/bin/guidance".to_string()), "{paths:?}");
 }
+
+#[test]
+fn scope_names_crate_mentions_without_guessing() {
+    use crate::component_map::scope_packages_for_query;
+    // Exact package, directory, and component mentions resolve.
+    assert_eq!(
+        scope_packages_for_query("where is clean_build_cache in guidance"),
+        vec!["guidance-core".to_string(), "guidance".to_string()]
+    );
+    assert_eq!(
+        scope_packages_for_query("which crate owns calibration in common-core"),
+        // Explicit common-core first; `core` weakly seconds
+        // guidance-core (soft scope: render order only, recall stays
+        // whole).
+        vec!["common-core".to_string(), "guidance-core".to_string()]
+    );
+    // Substring mentions resolve weakly; exact beats weak.
+    let scope = scope_packages_for_query("how does the router ladder work");
+    assert!(
+        scope.contains(&"fluent-router".to_string()),
+        "router names fluent-router: {scope:?}"
+    );
+    // Nothing named: no scope instead of a guess. Recall stays
+    // unscoped rather than filtering on a hallucinated crate.
+    assert!(scope_packages_for_query("which crate owns calibration").is_empty());
+    assert!(scope_packages_for_query("how does sync decide what to reprocess").is_empty());
+    // Control-shaped nonsense stays silent.
+    assert!(scope_packages_for_query("files in crate qqqNoSuchCrate").is_empty());
+    // At most two packages, strongest first; ties keep table order
+    // (common-core heads the table; `router` exactly names src/router's
+    // directory, so fluent-router outranks guidance-core by position).
+    let scope = scope_packages_for_query("guidance common-core router sync");
+    assert_eq!(
+        scope,
+        vec!["common-core".to_string(), "fluent-router".to_string()],
+        "{scope:?}"
+    );
+}

@@ -87,7 +87,7 @@ RUST_SRC_DIR := src
 GUIDANCE_DIR  := .guidance
 GUIDANCE_DB   := .guidance.db
 ENV_DIR      := .env
-HASH_DIR     := $(ENV_DIR)/.make_hashes
+HASH_DIR     := $(GUIDANCE_DIR)/src
 
 # Verbosity control: V=1 enables shell echo. Gate logs live in GATE_LOG_DIR.
 V ?= 0

@@ -1133,6 +1133,7 @@ fn answer_read_question(
         limit: 10,
         budget_override: None,
         no_llm: true,
+        include_fixtures: false,
     };
     let coverage = crate::read::readiness::Coverage::empty();
     let context = ExplainContext {

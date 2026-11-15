@@ -1,0 +1,3 @@
+{"control":true,"golden_facts":[],"id":"control-scope-nonexistent-crate","intent":"orientation","query":"Which files belong to crate qqqNoSuchCrate under glob src/qqqNoSuchCrate/**?","relevant":[],"required_sections":[],"split":"heldout"}
+{"control":true,"golden_facts":[],"id":"control-scope-fixture-term","intent":"orientation","query":"How does the zzqy fixture subsystem scope to src/zzqy/**?","relevant":[],"required_sections":[],"split":"heldout"}
+{"control":true,"golden_facts":[],"id":"control-scope-eval-leak","intent":"orientation","query":"What does doc/guidance/eval scope to under src/eval/**?","relevant":[],"required_sections":[],"split":"heldout"}

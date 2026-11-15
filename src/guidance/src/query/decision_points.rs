@@ -18,6 +18,8 @@ pub const SUFFICIENCY_POINT: &str = "sufficiency";
 pub const EXCERPT_POINT: &str = "excerpt";
 pub const STALENESS_POINT: &str = "staleness";
 pub const SUMMARY_INDEX_POINT: &str = "summary_index";
+pub const SCOPE_POINT: &str = "scope";
+pub const RERANK_POINT: &str = "rerank";
 
 /// Question version 2: the options cover the ambiguous read-plane
 /// intents (`Graph`, `Ownership`, `Orientation`, `Provenance`
@@ -28,6 +30,11 @@ pub const SUFFICIENCY_VERSION: u64 = 1;
 pub const EXCERPT_VERSION: u64 = 1;
 pub const STALENESS_VERSION: u64 = 1;
 pub const SUMMARY_INDEX_VERSION: u64 = 1;
+/// Scope hypothesis version: choice over candidate crates/domains.
+pub const SCOPE_VERSION: u64 = 1;
+/// Rerank version: bounded relevance choice over one candidate.
+/// Bumped only with a recorded reason; the registry key pins it.
+pub const RERANK_VERSION: u64 = 1;
 
 fn spec(
     id: &str,
@@ -153,10 +160,91 @@ pub fn summary_index_spec() -> QuestionSpec {
 /// Fingerprint binding a summary-index authorization to the model and
 /// prompt that produced the measured summaries.
 #[must_use]
-/// Fingerprint binding a summary-index authorization to the model and
+/// Fingerprint binding a summary-index authorization to a model and
 /// prompt that produced the measured summaries.
 pub fn summary_index_fingerprint(model: &str) -> String {
     format!("{model}@prompt-v{}", crate::summary::SUMMARY_PROMPT_VERSION)
+}
+
+/// Scope hypothesis: bounded choice over candidate crates/domains.
+/// Options are caller-shaped crate names (max 10, single tokens);
+/// the generative role contributes only term lists that fill the
+/// state as data, never as instruction text.
+#[must_use]
+/// Scope hypothesis: bounded choice over candidate crates/domains.
+/// Options are caller-shaped crate names (max 10, single tokens);
+/// the generative role contributes only term lists that fill the
+/// state as data, never as instruction text.
+pub fn scope_spec(crates: &[String]) -> QuestionSpec {
+    let mut options: Vec<String> = crates.iter().take(10).cloned().collect();
+    if options.is_empty() {
+        options.push("unknown".to_string());
+    }
+    spec(
+        SCOPE_POINT,
+        SCOPE_VERSION,
+        "choice",
+        "Which crate owns this query?",
+        &options.join(","),
+        0.9,
+        0.7,
+        2000,
+    )
+}
+
+/// Scope state payload: funnel terms plus crate cards as data.
+/// Repo text never enters instruction slots (template, options,
+/// question are caller-shaped); state is the only untrusted slot.
+#[must_use]
+/// Scope state payload: funnel terms plus crate cards as data.
+/// Repo text never enters instruction slots (template, options,
+/// question are caller-shaped); state is the only untrusted slot.
+pub fn scope_state(query: &str, funnel_terms: &[String], crates: &[String]) -> String {
+    format!(
+        "Query: {query}\nTerms: {}\nCrates: {}",
+        funnel_terms.join(", "),
+        crates.join(", ")
+    )
+}
+
+/// Rerank relevance choice: the pinned rubric over one candidate.
+/// Options are the fixed three-label verdict set (bounded by
+/// construction); the scope payload fills state, never options or
+/// template (repo text stays out of instruction slots).
+#[must_use]
+/// Rerank relevance choice: the pinned rubric over one candidate.
+/// Options are the fixed three-label verdict set (bounded by
+/// construction); the scope payload fills state, never options or
+/// template (repo text stays out of instruction slots).
+pub fn rerank_spec() -> QuestionSpec {
+    spec(
+        RERANK_POINT,
+        RERANK_VERSION,
+        "choice",
+        "Is this finding relevant to the query?",
+        "relevant,irrelevant,insufficient",
+        0.9,
+        0.7,
+        5000,
+    )
+}
+
+/// Rerank state payload: query plus scope plus excerpt as data.
+/// The scope crate is one bounded token; excerpts stay verbatim.
+#[must_use]
+/// Rerank state payload: query plus scope plus excerpt as data.
+/// The scope crate is one bounded token; excerpts stay verbatim.
+pub fn rerank_state(query: &str, scope_crate: &str, excerpt: &str) -> String {
+    format!("Query: {query}\nScope: {scope_crate}\nFinding: {excerpt}")
+}
+
+/// Fail-closed rerank authorization: hard drops wait for a passing
+/// entry on all three keys; anything else stays rank-only.
+#[must_use]
+/// Fail-closed rerank authorization: hard drops wait for a passing
+/// entry on all three keys; anything else stays rank-only.
+pub fn rerank_authorized(registry: &CalibrationRegistry, fingerprint: &str) -> CalibrationStatus {
+    authorize_point_with(registry, RERANK_POINT, fingerprint, RERANK_VERSION)
 }
 
 /// Fail-closed authorization: a passing entry on all three keys
@@ -238,6 +326,15 @@ pub fn authorize_point_pinned_with(
     dataset: &str,
 ) -> CalibrationStatus {
     authorize_pinned(registry, point, fingerprint, version, dataset)
+}
+
+/// Fail-closed scope authorization: hard filters wait for a passing
+/// entry on all three keys; anything else stays rank-prior only.
+#[must_use]
+/// Fail-closed scope authorization: hard filters wait for a passing
+/// entry on all three keys; anything else stays rank-prior only.
+pub fn scope_authorized(registry: &CalibrationRegistry, fingerprint: &str) -> CalibrationStatus {
+    authorize_point_with(registry, SCOPE_POINT, fingerprint, SCOPE_VERSION)
 }
 
 /// Fingerprint-scoped cache key for one decision evaluation.
@@ -588,6 +685,10 @@ pub struct DecisionMetricsSnapshot {
 #[cfg(test)]
 #[path = "../../tests/decision_points.rs"]
 mod decision_points_tests;
+
+#[cfg(test)]
+#[path = "../../tests/scope_hypothesis.rs"]
+mod scope_hypothesis_tests;
 
 #[cfg(test)]
 #[path = "../../tests/sufficiency_decision.rs"]

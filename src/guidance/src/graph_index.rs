@@ -431,13 +431,13 @@ impl GraphIndex {
             for symbol in &harvested.symbols {
                 for callee in &symbol.calls {
                     let defs = symbol_defs.get(callee);
+                    // Every definition file counts for call resolution:
+                    // a caller usually lives beside its callee, and
+                    // dropping same-file definitions blinds `callers`
+                    // to the common case. File-dependency edges stay
+                    // cross-file so the dep graph never self-loops.
                     let callee_files: Vec<String> = defs
-                        .map(|defs| {
-                            defs.iter()
-                                .map(|def| def.file.clone())
-                                .filter(|file| file != path)
-                                .collect()
-                        })
+                        .map(|defs| defs.iter().map(|def| def.file.clone()).collect())
                         .unwrap_or_default();
                     // Count sites, not surviving files: a self-only name
                     // is certain (one site) even with no file edge.
@@ -447,10 +447,12 @@ impl GraphIndex {
                         count => ResolutionMethod::Homonym { count },
                     };
                     for target in &callee_files {
-                        file_deps
-                            .entry(path.clone())
-                            .or_default()
-                            .insert(target.clone());
+                        if target != path {
+                            file_deps
+                                .entry(path.clone())
+                                .or_default()
+                                .insert(target.clone());
+                        }
                     }
                     call_edges.push(CallEdge {
                         caller_file: path.clone(),

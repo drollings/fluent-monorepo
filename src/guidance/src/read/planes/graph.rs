@@ -222,6 +222,138 @@ impl GraphPlane {
     pub fn index(&self) -> &GraphIndex {
         &self.index
     }
+
+    /// Scope-owned definitions of one symbol: (query form, file)
+    /// pairs whose file sits under a scope prefix. Empty means the
+    /// scope names no definition — the caller falls back to the
+    /// unscoped planes, never to nothing.
+    fn defs_in_scope(&self, symbol: &str, prefixes: &[String]) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for form in Self::forms(symbol) {
+            for def in self.index.definitions_of(&form) {
+                if Self::scope_file_matches(prefixes, &def.file)
+                    && seen.insert((form.clone(), def.file.clone()))
+                {
+                    out.push((form.clone(), def.file.clone()));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Stored file rows matching any scope prefix. Roots differ by
+    /// store (absolute workspace paths in fixtures, `./`-relative in
+    /// the shipped index), so leading segments strip until the
+    /// remainder stays scoped — the same dual-spelling tolerance as
+    /// the glob matcher. Boundary matching keeps `src/guidance` from
+    /// swallowing `src/guidance-foo`.
+    fn scope_file_matches(prefixes: &[String], file: &str) -> bool {
+        let mut path = file.trim_start_matches("./");
+        loop {
+            if prefixes.iter().any(|prefix| {
+                let root = prefix.trim_start_matches("./").trim_end_matches('/');
+                path == root || path.starts_with(&format!("{root}/"))
+            }) {
+                return true;
+            }
+            match path.split_once('/') {
+                Some((_, rest)) if rest.contains('/') => path = rest,
+                _ => return false,
+            }
+        }
+    }
+
+    /// Callers located in scope: call sites under a scope prefix
+    /// naming the symbol, with the usual resolution tiers. Location
+    /// narrows; identity still resolves globally, so calls into an
+    /// imported (out-of-scope-defined) symbol keep their rows.
+    #[must_use]
+    pub fn callers_in_scope(
+        &self,
+        symbol: &str,
+        filter: CallerFilter,
+        prefixes: &[String],
+    ) -> Vec<CallSite> {
+        if Self::forms(symbol).is_empty() {
+            return Vec::new();
+        }
+        let defs: std::collections::HashSet<String> = Self::forms(symbol)
+            .into_iter()
+            .flat_map(|form| {
+                self.index
+                    .definitions_of(&form)
+                    .iter()
+                    .map(|def| def.file.clone())
+            })
+            .collect();
+        let terminal = crate::read::planes::symbol::normalize_symbol_query(symbol)
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+        let mut out: Vec<CallSite> = self
+            .index
+            .call_edges()
+            .iter()
+            .filter(|edge| {
+                terminal.contains(&edge.callee)
+                    && !edge.callee_files.is_empty()
+                    && (defs.is_empty() || edge.callee_files.iter().any(|file| defs.contains(file)))
+                    && Self::scope_file_matches(prefixes, &edge.caller_file)
+                    && !filter.excludes(&edge.caller_file)
+            })
+            .map(CallSite::from_edge)
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// Callees recorded at scope-owned definition sites.
+    #[must_use]
+    pub fn callees_in_scope(&self, symbol: &str, prefixes: &[String]) -> Vec<Callee> {
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (form, file) in self.defs_in_scope(symbol, prefixes) {
+            if let Some(calls) = self.calls_by_symbol.get(&(form, file.clone())) {
+                for callee in calls {
+                    if seen.insert((file.clone(), callee.clone())) {
+                        out.push(Callee {
+                            file: file.clone(),
+                            name: callee.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        out.sort_by(|a, b| (&a.file, &a.name).cmp(&(&b.file, &b.name)));
+        out
+    }
+
+    /// Dependent files seeded from scope-owned definitions: the
+    /// closure, files calling the symbol in scope, and the scope-owned
+    /// defining files themselves.
+    #[must_use]
+    pub fn dependents_in_scope(&self, symbol: &str, prefixes: &[String]) -> Vec<String> {
+        let seeds: Vec<String> = self
+            .defs_in_scope(symbol, prefixes)
+            .into_iter()
+            .map(|(_, file)| file)
+            .collect();
+        if seeds.is_empty() {
+            return Vec::new();
+        }
+        let mut files: std::collections::HashSet<String> = seeds.iter().cloned().collect();
+        for dependent in self.index.dependents_closure(&seeds) {
+            files.insert(dependent);
+        }
+        for site in self.callers_in_scope(symbol, CallerFilter::default(), prefixes) {
+            files.insert(site.file);
+        }
+        let mut out: Vec<String> = files.into_iter().collect();
+        out.sort();
+        out
+    }
 }
 
 impl CallSite {

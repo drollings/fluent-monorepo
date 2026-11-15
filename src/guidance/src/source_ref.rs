@@ -77,6 +77,7 @@ impl SourceRef {
             end,
             stale: false,
             unverified: false,
+            digest: String::new(),
         }
     }
 }
@@ -101,6 +102,9 @@ pub struct Citation {
     pub stale: bool,
     /// The excerpt could not be verified against the stored row.
     pub unverified: bool,
+    /// Digest of the served excerpt (`blake3_hex`, same scheme as
+    /// project cards). Binds the stamp to the rendered text.
+    pub digest: String,
 }
 
 impl Citation {
@@ -109,6 +113,14 @@ impl Citation {
     pub fn with_status(mut self, stale: bool, unverified: bool) -> Self {
         self.stale = stale;
         self.unverified = unverified;
+        self
+    }
+
+    /// Stamp the served-excerpt digest (`blake3_hex` of the rendered
+    /// text, same scheme as project cards).
+    #[must_use]
+    pub fn with_digest(mut self, digest: String) -> Self {
+        self.digest = digest;
         self
     }
 
@@ -155,3 +167,7 @@ fn normalize(path: &str) -> String {
 #[cfg(test)]
 #[path = "../tests/source_ref.rs"]
 mod source_ref_tests;
+
+#[cfg(test)]
+#[path = "../tests/citation_truth.rs"]
+mod citation_truth_tests;

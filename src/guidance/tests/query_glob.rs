@@ -131,3 +131,110 @@ fn m1_glob_absolute_detection_matrix() {
     assert!(!is_absolute_path_pattern("C:x"));
     assert!(!is_absolute_path_pattern(""));
 }
+
+#[test]
+fn stripped_root_glob_selects_workspace_relative_rows() {
+    // The bin normalizer strips a leading indexing root (`src/…` →
+    // `…`); the matcher must still select workspace-relative rows.
+    let row = "src/bin/guidance/src/main.rs";
+    assert!(ripgrep_glob_matches("bin/guidance/**", row));
+    assert!(path_pattern_matches("bin/guidance/src/main.rs", row));
+    assert!(matches_ordered_globs(
+        row,
+        &["bin/guidance/**".to_string()],
+        &[]
+    ));
+    assert!(!ripgrep_glob_matches("bin/other/**", row));
+    assert!(!path_pattern_matches("bin/other", row));
+}
+
+#[test]
+fn compiled_filter_matches_per_call_path() {
+    // Equivalence over patterns × paths: the precompiled filter used
+    // by recall agrees with the per-call predicates everywhere.
+    use super::FileTypePatterns;
+    let patterns = [
+        "src/**",
+        "bin/guidance/**",
+        "src/bin/guidance/src/main.rs",
+        "bin/guidance/src/main.rs",
+        "**/main.rs",
+        "nomatch_xyz/**",
+        "!src/docs/**",
+    ];
+    let paths = [
+        "src/bin/guidance/src/main.rs",
+        "src/guidance/src/query/glob.rs",
+        "src/docs/x.md",
+        "src/main.rs",
+        "README.md",
+    ];
+    let empty_types = FileTypePatterns {
+        include: Vec::new(),
+        exclude: Vec::new(),
+    };
+    for pattern in patterns {
+        let raw = [pattern.to_string()];
+        let compiled = super::CompiledOrderedGlobs::new(&raw, &[]);
+        for path in paths {
+            assert_eq!(
+                compiled.matches(path),
+                super::matches_ordered_globs(path, &raw, &[]),
+                "ordered walk agrees for {pattern:?} on {path:?}"
+            );
+            assert_eq!(
+                super::CompiledPattern::path(pattern).matches(path),
+                super::path_pattern_matches(pattern, path),
+                "path spelling agrees for {pattern:?} on {path:?}"
+            );
+            assert_eq!(
+                super::CompiledPattern::ripgrep(pattern, false).matches(path),
+                super::ripgrep_glob_matches(pattern, path),
+                "ripgrep spelling agrees for {pattern:?} on {path:?}"
+            );
+        }
+        let filter = super::CompiledFileFilter::new(&[], &[], &raw, &[], &empty_types);
+        for path in paths {
+            assert_eq!(
+                filter.matches(path),
+                super::matches_file_selection(path, &raw, &[], &empty_types),
+                "file filter agrees for {pattern:?} on {path:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn compiled_filter_builds_regexes_once() {
+    // The precompile-once contract, race-free: the filter reports its
+    // own regex count, fixed at construction no matter how many files
+    // are matched. Two patterns here compile six regexes: the `/**`
+    // glob builds match and parent rules for both spellings (4), the
+    // excluded file builds one regex per spelling (2).
+    let mut paths = Vec::new();
+    for index in 0..50 {
+        paths.push(format!("src/crate_a/f{index}.rs"));
+    }
+    let raw = [
+        "src/crate_a/**".to_string(),
+        "!src/crate_a/f0.rs".to_string(),
+    ];
+    let filter = super::CompiledFileFilter::new(
+        &[],
+        &[],
+        &raw,
+        &[],
+        &super::FileTypePatterns {
+            include: Vec::new(),
+            exclude: Vec::new(),
+        },
+    );
+    assert_eq!(filter.regex_count(), 6);
+    let matched = paths.iter().filter(|path| filter.matches(path)).count();
+    assert_eq!(matched, 49, "negation drops exactly one file");
+    assert_eq!(
+        filter.regex_count(),
+        6,
+        "matching files builds no further regexes"
+    );
+}

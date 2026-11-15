@@ -278,6 +278,7 @@ pub struct Escalation {
 
 /// Per-file residual diagnostics after the last fix attempt.
 #[derive(Debug, Clone, Default)]
+/// Per-file residual diagnostics after the last fix attempt.
 pub struct FileFeedback {
     /// File path, as passed in.
     pub file: String,
@@ -289,6 +290,7 @@ pub struct FileFeedback {
 
 /// Package-level failure that could not be attributed to one file.
 #[derive(Debug, Clone, Default)]
+/// Package-level failure that could not be attributed to one file.
 pub struct PackageFailure {
     /// Package directory.
     pub package: String,

@@ -34,13 +34,11 @@ impl Formatter for MarkdownFormatter {
                 StageKind::NotFound => "Not Found",
                 StageKind::CapabilityDoc => "Capability",
             };
-            let _ = write!(out, "## {kind}\n\n");
-            let _ = write!(
-                out,
-                "*Source: {}:{}*\n\n",
-                stage.source,
-                stage.line.unwrap_or(0)
-            );
+            let _ = write!(out, "## {kind}\n\n*Source: {}", stage.source);
+            if let Some(line) = stage.line {
+                let _ = write!(out, ":{line}");
+            }
+            let _ = write!(out, "*\n\n");
             out.push_str(&stage.content);
             out.push_str("\n\n---\n\n");
         }
@@ -96,12 +94,14 @@ impl Formatter for DebugFormatter {
         for (i, stage) in stages.iter().enumerate() {
             let kind_str = format!("{:?}", stage.kind);
             let _ = writeln!(out, "[{}. {}]", i + 1, kind_str);
-            let _ = writeln!(
-                out,
-                "  Source: {}:{}",
-                stage.source,
-                stage.line.unwrap_or(0)
-            );
+            match stage.line {
+                Some(line) => {
+                    let _ = writeln!(out, "  Source: {}:{line}", stage.source);
+                }
+                None => {
+                    let _ = writeln!(out, "  Source: {}", stage.source);
+                }
+            }
             let preview: String = stage.content.chars().take(120).collect();
             let _ = writeln!(
                 out,

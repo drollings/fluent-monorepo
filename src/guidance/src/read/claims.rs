@@ -149,6 +149,23 @@ pub fn constrain_answer_to_evidence(
     answer: &str,
     snippets: &[(String, String, u32, u32, String)],
 ) -> String {
+    constrain_answer_to_evidence_with_cards(answer, snippets, &[])
+}
+
+/// Card-aware constrain: citations naming a shown card (verified
+/// doc or project card) are whole-card citations — the path alone
+/// binds, with no line range to check. Snippet spans rule code.
+/// Capability briefs stay snippet-side: `considered` until calibrated.
+#[must_use]
+/// Card-aware constrain: citations naming a shown card (verified
+/// doc or project card) are whole-card citations — the path alone
+/// binds, with no line range to check. Snippet spans rule code.
+/// Capability briefs stay snippet-side: `considered` until calibrated.
+pub fn constrain_answer_to_evidence_with_cards(
+    answer: &str,
+    snippets: &[(String, String, u32, u32, String)],
+    card_paths: &[String],
+) -> String {
     fn suffixes(path: &str) -> Vec<&str> {
         let mut out = vec![path];
         let mut rest = path;
@@ -220,6 +237,13 @@ pub fn constrain_answer_to_evidence(
     }
     let mut violated = false;
     for (path, start, end) in cited_spans(answer) {
+        // Whole-card citations cover their path with no range check.
+        if card_paths
+            .iter()
+            .any(|card| suffixes(card).iter().any(|suffix| *suffix == path))
+        {
+            continue;
+        }
         let known = snippets
             .iter()
             .any(|(_, file, _, _, _)| suffixes(file).iter().any(|suffix| *suffix == path));
@@ -245,6 +269,9 @@ pub fn constrain_answer_to_evidence(
     );
     for (_, file, start, end, _) in snippets {
         let _ = std::fmt::Write::write_fmt(&mut out, format_args!("- {file}:{start}-{end}\n"));
+    }
+    for card in card_paths {
+        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("- {card}\n"));
     }
     out
 }

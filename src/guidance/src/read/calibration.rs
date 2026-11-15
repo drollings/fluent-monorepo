@@ -20,6 +20,26 @@ pub const SUPPORT_POINT: &str = "support";
 pub const FINDING_QUESTION_VERSION: u64 = 1;
 pub const SUPPORT_QUESTION_VERSION: u64 = 1;
 
+/// Scope/rerank bars: default floors (precision ≥ 0.90, FPR ≤ 0.05,
+/// zero control fires) plus a per-point recall floor. Changes need
+/// a recorded reason.
+pub const SCOPE_BARS: TaskBars = TaskBars {
+    min_precision: 0.90,
+    max_fpr: 0.05,
+    min_recall: 0.80,
+};
+
+/// Rerank bars: same default floors plus its own recall floor.
+pub const RERANK_BARS: TaskBars = TaskBars {
+    min_precision: 0.90,
+    max_fpr: 0.05,
+    min_recall: 0.80,
+};
+
+/// Operating thresholds: binary 1.0/0.0 task-value scores fire at 1.0.
+pub const SCOPE_THRESHOLD: f64 = 1.0;
+pub const RERANK_THRESHOLD: f64 = 1.0;
+
 /// Task-value bars for one scored gate: precision floor, FPR ceiling,
 /// recall floor, and zero control fires (enforced separately — a
 /// control firing vetoes promotion even when the sweep is clean).
@@ -815,6 +835,206 @@ pub fn support_corpus(
     }
 }
 
+/// One hand-labelled scope row: the task-value goldens for the scope
+/// point. Control rows must hypothesize nothing (`unknown`); any
+/// listed crate on a control is a must-NOT-fire violation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// One hand-labelled scope row: the task-value goldens for the scope
+/// point. Control rows must hypothesize nothing (`unknown`); any
+/// listed crate on a control is a must-NOT-fire violation.
+pub struct LabeledScope {
+    /// Stable case id.
+    pub id: String,
+    /// Question the scope hypothesis answers.
+    pub query: String,
+    /// Owning crate, or `unknown` on controls.
+    pub expected_crate: String,
+    /// Control rows must never hypothesize a listed crate.
+    pub control: bool,
+}
+
+/// Parse the scope eval corpus (one JSON object per line). Unknown
+/// ids/queries reject the file; controls must expect `unknown` and
+/// non-controls must name a crate — a mislabelled gold set must
+/// fail loudly, never calibrate quietly.
+pub fn parse_labeled_scopes(text: &str) -> Result<Vec<LabeledScope>, String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value =
+            serde_json::from_str(line).map_err(|error| format!("line {}: {error}", index + 1))?;
+        let id = value
+            .get("id")
+            .and_then(|id| id.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if id.is_empty() {
+            return Err(format!("line {}: missing `id`", index + 1));
+        }
+        if !seen.insert(id.clone()) {
+            return Err(format!("line {}: duplicate id `{id}`", index + 1));
+        }
+        let query = value
+            .get("query")
+            .and_then(|query| query.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if query.trim().is_empty() {
+            return Err(format!("line {}: missing `query`", index + 1));
+        }
+        let expected_crate = value
+            .get("expected_crate")
+            .and_then(|crate_name| crate_name.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let control = value
+            .get("control")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if control && expected_crate != "unknown" {
+            return Err(format!(
+                "line {}: controls must expect `unknown`",
+                index + 1
+            ));
+        }
+        if !control && (expected_crate.is_empty() || expected_crate == "unknown") {
+            return Err(format!(
+                "line {}: non-controls must name a crate",
+                index + 1
+            ));
+        }
+        out.push(LabeledScope {
+            id,
+            query,
+            expected_crate,
+            control,
+        });
+    }
+    Ok(out)
+}
+
+/// Load the scope corpus from disk.
+pub fn load_labeled_scopes(path: &std::path::Path) -> Result<Vec<LabeledScope>, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|error| format!("scope corpus read {}: {error}", path.display()))?;
+    parse_labeled_scopes(&raw)
+}
+
+/// Scope-hypothesis score: 1.0 when the verdict names the expected
+/// crate; controls fire (1.0) on any listed crate and stay silent
+/// (0.0) on `unknown`. Discrete by construction — the gate measures
+/// hypothesis accuracy, not a ranking sweep.
+#[must_use]
+/// Scope-hypothesis score: 1.0 when the verdict names the expected
+/// crate; controls fire (1.0) on any listed crate and stay silent
+/// (0.0) on `unknown`. Discrete by construction — the gate measures
+/// hypothesis accuracy, not a ranking sweep.
+pub fn scope_label_score(label: &str, expected_crate: &str, control: bool) -> f64 {
+    if control {
+        f64::from(label != "unknown")
+    } else {
+        f64::from(label == expected_crate)
+    }
+}
+
+/// Score scope rows through one hypothesis producer (judge labels in
+/// production calibration, scripted labels for harness checks).
+#[must_use]
+/// Score scope rows through one hypothesis producer (judge labels in
+/// production calibration, scripted labels for harness checks).
+pub fn score_scopes(
+    rows: &[LabeledScope],
+    mut hypothesize: impl FnMut(&LabeledScope) -> String,
+) -> Vec<fluent_llm::decision::ScoredCase> {
+    let provenance = eval_provenance();
+    rows.iter()
+        .map(|row| fluent_llm::decision::ScoredCase {
+            score: scope_label_score(&hypothesize(row), &row.expected_crate, row.control),
+            expected: !row.control,
+            control: row.control,
+            provenance: provenance.clone(),
+        })
+        .collect()
+}
+
+/// Measure scope rows through one hypothesis producer at the scope
+/// operating point.
+#[must_use]
+/// Measure scope rows through one hypothesis producer at the scope
+/// operating point.
+pub fn measure_scope(
+    rows: &[LabeledScope],
+    hypothesize: impl FnMut(&LabeledScope) -> String,
+) -> GateVerdict {
+    let cases = score_scopes(rows, hypothesize);
+    gate_scored_cases(&cases, SCOPE_THRESHOLD, &SCOPE_BARS)
+}
+
+/// Build the registry corpus for the scope point.
+#[must_use]
+/// Build the registry corpus for the scope point.
+pub fn scope_corpus(
+    cases: Vec<fluent_llm::decision::ScoredCase>,
+    model_fingerprint: &str,
+    dataset_hash: &str,
+    source: &str,
+) -> fluent_llm::decision::Corpus {
+    fluent_llm::decision::Corpus {
+        point: crate::query::decision_points::SCOPE_POINT.to_string(),
+        model_fingerprint: model_fingerprint.to_string(),
+        question_version: crate::query::decision_points::SCOPE_VERSION,
+        provenance: fluent_llm::decision::CorpusProvenance {
+            source: source.to_string(),
+            labeller: "guidance calibrate".to_string(),
+            date: crate::scorecard::today_utc(),
+            dataset: dataset_hash.to_string(),
+        },
+        cases,
+    }
+}
+
+/// Measure rerank rows through one scorer at the rerank operating
+/// point. Rerank reuses the finding label shape: relevance decides
+/// demotion, and calibration measures the same verdicts.
+#[must_use]
+/// Measure rerank rows through one scorer at the rerank operating
+/// point. Rerank reuses the finding label shape: relevance decides
+/// demotion, and calibration measures the same verdicts.
+pub fn measure_rerank(
+    rows: &[LabeledFinding],
+    scorer: impl FnMut(&LabeledFinding) -> f64,
+) -> GateVerdict {
+    let cases = score_findings(rows, scorer);
+    gate_scored_cases(&cases, RERANK_THRESHOLD, &RERANK_BARS)
+}
+
+/// Build the registry corpus for the rerank point.
+#[must_use]
+/// Build the registry corpus for the rerank point.
+pub fn rerank_corpus(
+    cases: Vec<fluent_llm::decision::ScoredCase>,
+    model_fingerprint: &str,
+    dataset_hash: &str,
+    source: &str,
+) -> fluent_llm::decision::Corpus {
+    fluent_llm::decision::Corpus {
+        point: crate::query::decision_points::RERANK_POINT.to_string(),
+        model_fingerprint: model_fingerprint.to_string(),
+        question_version: crate::query::decision_points::RERANK_VERSION,
+        provenance: fluent_llm::decision::CorpusProvenance {
+            source: source.to_string(),
+            labeller: "guidance calibrate".to_string(),
+            date: crate::scorecard::today_utc(),
+            dataset: dataset_hash.to_string(),
+        },
+        cases,
+    }
+}
+
 #[cfg(test)]
 #[path = "../../tests/calibration_intent.rs"]
 mod calibration_intent_tests;
@@ -830,3 +1050,7 @@ mod calibration_support_tests;
 #[cfg(test)]
 #[path = "../../tests/calibration_capability.rs"]
 mod calibration_capability_tests;
+
+#[cfg(test)]
+#[path = "../../tests/calibration_scope_rerank.rs"]
+mod calibration_scope_rerank_tests;

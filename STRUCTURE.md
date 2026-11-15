@@ -197,7 +197,7 @@ Then you you must read
     │   │   │   ├── index_cmd.rs  # `index` command (P5): thin shell over...
     │   │   │   ├── main.rs
     │   │   │   ├── mcp.rs  # MCP (Model Context Protocol) server f...
-    │   │   │   ├── profile.rs  # Opt-in phase timing: `GUIDANCE_PROFIL...
+    │   │   │   ├── profile.rs
     │   │   │   ├── search.rs  # `search` command (P5): thin shell ove...
     │   │   │   ├── structure.rs
     │   │   │   └── summarize_cmd.rs  # `summarize` command (M5.7): backgroun...
@@ -222,6 +222,7 @@ Then you you must read
     │   │       ├── search_cmd.rs  # //! Unit tests for the `search` command 
     │   │       ├── strict_verify.rs  # //! Strict-mode and per-file verify gold
     │   │       ├── summarize_cli.rs  # //! `summarize` command contract: additi
+    │   │       ├── sync_fix_harness.rs  # //! `sync` as the maintenance harness: f
     │   │       ├── sync_propagate.rs  # //! M3 acceptance: stale-dependent propa
     │   │       └── truth_cli.rs  # //! Truth-model wiring goldens: generati
     │   └── yamake-coral/
@@ -711,6 +712,58 @@ Then you you must read
     │   │   ├── i_user.rs
     │   │   ├── u_callee.rs
     │   │   └── u_caller.rs
+    │   ├── fixture_read/
+    │   │   ├── Cargo.toml
+    │   │   ├── README.md  # # Fixture Workspace
+    │   │   ├── doc/
+    │   │   │   ├── capabilities/
+    │   │   │   │   └── corpus.json
+    │   │   │   └── guidance/
+    │   │   │       ├── CALIBRATION.md  # # Calibration
+    │   │   │       ├── CAPABILITY_SUMMARIES.md  # # Capability summaries
+    │   │   │       └── VISION.md  # # Vision
+    │   │   └── src/
+    │   │       ├── bin/
+    │   │       │   └── guidance/
+    │   │       │       └── src/
+    │   │       │           ├── benchmark.rs  # Benchmark: shipping explain vs target...
+    │   │       │           ├── index_cmd.rs  # Index command: run the scoped indexer.
+    │   │       │           └── main.rs  # Command entry: clean, sync, and expla...
+    │   │       ├── common-core/
+    │   │       │   ├── Cargo.toml
+    │   │       │   └── src/
+    │   │       │       ├── calibration.rs  # Shared calibration primitives: the re...
+    │   │       │       └── cite.rs  # Citations: hash-verified source ranges.
+    │   │       ├── guidance/
+    │   │       │   ├── Cargo.toml
+    │   │       │   ├── README.md  # # Guidance Core
+    │   │       │   └── src/
+    │   │       │       ├── capability.rs  # External capability corpus: consume, ...
+    │   │       │       ├── freshness.rs  # Freshness verdicts: mtime skew plus c...
+    │   │       │       ├── graph_index.rs  # Syntactic call graph: unique, homonym...
+    │   │       │       ├── grounding.rs  # Hash-verified citations over live bytes.
+    │   │       │       ├── index_generation.rs  # Generation guard: refuse mixed reads.
+    │   │       │       ├── index_pipeline.rs  # Index pipeline: fragment embeddings o...
+    │   │       │       ├── invalidation.rs  # Sig-gated invalidation: interface cha...
+    │   │       │       ├── query/
+    │   │       │       │   ├── capability_match.rs  # Capability match: SVO overlap over fu...
+    │   │       │       │   ├── decision_points.rs  # Decision points: rule, then cache, th...
+    │   │       │       │   ├── fusion.rs  # Fusion: RRF over ranked routes (k=60).
+    │   │       │       │   ├── hybrid.rs  # Hybrid pipeline: how the query pipeli...
+    │   │       │       │   ├── recall.rs  # Fused recall: FTS, vector, and lemma ...
+    │   │       │       │   └── vector_backend.rs  # Vector recall over stored fragment ve...
+    │   │       │       ├── sync/
+    │   │       │       │   └── staleness.rs  # Staleness: stored hashes against live...
+    │   │       │       └── sync_engine.rs  # Sync engine: Convergence of the mirro...
+    │   │       ├── llm/
+    │   │       │   └── src/
+    │   │       │       └── decision/
+    │   │       │           └── registry.rs  # Decision registry: precision and cont...
+    │   │       └── search-vector/
+    │   │           ├── Cargo.toml
+    │   │           └── src/
+    │   │               └── db/
+    │   │                   └── capabilities.rs  # Capabilities table: external cards wi...
     │   ├── scorecard_baseline.json
     │   ├── src/
     │   │   ├── ast_parser.rs
@@ -722,6 +775,7 @@ Then you you must read
     │   │   ├── config.rs
     │   │   ├── coordinator.rs  # P3 index coordinator: watcher batches...
     │   │   ├── diff.rs  # P2 diff: scanned files vs stored reco...
+    │   │   ├── eval.rs  # Independent natural-language evaluati...
     │   │   ├── extractor/
     │   │   │   ├── adapter.rs  # P2 language adapters (port of `extrac...
     │   │   │   ├── code.rs  # P2 code extraction (port of `extracti...
@@ -772,7 +826,7 @@ Then you you must read
     │   │   │   ├── mod.rs
     │   │   │   ├── plan.rs  # Search-plan validation: closed-enum m...
     │   │   │   ├── recall.rs  # Hybrid recall pipeline: plan validati...
-    │   │   │   ├── rerank.rs  # LLM reranker response parsing: ordere...
+    │   │   │   ├── rerank.rs  # Single rerank seam over code findings...
     │   │   │   ├── rg_backend.rs  # L0 minimal: capability-gated managed-...
     │   │   │   ├── search_backend.rs
     │   │   │   ├── shadow.rs  # Shadow decision hooks for the guidanc...
@@ -782,6 +836,27 @@ Then you you must read
     │   │   │   ├── vector_backend.rs  # Vector backend: single-route embeddin...
     │   │   │   └── writer.rs  # Unified fragment writer: item chunks ...
     │   │   ├── query_engine.rs
+    │   │   ├── read/
+    │   │   │   ├── budget.rs  # Per-intent token budgets for the read...
+    │   │   │   ├── calibration.rs  # Task-value calibration for the read p...
+    │   │   │   ├── claims.rs  # Claim extraction, citation binding, a...
+    │   │   │   ├── decide.rs  # Native decision adapter for the read ...
+    │   │   │   ├── doc_cards.rs  # Deterministic doc chunking and extern...
+    │   │   │   ├── engine.rs  # The read engine: intent-routed, budge...
+    │   │   │   ├── evidence.rs  # One deduplicated evidence set across ...
+    │   │   │   ├── intent.rs  # Deterministic intent routing for the ...
+    │   │   │   ├── mod.rs  # Read-plane types, readiness, and the ...
+    │   │   │   ├── planes/
+    │   │   │   │   ├── code.rs  # Code plane: FTS + vector + lemma reca...
+    │   │   │   │   ├── docs.rs  # Docs plane: capability-card retrieval...
+    │   │   │   │   ├── graph.rs  # Graph plane: callers, callees, depend...
+    │   │   │   │   ├── mod.rs  # Read-plane retrieval planes: symbols,...
+    │   │   │   │   ├── orientation.rs  # Orientation plane: project, ownership...
+    │   │   │   │   └── symbol.rs  # Exact symbol plane: definitions by na...
+    │   │   │   ├── project_map.rs  # Deterministic workspace/crate/domain ...
+    │   │   │   ├── readiness.rs  # Readiness is coverage, not model conf...
+    │   │   │   ├── render.rs  # Card and section rendering for the re...
+    │   │   │   └── vocabulary.rs  # One query vocabulary for the read plane.
     │   │   ├── runtime.rs
     │   │   ├── scheduler.rs  # P3 reconcile job queue: the coalescin...
     │   │   ├── scorecard.rs  # Hermetic scorecard: the measuring ins...
@@ -790,6 +865,8 @@ Then you you must read
     │   │   ├── search_types.rs  # Search value types + pure search help...
     │   │   ├── selection.rs  # P2 file selection: `FileSelection` (r...
     │   │   ├── shadow.rs  # Shadow verification for model-drafted...
+    │   │   ├── source_ref.rs  # One source identity for findings, cit...
+    │   │   ├── source_scope.rs  # One source-scope classification share...
     │   │   ├── summary.rs  # Comment summary generation (maintain ...
     │   │   ├── sync/
     │   │   │   ├── comments.rs
@@ -807,8 +884,13 @@ Then you you must read
     │   └── tests/
     │       ├── answer_envelope.rs  # //! Envelope fields on exact, homonym, a
     │       ├── authorization_gates.rs  # //! Authorization gates: advisory versus
+    │       ├── calibration_capability.rs  # //! Capability-tier calibration: the `dp
+    │       ├── calibration_findings.rs  # //! Finding-relevance calibration: label
     │       ├── calibration_goldens.rs  # //! Calibration corpora goldens: the che
+    │       ├── calibration_intent.rs  # //! Intent calibration: the deterministi
+    │       ├── calibration_support.rs  # //! Claim-support calibration: hand-labe
     │       ├── capability_decision.rs  # use super::{grounded_first, member_groun
+    │       ├── capability_import.rs  # //! External capability-corpus import: m
     │       ├── certified_commentary.rs  # //! Certified commentary: bad-symbol, ba
     │       ├── change_set.rs  # //! P3 `change_set` tests (port of zvec-
     │       ├── clippy_driver.rs  # //! Clippy-driver pins: JSON parsing, fi
@@ -823,12 +905,17 @@ Then you you must read
     │       ├── corpus_seeds.rs  # use fluent_llm::decision::{gate_for_poin
     │       ├── decision_metrics.rs  # use super::{evaluate_with_metrics, Decis
     │       ├── decision_points.rs  # use super::{
+    │       ├── doc_plane.rs  # //! Documentation-plane retrieval pins.
     │       ├── e2e_gen_roundtrip.rs  # use fluent_types::MemberType;
+    │       ├── embed_policy.rs  # //! Embed policy pins: off by default, e
+    │       ├── eval_exclusion.rs  # //! Eval/corpus exclusion: measurement f
+    │       ├── evidence_set.rs  # //! Evidence-set dedupe pins.
     │       ├── excerpt_decision.rs  # use super::{excerpt_spec, relevance_gate
     │       ├── extract_code.rs  # //! P2 code-extraction tests (ports `tes
     │       ├── extract_markdown.rs  # //! P2 markdown-extraction tests: headin
     │       ├── extract_text.rs  # //! P2 text-extraction tests: window bud
     │       ├── extract_vector_content.rs  # //! P2 `vector_content` tests: metadata 
+    │       ├── finding_relevance.rs  # //! Finding-relevance judge: batch align
     │       ├── fixpoint.rs  # //! Fixpoint behavior: clean reruns do z
     │       ├── freshness.rs  # //! P3 freshness-matrix tests: `fresh` /
     │       ├── freshness_vocab.rs  # //! Freshness vocabulary: pending, stale
@@ -844,6 +931,7 @@ Then you you must read
     │       ├── index_selection.rs  # //! P2.4 scanner-utils port: discovery r
     │       ├── intent_decision.rs  # use crate::query::decision_points::{inte
     │       ├── invalidation.rs  # //! Invalidation pins: interface diffs, 
+    │       ├── judge_prompt.rs  # //! Judge prompt goldens: the generic ca
     │       ├── jumps.rs  # //! Doc→code jump records: per-chun...
     │       ├── l2_probe.rs  # //! P6 target (4) probe: inflected-query
     │       ├── lane_priority.rs  # use super::{Lane, LaneConfig, LaneError,
@@ -882,6 +970,7 @@ Then you you must read
     │       │   └── mod.rs  # //! P0 fixture corpora for legacy parity
     │       ├── pipeline_order.rs  # //! Pipeline order: dependency depth fir
     │       ├── policy_staleness.rs  # //! Policy staleness: version change re-
+    │       ├── project_map.rs  # //! Deterministic project cards: README 
     │       ├── query_capability.rs  # //! Import-side tests for the capability
     │       ├── query_capability_match.rs  # //! Route-level tests for the capability
     │       ├── query_concept_ground.rs  # //! Hermetic pins for `query::concept_gr
@@ -897,14 +986,32 @@ Then you you must read
     │       ├── query_recall.rs  # use super::*;
     │       ├── query_rg_backend.rs  # use super::*;
     │       ├── query_vector_backend.rs  # use super::*;
+    │       ├── read_budget.rs  # //! Per-intent budget contracts: allocat
+    │       ├── read_claims.rs  # //! Claim extraction, citation binding, 
+    │       ├── read_code.rs  # //! Code plane: FTS + vector + lemma rec
+    │       ├── read_docs.rs  # //! Docs plane: capability-card retrieva
+    │       ├── read_engine.rs  # //! Read-engine skeleton: plan routing, 
+    │       ├── read_eval.rs  # //! Evaluation-corpus parsing and exclus
+    │       ├── read_graph.rs  # //! Symbol and graph plane contracts: ex
+    │       ├── read_intent.rs  # //! Rule-table intent routing: exact pre
+    │       ├── read_judge.rs  # //! Native doc judge: choice labels, bat
+    │       ├── read_orientation.rs  # //! Orientation plane: workspace/crate/d
+    │       ├── read_perf.rs  # //! Read-plane performance pins: no pipe
+    │       ├── read_render.rs  # //! Card and section rendering: order, b
+    │       ├── read_vocabulary.rs  # //! Single-vocabulary contracts: term ex
+    │       ├── readiness.rs  # //! Readiness classification: coverage i
     │       ├── redteam_hardening.rs  # //! Red-team hardening: expanded corpora
+    │       ├── rg_backend.rs  # //! Ripgrep arm pins: exact intents norm
     │       ├── scheduler.rs  # //! P3 scheduler tests: the coalescing c
     │       ├── scorecard.rs  # use super::{render_human, score_metrics,
     │       ├── scorecard_ratchet.rs  # use super::{
+    │       ├── scorecard_read.rs  # //! Read-tier scorecard: the fast tier m
     │       ├── seal.rs  # //! Seal pins: clean seals Done, finding
     │       ├── search_constants.rs  # use super::*;
     │       ├── search_types.rs  # use super::*;
     │       ├── shadow_verify.rs  # //! Shadow-verify pins: individual check
+    │       ├── source_ref.rs  # //! Source identity path invariants.
+    │       ├── source_scope.rs  # //! Source-scope classification invarian
     │       ├── staged_routing.rs  # //! Cheapest sufficient rung wins; exact
     │       ├── staleness_decision.rs  # use super::{normalize_signature, stalene
     │       ├── sufficiency_decision.rs  # use super::{route_sufficiency, sufficien
@@ -913,6 +1020,7 @@ Then you you must read
     │       ├── summary_sidecar.rs  # use super::*;
     │       ├── suspicion_corpus.rs  # //! Suspicion calibration corpus for `is
     │       ├── symbol_identity.rs  # //! Symbol identity: body edits keep the
+    │       ├── sync_embeddings.rs  # //! Semantic-unit embed backfill: select
     │       ├── sync_fixpoint.rs  # use super::absolute_or;
     │       ├── synthesis_gate.rs  # use super::{can_synthesize, stage_conten
     │       ├── synthesis_gate_wiring.rs  # use super::{QueryEngine, QueryEngineErro
@@ -982,6 +1090,7 @@ Then you you must read
     │   │   │   ├── question.rs  # Two-layer question API: spec Componen...
     │   │   │   ├── registry.rs  # Calibration registry: thresholds keye...
     │   │   │   ├── shadow.rs  # Shadow guidance consumers (logs only,...
+    │   │   │   ├── systemone.rs  # Native `/v1/systemone` decision trans...
     │   │   │   ├── transport.rs  # Remote opt-in boundary: redaction hoo...
     │   │   │   ├── types.rs  # Decision types + pure policy (no I/O).
     │   │   │   └── wvr.rs  # Pure render/decode/policy `WorkUnit`s...
@@ -1042,6 +1151,7 @@ Then you you must read
     │       ├── decision_registry.rs  # //! Calibration registry tests (tests-fi
     │       ├── decision_shadow.rs  # //! Shadow wrapper tests (tests-first).
     │       ├── decision_spike_fixtures.rs  # //! Shared hermetic fixtures for decisio
+    │       ├── decision_systemone.rs  # //! Native `/v1/systemone` transport tes
     │       ├── decision_transport.rs  # //! Async decide seam tests over `httpmo
     │       ├── decision_types.rs  # //! Decision types + pure policy tests (
     │       ├── decomposer.rs  # use super::*;

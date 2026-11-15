@@ -477,6 +477,12 @@ fn explain_renders_sections_and_envelope_v2() {
     // plus a schema-2 envelope carrying every v1 key.
     let (temp, ws, json_dir, db) = explain_fixture();
     let dir = temp.path();
+    std::fs::create_dir_all(dir.join("doc/capabilities")).expect("mkdir corpus");
+    std::fs::write(
+        dir.join("doc/capabilities/corpus.json"),
+        r#"{"briefs": [{"id": "doc/notes.md#notes", "title": "Notes", "purpose": "Alpha helper notes.", "crate": "c", "domain": "d", "source_path": "doc/notes.md", "anchor": "notes"}]}"#,
+    )
+    .expect("write corpus");
     sync(dir, &db, false);
     let out = run(
         dir,

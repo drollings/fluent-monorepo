@@ -31,14 +31,13 @@ fn glob_matches_indexed_relative_form() {
     ));
 }
 
-/// Records the layer contract: `matches_file_selection` matches the indexed
-/// root-relative form only. Workspace-relative spellings are converted to
-/// this form one layer up (`normalize_selection_glob` at the recall
-/// entries), so this pin stays as-is while the round-trip pins prove the
-/// end-to-end behavior.
+/// Fixed behavior: workspace (`src/<crate>/**`) and index-relative
+/// (`<crate>/**`) spellings select the same rows at every layer, so a
+/// scoped glob never silently empties. Normalization one layer up stays,
+/// and this layer tolerates the prefix too.
 #[test]
 fn glob_records_current_workspace_prefix_behavior() {
-    assert!(!matches_file_selection(
+    assert!(matches_file_selection(
         "guidance/src/sync_engine.rs",
         &globs(&["src/guidance/**"]),
         &[],

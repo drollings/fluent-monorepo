@@ -109,3 +109,7 @@ pub fn is_eval_path(relative: &str) -> bool {
 #[cfg(test)]
 #[path = "../tests/read_eval.rs"]
 mod read_eval_tests;
+
+#[cfg(test)]
+#[path = "../tests/explain_characterization.rs"]
+mod explain_characterization_tests;

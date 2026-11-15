@@ -539,6 +539,7 @@ pub fn explain_arm_detailed(
         limit,
         budget_override: None,
         no_llm: true,
+        include_fixtures: false,
     };
     let answer = ReadEngine::new().explain(&request, &context, None);
     let rendered = guidance_core::read::render::render_answer(&answer);

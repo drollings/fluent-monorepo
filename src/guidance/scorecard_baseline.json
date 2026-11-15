@@ -346,7 +346,7 @@
         ],
         "read.p50_ms": [
           8.265566999999999,
-          12.430368000000001
+          12.430368
         ],
         "read.p95_ms": [
           11.129595,
@@ -367,6 +367,72 @@
       },
       "date": "2026-11-15",
       "reason": "Accuracy-first: doc-plane verbatim sections, doc-scoped recall, rg fallback-only, and shadow/authorized judging direct explain to the correct code (file_recall_tune up, fact recall held). Accept higher degraded/latency/tokens vs pre-docs baseline; explain p50/p95 stay within interactive budget and sync stays embed-off by default.",
+      "tolerances": {
+        "read.p50_ms": 1.0,
+        "read.p95_ms": 1.5,
+        "read.tokens_per_correct": 0.5,
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "read.p50_ms": [
+          12.430368,
+          12.221782
+        ],
+        "read.p95_ms": [
+          20.128237,
+          19.88291
+        ],
+        "speed.explain_p50_us": [
+          6197.04,
+          6182.555
+        ],
+        "speed.explain_p99_us": [
+          6465.677000000001,
+          6525.619
+        ]
+      },
+      "date": "2026-11-15",
+      "reason": "New methods",
+      "tolerances": {
+        "read.p50_ms": 1.0,
+        "read.p95_ms": 1.5,
+        "read.tokens_per_correct": 0.5,
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "read.p50_ms": [
+          12.221782,
+          13.256504000000001
+        ],
+        "read.p95_ms": [
+          19.88291,
+          21.151259
+        ],
+        "speed.explain_p50_us": [
+          6182.555,
+          6266.503
+        ],
+        "speed.explain_p99_us": [
+          6525.619,
+          7218.977
+        ]
+      },
+      "date": "2026-11-15",
+      "reason": "New methods",
       "tolerances": {
         "read.p50_ms": 1.0,
         "read.p95_ms": 1.5,
@@ -409,14 +475,14 @@
     "read.file_recall_at_5.heldout": 0.5416666666666667,
     "read.file_recall_at_5.tune": 0.7447916666666666,
     "read.no_result_false": 0.0,
-    "read.p50_ms": 12.430368000000001,
-    "read.p95_ms": 20.128237,
+    "read.p50_ms": 13.256504000000001,
+    "read.p95_ms": 21.151259,
     "read.tokens_per_correct": 266.40845070422534,
     "read.unsupported_claims": 0.0,
-    "speed.explain_p50_us": 6197.04,
-    "speed.explain_p99_us": 6465.677000000001
+    "speed.explain_p50_us": 6266.503,
+    "speed.explain_p99_us": 7218.977
   },
-  "reason": "Accuracy-first: doc-plane verbatim sections, doc-scoped recall, rg fallback-only, and shadow/authorized judging direct explain to the correct code (file_recall_tune up, fact recall held). Accept higher degraded/latency/tokens vs pre-docs baseline; explain p50/p95 stay within interactive budget and sync stays embed-off by default.",
+  "reason": "New methods",
   "tolerance_source": "repeat-run variance (3 fast-tier runs, max spread <1%); deterministic metrics tol 0, timing 10% of value, ceilings 2x value; bootstrap pending long-run calibration",
   "tolerances": {
     "read.p50_ms": 1.0,

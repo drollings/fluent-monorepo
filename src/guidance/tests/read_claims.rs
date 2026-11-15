@@ -81,3 +81,44 @@ fn moved_prefilter_keeps_byte_identical_behavior() {
         "{out_of_range}"
     );
 }
+
+#[test]
+fn prefilter_accepts_card_backed_citations() {
+    // Whole-card citations (verified doc and project cards) name shown
+    // evidence with no line range: the path alone binds, so card-backed
+    // sentences survive the prefilter instead of abstaining.
+    let snippets = vec![(
+        "h".to_string(),
+        "src/a.rs".to_string(),
+        1u32,
+        3u32,
+        "t".to_string(),
+    )];
+    let cards = vec!["doc/alpha.md".to_string(), "Cargo.toml".to_string()];
+    assert_eq!(
+        constrain_answer_to_evidence_with_cards("Alpha syncs (doc/alpha.md:3).", &snippets, &cards),
+        "Alpha syncs (doc/alpha.md:3)."
+    );
+    assert_eq!(
+        constrain_answer_to_evidence_with_cards("Ships X and Y (Cargo.toml).", &snippets, &cards),
+        "Ships X and Y (Cargo.toml)."
+    );
+    let unknown = constrain_answer_to_evidence_with_cards("See src/zzz.rs:9.", &snippets, &cards);
+    assert!(
+        unknown.starts_with("The excerpts do not support"),
+        "{unknown}"
+    );
+}
+
+#[test]
+fn gating_keeps_card_backed_claims_labelled() {
+    // Card-bound claims gate exactly like snippet-bound ones: kept
+    // with the support label, never silently verified.
+    let claims = vec![Claim {
+        text: "Ships X and Y (Cargo.toml).".to_string(),
+        citation: Some("Cargo.toml".to_string()),
+        support: Support::Unverified,
+    }];
+    let gated = gate_answer(&claims).expect("card-backed claims are kept");
+    assert!(gated.contains("[unverified]"), "{gated}");
+}

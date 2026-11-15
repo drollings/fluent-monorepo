@@ -1,11 +1,10 @@
 //! Opt-in phase timing: `GUIDANCE_PROFILE=1` prints `[profile] name: N ms`
-//! lines to stderr. Off by default so normal output and timing stay untouched.
+//! lines to stderr. Off by default so normal output stays untouched.
 
 use std::time::Instant;
 
 /// Whether phase timing is requested for this process.
 #[must_use]
-/// Whether phase timing is requested for this process.
 pub fn enabled() -> bool {
     std::env::var_os("GUIDANCE_PROFILE").is_some_and(|value| value != "0")
 }

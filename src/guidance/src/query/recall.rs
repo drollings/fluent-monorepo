@@ -14,9 +14,7 @@ use crate::query::fusion::{
     apply_limit_and_track, build_hit, fuse_candidates, RecallCandidate, RecallEvidence,
     TimingCollector,
 };
-use crate::query::glob::{
-    matches_file_selection, path_pattern_matches, resolve_file_type_patterns, FileTypePatterns,
-};
+use crate::query::glob::{resolve_file_type_patterns, CompiledFileFilter, FileTypePatterns};
 use crate::search_constants::{
     recall_target_candidate_count, DEFAULT_LIMIT, RECALL_GROWTH_FACTOR, RECALL_INITIAL_DEPTH,
     RECALL_MAX_DEPTH,
@@ -106,19 +104,15 @@ pub fn resolve_filtered_file_ids(
     }
     let globs = plan.globs.clone().unwrap_or_default();
     let insensitive = plan.insensitive_globs.clone().unwrap_or_default();
+    // Compile once per recall: per-file regex construction costs
+    // ~ms in debug builds, so the naive per-file path burns seconds
+    // over a thousand files. Same predicates, built once.
+    let compiled = CompiledFileFilter::new(&includes, &excludes, &globs, &insensitive, types);
     Some(
         files
             .iter()
             .filter(|file| {
-                (includes.is_empty()
-                    || includes
-                        .iter()
-                        .any(|pattern| path_pattern_matches(pattern, &file.relative_path)))
-                    && !excludes
-                        .iter()
-                        .any(|pattern| path_pattern_matches(pattern, &file.relative_path))
-                    && matches_file_selection(&file.relative_path, &globs, &insensitive, types)
-                    && matches_modified_time(file, plan)
+                compiled.matches(&file.relative_path) && matches_modified_time(file, plan)
             })
             .map(|file| file.id.clone())
             .collect(),
@@ -227,6 +221,7 @@ pub fn run_recall_with_policy(
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
     policy: RecallPolicy,
 ) -> Result<RecallOutput, RecallError> {
+    let _recall = common_core::profile::Phase::new("recall.query");
     let mut timings = TimingCollector::new();
     let normalized = validate_search_plan(plan)?;
     timings.record("search_plan");

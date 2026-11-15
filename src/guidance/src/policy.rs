@@ -76,6 +76,8 @@ pub fn autonomy_allows_fix(policy: &MaintenancePolicy) -> bool {
 /// Whether the autonomy cap permits model drafts. Drafts are judgment
 /// work, not a deterministic fixer, so they require the L3 rung.
 #[must_use]
+/// Whether the autonomy cap permits model drafts. Drafts are judgment
+/// work, not a deterministic fixer, so they require the L3 rung.
 pub fn autonomy_allows_model_drafts(policy: &MaintenancePolicy) -> bool {
     policy.autonomy.as_str() == "L3"
 }

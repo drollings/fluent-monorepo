@@ -30,6 +30,14 @@ name = "explain_cli"
 path = "tests/explain_cli.rs"
 
 [[test]]
+name = "profile_cli"
+path = "tests/profile_cli.rs"
+
+[[test]]
+name = "freshen_cli"
+path = "tests/freshen_cli.rs"
+
+[[test]]
 name = "component_gate_cli"
 path = "tests/component_gate_cli.rs"
 

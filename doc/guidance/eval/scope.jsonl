@@ -1,0 +1,12 @@
+{"control":false,"expected_crate":"guidance-core","id":"scope-sync-engine","intent":"ownership","query":"How does guidance sync decide what to reprocess after an edit?","split":"tune"}
+{"control":false,"expected_crate":"fluent-llm","id":"scope-calibration-promote","intent":"ownership","query":"How is a decision point promoted from shadow to active?","split":"tune"}
+{"control":false,"expected_crate":"fluent-router","id":"scope-router-dispatch","intent":"ownership","query":"How does coral-router route requests to models?","split":"tune"}
+{"control":false,"expected_crate":"search-vector","id":"scope-vector-store","intent":"ownership","query":"Where are FTS fragments stored for recall?","split":"tune"}
+{"control":false,"expected_crate":"guidance-core","id":"scope-component-gate","intent":"ownership","query":"Which component owns file src/guidance/src/sync_engine.rs?","split":"tune"}
+{"control":false,"expected_crate":"guidance-core","id":"scope-freshness","intent":"ownership","query":"How is file freshness decided when mtimes are close?","split":"tune"}
+{"control":false,"expected_crate":"fluent-llm","id":"scope-embeddings","intent":"ownership","query":"How are embeddings generated and searched?","split":"heldout"}
+{"control":false,"expected_crate":"fluent-wvr","id":"scope-wvr-component","intent":"ownership","query":"What is the Component trait?","split":"heldout"}
+{"control":false,"expected_crate":"fluent-concurrency","id":"scope-batch-supervision","intent":"ownership","query":"How are supervised batches scheduled?","split":"heldout"}
+{"control":true,"expected_crate":"unknown","id":"control-scope-nonexistent-crate","intent":"orientation","query":"Which files belong to crate qqqNoSuchCrate under glob src/qqqNoSuchCrate/**?","split":"heldout"}
+{"control":true,"expected_crate":"unknown","id":"control-scope-fixture-term","intent":"orientation","query":"How does the zzqy fixture subsystem scope to src/zzqy/**?","split":"heldout"}
+{"control":true,"expected_crate":"unknown","id":"control-scope-eval-leak","intent":"orientation","query":"What does doc/guidance/eval scope to under src/eval/**?","split":"heldout"}

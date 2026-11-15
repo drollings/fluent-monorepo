@@ -40,7 +40,9 @@ pub const INDEX_WAVE_FILES: usize = 64;
 /// refused and rebuilt from sidecars.
 /// v7 stores workspace-relative file paths for citations, globs, and
 /// scope classification; v6 rows are refused and rebuilt from sidecars.
-pub const INDEX_SCHEMA_VERSION: u32 = 7;
+/// v8 stamps served-excerpt digests on citations (same `blake3_hex`
+/// scheme as project cards); v7 rows are refused and rebuilt.
+pub const INDEX_SCHEMA_VERSION: u32 = 8;
 /// Default cross-file embed packing size.
 pub const INDEX_EMBED_BATCH: usize = 32;
 /// Transient embed retry budget (zvec C.4: 3×500ms).

@@ -131,20 +131,32 @@ pub fn ripgrep_glob_matches_case_insensitive(pattern: &str, path: &str) -> bool 
 }
 
 fn ripgrep_glob_matches_with_case(pattern: &str, path: &str, case_insensitive: bool) -> bool {
-    let normalized = normalize_path_pattern(pattern);
-    if normalized.is_empty() {
-        return false;
+    // Root tolerance runs on both axes: pattern spellings (as written
+    // plus `src/`-stripped) against candidate spellings (as stored plus
+    // root-stripped), so workspace-relative and index-relative globs
+    // select the same rows without the caller pre-stripping.
+    for variant in pattern_variants(pattern) {
+        for candidate in candidate_spellings(path) {
+            if variant_matches_ripgrep(&variant, &candidate, case_insensitive) {
+                return true;
+            }
+        }
     }
-    if glob_pattern_matches(
-        &normalized,
-        &normalize_path_for_match(path),
-        case_insensitive,
-    ) {
+    false
+}
+
+fn variant_matches_ripgrep(pattern: &str, candidate: &str, case_insensitive: bool) -> bool {
+    if glob_pattern_matches(pattern, candidate, case_insensitive) {
         return true;
     }
-    // Trailing `/**` also matches the directory itself.
-    if let Some(dir) = normalized.strip_suffix("/**") {
-        if glob_to_regex(dir, case_insensitive).is_match(&normalize_path_for_match(path)) {
+    if let Some(dir) = pattern.strip_suffix("/**") {
+        if glob_to_regex(dir, case_insensitive).is_match(candidate) {
+            return true;
+        }
+    }
+    if !pattern.contains('/') {
+        let base = candidate.rsplit('/').next().unwrap_or(candidate);
+        if glob_pattern_matches(pattern, base, case_insensitive) {
             return true;
         }
     }
@@ -183,6 +195,304 @@ pub(crate) fn reset_compile_count() {
 /// Test-only read for the compile counter.
 pub(crate) fn compile_count() -> usize {
     COMPILE_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Pattern spellings for root tolerance: as written plus `src/`-stripped
+/// when the remainder stays scoped. Shared by per-call and precompiled
+/// matchers so the two never disagree.
+fn pattern_variants(pattern: &str) -> Vec<String> {
+    let normalized = normalize_path_pattern(pattern);
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+    let mut variants = vec![normalized.clone()];
+    if let Some(stripped) = normalized.strip_prefix("src/") {
+        if !stripped.is_empty() && stripped.contains('/') {
+            variants.push(stripped.to_string());
+        }
+    }
+    variants
+}
+
+/// Candidate spellings for root tolerance: as stored plus the path with
+/// one leading root segment stripped when the remainder stays scoped.
+/// Lets index-relative globs (`bin/guidance/**`, after root stripping)
+/// select workspace-relative rows (`src/bin/guidance/...`).
+pub(crate) fn candidate_spellings(path: &str) -> Vec<String> {
+    let candidate = normalize_path_for_match(path);
+    let mut out = vec![candidate.clone()];
+    if let Some((_, rest)) = candidate.split_once('/') {
+        if !rest.is_empty() && rest.contains('/') {
+            out.push(rest.to_string());
+        }
+    }
+    out
+}
+
+/// One precompiled pattern spelling.
+struct CompiledVariant {
+    text: String,
+    regex: Option<regex::Regex>,
+    dir_regex: Option<regex::Regex>,
+}
+
+fn build_variant(text: &str, case_insensitive: bool, literal_prefix: bool) -> CompiledVariant {
+    // Ripgrep mode compiles every spelling (literals become exact or
+    // basename regexes, mirroring the per-call path); path mode keeps
+    // literals on the prefix-compare branch and compiles glob
+    // spellings only. Builds on `glob_to_regex` directly: variant
+    // inputs are already normalized, and the shared test counter keeps
+    // tracking the selection path only.
+    let needs_regex = !literal_prefix || has_path_glob(text);
+    CompiledVariant {
+        text: text.to_string(),
+        regex: needs_regex.then(|| glob_to_regex(text, case_insensitive)),
+        dir_regex: text
+            .strip_suffix("/**")
+            .map(|dir| glob_to_regex(dir, case_insensitive)),
+    }
+}
+
+/// One precompiled pattern: all spellings, one case flag, one mode.
+/// Matches exactly what the per-call path matches; the regexes just
+/// build once instead of once per file.
+pub(crate) struct CompiledPattern {
+    variants: Vec<CompiledVariant>,
+    case_insensitive: bool,
+    literal_prefix: bool,
+}
+
+impl CompiledPattern {
+    /// Precompile a `path_pattern_matches` spelling (literal prefixes).
+    pub(crate) fn path(pattern: &str) -> Self {
+        Self::build(pattern, false, true)
+    }
+
+    /// Precompile a `ripgrep_glob_matches` spelling (regex only).
+    pub(crate) fn ripgrep(pattern: &str, case_insensitive: bool) -> Self {
+        Self::build(pattern, case_insensitive, false)
+    }
+
+    fn build(pattern: &str, case_insensitive: bool, literal_prefix: bool) -> Self {
+        Self {
+            variants: pattern_variants(pattern)
+                .iter()
+                .map(|variant| build_variant(variant, case_insensitive, literal_prefix))
+                .collect(),
+            case_insensitive,
+            literal_prefix,
+        }
+    }
+
+    /// True when any spelling matches any candidate spelling.
+    pub(crate) fn matches(&self, path: &str) -> bool {
+        for variant in &self.variants {
+            for candidate in candidate_spellings(path) {
+                if self.variant_matches(variant, &candidate) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Regexes built for this pattern: bounded by spelling count,
+    /// never by file count.
+    #[cfg(test)]
+    pub(crate) fn regex_count(&self) -> usize {
+        self.variants
+            .iter()
+            .map(|variant| {
+                usize::from(variant.regex.is_some()) + usize::from(variant.dir_regex.is_some())
+            })
+            .sum()
+    }
+
+    fn variant_matches(&self, variant: &CompiledVariant, candidate: &str) -> bool {
+        if let Some(regex) = &variant.regex {
+            if regex.is_match(candidate) {
+                return true;
+            }
+        } else if self.literal_prefix {
+            let hit = if self.case_insensitive {
+                let candidate = candidate.to_lowercase();
+                let expected = variant.text.to_lowercase();
+                candidate == expected || candidate.starts_with(&format!("{expected}/"))
+            } else {
+                candidate == variant.text || candidate.starts_with(&format!("{}/", variant.text))
+            };
+            if hit {
+                return true;
+            }
+            if !variant.text.contains('/') {
+                let base = candidate.rsplit('/').next().unwrap_or(candidate);
+                let hit = if self.case_insensitive {
+                    base.to_lowercase() == variant.text.to_lowercase()
+                } else {
+                    base == variant.text
+                };
+                if hit {
+                    return true;
+                }
+            }
+        }
+        if let Some(dir) = &variant.dir_regex {
+            if dir.is_match(candidate) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// One ordered glob rule with its negation flag.
+struct CompiledRule {
+    pattern: CompiledPattern,
+    negated: bool,
+}
+
+/// Ordered glob set compiled once: sensitive rules then insensitive
+/// rules, later matches overriding earlier ones. Same walk as
+/// `matches_ordered_globs`, shared by every walked file.
+pub(crate) struct CompiledOrderedGlobs {
+    rules: Vec<CompiledRule>,
+    has_positive: bool,
+}
+
+impl CompiledOrderedGlobs {
+    pub(crate) fn new(globs: &[String], insensitive_globs: &[String]) -> Self {
+        let mut rules = Vec::new();
+        let mut has_positive = false;
+        for (patterns, case_insensitive) in [(globs, false), (insensitive_globs, true)] {
+            for raw in patterns {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let negated = trimmed.starts_with('!');
+                let body = negated.then(|| trimmed[1..].trim()).unwrap_or(trimmed);
+                if body.is_empty() {
+                    continue;
+                }
+                has_positive = has_positive || !negated;
+                rules.push(CompiledRule {
+                    pattern: CompiledPattern::ripgrep(body, case_insensitive),
+                    negated,
+                });
+            }
+        }
+        Self {
+            rules,
+            has_positive,
+        }
+    }
+
+    /// True under the ordered walk: later rules override earlier ones.
+    pub(crate) fn matches(&self, path: &str) -> bool {
+        let mut included = !self.has_positive;
+        for rule in &self.rules {
+            if rule.pattern.matches(path) {
+                included = !rule.negated;
+            }
+        }
+        included
+    }
+
+    /// Regexes built for the whole ordered set.
+    #[cfg(test)]
+    pub(crate) fn regex_count(&self) -> usize {
+        self.rules
+            .iter()
+            .map(|rule| rule.pattern.regex_count())
+            .sum()
+    }
+}
+
+/// Whole file-selection predicate compiled once per recall: include /
+/// exclude path patterns plus the ordered glob walk plus file-type
+/// patterns. Mirrors the `resolve_filtered_file_ids` closure exactly.
+pub(crate) struct CompiledFileFilter {
+    includes: Vec<CompiledPattern>,
+    excludes: Vec<CompiledPattern>,
+    ordered: CompiledOrderedGlobs,
+    type_include: Vec<CompiledPattern>,
+    type_exclude: Vec<CompiledPattern>,
+    #[cfg(test)]
+    regex_count: usize,
+}
+
+impl CompiledFileFilter {
+    pub(crate) fn new(
+        includes: &[String],
+        excludes: &[String],
+        globs: &[String],
+        insensitive_globs: &[String],
+        types: &FileTypePatterns,
+    ) -> Self {
+        let includes: Vec<CompiledPattern> = includes
+            .iter()
+            .map(|pattern| CompiledPattern::path(pattern))
+            .collect();
+        let excludes: Vec<CompiledPattern> = excludes
+            .iter()
+            .map(|pattern| CompiledPattern::path(pattern))
+            .collect();
+        let ordered = CompiledOrderedGlobs::new(globs, insensitive_globs);
+        let type_include: Vec<CompiledPattern> = types
+            .include
+            .iter()
+            .map(|pattern| CompiledPattern::ripgrep(pattern, false))
+            .collect();
+        let type_exclude: Vec<CompiledPattern> = types
+            .exclude
+            .iter()
+            .map(|pattern| CompiledPattern::ripgrep(pattern, false))
+            .collect();
+        #[cfg(test)]
+        let regex_count = includes
+            .iter()
+            .map(CompiledPattern::regex_count)
+            .sum::<usize>()
+            + excludes
+                .iter()
+                .map(CompiledPattern::regex_count)
+                .sum::<usize>()
+            + ordered.regex_count()
+            + type_include
+                .iter()
+                .map(CompiledPattern::regex_count)
+                .sum::<usize>()
+            + type_exclude
+                .iter()
+                .map(CompiledPattern::regex_count)
+                .sum::<usize>();
+        Self {
+            includes,
+            excludes,
+            ordered,
+            type_include,
+            type_exclude,
+            #[cfg(test)]
+            regex_count,
+        }
+    }
+
+    /// Regexes built for the whole filter (test-only pin): fixed at
+    /// construction, independent of how many files are matched.
+    #[cfg(test)]
+    pub(crate) fn regex_count(&self) -> usize {
+        self.regex_count
+    }
+
+    /// True when the file survives every selection predicate.
+    pub(crate) fn matches(&self, path: &str) -> bool {
+        (self.includes.is_empty() || self.includes.iter().any(|rule| rule.matches(path)))
+            && !self.excludes.iter().any(|rule| rule.matches(path))
+            && self.ordered.matches(path)
+            && (self.type_include.is_empty()
+                || self.type_include.iter().any(|rule| rule.matches(path)))
+            && !self.type_exclude.iter().any(|rule| rule.matches(path))
+    }
 }
 
 fn glob_to_regex(pattern: &str, case_insensitive: bool) -> regex::Regex {
@@ -319,22 +629,42 @@ pub fn path_pattern_matches_case_insensitive(pattern: &str, path: &str) -> bool 
 }
 
 fn path_pattern_matches_with_case(pattern: &str, path: &str, case_insensitive: bool) -> bool {
-    let normalized = normalize_path_pattern(pattern);
-    let candidate = normalize_path_for_match(path);
-    if normalized.is_empty() {
-        return false;
+    for variant in pattern_variants(pattern) {
+        for candidate in candidate_spellings(path) {
+            if variant_matches_path(&variant, &candidate, case_insensitive) {
+                return true;
+            }
+        }
     }
-    if has_path_glob(&normalized) {
-        return glob_pattern_matches(&normalized, &candidate, case_insensitive);
+    false
+}
+
+fn variant_matches_path(pattern: &str, candidate: &str, case_insensitive: bool) -> bool {
+    if has_path_glob(pattern) {
+        return glob_pattern_matches(pattern, candidate, case_insensitive);
     }
-    if case_insensitive {
+    let hit = if case_insensitive {
         let candidate = candidate.to_lowercase();
-        let expected = normalized.to_lowercase();
+        let expected = pattern.to_lowercase();
         let prefix = format!("{expected}/");
-        return candidate == expected || candidate.starts_with(&prefix);
+        candidate == expected || candidate.starts_with(&prefix)
+    } else {
+        let prefix = format!("{pattern}/");
+        candidate == pattern || candidate.starts_with(&prefix)
+    };
+    if hit {
+        return true;
     }
-    let prefix = format!("{normalized}/");
-    candidate == normalized || candidate.starts_with(&prefix)
+    if !pattern.contains('/') {
+        let base = candidate.rsplit('/').next().unwrap_or(candidate);
+        if case_insensitive {
+            base.to_lowercase() == pattern.to_lowercase()
+        } else {
+            base == pattern
+        }
+    } else {
+        false
+    }
 }
 
 /// Ordered glob walk: later rules override earlier ones; a leading `!`

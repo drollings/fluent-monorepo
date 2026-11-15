@@ -95,6 +95,7 @@ fn without_cases_calibration_refuses_and_cards_stay_considered() {
             limit: 5,
             budget_override: None,
             no_llm: false,
+            include_fixtures: false,
         },
         &ctx,
         Some(&synth),

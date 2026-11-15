@@ -1,0 +1,3 @@
+{"control":true,"golden_facts":[],"id":"control-rerank-manifest-row","intent":"mechanism","query":"What does the Cargo.toml manifest row for guidance-core decide?","relevant":[],"required_sections":[],"split":"heldout"}
+{"control":true,"golden_facts":[],"id":"control-rerank-fixture-copy","intent":"mechanism","query":"How does fixture_read hybrid decide sync reprocessing?","relevant":[],"required_sections":[],"split":"heldout"}
+{"control":true,"golden_facts":[],"id":"control-rerank-eval-decoy","intent":"mechanism","query":"What does doc/guidance/eval/questions.jsonl rank for sync reprocessing?","relevant":[],"required_sections":[],"split":"heldout"}

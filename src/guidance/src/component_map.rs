@@ -303,6 +303,116 @@ pub fn paths_for_package(package: &str) -> Vec<String> {
         .collect()
 }
 
+/// Workspace prefixes for a scope list: every indexed root owned by
+/// the named packages, sorted and deduped. The recall/graph planes
+/// match stored `./`-relative rows against these roots.
+#[must_use]
+/// Workspace prefixes for a scope list: every indexed root owned by
+/// the named packages, sorted and deduped. The recall/graph planes
+/// match stored `./`-relative rows against these roots.
+pub fn prefixes_for_scope(packages: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = packages
+        .iter()
+        .flat_map(|package| paths_for_package(package))
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Soft crate scope for a query: up to two owning packages named by
+/// the text, strongest signal first. Exact token hits on a package,
+/// directory, or component name count double; a package or component
+/// name merely containing a ≥4-char token counts single; a
+/// path-shaped token resolving through the gate table counts double.
+/// Ties keep table order. Empty when nothing names a crate — the
+/// caller then reads unscoped instead of guessing.
+#[must_use]
+/// Soft crate scope for a query: up to two owning packages named by
+/// the text, strongest signal first. Exact token hits on a package,
+/// directory, or component name count double; a package or component
+/// name merely containing a ≥4-char token counts single; a
+/// path-shaped token resolving through the gate table counts double.
+/// Ties keep table order. Empty when nothing names a crate — the
+/// caller then reads unscoped instead of guessing.
+pub fn scope_packages_for_query(query: &str) -> Vec<String> {
+    let mut scores: std::collections::HashMap<&'static str, u32> = std::collections::HashMap::new();
+    let mut bump = |package: &'static str, points: u32| {
+        scores
+            .entry(package)
+            .and_modify(|score| *score = (*score).max(points))
+            .or_insert(points);
+    };
+    for raw in query.split_whitespace() {
+        let chunk = raw.trim_matches(|c: char| {
+            matches!(
+                c,
+                '"' | '\'' | '(' | ')' | '[' | ']' | ',' | '.' | ';' | ':' | '?' | '!'
+            )
+        });
+        if chunk.is_empty() {
+            continue;
+        }
+        let lowered = chunk.to_lowercase();
+        if lowered.contains('/') || lowered.ends_with(".rs") || lowered.ends_with(".toml") {
+            let gate = component_gate_for_path(&lowered);
+            if !gate.package.is_empty() {
+                let package = ENTRIES
+                    .iter()
+                    .find(|entry| entry.package == gate.package)
+                    .map(|entry| entry.package);
+                if let Some(package) = package {
+                    bump(package, 2);
+                }
+            }
+        }
+        // Whole-chunk exact hits keep hyphenated names whole
+        // (`common-core` names its package, not `common` + `core`).
+        for entry in ENTRIES {
+            let dirname = entry.prefix.rsplit('/').next().unwrap_or(entry.prefix);
+            if lowered == entry.package
+                || lowered == dirname
+                || entry.component == Some(lowered.as_str())
+            {
+                bump(entry.package, 2);
+            }
+        }
+        for token in lowered.split(|c: char| !c.is_ascii_alphanumeric()) {
+            if token.is_empty() {
+                continue;
+            }
+            for entry in ENTRIES {
+                let dirname = entry.prefix.rsplit('/').next().unwrap_or(entry.prefix);
+                if token == entry.package || token == dirname || entry.component == Some(token) {
+                    bump(entry.package, 2);
+                } else if token.len() >= 4
+                    && (entry.package.contains(token)
+                        || entry.component.is_some_and(|c| c.contains(token)))
+                {
+                    bump(entry.package, 1);
+                }
+            }
+        }
+    }
+    let mut ranked: Vec<(&'static str, u32, usize)> = Vec::new();
+    for (index, entry) in ENTRIES.iter().enumerate() {
+        if let Some(score) = scores.get(entry.package) {
+            if !ranked
+                .iter()
+                .any(|(package, _, _)| *package == entry.package)
+            {
+                ranked.push((entry.package, *score, index));
+            }
+        }
+    }
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)));
+    ranked
+        .into_iter()
+        .take(2)
+        .map(|(package, _, _)| package.to_string())
+        .collect()
+}
+
 /// Resolve `path` (workspace-relative, leading `./` tolerated) to its
 /// narrowest gate by longest boundary-matching prefix.
 #[must_use]
@@ -377,3 +487,7 @@ pub fn load_snapshot_components() -> Vec<String> {
 #[cfg(test)]
 #[path = "../tests/component_gate_map.rs"]
 mod component_gate_map_tests;
+
+#[cfg(test)]
+#[path = "../tests/scope_schema.rs"]
+mod scope_schema_tests;

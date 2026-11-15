@@ -63,6 +63,20 @@ pub struct Finding {
     pub provenance: String,
 }
 
+impl Finding {
+    /// Owning Cargo package via the gate table (no second resolver).
+    #[must_use]
+    pub fn crate_name(&self) -> String {
+        crate::component_map::component_gate_for_path(self.source.display()).package
+    }
+
+    /// Owning component via the gate table (`None` outside the matrix).
+    #[must_use]
+    pub fn domain(&self) -> Option<String> {
+        crate::component_map::component_gate_for_path(self.source.display()).component
+    }
+}
+
 /// One rendered answer section.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One rendered answer section.
@@ -95,6 +109,8 @@ pub struct ExplainRequest {
     pub budget_override: Option<usize>,
     /// Extractive evidence only: no synthesis call on any path.
     pub no_llm: bool,
+    /// Include fixture-scope rows (default excludes them).
+    pub include_fixtures: bool,
 }
 
 /// Retrieval context for one explain call (borrowed, no clones).
@@ -168,6 +184,14 @@ pub struct ReadPlan {
     /// Whether the bounded ripgrep arm runs (exact/symbol/graph/path
     /// only; broad language stays index-only).
     pub ripgrep: bool,
+    /// Soft crate scope named by the query (≤2 owning packages;
+    /// empty reads unscoped). Render-side budget split only: recall
+    /// never constrains on this, so cross-crate answers keep full
+    /// recall.
+    pub scope_crates: Vec<String>,
+    /// True when graph edges resolved through scope-owned
+    /// definitions. Declared in Coverage beside the scope.
+    pub scope_narrowed: bool,
 }
 
 /// Primary plane route for one intent.
@@ -258,6 +282,8 @@ impl ReadEngine {
                 intent,
                 QueryIntent::SingleIdentifier | QueryIntent::FilePath | QueryIntent::Graph
             ),
+            scope_crates: crate::component_map::scope_packages_for_query(&request.query),
+            scope_narrowed: false,
         }
     }
 
@@ -340,12 +366,13 @@ impl ReadEngine {
         synthesize: Option<&dyn Synthesizer>,
         judge: Option<&JudgeCtx<'_>>,
     ) -> ReadAnswer {
+        let _read = common_core::profile::Phase::new("read.explain");
         use crate::read::budget::tokens_for;
         let plan_request = ReadRequest {
             query: request.query.clone(),
             budget_override: request.budget_override,
         };
-        let plan = self.plan(&plan_request);
+        let mut plan = self.plan(&plan_request);
         let mut sections = Vec::new();
         let mut tokens_used = 0u64;
         let mut push = |title: &str, body: String, tokens_used: &mut u64| {
@@ -355,6 +382,17 @@ impl ReadEngine {
                 body,
             });
         };
+        // Symbol/Graph intents resolve through the structure/graph
+        // planes; scope narrowing is known before Coverage renders.
+        let scope_prefixes = crate::component_map::prefixes_for_scope(&plan.scope_crates);
+        let (plane_findings, graph_narrowed) = structure_findings(
+            &request.query,
+            plan.intent,
+            ctx.workspace,
+            ctx.db,
+            &scope_prefixes,
+        );
+        plan.scope_narrowed = graph_narrowed;
         push(
             "Coverage",
             coverage_section(ctx.coverage.as_ref(), &plan),
@@ -370,14 +408,14 @@ impl ReadEngine {
             ),
             &mut tokens_used,
         );
-        let cap_hits = crate::read::planes::docs::retrieve_cards(
+        let mut cap_hits = crate::read::planes::docs::retrieve_cards(
             &request.query,
             Some(ctx.workspace),
             ctx.db,
             ctx.nlp,
             None,
         );
-        let doc_hits = if matches!(
+        let mut doc_hits = if matches!(
             plan.intent,
             QueryIntent::SingleIdentifier | QueryIntent::FilePath | QueryIntent::Graph
         ) {
@@ -393,6 +431,59 @@ impl ReadEngine {
                 plan.budgets.evidence.max(8) / 32,
             )
         };
+        // Rerank briefs and doc cards (rank-only): judge via the seam,
+        // demote by tier, never filter. Unavailable keeps prior order.
+        if let Some(judge_ctx) = judge.as_ref() {
+            let doc_judge = crate::read::decide::DocJudge::new(
+                judge_ctx.backend,
+                judge_ctx.model.clone(),
+                judge_ctx.timeout_ms,
+            );
+            let cap_inputs: Vec<(String, String)> = cap_hits
+                .iter()
+                .map(|hit| (hit.id.clone(), hit.purpose.clone()))
+                .collect();
+            if !cap_inputs.is_empty() {
+                let cap_verdicts = doc_judge.judge(&request.query, &cap_inputs);
+                let prior: Vec<String> = cap_hits.iter().map(|hit| hit.id.clone()).collect();
+                let model = crate::query::rerank::demote_by_verdict(&prior, &cap_verdicts);
+                if model != prior {
+                    let mut by_id = std::collections::HashMap::new();
+                    for hit in cap_hits {
+                        by_id.insert(hit.id.clone(), hit);
+                    }
+                    cap_hits = model.iter().filter_map(|id| by_id.remove(id)).collect();
+                    let decisions = crate::query::rerank::verdict_decisions(
+                        &cap_verdicts,
+                        &judge_ctx.model,
+                        crate::query::decision_points::RERANK_VERSION,
+                    );
+                    let _ = crate::query::shadow::rerank_shadow(&prior, &model, &decisions);
+                }
+            }
+            let doc_inputs: Vec<(String, String)> = doc_hits
+                .iter()
+                .filter_map(|hit| hit.body.clone().map(|body| (hit.key.clone(), body)))
+                .collect();
+            if !doc_inputs.is_empty() {
+                let doc_verdicts = doc_judge.judge(&request.query, &doc_inputs);
+                let prior: Vec<String> = doc_hits.iter().map(|hit| hit.key.clone()).collect();
+                let model = crate::query::rerank::demote_by_verdict(&prior, &doc_verdicts);
+                if model != prior {
+                    let mut by_key = std::collections::HashMap::new();
+                    for hit in doc_hits {
+                        by_key.insert(hit.key.clone(), hit);
+                    }
+                    doc_hits = model.iter().filter_map(|key| by_key.remove(key)).collect();
+                    let decisions = crate::query::rerank::verdict_decisions(
+                        &doc_verdicts,
+                        &judge_ctx.model,
+                        crate::query::decision_points::RERANK_VERSION,
+                    );
+                    let _ = crate::query::shadow::rerank_shadow(&prior, &model, &decisions);
+                }
+            }
+        }
         let doc_entries: Vec<(String, String)> = doc_hits
             .iter()
             .filter_map(|hit| {
@@ -428,15 +519,21 @@ impl ReadEngine {
             ),
             &mut tokens_used,
         );
-        push(
-            "From the capabilities",
-            crate::read::render::render_evidence_section(
+        if cap_entries.is_empty() {
+            gaps.push(
+                "capability corpus unpopulated: no briefs indexed; run the capability import to populate".to_string(),
+            );
+        } else {
+            push(
                 "From the capabilities",
-                &cap_entries,
-                plan.budgets.evidence.saturating_sub(half_evidence),
-            ),
-            &mut tokens_used,
-        );
+                crate::read::render::render_evidence_section(
+                    "From the capabilities",
+                    &cap_entries,
+                    plan.budgets.evidence.saturating_sub(half_evidence),
+                ),
+                &mut tokens_used,
+            );
+        }
         // A drifted doc still renders with an `[unverified]` label; it
         // does not by itself mark the whole answer degraded.
         let code_plan = crate::read::planes::code::code_plan(
@@ -486,14 +583,12 @@ impl ReadEngine {
                 }
             }
         }
-        // Symbol/Graph intents resolve through the structure/graph
-        // planes first; exact sites head Top matches, code recall
-        // follows. Unknown symbols read as honest gaps.
-        let plane_findings = structure_findings(&request.query, plan.intent, ctx.workspace, ctx.db);
-        // Bounded ripgrep arm: exact/symbol/graph/path intents only when
-        // the index yields no product code, so a stale index cannot hide
-        // a literal. Broad language stays index-only. Cost caps, never
-        // silent truncation.
+        // Symbol/Graph findings resolved above; exact sites head Top
+        // matches, code recall follows. Unknown symbols read as honest
+        // gaps. Bounded ripgrep arm: exact/symbol/graph/path intents
+        // only when the index yields no product code, so a stale index
+        // cannot hide a literal. Broad language stays index-only. Cost
+        // caps, never silent truncation.
         let mut rg_gaps: Vec<String> = Vec::new();
         let mut rg_findings: Vec<crate::read::engine::Finding> = Vec::new();
         let index_empty = plane_findings.is_empty() && code_findings.is_empty();
@@ -511,7 +606,111 @@ impl ReadEngine {
         evidence.extend(code_findings);
         evidence.extend(rg_findings);
         evidence.dedupe();
-        let code_findings = evidence.into_findings();
+        let mut code_findings = evidence.into_findings();
+        if !request.include_fixtures {
+            code_findings.retain(|finding| {
+                crate::source_scope::classify(finding.source.display(), None)
+                    != crate::source_scope::SourceScope::Fixture
+            });
+        }
+        // Scope hypothesis (shadow-only): funnel terms first, decision
+        // role judges the pinned crate choice via the ladder; the
+        // verdict adjusts rank priors only, never filters. Unavailable
+        // falls back to funnel terms, labelled.
+        let funnel = crate::query::funnel::funnel_terms(
+            &request.query,
+            &search_vector::SemanticAliases::new(),
+            None,
+        );
+        let mut scope_crates: Vec<String> = code_findings
+            .iter()
+            .map(crate::read::engine::Finding::crate_name)
+            .filter(|name| !name.is_empty())
+            .collect();
+        scope_crates.sort();
+        scope_crates.dedup();
+        scope_crates.truncate(10);
+        let scope_hypothesis: Option<String> = match judge.as_ref() {
+            Some(judge_ctx) => {
+                let spec = crate::query::decision_points::scope_spec(&scope_crates);
+                let state = crate::query::decision_points::scope_state(
+                    &request.query,
+                    &funnel.significant,
+                    &scope_crates,
+                );
+                let question = fluent_llm::decision::Question {
+                    spec: &spec,
+                    state: &state,
+                    question: &request.query,
+                };
+                let prompt = question.render();
+                let options: Vec<fluent_llm::decision::DecisionOption> = spec
+                    .options()
+                    .into_iter()
+                    .map(|label| fluent_llm::decision::DecisionOption {
+                        label,
+                        description: String::new(),
+                    })
+                    .collect();
+                let request_decide = fluent_llm::decision::DecideRequest {
+                    prompt,
+                    state,
+                    question: request.query.clone(),
+                    options,
+                    kind: fluent_llm::decision::DecisionKind::Choice,
+                    version: crate::query::decision_points::SCOPE_VERSION,
+                    timeout_ms: judge_ctx.timeout_ms,
+                    model: judge_ctx.model.clone(),
+                };
+                let fallback = fluent_llm::decision::Decision::from_distribution(
+                    "unknown",
+                    vec![("unknown".to_string(), 1.0)],
+                    judge_ctx.model.clone(),
+                    crate::query::decision_points::SCOPE_VERSION,
+                    0,
+                    false,
+                )
+                .expect("fallback");
+                let key = common_core::hash::blake3_hex(
+                    format!("scope|{}|{}", request.query, scope_crates.join(",")).as_bytes(),
+                );
+                let breaker =
+                    fluent_llm::decision::DecisionBreaker::new(3, 60_000).expect("breaker");
+                let backend = judge_ctx.backend;
+                let outcome =
+                    fluent_llm::client::block_on(fluent_llm::decision::decide_with_ladder(
+                        None,
+                        finding_cache(),
+                        key,
+                        false,
+                        &breaker,
+                        || async { backend.decide(request_decide).await },
+                        fallback,
+                    ));
+                match outcome {
+                    Ok(decision) if scope_crates.contains(&decision.label) => {
+                        let _ = crate::query::shadow::scope_shadow(
+                            Some(&decision),
+                            &funnel.significant,
+                        );
+                        Some(decision.label)
+                    }
+                    Ok(_) | Err(_) => None,
+                }
+            }
+            None => None,
+        };
+        if let Some(want) = scope_hypothesis.as_deref() {
+            code_findings.sort_by(|a, b| {
+                let a_hit = a.crate_name() == want;
+                let b_hit = b.crate_name() == want;
+                b_hit.cmp(&a_hit).then_with(|| {
+                    b.producer_score
+                        .partial_cmp(&a.producer_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+            });
+        }
         gaps.extend(rg_gaps);
         // Negative-evidence floor: exact symbol/edge, product code, or a
         // verified doc/card satisfies it; project cards satisfy it only for
@@ -524,9 +723,37 @@ impl ReadEngine {
         if !floor_met {
             gaps.push("none found in covered index".to_string());
         }
+        // Live bytes win over stored ranges: edits shift lines without
+        // re-syncing, so excerpts re-resolve before capping — capping
+        // after resolve keeps the budget honest when live text grows.
+        let (resolved_all, live_gaps) =
+            crate::read::planes::code::resolve_live_findings(ctx.workspace, code_findings);
+        gaps.extend(live_gaps);
+        let clipped_all: Vec<crate::read::engine::Finding> = resolved_all
+            .into_iter()
+            .map(|mut finding| {
+                finding.text = crate::read::planes::code::clip_finding_text(
+                    &finding.text,
+                    crate::read::engine::RG_EXCERPT_CHAR_CAP,
+                );
+                finding
+            })
+            .collect();
         // Whole findings only: truncation cuts between findings, never
         // mid-fence, so citations always name a rendered row.
-        let mut kept_code = cap_findings_by_budget(&code_findings, plan.budgets.code);
+        let mut kept_code = cap_findings_by_budget(&clipped_all, plan.budgets.code);
+        // Deterministic spam handling first: manifest rows collapse to
+        // one with a count, fixtures re-assert exclusion. Rank-only.
+        let (collapsed_code, manifest_dropped) =
+            crate::query::rerank::collapse_manifest_rows(kept_code);
+        kept_code = collapsed_code;
+        if manifest_dropped > 0 {
+            gaps.push(format!(
+                "manifest rows collapsed: kept 1 of {}",
+                manifest_dropped + 1
+            ));
+        }
+        kept_code = crate::query::rerank::exclude_fixtures(kept_code, request.include_fixtures);
         // Shadow judge: labels render, nothing filters, rank order kept.
         // `None` judge is byte-identical to the extractive path. Authorized
         // filtering (M7) drops `Irrelevant`, gaps `Insufficient`, and keeps
@@ -666,6 +893,27 @@ impl ReadEngine {
             if all_zero && !verdicts.is_empty() {
                 gaps.push("judge unavailable: shadow-only evidence".to_string());
             }
+            // Rerank (rank-only): demote by verdict tier via the seam.
+            // Unavailable keeps prior order (ranked-unfiltered); hard
+            // drops wait for a passing registry entry, never a verdict.
+            if !verdicts.is_empty() {
+                let prior_ids: Vec<String> =
+                    kept_code.iter().map(|finding| finding.id.clone()).collect();
+                let model_ids = crate::query::rerank::demote_by_verdict(&prior_ids, &verdicts);
+                if model_ids != prior_ids {
+                    let mut by_id = std::collections::HashMap::new();
+                    for finding in kept_code {
+                        by_id.insert(finding.id.clone(), finding);
+                    }
+                    kept_code = model_ids.iter().filter_map(|id| by_id.remove(id)).collect();
+                    let decisions = crate::query::rerank::verdict_decisions(
+                        &verdicts,
+                        &judge_ctx.model,
+                        crate::query::decision_points::RERANK_VERSION,
+                    );
+                    let _ = crate::query::shadow::rerank_shadow(&prior_ids, &model_ids, &decisions);
+                }
+            }
             if judge_ctx.fingerprint.is_none() {
                 gaps.push("decision fingerprint absent: shadow-only".to_string());
             }
@@ -698,25 +946,39 @@ impl ReadEngine {
                 kept_code = filtered;
             }
         }
-        let top_body = if judge_labels.is_empty() {
-            format!(
-                "### Top matches\n{}",
-                crate::read::render::render_code_findings(&kept_code)
-            )
-        } else {
-            format!(
-                "### Top matches\n{}",
-                render_code_findings_with_labels(&kept_code, &judge_labels)
-            )
-        };
+        let (edge_findings, code_rest): (Vec<Finding>, Vec<Finding>) = kept_code
+            .into_iter()
+            .partition(|finding| finding.kind == FindingKind::Edge);
+        let top_body = render_top_matches(&code_rest, &judge_labels, finding_authorized, &plan);
         push("Top matches", top_body, &mut tokens_used);
+        // Call-graph edges render apart from code excerpts: the union
+        // collapse in `EvidenceSet::dedupe` would otherwise fuse edge
+        // rows into same-file excerpts and hide the caller list.
+        const EDGE_ROW_CAP: usize = 12;
+        if !edge_findings.is_empty() {
+            let shown = edge_findings.len().min(EDGE_ROW_CAP);
+            let edge_body = format!(
+                "### Call graph\n{}",
+                crate::read::render::render_code_findings(&edge_findings[..shown])
+            );
+            push("Call graph", edge_body, &mut tokens_used);
+            if edge_findings.len() > EDGE_ROW_CAP {
+                gaps.push(format!(
+                    "call graph truncated to {EDGE_ROW_CAP} rows ({} recorded)",
+                    edge_findings.len()
+                ));
+            }
+        } else if edge_query_target(&request.query).is_some() {
+            gaps.push(
+                "graph has no recorded edges for this query (unknown symbol or unindexed calls)"
+                    .to_string(),
+            );
+        }
         // The shown set is the evidence set: citations and synthesis
-        // draw from capped findings, never from trimmed rows.
-        // Live bytes win over stored ranges: edits shift lines without
-        // re-syncing, so excerpts re-resolve before they render.
-        let (code_findings, live_gaps) =
-            crate::read::planes::code::resolve_live_findings(ctx.workspace, kept_code);
-        gaps.extend(live_gaps);
+        // draw from the resolved, clipped, capped findings, never from
+        // trimmed rows.
+        let mut code_findings = code_rest;
+        code_findings.extend(edge_findings);
         // Freshness is labelled on the row, never hidden: findings
         // whose source moved since indexing cite with a ` (stale)`
         // marker. Strict callers refuse on marked citations; everyone
@@ -729,27 +991,40 @@ impl ReadEngine {
                     .source
                     .citation(finding.start_line, finding.end_line)
                     .with_status(stale.contains(finding.source.display()), false)
+                    .with_digest(common_core::hash::blake3_hex(finding.text.as_bytes()))
             })
             .collect();
+        // Card paths with whole-card citations: verified docs and
+        // capabilities plus the project sources below. The constrain
+        // prefilter accepts these paths with no line-range check.
+        let mut card_paths: Vec<String> = Vec::new();
         for hit in &doc_hits {
             if hit.verified {
+                let excerpt = hit.body.clone().unwrap_or_default();
                 citations.push(
                     crate::source_ref::SourceRef::from_workspace(
                         ctx.workspace,
                         std::path::Path::new(&hit.source_path),
                     )
-                    .citation(None, None),
+                    .citation(None, None)
+                    .with_digest(common_core::hash::blake3_hex(excerpt.as_bytes())),
                 );
+                card_paths.push(hit.source_path.clone());
             }
         }
         for hit in &cap_hits {
             if hit.verified {
+                let excerpt = hit
+                    .live_excerpt
+                    .clone()
+                    .unwrap_or_else(|| hit.purpose.clone());
                 citations.push(
                     crate::source_ref::SourceRef::from_workspace(
                         ctx.workspace,
                         std::path::Path::new(&hit.source_path),
                     )
-                    .citation(None, None),
+                    .citation(None, None)
+                    .with_digest(common_core::hash::blake3_hex(excerpt.as_bytes())),
                 );
             }
         }
@@ -757,32 +1032,50 @@ impl ReadEngine {
             let mut project_citations = Vec::new();
             let manifest = ctx.workspace.join("Cargo.toml");
             if manifest.is_file() {
+                let body = std::fs::read_to_string(&manifest).unwrap_or_default();
                 project_citations.push(
                     crate::source_ref::SourceRef::from_workspace(
                         ctx.workspace,
                         std::path::Path::new("Cargo.toml"),
                     )
-                    .citation(None, None),
+                    .citation(None, None)
+                    .with_digest(common_core::hash::blake3_hex(body.as_bytes())),
                 );
+                card_paths.push("Cargo.toml".to_string());
             }
             if let Ok(project_cards) = ctx.db.project_cards_all() {
                 for card in project_cards
                     .iter()
                     .filter(|card| matches!(card.kind.as_str(), "workspace" | "crate" | "domain"))
                 {
-                    let source = card.source_path.split('#').next().unwrap_or("");
-                    if !source.is_empty() {
-                        project_citations.push(
-                            crate::source_ref::SourceRef::from_workspace(
-                                ctx.workspace,
-                                std::path::Path::new(source),
-                            )
-                            .citation(None, None),
-                        );
+                    if card.content_hash.is_empty() {
+                        continue;
                     }
+                    let source = card.source_path.split('#').next().unwrap_or("");
+                    if source.is_empty() {
+                        continue;
+                    }
+                    if !ctx.workspace.join(source).is_file() {
+                        continue;
+                    }
+                    project_citations.push(
+                        crate::source_ref::SourceRef::from_workspace(
+                            ctx.workspace,
+                            std::path::Path::new(source),
+                        )
+                        .citation(None, None)
+                        .with_digest(card.content_hash.clone()),
+                    );
+                    card_paths.push(source.to_string());
                 }
             }
             citations.splice(0..0, project_citations);
+        }
+        // File-level collapse: one file cites once (first range wins),
+        // so duplicate and spam rows never reach the envelope.
+        {
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+            citations.retain(|cite| seen.insert(cite.source.display().to_string()));
         }
         push(
             "Citations",
@@ -800,35 +1093,44 @@ impl ReadEngine {
         // drop, and an empty gate means evidence-only (no answer
         // section). Until claim support calibrates, kept sentences are
         // `[unverified]` and the evidence sections stay authoritative.
+        // Synthesis runs on synthesis-grade evidence (code, verified
+        // docs, or the map) — never refused for empty code alone, and
+        // never triggered by `considered` capability briefs alone.
         let mut claims = Vec::new();
         let mut answer_body: Option<String> = None;
-        if !request.no_llm && !code_findings.is_empty() {
+        let synthesis_evidence = !code_findings.is_empty()
+            || doc_hits.iter().any(|hit| hit.verified)
+            || (plan.intent == QueryIntent::Orientation && !cards.is_empty());
+        if !request.no_llm && synthesis_evidence {
             match synthesize {
                 None => gaps.push("synthesis unavailable: evidence only".to_string()),
                 Some(synth) => {
-                    let prompt = synthesis_prompt(&request.query, &code_findings);
+                    let prompt =
+                        synthesis_prompt(&request.query, &cards, &doc_hits, &code_findings);
                     match synth.synthesize(&prompt) {
                         Ok(Some(text)) => {
-                            let constrained = crate::read::claims::constrain_answer_to_evidence(
-                                &text,
-                                &code_findings
-                                    .iter()
-                                    .filter_map(|finding| {
-                                        Some((
-                                            String::new(),
-                                            finding.source.display().to_string(),
-                                            finding.start_line?,
-                                            finding.end_line?,
-                                            finding.text.clone(),
-                                        ))
-                                    })
-                                    .collect::<Vec<_>>(),
-                            );
+                            let constrained =
+                                crate::read::claims::constrain_answer_to_evidence_with_cards(
+                                    &text,
+                                    &code_findings
+                                        .iter()
+                                        .filter_map(|finding| {
+                                            Some((
+                                                String::new(),
+                                                finding.source.display().to_string(),
+                                                finding.start_line?,
+                                                finding.end_line?,
+                                                finding.text.clone(),
+                                            ))
+                                        })
+                                        .collect::<Vec<_>>(),
+                                    &card_paths,
+                                );
                             claims = crate::read::claims::bind_claims(
                                 &constrained,
                                 &citations
                                     .iter()
-                                    .map(ToString::to_string)
+                                    .map(crate::source_ref::Citation::text)
                                     .collect::<Vec<_>>(),
                             );
                             if support_authorized {
@@ -848,11 +1150,11 @@ impl ReadEngine {
                             }
                         }
                         Ok(None) => {
-                            answer_body = Some("(unavailable: empty answer)".to_string());
+                            gaps.push("synthesis unavailable: evidence only".to_string());
                         }
                         Err(error) => {
                             let detail = error.trim().chars().take(200).collect::<String>();
-                            answer_body = Some(format!("(unavailable: {detail})"));
+                            gaps.push(format!("synthesis unavailable: {detail}"));
                         }
                     }
                 }
@@ -978,6 +1280,20 @@ fn coverage_section(
         "budget: {} tokens (project {} / evidence {} / code {})",
         plan.budgets.total, plan.budgets.project, plan.budgets.evidence, plan.budgets.code
     );
+    if plan.scope_crates.is_empty() {
+        out.push_str("scope: none (query names no crate; recall unscoped)\n");
+    } else {
+        let _ = writeln!(
+            out,
+            "scope: in=[{}] (70% of code budget; recall stays unscoped{})",
+            plan.scope_crates.join(", "),
+            if plan.scope_narrowed {
+                "; graph narrowed to scope-owned definitions"
+            } else {
+                ""
+            }
+        );
+    }
     out
 }
 
@@ -1043,20 +1359,105 @@ pub fn cap_findings_by_budget(
 /// Evidence prompt for the synthesizer: question plus budgeted
 /// finding excerpts with ids, source anchors, and verbatim text. Only
 /// shown ids may be cited; `constrain_answer_to_evidence` enforces it.
-fn synthesis_prompt(query: &str, findings: &[crate::read::engine::Finding]) -> String {
+/// The map and verified doc excerpts join code findings so card-backed
+/// answers ground in shown text. Capability briefs stay out: they are
+/// generated commentary and render `[considered]` until calibrated.
+fn synthesis_prompt(
+    query: &str,
+    cards: &[(String, String)],
+    docs: &[crate::read::planes::docs::DocHit],
+    findings: &[crate::read::engine::Finding],
+) -> String {
     use std::fmt::Write as _;
     let mut prompt = format!("Question: {query}\nEvidence:\n");
-    for finding in findings.iter().take(10) {
-        let _ = writeln!(
-            prompt,
-            "- [{}] {}: {}",
-            finding.id,
-            finding.source.display(),
-            finding.text
-        );
+    if !cards.is_empty() {
+        prompt.push_str("### Project map\n");
+        for (index, (title, body)) in cards.iter().enumerate() {
+            let _ = writeln!(prompt, "- [card-map-{index}] {title}: {body}");
+        }
+    }
+    let verified_docs: Vec<(&str, &str)> = docs
+        .iter()
+        .filter(|hit| hit.verified)
+        .filter_map(|hit| {
+            hit.body
+                .as_deref()
+                .map(|body| (hit.source_path.as_str(), body))
+        })
+        .collect();
+    if !verified_docs.is_empty() {
+        prompt.push_str("### Docs\n");
+        for (index, (source, body)) in verified_docs.iter().enumerate() {
+            let _ = writeln!(prompt, "- [card-doc-{index}] {source}: {body}");
+        }
+    }
+    if !findings.is_empty() {
+        prompt.push_str("### Code\n");
+        for finding in findings.iter().take(10) {
+            let _ = writeln!(
+                prompt,
+                "- [{}] {}: {}",
+                finding.id,
+                finding.source.display(),
+                finding.text
+            );
+        }
     }
     prompt.push_str("Answer with cited facts only. Cite only shown ids.");
     prompt
+}
+
+/// Top-matches body with the soft crate scope applied: in-scope
+/// findings render first with 70% of the code budget, out-of-scope
+/// with the remainder. Rank order inside each half is untouched and
+/// recall never constrains, so a wrong scope degrades gracefully.
+/// No scope (or a one-sided scope) renders exactly as before.
+fn render_top_matches(
+    kept_code: &[Finding],
+    judge_labels: &std::collections::HashMap<String, String>,
+    finding_authorized: bool,
+    plan: &ReadPlan,
+) -> String {
+    let render = |findings: &[Finding]| -> String {
+        if judge_labels.is_empty() || !finding_authorized {
+            crate::read::render::render_code_findings(findings)
+        } else {
+            render_code_findings_with_labels(findings, judge_labels)
+        }
+    };
+    let scoped = !plan.scope_crates.is_empty();
+    let (inside, outside): (Vec<Finding>, Vec<Finding>) = if scoped {
+        let mut inside = Vec::new();
+        let mut outside = Vec::new();
+        for finding in kept_code {
+            if plan
+                .scope_crates
+                .iter()
+                .any(|scope| *scope == finding.crate_name())
+            {
+                inside.push(finding.clone());
+            } else {
+                outside.push(finding.clone());
+            }
+        }
+        (inside, outside)
+    } else {
+        (kept_code.to_vec(), Vec::new())
+    };
+    if !scoped || inside.is_empty() || outside.is_empty() {
+        return format!(
+            "### Top matches\n{}",
+            crate::read::budget::enforce_budget(&render(kept_code), plan.budgets.code)
+        );
+    }
+    let in_budget = plan.budgets.code * 7 / 10;
+    let out_budget = plan.budgets.code.saturating_sub(in_budget);
+    format!(
+        "### Top matches\nscope: in-scope first (70% of code budget for [{}])\n{}{}",
+        plan.scope_crates.join(", "),
+        crate::read::budget::enforce_budget(&render(&inside), in_budget),
+        crate::read::budget::enforce_budget(&render(&outside), out_budget)
+    )
 }
 
 /// Render code findings with shadow judge labels. Rank order is
@@ -1223,17 +1624,49 @@ fn file_mtime_ms(meta: &std::fs::Metadata) -> Option<i64> {
         .and_then(|duration| i64::try_from(duration.as_millis()).ok())
 }
 
+/// Edge-query target for the honest-empty gap: the first identifier
+/// after `callers of` / `callees of` / `dependents of`. Symbols are
+/// single identifiers, so a trailing scope clause (`in <crate>`) or
+/// stray words never pollute the lookup — the scope resolver owns
+/// those tokens instead.
+fn edge_query_target(query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    let lowered = trimmed.to_lowercase();
+    ["callers of", "callees of", "dependents of"]
+        .iter()
+        .find_map(|cue| {
+            lowered.find(cue).and_then(|position| {
+                trimmed.get(position + cue.len()..).map(|tail| {
+                    tail.trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .trim()
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                })
+            })
+        })
+        .filter(|target| !target.is_empty())
+}
+
 /// Exact-structure findings for Symbol/Graph intents: definitions,
 /// call sites, and owners through the committed graph. Unknown
-/// symbols yield no findings (the caller records the gap).
+/// symbols yield no findings (the caller records the gap). Graph
+/// edges resolve through scope-owned definitions first when prefixes
+/// are given, falling back to the unscoped planes; the flag reports
+/// which side answered.
 fn structure_findings(
     query: &str,
     intent: QueryIntent,
     workspace: &std::path::Path,
     db: &search_vector::db::GuidanceDb,
-) -> Vec<crate::read::engine::Finding> {
+    scope_prefixes: &[String],
+) -> (Vec<crate::read::engine::Finding>, bool) {
     use crate::read::engine::{Finding, FindingKind, FindingProducer};
     let mut out = Vec::new();
+    let narrowed: bool;
     let lower = query.trim().to_lowercase();
     let after_of = |cue: &str| {
         let trimmed = query.trim();
@@ -1270,16 +1703,16 @@ fn structure_findings(
                 provenance: "symbol".to_string(),
             });
         }
-        return out;
+        return (out, false);
     }
     if intent != QueryIntent::Graph {
-        return out;
+        return (out, false);
     }
     let Ok(plane) = crate::read::planes::graph::GraphPlane::hydrate(
         db,
         &[workspace.to_string_lossy().into_owned()],
     ) else {
-        return out;
+        return (out, false);
     };
     if lower.starts_with("owner of") {
         if let Some(path) = after_of("owner of") {
@@ -1300,17 +1733,26 @@ fn structure_findings(
                 provenance: "ownership".to_string(),
             });
         }
-        return out;
+        return (out, false);
     }
-    let target = after_of("callers of")
-        .or_else(|| after_of("callees of"))
-        .or_else(|| after_of("dependents of"))
-        .unwrap_or_default();
+    let target = edge_query_target(query).unwrap_or_default();
     if target.is_empty() {
-        return out;
+        return (out, false);
     }
+    let scoped = !scope_prefixes.is_empty();
     if lower.starts_with("callees of") {
-        for callee in plane.callees(&target) {
+        let scoped_hits = if scoped {
+            plane.callees_in_scope(&target, scope_prefixes)
+        } else {
+            Vec::new()
+        };
+        let (hits, narrow) = if scoped_hits.is_empty() {
+            (plane.callees(&target), false)
+        } else {
+            (scoped_hits, true)
+        };
+        narrowed = narrow;
+        for callee in hits {
             out.push(Finding {
                 id: format!("callee:{}:{}", callee.file, callee.name),
                 producer: FindingProducer::Ast,
@@ -1323,10 +1765,21 @@ fn structure_findings(
                 provenance: "graph".to_string(),
             });
         }
-        return out;
+        return (out, narrowed);
     }
     if lower.starts_with("dependents of") {
-        for dependent in plane.dependents(&target) {
+        let scoped_hits = if scoped {
+            plane.dependents_in_scope(&target, scope_prefixes)
+        } else {
+            Vec::new()
+        };
+        let (hits, narrow) = if scoped_hits.is_empty() {
+            (plane.dependents(&target), false)
+        } else {
+            (scoped_hits, true)
+        };
+        narrowed = narrow;
+        for dependent in hits {
             out.push(Finding {
                 id: format!("dependent:{dependent}"),
                 producer: FindingProducer::Ast,
@@ -1339,9 +1792,24 @@ fn structure_findings(
                 provenance: "graph".to_string(),
             });
         }
-        return out;
+        return (out, narrowed);
     }
-    for caller in plane.callers(&target) {
+    let scoped_callers = if scoped {
+        plane.callers_in_scope(
+            &target,
+            crate::read::planes::graph::CallerFilter::default(),
+            scope_prefixes,
+        )
+    } else {
+        Vec::new()
+    };
+    let (callers, narrow) = if scoped_callers.is_empty() {
+        (plane.callers(&target), false)
+    } else {
+        (scoped_callers, true)
+    };
+    narrowed = narrow;
+    for caller in callers {
         let source = source_of(&caller.file);
         out.push(Finding {
             id: format!(
@@ -1367,7 +1835,7 @@ fn structure_findings(
             provenance: "graph".to_string(),
         });
     }
-    out
+    (out, narrowed)
 }
 
 /// Live excerpt for one definition site: the owning fragment's
@@ -1426,3 +1894,11 @@ mod read_engine_tests;
 #[cfg(test)]
 #[path = "../../tests/rg_backend.rs"]
 mod rg_backend_tests;
+
+#[cfg(test)]
+#[path = "../../tests/graph_callers.rs"]
+mod graph_callers_tests;
+
+#[cfg(test)]
+#[path = "../../tests/synthesis_evidence.rs"]
+mod synthesis_evidence_tests;

@@ -125,6 +125,33 @@ pub fn rerank_shadow(
         .collect()
 }
 
+/// Scope-hypothesis shadow: the decision-role crate pick is logged
+/// with the deterministic funnel fallback as authoritative. The
+/// hypothesis adjusts rank priors only; it never filters, caches,
+/// or persists until calibration authorizes it.
+#[must_use]
+/// Scope-hypothesis shadow: the decision-role crate pick is logged
+/// with the deterministic funnel fallback as authoritative. The
+/// hypothesis adjusts rank priors only; it never filters, caches,
+/// or persists until calibration authorizes it.
+pub fn scope_shadow(
+    hypothesis: Option<&Decision>,
+    funnel_terms: &[String],
+) -> Option<ShadowRecord> {
+    use fluent_llm::decision::ThresholdSet;
+    let thresholds = ThresholdSet {
+        act: 0.9,
+        review: 0.7,
+    };
+    hypothesis.map(|d| {
+        record(
+            crate::query::decision_points::SCOPE_POINT,
+            d,
+            &thresholds,
+            format!("funnel:{}", funnel_terms.join(",")),
+        )
+    })
+}
 /// Capability-judge shadow: one record per scored brief for the
 /// judge corpus. The tier is the label; the score is the confidence.
 /// Unjudged briefs (`None`) log nothing — there is no verdict to

@@ -148,6 +148,7 @@ fn explain_request(query: &str, no_llm: bool) -> ExplainRequest {
         limit: 5,
         budget_override: None,
         no_llm,
+        include_fixtures: false,
     }
 }
 
@@ -180,11 +181,21 @@ fn explain_assembles_sections_in_order_without_a_model() {
             "Coverage",
             "From the project map",
             "From the docs",
-            "From the capabilities",
             "Top matches",
-            "Citations"
+            "Citations",
+            "Gaps"
         ],
         "{titles:?}"
+    );
+    // No capability rows seeded: the section stays out and the gap
+    // names the unpopulated corpus instead.
+    assert!(
+        answer
+            .gaps
+            .iter()
+            .any(|gap| gap.contains("capability corpus unpopulated")),
+        "{:?}",
+        answer.gaps
     );
     assert!(answer.coverage.is_some());
     assert!(answer.tokens_used > 0);
@@ -223,8 +234,16 @@ fn explain_synthesizes_support_gated_answers() {
     );
     let rendered = crate::read::render::render_answer(&answer);
     assert!(
-        rendered.contains("(unavailable: empty answer)"),
-        "{rendered}"
+        !rendered.contains("### Answer"),
+        "declined synthesis renders no answer section: {rendered}"
+    );
+    assert!(
+        answer
+            .gaps
+            .iter()
+            .any(|gap| gap.contains("synthesis unavailable")),
+        "decline names the gap: {:?}",
+        answer.gaps
     );
     // Evidence-only when declined at the request level.
     let answer = engine.explain(
@@ -234,6 +253,319 @@ fn explain_synthesizes_support_gated_answers() {
     );
     assert!(!crate::read::render::render_answer(&answer).contains("### Answer"));
     assert!(answer.claims.is_empty());
+}
+
+#[test]
+fn soft_scope_orders_in_crate_first_with_split_budget() {
+    // Two retrieved files, one in the query-named crate: the scope
+    // partition renders the in-crate finding first even when rank
+    // prefers the other file (the router file repeats the query terms
+    // to outrank the guidance file), declares the split in Coverage,
+    // and leaves recall itself unscoped (both files still cited).
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\n").expect("manifest");
+    let seed = |relative: &str, symbol: &str, body: &str| {
+        let path = root.join(relative);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, body).expect("write");
+        let meta = std::fs::metadata(&path).expect("mtime");
+        (search_vector::db::FileRecord {
+            id: relative.to_string(),
+            absolute_path: path.to_string_lossy().into_owned(),
+            relative_path: relative.to_string(),
+            root_path: root.to_string_lossy().into_owned(),
+            size_bytes: meta.len(),
+            last_modified_time: meta
+                .modified()
+                .expect("mtime")
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("epoch")
+                .as_millis() as i64,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        }, search_vector::db::FragmentRecord {
+            id: format!("{relative}:{symbol}"),
+            group: None,
+            file_id: relative.to_string(),
+            range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":2,\"start_offset\":0,\"end_offset\":10}".to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some(body.to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some(symbol.to_string()),
+            scope: None,
+            signature: None,
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        })
+    };
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let (in_file, in_frag) = seed(
+        "src/guidance/alpha.rs",
+        "alpha_guidance_fn",
+        "pub fn alpha_guidance_fn() {}\n// guidance sync work\n",
+    );
+    let (out_file, out_frag) = seed(
+        "src/router/beta.rs",
+        "router_dispatch_fn",
+        "pub fn router_dispatch_fn() {}\n// guidance sync work guidance sync work guidance sync work\n",
+    );
+    db.upsert_fragments(&in_file, &[in_frag], &[])
+        .expect("seed");
+    db.upsert_fragments(&out_file, &[out_frag], &[])
+        .expect("seed");
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: root,
+        db: &db,
+        nlp: None,
+        coverage: Some(crate::read::readiness::Coverage::empty()),
+    };
+    let answer = engine.explain(
+        &explain_request("how does guidance sync work", true),
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(
+        rendered
+            .contains("scope: in-scope first (70% of code budget for [guidance-core, guidance])"),
+        "partition marker names the scope: {rendered}"
+    );
+    let top = rendered
+        .split_once("### Top matches")
+        .map(|(_, rest)| rest)
+        .unwrap_or("");
+    let in_pos = top.find("src/guidance/alpha.rs");
+    let out_pos = top.find("src/router/beta.rs");
+    assert!(
+        in_pos.is_some() && out_pos.is_some(),
+        "recall stays unscoped, both files render: {rendered}"
+    );
+    assert!(
+        in_pos < out_pos,
+        "in-scope renders first regardless of rank: {rendered}"
+    );
+    assert!(
+        rendered.contains("scope: in=[guidance-core, guidance]"),
+        "Coverage declares the split: {rendered}"
+    );
+}
+
+fn graph_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+    // One file where a same-file caller invokes its callee: the
+    // regression case for the dropped same-file edge.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    let abs = root.join("a.rs");
+    std::fs::write(
+        &abs,
+        "pub fn caller_fn() { target_fn(); }\npub fn target_fn() {}\n",
+    )
+    .expect("write");
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let abs_text = abs.to_string_lossy().into_owned();
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: abs_text.clone(),
+            absolute_path: abs_text.clone(),
+            relative_path: "a.rs".to_string(),
+            root_path: root.to_string_lossy().into_owned(),
+            size_bytes: 60,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[],
+        &[],
+    )
+    .expect("seed file");
+    db.replace_file_graph(
+        &abs_text,
+        &[],
+        &[
+            ("caller_fn".to_string(), vec!["target_fn".to_string()]),
+            ("target_fn".to_string(), vec![]),
+        ],
+    )
+    .expect("seed graph");
+    (dir, db)
+}
+
+#[test]
+fn call_graph_section_lists_same_file_callers() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = graph_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: Some(crate::read::readiness::Coverage::empty()),
+    };
+    let answer = engine.explain(&explain_request("callers of target_fn", true), &ctx, None);
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(
+        rendered.contains("### Call graph"),
+        "edges render apart from code: {rendered}"
+    );
+    assert!(
+        rendered.contains("calls target_fn in caller_fn"),
+        "same-file caller resolves: {rendered}"
+    );
+}
+
+#[test]
+fn call_graph_without_edges_is_an_explicit_gap() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = graph_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: Some(crate::read::readiness::Coverage::empty()),
+    };
+    let answer = engine.explain(&explain_request("callers of no_such_fn", true), &ctx, None);
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(
+        !rendered.contains("### Call graph"),
+        "no edges means no section: {rendered}"
+    );
+    assert!(
+        answer
+            .gaps
+            .iter()
+            .any(|gap| gap.contains("no recorded edges")),
+        "honest-empty names the gap: {:?}",
+        answer.gaps
+    );
+}
+
+fn two_crate_graph_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+    // One homonym split across two table crates: `target_fn` defined
+    // and called in both `src/guidance` and `src/router`.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    for (relative, caller, callee) in [
+        ("src/guidance/g.rs", "g_caller_fn", "target_fn"),
+        ("src/router/r.rs", "r_caller_fn", "target_fn"),
+    ] {
+        let path = root.join(relative);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(
+            &path,
+            format!("pub fn {caller}() {{ {callee}(); }}\npub fn {callee}() {{}}\n"),
+        )
+        .expect("write");
+    }
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    for (relative, caller) in [
+        ("src/guidance/g.rs", "g_caller_fn"),
+        ("src/router/r.rs", "r_caller_fn"),
+    ] {
+        let absolute = root.join(relative).to_string_lossy().into_owned();
+        db.upsert_fragments(
+            &search_vector::db::FileRecord {
+                id: absolute.clone(),
+                absolute_path: absolute.clone(),
+                relative_path: relative.to_string(),
+                root_path: root.to_string_lossy().into_owned(),
+                size_bytes: 60,
+                last_modified_time: 100,
+                kind: Some("code".to_string()),
+                format: "rust".to_string(),
+                content_hash: None,
+                index_status: Some("indexed".to_string()),
+                fail_count: 0,
+                last_error: None,
+            },
+            &[],
+            &[],
+        )
+        .expect("seed file");
+        db.replace_file_graph(
+            &absolute,
+            &[],
+            &[
+                (caller.to_string(), vec!["target_fn".to_string()]),
+                ("target_fn".to_string(), vec![]),
+            ],
+        )
+        .expect("seed graph");
+    }
+    (dir, db)
+}
+
+#[test]
+fn scoped_graph_query_narrows_to_the_named_crate() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = two_crate_graph_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: Some(crate::read::readiness::Coverage::empty()),
+    };
+    let answer = engine.explain(
+        &explain_request("callers of target_fn in guidance", true),
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(
+        rendered.contains("calls target_fn in g_caller_fn"),
+        "named-crate caller resolves: {rendered}"
+    );
+    assert!(
+        !rendered.contains("r_caller_fn"),
+        "out-of-scope caller stays out: {rendered}"
+    );
+    assert!(
+        rendered.contains("graph narrowed"),
+        "Coverage declares the narrowing: {rendered}"
+    );
+}
+
+#[test]
+fn scoped_graph_query_falls_back_when_scope_names_no_definition() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = two_crate_graph_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: Some(crate::read::readiness::Coverage::empty()),
+    };
+    let answer = engine.explain(
+        &explain_request("callers of target_fn in llm", true),
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(
+        rendered.contains("g_caller_fn") && rendered.contains("r_caller_fn"),
+        "empty scope reads unscoped, never empty: {rendered}"
+    );
+    assert!(
+        !rendered.contains("graph narrowed"),
+        "no narrowing claimed without narrowing: {rendered}"
+    );
 }
 
 #[test]
@@ -277,6 +609,7 @@ fn exact_fallback_finds_literal_without_an_index_row() {
             limit: 5,
             budget_override: None,
             no_llm: true,
+            include_fixtures: false,
         },
         &ctx,
         None,
@@ -290,6 +623,7 @@ fn exact_fallback_finds_literal_without_an_index_row() {
             limit: 5,
             budget_override: None,
             no_llm: true,
+            include_fixtures: false,
         },
         &ctx,
         None,
@@ -340,10 +674,12 @@ fn shadow_judge_labels_without_filtering_or_reordering() {
     let judged =
         engine.explain_with_judge(&explain_request("alpha_fn", true), &ctx, None, Some(&judge));
     let judged_rendered = crate::read::render::render_answer(&judged);
+    // Shadow-only verdicts annotate nothing without a calibrated
+    // fingerprint: Tier labels render only when authorized.
     assert!(
-        judged_rendered.contains("[relevant]")
-            || judged_rendered.contains("[irrelevant]")
-            || judged_rendered.contains("[insufficient]"),
+        !judged_rendered.contains("[relevant]")
+            && !judged_rendered.contains("[irrelevant]")
+            && !judged_rendered.contains("[insufficient]"),
         "{judged_rendered}"
     );
     assert_eq!(
@@ -527,6 +863,7 @@ fn controls_abstain_with_none_found_gap() {
                 limit: 5,
                 budget_override: None,
                 no_llm: false,
+                include_fixtures: false,
             },
             &ctx,
             Some(&StubSynth {
@@ -552,6 +889,7 @@ fn controls_abstain_with_none_found_gap() {
             limit: 5,
             budget_override: None,
             no_llm: false,
+            include_fixtures: false,
         },
         &ctx,
         Some(&StubSynth {

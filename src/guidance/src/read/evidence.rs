@@ -31,12 +31,29 @@ impl EvidenceSet {
     }
 
     /// Dedupe by id then by location, preserving first-seen order.
+    /// File-level collapse keeps one row per file: distinct excerpts
+    /// union into that row (longest first, bounded by one excerpt's
+    /// budget) so facts living in shorter excerpts still render, while
+    /// the cited span follows the longest excerpt. Contained excerpts
+    /// drop as redundant.
     pub fn dedupe(&mut self) {
         let mut seen_ids: HashSet<String> = HashSet::new();
         let mut seen_locs: HashSet<(String, Option<u32>, Option<u32>)> = HashSet::new();
-        let mut out = Vec::with_capacity(self.findings.len());
+        // Per-file slot plus the longest served constituent's length;
+        // the row's span follows that constituent (span stability).
+        let mut best: std::collections::HashMap<String, (usize, usize)> =
+            std::collections::HashMap::new();
+        let mut out: Vec<Finding> = Vec::new();
         for finding in std::mem::take(&mut self.findings) {
             if !seen_ids.insert(finding.id.clone()) {
+                continue;
+            }
+            // Edge rows are a list, not excerpts: exact-id dupes drop,
+            // but same-file edges never union into each other or into
+            // code rows, or the caller list fuses into one excerpt and
+            // the Call graph section starves.
+            if finding.kind == crate::read::engine::FindingKind::Edge {
+                out.push(finding);
                 continue;
             }
             let loc = (
@@ -47,6 +64,38 @@ impl EvidenceSet {
             if !seen_locs.insert(loc) {
                 continue;
             }
+            let file = finding.source.display().to_string();
+            if let Some(&(slot, _)) = best.get(&file) {
+                let row = &mut out[slot];
+                if row.text.contains(&finding.text) {
+                    continue;
+                }
+                if finding.text.contains(&row.text) {
+                    *row = finding;
+                    best.insert(file, (slot, row.text.len()));
+                    continue;
+                }
+                let cap = crate::read::engine::RG_EXCERPT_CHAR_CAP;
+                if row.text.len() + 1 + finding.text.len() > cap {
+                    continue;
+                }
+                if finding.text.len() > best[&file].1 {
+                    row.text = format!("{}\n{}", finding.text, row.text);
+                    row.id.clone_from(&finding.id);
+                    row.producer = finding.producer;
+                    row.kind = finding.kind;
+                    row.start_line = finding.start_line;
+                    row.end_line = finding.end_line;
+                    row.producer_score = finding.producer_score;
+                    row.provenance.clone_from(&finding.provenance);
+                    best.insert(file, (slot, finding.text.len()));
+                } else {
+                    row.text = format!("{}\n{}", row.text, finding.text);
+                }
+                continue;
+            }
+            let len = finding.text.len();
+            best.insert(file.clone(), (out.len(), len));
             out.push(finding);
         }
         self.findings = out;

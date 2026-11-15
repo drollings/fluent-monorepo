@@ -108,3 +108,7 @@ pub fn tokens_for(text: &str) -> u64 {
 #[cfg(test)]
 #[path = "../../tests/read_budget.rs"]
 mod read_budget_tests;
+
+#[cfg(test)]
+#[path = "../../tests/budget_honesty.rs"]
+mod budget_honesty_tests;

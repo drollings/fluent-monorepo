@@ -252,6 +252,41 @@ fn normalize_line(line: &str) -> String {
         .to_string()
 }
 
+/// Clip an oversized excerpt to `max_chars`: signature plus doc lines
+/// survive, then a windowed body with an explicit truncation marker.
+/// Citation ranges are untouched by the caller (full span kept).
+#[must_use]
+/// Clip an oversized excerpt to `max_chars`: signature plus doc lines
+/// survive, then a windowed body with an explicit truncation marker.
+/// Citation ranges are untouched by the caller (full span kept).
+pub fn clip_finding_text(text: &str, max_chars: usize) -> String {
+    if text.len() <= max_chars {
+        return text.to_string();
+    }
+    let mut lines = text.lines();
+    let first = lines.next().unwrap_or("");
+    let second = lines.next().unwrap_or("");
+    let head = if second.trim_start().starts_with("//")
+        || second.trim_start().starts_with("///")
+        || second.trim_start().starts_with('#')
+    {
+        format!("{first}\n{second}\n")
+    } else {
+        format!("{first}\n")
+    };
+    let marker = "\n… [truncated]\n";
+    let room = max_chars.saturating_sub(head.len() + marker.len());
+    let mut body = String::new();
+    for line in text.lines().skip(head.lines().count()) {
+        if body.len() + line.len() + 1 > room {
+            break;
+        }
+        body.push_str(line);
+        body.push('\n');
+    }
+    format!("{head}{body}{marker}")
+}
+
 /// Normalize ripgrep hits into findings: the exhaustive arm speaks
 /// the same `Finding` as every other producer, so one relevance judge
 /// covers it. Scores are rank-free (`0.0`) — exhaustion has no signal.

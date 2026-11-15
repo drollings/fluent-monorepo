@@ -42,7 +42,6 @@ fn read_tier_uses_the_shipping_engine_over_a_real_db() {
         "Coverage",
         "From the project map",
         "From the docs",
-        "From the capabilities",
         "Top matches",
         "Citations",
     ] {
@@ -51,6 +50,12 @@ fn read_tier_uses_the_shipping_engine_over_a_real_db() {
             "{section}"
         );
     }
+    // Fixture seeds no capability rows: no capabilities section, and
+    // the gap names the unpopulated corpus.
+    assert!(
+        !answer.rendered.contains("### From the capabilities"),
+        "empty corpus renders no section"
+    );
     assert!(
         answer
             .citations

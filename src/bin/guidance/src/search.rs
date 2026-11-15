@@ -281,23 +281,49 @@ pub fn cmd_search(
     globs: &[String],
     symbol_type_names: &[String],
     rg_options: &RgDisplayOptions,
+    include_fixtures: bool,
+    freshen: bool,
 ) {
-    match run_search(
-        query,
-        workspace,
-        db_path,
-        limit,
-        fts,
-        vector,
-        rg,
-        fuse,
-        trace,
-        compact,
-        prefer_symbol,
-        globs,
-        symbol_type_names,
-        rg_options,
-    ) {
+    let result = if freshen {
+        run_search_impl(
+            query,
+            workspace,
+            db_path,
+            limit,
+            fts,
+            vector,
+            rg,
+            fuse,
+            trace,
+            compact,
+            prefer_symbol,
+            globs,
+            symbol_type_names,
+            rg_options,
+            include_fixtures,
+            true,
+            3,
+        )
+    } else {
+        run_search(
+            query,
+            workspace,
+            db_path,
+            limit,
+            fts,
+            vector,
+            rg,
+            fuse,
+            trace,
+            compact,
+            prefer_symbol,
+            globs,
+            symbol_type_names,
+            rg_options,
+            include_fixtures,
+        )
+    };
+    match result {
         Ok(rendered) => print!("{rendered}"),
         Err(message) => {
             eprintln!("error: {message}");
@@ -326,6 +352,48 @@ pub fn run_search(
     globs: &[String],
     symbol_type_names: &[String],
     rg_options: &RgDisplayOptions,
+    include_fixtures: bool,
+) -> Result<String, String> {
+    run_search_impl(
+        query,
+        workspace,
+        db_path,
+        limit,
+        fts,
+        vector,
+        rg,
+        fuse,
+        trace,
+        compact,
+        prefer_symbol,
+        globs,
+        symbol_type_names,
+        rg_options,
+        include_fixtures,
+        false,
+        0,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_search_impl(
+    query: &str,
+    workspace: &str,
+    db_path: &str,
+    limit: Option<usize>,
+    fts: bool,
+    vector: bool,
+    rg: bool,
+    fuse: bool,
+    trace: bool,
+    compact: bool,
+    prefer_symbol: bool,
+    globs: &[String],
+    symbol_type_names: &[String],
+    rg_options: &RgDisplayOptions,
+    include_fixtures: bool,
+    freshen: bool,
+    rounds: u8,
 ) -> Result<String, String> {
     let mode = match resolve_mode(fts, vector, rg, fuse) {
         Ok(mode) => mode,
@@ -379,6 +447,7 @@ pub fn run_search(
     // nondeterministically under parallel rg); recall modes keep the
     // CLI default. `usize::MAX` never trips the backend's
     // `hits.len() >= limit` kill, and renders as `rg_exhaustive`.
+    let limit_option = limit;
     let limit = match (mode, limit) {
         (SearchMode::Rg, None) => usize::MAX,
         (_, None) => CLI_DEFAULT_LIMIT,
@@ -414,6 +483,35 @@ pub fn run_search(
             Ok(hits) => {
                 if hits.is_empty() {
                     return Ok("No results found.\n".to_string());
+                }
+                if freshen {
+                    match freshen_hit_files(workspace, db_path, &hits) {
+                        Ok(true) if rounds > 0 => {
+                            return run_search_impl(
+                                query,
+                                workspace,
+                                db_path,
+                                limit_option,
+                                fts,
+                                vector,
+                                rg,
+                                fuse,
+                                trace,
+                                compact,
+                                prefer_symbol,
+                                globs,
+                                symbol_type_names,
+                                rg_options,
+                                include_fixtures,
+                                true,
+                                rounds - 1,
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            eprintln!("warning: freshen failed ({error}); serving indexed hits");
+                        }
+                    }
                 }
                 let stages = stages_from_hits(&hits);
                 let format = if trace {
@@ -466,10 +564,55 @@ pub fn run_search(
     let nlp = nlp_holder.get();
     match run_recall(&plan, &storage, embedder.as_deref(), nlp) {
         Ok(output) => {
-            if output.hits.is_empty() {
+            let mut hits = output.hits;
+            // Eval corpus never enters any arm, even opt-in.
+            hits.retain(|hit| {
+                !matches!(
+                    guidance_core::source_scope::of_file(&hit.file),
+                    guidance_core::source_scope::SourceScope::Eval
+                )
+            });
+            if !include_fixtures {
+                hits.retain(|hit| {
+                    !matches!(
+                        guidance_core::source_scope::of_file(&hit.file),
+                        guidance_core::source_scope::SourceScope::Fixture
+                    )
+                });
+            }
+            if hits.is_empty() {
                 return Ok("No results found.\n".to_string());
             }
-            let stages = stages_from_hits(&output.hits);
+            if freshen {
+                match freshen_hit_files(workspace, db_path, &hits) {
+                    Ok(true) if rounds > 0 => {
+                        return run_search_impl(
+                            query,
+                            workspace,
+                            db_path,
+                            limit_option,
+                            fts,
+                            vector,
+                            rg,
+                            fuse,
+                            trace,
+                            compact,
+                            prefer_symbol,
+                            globs,
+                            symbol_type_names,
+                            rg_options,
+                            include_fixtures,
+                            true,
+                            rounds - 1,
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        eprintln!("warning: freshen failed ({error}); serving indexed hits");
+                    }
+                }
+            }
+            let stages = stages_from_hits(&hits);
             let format = if trace {
                 OutputFormat::Debug
             } else if compact {
@@ -643,15 +786,15 @@ fn recall_on_index(
 /// plus the read-plane additions (coverage, claims, tokens,
 /// latency, degraded). v1 keys keep their names and meaning;
 /// `schema_version` 2 marks the additive set. Uncalibrated runs
-/// report zero task-value confidence — the axis is honest, the
-/// number waits on calibration.
+/// report zero task-value confidence with an explicit shadow status —
+/// the axis names the measurement, never a settled verdict.
 #[must_use]
 /// Machine-readable envelope v2 for orchestrators: every v1 key
 /// plus the read-plane additions (coverage, claims, tokens,
 /// latency, degraded). v1 keys keep their names and meaning;
 /// `schema_version` 2 marks the additive set. Uncalibrated runs
-/// report zero task-value confidence — the axis is honest, the
-/// number waits on calibration.
+/// report zero task-value confidence with an explicit shadow status —
+/// the axis names the measurement, never a settled verdict.
 pub fn envelope_json_v2(
     intent: &str,
     route: &str,
@@ -663,9 +806,14 @@ pub fn envelope_json_v2(
         "intent": intent,
         "route": route,
         "resolution": answer.route,
-        "confidence": {"value": 0.0, "axis": "task-value"},
+        "confidence": {"value": 0.0, "axis": "task-value (shadow)"},
         "gaps": answer.gaps,
-        "citations": answer.citations,
+        "citations": answer.citations.iter().map(|cite| serde_json::json!({
+            "citation": cite.to_string(),
+            "digest": cite.digest,
+            "stale": cite.stale,
+            "unverified": cite.unverified,
+        })).collect::<Vec<_>>(),
         "coverage": answer.coverage,
         "claims": answer.claims.iter().map(|claim| serde_json::json!({
             "text": claim.text,
@@ -802,6 +950,27 @@ pub fn cite_hit(hit: &SearchHit, workspace: &str) -> String {
 /// Citations for a hit list, rank order. Length always matches `hits`.
 pub fn cite_hits(hits: &[SearchHit], workspace: &str) -> Vec<String> {
     hits.iter().map(|hit| cite_hit(hit, workspace)).collect()
+}
+
+/// Converge the indexed files behind recall hits, then report
+/// whether anything moved — a fresh tree pays stats only.
+fn freshen_hit_files(workspace: &str, db_path: &str, hits: &[SearchHit]) -> Result<bool, String> {
+    use guidance_core::sync_engine::absolute_or;
+    let root = absolute_or(PathBuf::from(workspace));
+    let db = GuidanceDb::open(Path::new(db_path))
+        .map_err(|error| format!("cannot open index at {db_path}: {error}"))?;
+    let mut files = Vec::new();
+    for hit in hits {
+        let absolute = absolute_or(PathBuf::from(&hit.file.absolute_path));
+        if absolute.is_dir() || !absolute.starts_with(&root) || files.contains(&absolute) {
+            continue;
+        }
+        files.push(absolute);
+    }
+    if files.is_empty() {
+        return Ok(false);
+    }
+    crate::freshen::freshen_search_hits(&root, &db, Path::new(db_path), &files)
 }
 
 /// Test-only hit over a real file with one text evidence range.

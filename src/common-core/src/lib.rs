@@ -53,6 +53,7 @@ pub mod metrics;
 pub mod path;
 pub mod pcm;
 pub mod prelude;
+pub mod profile;
 pub mod registry;
 pub mod retry;
 pub mod runtime;

@@ -136,6 +136,7 @@ fn missing_index_is_a_named_error() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect_err("missing index must fail");
     assert!(error.contains("run `guidance index` first"), "{error}");
@@ -158,6 +159,7 @@ fn invalid_symbol_type_is_a_named_error() {
         &[],
         &["namespace".to_string()],
         &rg_opts(),
+        false,
     );
     assert!(result.is_err());
 }
@@ -194,6 +196,7 @@ async fn rg_route_reports_context_and_symbols() {
         &[],
         &[],
         &options,
+        false,
     )
     .expect("rg route");
     assert!(rendered.contains("coverage: rg_exhaustive"), "{rendered}");
@@ -234,6 +237,7 @@ async fn rg_absent_limit_returns_every_match_line() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect("rg route");
     for name in ["m1.rs", "m2.rs", "m3.rs"] {
@@ -273,6 +277,7 @@ async fn rg_explicit_limit_still_truncates() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect("rg route");
     assert!(rendered.contains("coverage: rg_truncated"), "{rendered}");
@@ -305,6 +310,7 @@ async fn rg_route_searches_without_an_index() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect("rg route");
     assert!(rendered.contains("a.rs:1:"), "{rendered}");
@@ -359,11 +365,12 @@ async fn fuse_search_output_is_byte_stable() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect("fuse route");
     assert_eq!(
         rendered,
-        "## Prose\n\n*Source: a.rs:0*\n\nthe alpha needle sleeps here\n\n\n---\n\n\n### Citations\n- unverified\n"
+        "## Prose\n\n*Source: a.rs*\n\nthe alpha needle sleeps here\n\n\n---\n\n\n### Citations\n- unverified\n"
     );
 }
 
@@ -401,6 +408,7 @@ async fn vector_mode_declines_without_embedder() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect_err("vector mode without a backend must decline");
     assert!(
@@ -444,6 +452,7 @@ async fn vector_mode_refuses_without_stored_vectors() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect_err("vector mode without stored vectors must decline");
     assert!(
@@ -725,6 +734,7 @@ async fn item_chunk_citations_verify_item_ranges() {
         &[],
         &[],
         &rg_opts(),
+        false,
     )
     .expect("fuse route");
     let expected = common_core::hash::blake3_hex("pub fn alpha() -> i32 {\n    1\n}\n".as_bytes());

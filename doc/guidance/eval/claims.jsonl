@@ -1,0 +1,12 @@
+{"id":"claim-sync-stale-supported","sentence":"Sync reprocesses exactly the stale set from the freshness gate (src/guidance/src/sync_engine.rs:10-20).","citation":"src/guidance/src/sync_engine.rs:10-20","expected":"supported","split":"tune"}
+{"id":"claim-sync-hash-supported","sentence":"Stored hashes are compared against live bytes before regenerating (src/guidance/src/sync/staleness.rs:5-9).","citation":"src/guidance/src/sync/staleness.rs:5-9","expected":"supported","split":"tune"}
+{"id":"claim-fusion-supported","sentence":"Recall fuses FTS, vector, and lemma routes with RRF (src/guidance/src/query/recall.rs:1-8).","citation":"src/guidance/src/query/recall.rs:1-8","expected":"supported","split":"tune"}
+{"id":"claim-router-decide-contradicted","sentence":"The decide model ranks code hits by confidence (src/bin/guidance/src/search.rs:1-5).","citation":"src/bin/guidance/src/search.rs:1-5","expected":"contradicted","split":"tune"}
+{"id":"claim-tier-contradicted","sentence":"Unique resolution means the edge was model-verified (src/guidance/src/graph_index.rs:1-4).","citation":"src/guidance/src/graph_index.rs:1-4","expected":"contradicted","split":"tune"}
+{"id":"claim-freshness-insufficient","sentence":"Freshness uses mtime alone.","citation":"","expected":"insufficient","split":"tune"}
+{"id":"claim-graph-supported","sentence":"cmd_sync calls clean_build_cache after the fix pass (src/bin/guidance/src/main.rs:100-104).","citation":"src/bin/guidance/src/main.rs:100-104","expected":"supported","split":"heldout"}
+{"id":"claim-orient-supported","sentence":"The workspace owns guidance-core and fluent-router (README.md:1-10).","citation":"README.md:1-10","expected":"supported","split":"heldout"}
+{"id":"claim-capability-contradicted","sentence":"Capability cards feed synthesis directly (doc/guidance/CAPABILITY_SUMMARIES.md:1-6).","citation":"doc/guidance/CAPABILITY_SUMMARIES.md:1-6","expected":"contradicted","split":"heldout"}
+{"id":"claim-vector-insufficient","sentence":"Embeddings cover every stored fragment.","citation":"","expected":"insufficient","split":"heldout"}
+{"id":"control-nonsense-claim","sentence":"The zzqy subsystem calibrates flux (src/zzqy/mod.rs:1).","citation":"src/zzqy/mod.rs:1","expected":"insufficient","split":"heldout","control":true}
+{"id":"control-unknown-claim","sentence":"qqqNoSuchSymbol owns calibration (src/calib.rs:1).","citation":"src/calib.rs:1","expected":"insufficient","split":"heldout","control":true}

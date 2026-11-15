@@ -78,6 +78,40 @@ pub struct RecallCandidate {
     pub forced: bool,
 }
 
+/// Bounded scope rank prior: findings whose crate matches the
+/// hypothesis gain a small score boost (reorder only, never a filter —
+/// the unscoped pool is always retained as the recall safety net).
+/// Deterministic fallback when unavailable: funnel terms only, labelled.
+#[must_use]
+/// Bounded scope rank prior: findings whose crate matches the
+/// hypothesis gain a small score boost (reorder only, never a filter —
+/// the unscoped pool is always retained as the recall safety net).
+/// Deterministic fallback when unavailable: funnel terms only, labelled.
+pub fn apply_scope_prior(
+    mut candidates: Vec<RecallCandidate>,
+    scope_crate: Option<&str>,
+) -> Vec<RecallCandidate> {
+    const PRIOR_BOOST: f64 = 0.05;
+    if let Some(want) = scope_crate {
+        for candidate in &mut candidates {
+            let gate = crate::component_map::component_gate_for_path(&candidate.file.relative_path);
+            if gate.package == want {
+                let boosted = candidate.score.0 + PRIOR_BOOST;
+                candidate.score = RrfScore::new(boosted);
+            }
+        }
+        candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        for (index, candidate) in candidates.iter_mut().enumerate() {
+            candidate.rank = index + 1;
+        }
+    }
+    candidates
+}
 /// Score, order, and rank candidates: `score = Σ 1/(K + rank)` over found
 /// recalls, lexicographic id tie-break. Source: `fuseCandidates`.
 /// Scoring composes the shared seam
