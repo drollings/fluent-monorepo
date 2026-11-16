@@ -75,14 +75,22 @@ fn file_level_repeats_collapse_to_first_range() {
 
 #[test]
 fn unbound_sentences_bind_to_nothing_today() {
+    let manifest = vec![(
+        "[C1]".to_string(),
+        "src/guidance/src/sync_engine.rs:10-20".to_string(),
+    )];
     let claims = crate::read::claims::bind_claims(
         "Sync reprocesses stale files. See nothing else.",
-        &["src/guidance/src/sync_engine.rs:10-20".to_string()],
+        &manifest,
     );
     assert!(!claims.is_empty());
     assert!(
         claims.iter().all(|c| c.citation.is_none()),
         "no sentence names the citation today: {claims:?}"
+    );
+    assert!(
+        crate::read::claims::gate_answer(&claims).is_none(),
+        "unbound sentences never render"
     );
 }
 

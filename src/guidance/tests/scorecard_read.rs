@@ -119,3 +119,25 @@ fn read_metric_names_are_stable() {
         ]
     );
 }
+
+#[test]
+fn coldstart_cache_and_hash_metric_names_are_stable() {
+    // Same pin as the read tier: dashboards and the baseline key on
+    // these names, so renames go through the baseline command.
+    let mut measured = common_core::runtime::block_on_shared(measure_coldstart());
+    measured.extend(measure_answer_cache());
+    measured.extend(measure_sync_hashes());
+    let mut names: Vec<String> = measured.iter().map(|metric| metric.name.clone()).collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "coldstart.answer_error.tune".to_string(),
+            "coldstart.control_abstained.heldout".to_string(),
+            "coldstart.mrr.tune".to_string(),
+            "coldstart.synthesis_avoided.tune".to_string(),
+            "read.cache_hit_rate".to_string(),
+            "sync.noop_hash_calls".to_string(),
+        ]
+    );
+}

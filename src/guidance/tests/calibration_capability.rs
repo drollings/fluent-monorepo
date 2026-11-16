@@ -96,6 +96,7 @@ fn without_cases_calibration_refuses_and_cards_stay_considered() {
             budget_override: None,
             no_llm: false,
             include_fixtures: false,
+            answer_mode: crate::read::engine::AnswerMode::Auto,
         },
         &ctx,
         Some(&synth),

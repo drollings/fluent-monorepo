@@ -90,6 +90,12 @@ fn fast_tier_passes_on_fixtures() {
         "read.fact_recall.heldout",
         "read.file_recall_at_5.tune",
         "read.file_recall_at_5.heldout",
+        "coldstart.synthesis_avoided.tune",
+        "coldstart.control_abstained.heldout",
+        "explain_spam.citation_ok",
+        "explain_spam.fixture_free",
+        "explain_spam.span_ok",
+        "explain_answer_floor.control_abstain",
     ];
     for metric in &first {
         if metric.higher_is_better {

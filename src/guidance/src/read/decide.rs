@@ -266,6 +266,84 @@ pub type FindingVerdict = CandidateVerdict<FindingLabel>;
 /// stays honest without failing the read.
 pub type FindingJudge<'a> = CandidateJudge<'a, FindingLabel>;
 
+/// Claim-entailment verdict: the cited excerpt states the claim,
+/// contradicts it, or cannot settle it. `Insufficient` renders as a
+/// gap, never as evidence; `Contradicted` drops only when the
+/// support point calibrates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Claim-entailment verdict: the cited excerpt states the claim,
+/// contradicts it, or cannot settle it. `Insufficient` renders as a
+/// gap, never as evidence; `Contradicted` drops only when the
+/// support point calibrates.
+pub enum SupportLabel {
+    Supported,
+    Contradicted,
+    Insufficient,
+}
+
+impl CandidateLabel for SupportLabel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Supported => "supported",
+            Self::Contradicted => "contradicted",
+            Self::Insufficient => "insufficient",
+        }
+    }
+
+    fn from_label(label: &str) -> Self {
+        let lower = label.trim().to_lowercase();
+        match lower.as_str() {
+            "supported" => Self::Supported,
+            "contradicted" => Self::Contradicted,
+            _ => Self::Insufficient,
+        }
+    }
+
+    fn options() -> Vec<DecisionOption> {
+        vec![
+            DecisionOption {
+                label: "supported".to_string(),
+                description: "The excerpt states the claim.".to_string(),
+            },
+            DecisionOption {
+                label: "contradicted".to_string(),
+                description: "The excerpt refutes the claim.".to_string(),
+            },
+            DecisionOption {
+                label: "insufficient".to_string(),
+                description: "The excerpt cannot settle the claim.".to_string(),
+            },
+        ]
+    }
+
+    fn state_line(index: usize, id_label: &str, excerpt: &str) -> String {
+        format!("Claim {} [{id_label}]: {excerpt}\n", index + 1)
+    }
+
+    fn prompt(index: usize) -> String {
+        format!("Does the excerpt support claim {}?", index + 1)
+    }
+
+    fn question(index: usize, id_label: &str) -> String {
+        format!("Judge claim {} [{id_label}]", index + 1)
+    }
+}
+
+impl SupportLabel {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        (*self).as_str()
+    }
+}
+
+/// One entailment verdict.
+pub type SupportVerdict = CandidateVerdict<SupportLabel>;
+
+/// Native entailment judge: one bounded `choice` per bound claim
+/// (claim text plus its cited excerpt). Batched and aligned.
+/// Transport or decode failures return all-`Insufficient`.
+pub type SupportJudge<'a> = CandidateJudge<'a, SupportLabel>;
+
 #[cfg(test)]
 #[path = "../../tests/read_judge.rs"]
 mod read_judge_tests;

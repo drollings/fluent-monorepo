@@ -80,21 +80,23 @@ pub fn extract_sentences(text: &str) -> Vec<String> {
     out
 }
 
-/// Bind each sentence to the first citation it names
-/// (`path:line[-line]`). Sentences without a citation bind to
-/// nothing; binding is structural, never semantic.
+/// Bind each sentence to the evidence manifest: a `[Cn]`/`[Dn]`
+/// token resolves to its canonical citation, otherwise a raw
+/// `file:start-end` range binds when it names shown evidence.
+/// Sentences with no resolvable citation bind to nothing; the gate
+/// drops them, so uncited prose never renders.
 #[must_use]
-/// Bind each sentence to the first citation it names
-/// (`path:line[-line]`). Sentences without a citation bind to
-/// nothing; binding is structural, never semantic.
-pub fn bind_claims(answer: &str, citations: &[String]) -> Vec<Claim> {
+/// Bind each sentence to the evidence manifest: a `[Cn]`/`[Dn]`
+/// token resolves to its canonical citation, otherwise a raw
+/// `file:start-end` range binds when it names shown evidence.
+/// Sentences with no resolvable citation bind to nothing; the gate
+/// drops them, so uncited prose never renders.
+pub fn bind_claims(answer: &str, manifest: &[(String, String)]) -> Vec<Claim> {
     extract_sentences(answer)
         .into_iter()
         .map(|text| {
-            let citation = citations
-                .iter()
-                .find(|citation| text.contains(citation.as_str()))
-                .cloned();
+            let citation =
+                resolve_token(&text, manifest).or_else(|| resolve_raw_range(&text, manifest));
             Claim {
                 citation,
                 support: Support::Unverified,
@@ -104,18 +106,118 @@ pub fn bind_claims(answer: &str, citations: &[String]) -> Vec<Claim> {
         .collect()
 }
 
-/// Gate an answer on claim support: drop contradicted and
-/// insufficient sentences, label the rest `[unverified]`. An empty
-/// result means evidence-only — the caller renders sections without
-/// an answer. Until the support point calibrates, nothing verifies.
+/// First `[Cn]`/`[Dn]` token in the sentence, resolved through the
+/// manifest to its canonical citation.
+fn resolve_token(sentence: &str, manifest: &[(String, String)]) -> Option<String> {
+    for token in evidence_tokens(sentence) {
+        if let Some(canonical) = manifest
+            .iter()
+            .find(|(shown, _)| *shown == token)
+            .map(|(_, canonical)| canonical.clone())
+        {
+            return Some(canonical);
+        }
+    }
+    None
+}
+
+/// Raw `file:start-end` fallback: the first manifest canonical named
+/// verbatim by the sentence binds; otherwise a cited range that
+/// overlaps a shown canonical range binds (a line inside the shown
+/// span names shown evidence). Structural, never semantic.
+fn resolve_raw_range(sentence: &str, manifest: &[(String, String)]) -> Option<String> {
+    if let Some(canonical) = manifest
+        .iter()
+        .find(|(_, canonical)| sentence.contains(canonical.as_str()))
+        .map(|(_, canonical)| canonical.clone())
+    {
+        return Some(canonical);
+    }
+    let cited = common_core::cite::extract_citation_ranges(sentence);
+    for range in &cited {
+        for (_, canonical) in manifest {
+            if canonical_covers(canonical, range) {
+                return Some(canonical.clone());
+            }
+        }
+    }
+    None
+}
+
+/// Whether a manifest canonical (`path`, `path:start`,
+/// `path:start-end`, `path#anchor`) covers a cited range: same file
+/// by suffix, with range overlap when the canonical carries one. A
+/// range-free canonical (whole card) covers any same-file range.
+fn canonical_covers(canonical: &str, range: &common_core::cite::CitationRange) -> bool {
+    let anchor_free = canonical.split('#').next().unwrap_or(canonical);
+    let (file, start, end) = match anchor_free.split_once(':') {
+        Some((file, spec)) => {
+            let (start, end): (Option<u32>, Option<u32>) = match spec.split_once('-') {
+                Some((first, second)) => (first.parse().ok(), second.parse().ok()),
+                None => (spec.parse().ok(), None),
+            };
+            match (start, end) {
+                (Some(first), Some(second)) => (
+                    file.to_string(),
+                    Some(first.min(second)),
+                    Some(first.max(second)),
+                ),
+                (Some(only), None) => (file.to_string(), Some(only), Some(only)),
+                _ => (anchor_free.to_string(), None, None),
+            }
+        }
+        None => (anchor_free.to_string(), None, None),
+    };
+    if !(file == range.file
+        || file.ends_with(range.file.as_str())
+        || range.file.ends_with(file.as_str()))
+    {
+        return false;
+    }
+    match (start, end) {
+        (Some(first), Some(second)) => range.start <= second && range.end >= first,
+        _ => true,
+    }
+}
+
+/// Scan one sentence for `[Cn]`/`[Dn]` evidence tokens.
+fn evidence_tokens(sentence: &str) -> Vec<String> {
+    let bytes = sentence.as_bytes();
+    let mut tokens = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'[' && i + 2 < bytes.len() && (bytes[i + 1] == b'C' || bytes[i + 1] == b'D')
+        {
+            let mut j = i + 2;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > i + 2 && j < bytes.len() && bytes[j] == b']' {
+                tokens.push(sentence[i..=j].to_string());
+                i = j + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    tokens
+}
+
+/// Gate an answer on claim support: claims with no resolved
+/// citation drop, contradicted and insufficient sentences drop, and
+/// the rest render verbatim when verified or `[unverified]` when the
+/// support verdict has not run. An empty result means evidence-only —
+/// the caller renders sections without an answer.
 #[must_use]
-/// Gate an answer on claim support: drop contradicted and
-/// insufficient sentences, label the rest `[unverified]`. An empty
-/// result means evidence-only — the caller renders sections without
-/// an answer. Until the support point calibrates, nothing verifies.
+/// Gate an answer on claim support: claims with no resolved
+/// citation drop, contradicted and insufficient sentences drop, and
+/// the rest render verbatim when verified or `[unverified]` when the
+/// support verdict has not run. An empty result means evidence-only —
+/// the caller renders sections without an answer.
 pub fn gate_answer(claims: &[Claim]) -> Option<String> {
     let kept: Vec<String> = claims
         .iter()
+        .filter(|claim| claim.citation.is_some())
         .filter(|claim| {
             claim.support != Support::Contradicted && claim.support != Support::Insufficient
         })
@@ -175,68 +277,12 @@ pub fn constrain_answer_to_evidence_with_cards(
         }
         out
     }
-    fn parse_line_spec(spec: &str) -> Option<(u32, u32)> {
-        let (first, second) = match spec.split_once('-') {
-            Some((first, second)) => (first, second.split_whitespace().next().unwrap_or("")),
-            None => (spec, ""),
-        };
-        let start: u32 = first.parse().ok()?;
-        if second.is_empty() {
-            return Some((start, start));
-        }
-        let end: u32 = second.parse().ok()?;
-        Some((start.min(end), start.max(end)))
-    }
-    fn cited_spans(answer: &str) -> Vec<(String, u32, u32)> {
-        let bytes = answer.as_bytes();
-        let mut spans = Vec::new();
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b':' {
-                let mut head = i;
-                while head > 0 {
-                    let cell = bytes[head - 1];
-                    if cell.is_ascii_alphanumeric() || matches!(cell, b'.' | b'_' | b'-' | b'/') {
-                        head -= 1;
-                    } else {
-                        break;
-                    }
-                }
-                let mut tail = i + 1;
-                while tail < bytes.len() && bytes[tail].is_ascii_digit() {
-                    tail += 1;
-                }
-                let mut tail_end = tail;
-                if tail < bytes.len() && bytes[tail] == b'-' {
-                    let mut digits = tail + 1;
-                    while digits < bytes.len() && bytes[digits].is_ascii_digit() {
-                        digits += 1;
-                    }
-                    if digits > tail + 1 {
-                        tail_end = digits;
-                    }
-                }
-                if head < i && tail > i + 1 {
-                    let path = &answer[head..i];
-                    let has_ext = path
-                        .rsplit('/')
-                        .next()
-                        .is_some_and(|base| base.contains('.'));
-                    if has_ext {
-                        if let Some((start, end)) = parse_line_spec(&answer[i + 1..tail_end]) {
-                            spans.push((path.to_string(), start, end));
-                        }
-                    }
-                }
-                i = tail_end.max(i + 1);
-            } else {
-                i += 1;
-            }
-        }
-        spans
-    }
+    let cited: Vec<(String, u32, u32)> = crate::grounding::extract_citation_ranges(answer)
+        .into_iter()
+        .map(|range| (range.file, range.start, range.end))
+        .collect();
     let mut violated = false;
-    for (path, start, end) in cited_spans(answer) {
+    for (path, start, end) in cited {
         // Whole-card citations cover their path with no range check.
         if card_paths
             .iter()
@@ -274,6 +320,33 @@ pub fn constrain_answer_to_evidence_with_cards(
         let _ = std::fmt::Write::write_fmt(&mut out, format_args!("- {card}\n"));
     }
     out
+}
+
+/// Deterministic entailment prefilter: a bound claim whose cited
+/// range shares no identifier with the claim text is `Insufficient`
+/// without spending a model call. The cited range must contain at
+/// least one identifier-shaped term from the claim
+/// (`read::vocabulary::symbol_terms`). Unbound claims and decided
+/// claims pass through untouched; the gate drops the rest.
+pub fn prefilter_support(claims: &mut [Claim], evidence: &[(String, String)]) {
+    for claim in claims.iter_mut() {
+        if claim.support != Support::Unverified {
+            continue;
+        }
+        let Some(canonical) = claim.citation.as_deref() else {
+            continue;
+        };
+        let Some((_, excerpt)) = evidence.iter().find(|(shown, _)| shown == canonical) else {
+            continue;
+        };
+        let fold = excerpt.to_lowercase();
+        let shares_identifier = crate::read::vocabulary::symbol_terms(&claim.text)
+            .iter()
+            .any(|term| fold.contains(term.as_str()));
+        if !shares_identifier {
+            claim.support = Support::Insufficient;
+        }
+    }
 }
 
 #[cfg(test)]

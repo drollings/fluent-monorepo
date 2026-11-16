@@ -42,7 +42,7 @@ pub const INDEX_WAVE_FILES: usize = 64;
 /// scope classification; v6 rows are refused and rebuilt from sidecars.
 /// v8 stamps served-excerpt digests on citations (same `blake3_hex`
 /// scheme as project cards); v7 rows are refused and rebuilt.
-pub const INDEX_SCHEMA_VERSION: u32 = 8;
+pub const INDEX_SCHEMA_VERSION: u32 = 9;
 /// Default cross-file embed packing size.
 pub const INDEX_EMBED_BATCH: usize = 32;
 /// Transient embed retry budget (zvec C.4: 3×500ms).
@@ -127,6 +127,9 @@ pub struct IndexStats {
     /// Clean files reprocessed without an invalidation cause. Converged
     /// trees read zero; anything else trips the ratchet.
     pub reprocessed_clean: usize,
+    /// Whole-edge-table reads in the sig-gated follow-up. A converged
+    /// tree reads zero; a dependent derivation reads at least one.
+    pub followup_graph_reads: usize,
 }
 
 /// Index failure (stored per-file data surfaces as `FilesFailed`; the run
@@ -332,7 +335,7 @@ where
                 file.id.clone(),
                 rows.iter()
                     // Module fragments carry comments, never interfaces.
-                    .filter(|row| row.name.as_deref() != Some("$file"))
+                    .filter(|row| !row.symbol_id.ends_with("#$file"))
                     .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
                     .collect(),
             );
@@ -431,7 +434,10 @@ where
         let mut scheduled: std::collections::HashSet<String> =
             work.iter().map(|file| file.id.clone()).collect();
         let mut followup_n = 0usize;
-        loop {
+        // A converged tree schedules no work: dependents can only move
+        // from a committed file, so the whole-edge-table read is skipped.
+        while !work.is_empty() {
+            stats.followup_graph_reads += 1;
             let edges: Vec<(String, String, Option<String>)> = shared
                 .db
                 .graph_edge_rows()
@@ -455,7 +461,7 @@ where
                     .symbols_for_file(&file.id)
                     .map(|rows| {
                         rows.iter()
-                            .filter(|row| row.name.as_deref() != Some("$file"))
+                            .filter(|row| !row.symbol_id.ends_with("#$file"))
                             .map(|row| (row.symbol_id.clone(), row.interface_hash.clone()))
                             .collect()
                     })
@@ -910,7 +916,7 @@ where
             });
         }
     };
-    if let Some(module) = module_fragment_for(&file.id, &blocks) {
+    if let Some(module) = module_fragment_for(&file.id, &file.relative_path, &blocks) {
         fragments.push(module);
     }
     let texts: Vec<String> = fragments
@@ -1593,9 +1599,6 @@ pub fn classify_embed_fragment(fragment: &FragmentRow) -> Result<EmbedUnit, Embe
     if let Some(reason) = is_unembeddable_path(&fragment.file_id) {
         return skip(reason);
     }
-    if fragment.symbol_name.as_deref() == Some("$file") {
-        return skip("module-pseudo-symbol");
-    }
     let is_unit = match (&fragment.symbol_name, &fragment.heading) {
         (Some(_), _) => fragment
             .symbol_type
@@ -1621,12 +1624,12 @@ pub fn classify_embed_fragment(fragment: &FragmentRow) -> Result<EmbedUnit, Embe
 }
 
 /// Select semantic units from stored rows: code symbols plus markdown
-/// sections; whole-file duplicates, images, `$file` pseudo-symbols,
-/// eval fixtures, and derived-mirror rows skip with reasons.
+/// sections; whole-file duplicates, images, eval fixtures, and
+/// derived-mirror rows skip with reasons.
 #[must_use]
 /// Select semantic units from stored rows: code symbols plus markdown
-/// sections; whole-file duplicates, images, `$file` pseudo-symbols,
-/// eval fixtures, and derived-mirror rows skip with reasons.
+/// sections; whole-file duplicates, images, eval fixtures, and
+/// derived-mirror rows skip with reasons.
 pub fn select_embed_units(fragments: &[FragmentRow]) -> (Vec<EmbedUnit>, Vec<EmbedSkip>) {
     let mut units = Vec::new();
     let mut skips = Vec::new();
@@ -1856,6 +1859,10 @@ pub fn backfill_fragment_embeddings(
 #[cfg(test)]
 #[path = "../tests/index_pipeline.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/module_headers.rs"]
+mod module_headers_tests;
 
 #[cfg(test)]
 #[path = "../tests/m4_cutoff.rs"]

@@ -36,7 +36,7 @@ fn task_ids() -> Vec<(String, Vec<String>)> {
 #[test]
 fn benchmark_instrument_covers_six_questions() {
     let tasks = task_ids();
-    assert_eq!(tasks.len(), 6);
+    assert_eq!(tasks.len(), 9);
     let ids: BTreeSet<String> = tasks.iter().map(|task| task.0.clone()).collect();
     for expected in [
         "q1-components",
@@ -45,6 +45,9 @@ fn benchmark_instrument_covers_six_questions() {
         "q4-capabilities",
         "q5-clean",
         "q6-ranking",
+        "q7-control-nonexistent",
+        "q8-control-unknown-symbol",
+        "q9-control-scope-eval",
     ] {
         assert!(ids.contains(expected), "missing task {expected}");
     }
@@ -69,12 +72,15 @@ fn benchmark_goldens_name_expected_owners() {
     assert!(basenames("q1-components").contains("Cargo.toml"));
     assert!(basenames("q2-calibration").contains("decision_points.rs"));
     assert!(basenames("q2-calibration").contains("registry.rs"));
+    assert!(basenames("q2-calibration").contains("calibration.rs"));
     assert!(basenames("q3-sync").contains("sync_engine.rs"));
     assert!(basenames("q3-sync").contains("staleness.rs"));
+    assert!(basenames("q3-sync").contains("freshness.rs"));
     assert!(basenames("q4-capabilities").contains("capability_match.rs"));
     assert!(basenames("q5-clean").contains("main.rs"));
     assert!(basenames("q6-ranking").contains("search.rs"));
-    assert!(basenames("q6-ranking").contains("plan.rs"));
+    assert!(basenames("q6-ranking").contains("hybrid.rs"));
+    assert!(basenames("q6-ranking").contains("search_types.rs"));
 }
 
 #[test]

@@ -1,0 +1,1 @@
+{"answer_present":false,"citations":["src/guidance/src/query/capability_match.rs:2-4","src/guidance/src/sync_engine.rs:2-4","src/guidance/src/freshness.rs:2-4"],"fixture_paths":[],"gaps_count":3,"id":"q4-capabilities","max_span":2,"rendered_bytes":991,"route":"cards","sections":["Coverage","From the project map","From the docs","Top matches","Citations","Gaps"],"tokens_used":206}

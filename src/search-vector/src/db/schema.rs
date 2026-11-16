@@ -182,10 +182,21 @@ pub(crate) fn init_schema(store: &SqliteStore) -> Result<(), VectorDbError> {
                     embedder TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL,
                     reason TEXT NOT NULL DEFAULT '',
-                    updated_at INTEGER NOT NULL DEFAULT 0);",
+                    updated_at INTEGER NOT NULL DEFAULT 0);
+                CREATE TABLE IF NOT EXISTS answer_cache (
+                    manifest_hash TEXT PRIMARY KEY,
+                    answer TEXT NOT NULL,
+                    claims_json TEXT NOT NULL DEFAULT '[]',
+                    citations_json TEXT NOT NULL DEFAULT '[]',
+                    support TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL DEFAULT '',
+                    prompt_version INTEGER NOT NULL DEFAULT 0,
+                    generation TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL DEFAULT 0);",
             )
             .map_err(DbError::from)?;
             ensure_file_status_columns(conn)?;
+            ensure_answer_cache_generation(conn)?;
             ensure_fragment_q8_column(conn).map_err(DbError::from)?;
             ensure_embedding_status_reason_column(conn)?;
             ensure_fts_doc_column(conn).map_err(DbError::from)?;
@@ -214,6 +225,11 @@ fn ensure_nodes_table(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
         conn.execute_batch("ALTER TABLE guidance_nodes RENAME TO nodes")?;
     }
     Ok(())
+}
+
+/// Add the answer-cache generation column to older databases.
+fn ensure_answer_cache_generation(conn: &rusqlite::Connection) -> Result<(), DbError> {
+    fluent_db::migrate::ensure_column(conn, "answer_cache", "generation", "TEXT NOT NULL DEFAULT ''")
 }
 
 /// Add P2 file-status columns to pre-P2 databases (fresh tables already

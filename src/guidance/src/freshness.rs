@@ -367,6 +367,24 @@ pub fn mtime_skew_with_granularity(
     }
 }
 
+/// Whether the sidecar is newer beyond the resolution window: the
+/// only stat-only fresh verdict. Newer-by-less is evidence-free —
+/// timestamp quantization inverts back-to-back writes — so the
+/// content hash decides instead. The margin is the skew window
+/// itself (1s, like [`mtime_skew`]).
+#[must_use]
+/// Whether the sidecar is newer beyond the resolution window: the
+/// only stat-only fresh verdict. Newer-by-less is evidence-free —
+/// timestamp quantization inverts back-to-back writes — so the
+/// content hash decides instead. The margin is the skew window
+/// itself (1s, like [`mtime_skew`]).
+pub fn sidecar_decisively_newer(json_mtime: SystemTime, source_mtime: SystemTime) -> bool {
+    matches!(mtime_skew(json_mtime, source_mtime), MtimeSkew::SourceOlder)
+        && json_mtime
+            .duration_since(source_mtime)
+            .is_ok_and(|skew| skew > std::time::Duration::from_secs(1))
+}
+
 /// Probe the filesystem timestamp granularity behind `dir`: round-trip a
 /// timestamp with distinctive sub-second digits and read what survives.
 /// Missing prefixes resolve to the nearest existing ancestor (same

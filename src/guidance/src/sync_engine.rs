@@ -265,40 +265,98 @@ impl SyncEngine {
         Ok(true)
     }
 
-    /// Staleness for one source file. The sidecar's own header receipt
-    /// is self-contained evidence: when it names the source hash,
-    /// bytes decide (moved bytes re-process, identical bytes never
-    /// do) at one header read plus one source hash. The external
-    /// stored map says the same thing when attached and wins on
-    /// conflict by being the fresher record. Headerless legacy files
-    /// keep legacy mtime behavior byte-identically. Component and
-    /// policy staleness stays with the header sweep, which owns those
-    /// inputs; the completion touch keeps the stat-only verdict honest
-    /// for legacy files.
+    /// Staleness for one source file: stale verdict form of the
+    /// stat-first [`Self::freshness_verdict_for`] gate.
     fn should_generate_for(&self, source_path: &Path, json_path: &Path) -> bool {
+        matches!(
+            self.freshness_verdict_for(source_path, json_path, &HashProbe),
+            StalenessVerdict::Stale
+        )
+    }
+
+    /// Stat-first staleness: sidecar missing → stale; sidecar mtime
+    /// newer than source → fresh with no hash; ambiguous or
+    /// source-newer → one content hash, equal bytes revalidate.
+    /// Reuses the freshness math and the staleness edges; no second
+    /// mtime rule.
+    fn freshness_verdict_for(
+        &self,
+        source_path: &Path,
+        json_path: &Path,
+        probe: &dyn FreshnessProbe,
+    ) -> StalenessVerdict {
         if !json_path.exists() {
-            return true;
+            return StalenessVerdict::Stale;
         }
         // Stuck records never count as fresh, even when the bytes are
         // unchanged: the loop escalated the file and only a clean save
         // clears the hold.
         if crate::freshness::sidecar_stuck(json_path) {
-            return true;
+            return StalenessVerdict::Stale;
         }
-        if let Some(stored) = self.stored_hash(source_path) {
-            return crate::diff::hash_file(source_path).as_deref() != Some(stored);
-        }
-        if let Some(recorded) = header_source_hash(json_path) {
-            if crate::diff::hash_file(source_path).as_deref() != Some(recorded.as_str()) {
-                return true;
+        let stored: Option<String> = self.stored_hash(source_path).map(str::to_string);
+        // Header receipts are read only when no fresher stored hash
+        // exists; the stored map wins on conflict by being fresher.
+        let recorded: Option<String> = if stored.is_none() {
+            header_source_hash(json_path)
+        } else {
+            None
+        };
+        let (Some(json_mtime), Some(source_mtime)) = (
+            common_core::io::mtime(json_path),
+            common_core::io::mtime(source_path),
+        ) else {
+            // A clock that cannot read is evidence-free: a missing
+            // source with a recorded hash is stale work (fail open,
+            // never silently fresh); otherwise legacy mtime behavior.
+            if !source_path.exists() && (stored.is_some() || recorded.is_some()) {
+                return StalenessVerdict::Stale;
             }
-            // Bytes match: the receipt is reusable only when every input
-            // it consumed still matches. Default engines record the same
-            // four keys they compare, so legacy trees decide exactly as
-            // before; wider receipts narrow correctly.
-            return !self.receipt_consumed_current(json_path);
+            return if staleness::should_generate(json_path, source_path) {
+                StalenessVerdict::Stale
+            } else {
+                StalenessVerdict::Fresh
+            };
+        };
+        // Stat sweep first: only a decisively newer sidecar proves
+        // freshness without a hash. Anything closer is evidence-free
+        // (timestamp quantization inverts back-to-back writes) and
+        // falls through to the single content hash below.
+        if crate::freshness::sidecar_decisively_newer(json_mtime, source_mtime) {
+            return StalenessVerdict::Fresh;
         }
-        staleness::should_generate(json_path, source_path)
+        // The external stored map wins on conflict by being the
+        // fresher record: equal bytes revalidate with no receipt
+        // consult, exactly as before.
+        if let Some(stored) = stored {
+            return match probe.hash_file(source_path).as_deref() {
+                Some(current) if current == stored => StalenessVerdict::Revalidated,
+                _ => StalenessVerdict::Stale,
+            };
+        }
+        let Some(recorded) = recorded else {
+            // No baseline hash to compare: headerless legacy files
+            // keep mtime behavior byte-identically.
+            return if staleness::should_generate(json_path, source_path) {
+                StalenessVerdict::Stale
+            } else {
+                StalenessVerdict::Fresh
+            };
+        };
+        match probe.hash_file(source_path).as_deref() {
+            // Bytes match: the receipt is reusable only when every
+            // input it consumed still matches. Default engines record
+            // the same keys they compare, so legacy trees decide
+            // exactly as before; wider receipts narrow correctly.
+            Some(current) if current == recorded => {
+                if self.receipt_consumed_current(json_path) {
+                    StalenessVerdict::Revalidated
+                } else {
+                    StalenessVerdict::Stale
+                }
+            }
+            _ => StalenessVerdict::Stale,
+        }
     }
 
     /// Whether the sidecar receipt's consumed inputs still match this
@@ -327,34 +385,58 @@ impl SyncEngine {
     }
 
     pub fn status(&self) -> Result<SyncStatus, SyncEngineError> {
+        self.status_with(&HashProbe)
+    }
+
+    /// Status sweep behind an explicit hash probe: the no-op sweep
+    /// spends zero hashes when every sidecar is newer. Counts fresh,
+    /// revalidated, and stale separately; the JSON and dry-run
+    /// reports carry all three.
+    pub fn status_with(&self, probe: &dyn FreshnessProbe) -> Result<SyncStatus, SyncEngineError> {
         let mut total_files = 0;
         let mut stale_files = 0;
+        let mut fresh_files = 0;
+        let mut revalidated_files = 0;
         let mut up_to_date = 0;
 
         // Single sweep: the shared classifier behind `status` and
         // `stale_files`, so the two never disagree about what is stale.
-        self.each_source_file_staleness(|stale| {
+        self.each_source_file_verdicts(probe, |verdict| {
             total_files += 1;
-            if stale {
-                stale_files += 1;
-            } else {
-                up_to_date += 1;
+            match verdict {
+                StalenessVerdict::Stale => stale_files += 1,
+                StalenessVerdict::Fresh => {
+                    fresh_files += 1;
+                    up_to_date += 1;
+                }
+                StalenessVerdict::Revalidated => {
+                    revalidated_files += 1;
+                    up_to_date += 1;
+                }
             }
         });
 
         Ok(SyncStatus {
             total_files,
             stale_files,
+            fresh_files,
+            revalidated_files,
             up_to_date,
         })
     }
 
-    /// One walk, one staleness verdict per file: the single classifier
-    /// behind `status` and `stale_files` (no second sweep semantics).
-    fn each_source_file_staleness(&self, mut classify: impl FnMut(bool)) {
+    /// One walk, one [`StalenessVerdict`] per file, behind an explicit
+    /// hash probe for the counting budget tests. The single classifier
+    /// behind `status` and `stale_files`, so the two never disagree
+    /// about what is stale (no second sweep semantics).
+    fn each_source_file_verdicts(
+        &self,
+        probe: &dyn FreshnessProbe,
+        mut classify: impl FnMut(StalenessVerdict),
+    ) {
         self.walk_source_files(|source_path| {
             let json_path = self.guidance_json_path(source_path);
-            classify(self.should_generate_for(source_path, &json_path));
+            classify(self.freshness_verdict_for(source_path, &json_path, probe));
         });
     }
 
@@ -518,9 +600,69 @@ pub fn guidance_json_path(source_path: &Path, source_dir: &Path, guidance_dir: &
 
 #[derive(Debug, Clone)]
 pub struct SyncStatus {
+    /// Files walked.
     pub total_files: usize,
+    /// Files needing regeneration.
     pub stale_files: usize,
+    /// Files fresh by the stat sweep alone (no hash spent).
+    pub fresh_files: usize,
+    /// Files revalidated by one content hash (touched but identical).
+    pub revalidated_files: usize,
+    /// Files already fresh.
     pub up_to_date: usize,
+}
+
+/// Freshness verdict for one source file: the stat sweep proves
+/// `Fresh` alone; `Revalidated` spends exactly one content hash;
+/// `Stale` regenerates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Freshness verdict for one source file: the stat sweep proves
+/// `Fresh` alone; `Revalidated` spends exactly one content hash;
+/// `Stale` regenerates.
+pub enum StalenessVerdict {
+    Fresh,
+    Revalidated,
+    Stale,
+}
+
+/// Content-hash seam for the staleness gate: production hashes live
+/// bytes; the counting probe measures hash calls without I/O mocks.
+pub trait FreshnessProbe {
+    /// Hash one source file, or `None` when unreadable.
+    fn hash_file(&self, path: &Path) -> Option<String>;
+}
+
+/// Production probe: the one content hash, never a second hasher.
+pub struct HashProbe;
+
+impl FreshnessProbe for HashProbe {
+    fn hash_file(&self, path: &Path) -> Option<String> {
+        crate::diff::hash_file(path)
+    }
+}
+
+/// Test probe: counts content hashes through interior mutability so
+/// the no-op sweep can assert zero-hash budgets.
+#[derive(Default)]
+/// Test probe: counts content hashes through interior mutability so
+/// the no-op sweep can assert zero-hash budgets.
+pub struct CountingProbe {
+    calls: std::cell::Cell<usize>,
+}
+
+impl CountingProbe {
+    /// Content hashes spent so far.
+    #[must_use]
+    pub fn calls(&self) -> usize {
+        self.calls.get()
+    }
+}
+
+impl FreshnessProbe for CountingProbe {
+    fn hash_file(&self, path: &Path) -> Option<String> {
+        self.calls.set(self.calls.get() + 1);
+        crate::diff::hash_file(path)
+    }
 }
 
 impl SyncStatus {
@@ -532,6 +674,10 @@ impl SyncStatus {
 #[cfg(test)]
 #[path = "../tests/offload_stale_only.rs"]
 mod offload_stale_only_tests;
+
+#[cfg(test)]
+#[path = "../tests/sync_probe.rs"]
+mod sync_probe_tests;
 
 #[cfg(test)]
 #[path = "../tests/sync_fixpoint.rs"]

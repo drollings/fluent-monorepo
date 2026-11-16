@@ -795,17 +795,40 @@ fn recall_on_index(
 /// `schema_version` 2 marks the additive set. Uncalibrated runs
 /// report zero task-value confidence with an explicit shadow status —
 /// the axis names the measurement, never a settled verdict.
+#[allow(clippy::too_many_arguments)]
+/// Machine-readable envelope v2 for orchestrators: every v1 key
+/// plus the read-plane additions (coverage, claims, tokens,
+/// latency, degraded). v1 keys keep their names and meaning;
+/// `schema_version` 2 marks the additive set. Uncalibrated runs
+/// report zero task-value confidence with an explicit shadow status —
+/// the axis names the measurement, never a settled verdict.
+/// Machine-readable envelope v2 for orchestrators: every v1 key
+/// plus the read-plane additions (coverage, claims, tokens,
+/// latency, degraded). v1 keys keep their names and meaning;
+/// `schema_version` 2 marks the additive set. Uncalibrated runs
+/// report zero task-value confidence with an explicit shadow status —
+/// the axis names the measurement, never a settled verdict.
 pub fn envelope_json_v2(
     intent: &str,
     route: &str,
     answer: &guidance_core::read::engine::ReadAnswer,
     latency_ms: u64,
+    generative: &str,
+    decision: &str,
+    subject_terms: &[String],
+    subject_source: Option<&str>,
+    answer_mode: &str,
+    trace: Option<&[guidance_core::read::engine::TraceRow]>,
 ) -> serde_json::Value {
-    serde_json::json!({
+    let mut envelope = serde_json::json!({
         "schema_version": 2,
         "intent": intent,
         "route": route,
-        "resolution": answer.route,
+        "resolution": {
+            "route": answer.route,
+            "subject": if subject_terms.is_empty() { serde_json::Value::Null } else { serde_json::json!(subject_terms) },
+            "source": subject_source,
+        },
         "confidence": {"value": 0.0, "axis": "task-value (shadow)"},
         "gaps": answer.gaps,
         "citations": answer.citations.iter().map(|cite| serde_json::json!({
@@ -823,7 +846,25 @@ pub fn envelope_json_v2(
         "tokens": answer.tokens_used,
         "latency_ms": latency_ms,
         "degraded": answer.degraded,
-    })
+        "models": {"generative": generative, "decision": decision},
+        "answer_mode": answer_mode,
+        "cache": if answer.cache_hit { "hit" } else { "miss" },
+    });
+    // Trace rides the envelope only under `--trace`: the default
+    // contract stays byte-identical.
+    if let Some(rows) = trace {
+        envelope["trace"] = serde_json::json!(rows
+            .iter()
+            .map(|row| serde_json::json!({
+                "plane": row.plane,
+                "candidate": row.candidate,
+                "anchor": row.anchor,
+                "judge": row.judge,
+                "outcome": row.outcome,
+            }))
+            .collect::<Vec<_>>());
+    }
+    envelope
 }
 
 /// Machine-readable envelope handoff for orchestrators: schema version,
@@ -927,17 +968,15 @@ pub fn cite_hit(hit: &SearchHit, workspace: &str) -> String {
     let Some((start, end)) = range else {
         return "unverified".to_string();
     };
-    let Ok(bytes) = std::fs::read(&hit.file.absolute_path) else {
+    // One live-range implementation shared with the finding
+    // renderer: the cited bytes and their hash always agree.
+    let Some(hash) = guidance_core::grounding::live_range_hash(
+        std::path::Path::new(&hit.file.absolute_path),
+        start,
+        end,
+    ) else {
         return "unverified".to_string();
     };
-    let text = String::from_utf8_lossy(&bytes);
-    let lines: Vec<&str> = text.lines().collect();
-    if lines.is_empty() || start == 0 || start > lines.len() {
-        return "unverified".to_string();
-    }
-    let end = end.min(lines.len());
-    let cited = lines[start - 1..end].join("\n") + "\n";
-    let hash = common_core::hash::blake3_hex(cited.as_bytes());
     let shown = PathBuf::from(&hit.file.absolute_path)
         .strip_prefix(workspace)
         .map(|rel| rel.to_string_lossy().into_owned())

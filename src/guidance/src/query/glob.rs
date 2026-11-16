@@ -370,7 +370,11 @@ impl CompiledOrderedGlobs {
                     continue;
                 }
                 let negated = trimmed.starts_with('!');
-                let body = negated.then(|| trimmed[1..].trim()).unwrap_or(trimmed);
+                let body = if negated {
+                    trimmed[1..].trim()
+                } else {
+                    trimmed
+                };
                 if body.is_empty() {
                     continue;
                 }
@@ -655,15 +659,15 @@ fn variant_matches_path(pattern: &str, candidate: &str, case_insensitive: bool) 
     if hit {
         return true;
     }
-    if !pattern.contains('/') {
+    if pattern.contains('/') {
+        false
+    } else {
         let base = candidate.rsplit('/').next().unwrap_or(candidate);
         if case_insensitive {
             base.to_lowercase() == pattern.to_lowercase()
         } else {
             base == pattern
         }
-    } else {
-        false
     }
 }
 

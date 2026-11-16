@@ -1,0 +1,93 @@
+{
+  "changes": [
+    {
+      "id": "fixture-exclusion",
+      "goldens": [
+        "q1-components",
+        "q2-calibration",
+        "q3-sync",
+        "q4-capabilities",
+        "q5-clean",
+        "q6-ranking",
+        "q7-control-nonexistent",
+        "q8-control-unknown-symbol",
+        "q9-control-scope-eval"
+      ],
+      "why": "default output loses every fixture-scope path; `fixture_paths` must go to zero and citations shrink"
+    },
+    {
+      "id": "span-render-cap",
+      "goldens": [
+        "q1-components",
+        "q2-calibration",
+        "q3-sync",
+        "q5-clean",
+        "q6-ranking",
+        "q7-control-nonexistent",
+        "q8-control-unknown-symbol",
+        "q9-control-scope-eval"
+      ],
+      "why": "oversized excerpts render as head windows with a truncation marker; rendered_bytes drops while citation ranges and max_span stay true"
+    },
+    {
+      "id": "abstention-floor",
+      "goldens": [
+        "q2-calibration",
+        "q3-sync",
+        "q4-capabilities",
+        "q5-clean",
+        "q6-ranking",
+        "q7-control-nonexistent",
+        "q8-control-unknown-symbol",
+        "q9-control-scope-eval"
+      ],
+      "why": "the answer floor withholds material that never names the asked subject; controls lose the Answer section and every negative result carries the covered-index contract with its scope"
+    },
+    {
+      "id": "payload-trim",
+      "goldens": [
+        "q1-components",
+        "q2-calibration",
+        "q3-sync",
+        "q4-capabilities",
+        "q5-clean",
+        "q6-ranking",
+        "q7-control-nonexistent",
+        "q8-control-unknown-symbol",
+        "q9-control-scope-eval"
+      ],
+      "why": "markdown shrinks (scoped project map, capped citation list); rendered_bytes drops at unchanged recall"
+    },
+    {
+      "id": "extractive-always",
+      "goldens": [
+        "q2-calibration",
+        "q5-clean"
+      ],
+      "why": "factual intents render extractive answers without any model client; answer_present stays true where rows exist and gains on model-less runs"
+    },
+    {
+      "id": "module-header-rows",
+      "goldens": [
+        "q3-sync"
+      ],
+      "why": "module doc rows join retrieval; freshness/sync_engine citations lead for the reprocessing question"
+    },
+    {
+      "id": "capability-corpus",
+      "goldens": [
+        "q1-components",
+        "q4-capabilities",
+        "q6-ranking"
+      ],
+      "why": "imported capability briefs render the capabilities section when the corpus is populated"
+    },
+    {
+      "id": "ownership-owners",
+      "goldens": [
+        "q2-calibration"
+      ],
+      "why": "Ownership answers render one cited row per component package plus the verified doc context; the answer body grows and cites owner evidence instead of consuming code rows"
+    }
+  ]
+}

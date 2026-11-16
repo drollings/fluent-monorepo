@@ -314,9 +314,11 @@ pub fn ingest_workspace_fragments(
                         continue;
                     }
                 };
-            if let Some(module) =
-                guidance_core::extractor::code::module_fragment_for(&record.id, &blocks)
-            {
+            if let Some(module) = guidance_core::extractor::code::module_fragment_for(
+                &record.id,
+                &record.relative_path,
+                &blocks,
+            ) {
                 fragments.push(module);
             }
             // Spacy pays off on prose, not code: whole-file lemmatization
@@ -332,7 +334,7 @@ pub fn ingest_workspace_fragments(
                     rows.into_iter()
                         // Module fragments carry comments, not interfaces:
                         // their appearance must not expand dependents.
-                        .filter(|row| row.name.as_deref() != Some("$file"))
+                        .filter(|row| !row.symbol_id.ends_with("#$file"))
                         .map(|row| (row.symbol_id, row.interface_hash))
                         .collect()
                 })
@@ -389,7 +391,7 @@ pub fn ingest_workspace_fragments(
                         .symbols_for_file(&record.id)
                         .map(|rows| {
                             rows.into_iter()
-                                .filter(|row| row.name.as_deref() != Some("$file"))
+                                .filter(|row| !row.symbol_id.ends_with("#$file"))
                                 .map(|row| (row.symbol_id, row.interface_hash))
                                 .collect()
                         })

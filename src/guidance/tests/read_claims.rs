@@ -16,16 +16,53 @@ fn sentences_split_on_terminal_punctuation() {
 
 #[test]
 fn claims_bind_to_named_citations_only() {
-    let claims = bind_claims(
-        "Alpha adds one (src/a.rs:1-3). Baking is nice.",
-        &["src/a.rs:1".to_string(), "src/b.rs:9".to_string()],
-    );
+    let manifest = vec![
+        ("[C1]".to_string(), "src/a.rs:1".to_string()),
+        ("[C2]".to_string(), "src/b.rs:9".to_string()),
+    ];
+    let claims = bind_claims("Alpha adds one (src/a.rs:1-3). Baking is nice.", &manifest);
     assert_eq!(claims.len(), 2);
     assert!(claims[0].citation.is_some());
     assert!(claims[1].citation.is_none());
     assert!(claims
         .iter()
         .all(|claim| claim.support == Support::Unverified));
+}
+
+#[test]
+fn claims_resolve_evidence_tokens_to_canonical_citations() {
+    let manifest = vec![
+        ("[C1]".to_string(), "src/a.rs:1-3".to_string()),
+        ("[D1]".to_string(), "doc/alpha.md#notes".to_string()),
+    ];
+    let claims = bind_claims(
+        "Alpha adds one [C1]. Notes say so [D1]. Invented claims [C9].",
+        &manifest,
+    );
+    assert_eq!(claims.len(), 3);
+    assert_eq!(claims[0].citation.as_deref(), Some("src/a.rs:1-3"));
+    assert_eq!(claims[1].citation.as_deref(), Some("doc/alpha.md#notes"));
+    assert!(claims[2].citation.is_none(), "unknown token binds nothing");
+    let gated = gate_answer(&claims).expect("token-bound claims are kept");
+    assert!(
+        !gated.contains("[C9]"),
+        "unbound sentences never render: {gated}"
+    );
+    assert!(
+        gated.contains("src/a.rs:1-3") || gated.contains("Alpha adds one"),
+        "{gated}"
+    );
+}
+
+#[test]
+fn invented_paths_drop_through_the_gate() {
+    let manifest = vec![("[C1]".to_string(), "src/a.rs:1-3".to_string())];
+    let claims = bind_claims("Lives in invented.rs:99.", &manifest);
+    assert!(claims.iter().all(|claim| claim.citation.is_none()));
+    assert!(
+        gate_answer(&claims).is_none(),
+        "uncited prose renders nothing"
+    );
 }
 
 #[test]
@@ -121,4 +158,39 @@ fn gating_keeps_card_backed_claims_labelled() {
     }];
     let gated = gate_answer(&claims).expect("card-backed claims are kept");
     assert!(gated.contains("[unverified]"), "{gated}");
+}
+
+#[test]
+fn prefilter_marks_identifier_free_claims_insufficient() {
+    // Deterministic entailment prefilter: the cited range must share
+    // an identifier with the claim, else no model call is spent.
+    let manifest = vec![("[C1]".to_string(), "src/a.rs:1-3".to_string())];
+    let evidence = vec![(
+        "src/a.rs:1-3".to_string(),
+        "pub fn alpha() {}\nadds one".to_string(),
+    )];
+    let mut claims = bind_claims("Alpha adds one [C1]. Baking is nice.", &manifest);
+    assert_eq!(claims.len(), 2);
+    prefilter_support(&mut claims, &evidence);
+    assert_eq!(
+        claims[0].support,
+        Support::Unverified,
+        "shared identifier survives"
+    );
+    assert_eq!(
+        claims[1].support,
+        Support::Unverified,
+        "unbound claims pass through for the gate to drop"
+    );
+    let mut claims = bind_claims("Baking is nice [C1].", &manifest);
+    prefilter_support(&mut claims, &evidence);
+    assert_eq!(
+        claims[0].support,
+        Support::Insufficient,
+        "no shared identifier means no model call"
+    );
+    assert!(
+        gate_answer(&claims).is_none(),
+        "prefiltered claims never render"
+    );
 }

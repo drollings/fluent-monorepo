@@ -507,3 +507,7 @@ pub fn import_capability_corpus(
 #[cfg(test)]
 #[path = "../../tests/capability_import.rs"]
 mod capability_import_tests;
+
+#[cfg(test)]
+#[path = "../../tests/capability_corpus.rs"]
+mod capability_corpus_tests;

@@ -21,6 +21,11 @@ fn explain_help_lists_stable_flags() {
         "--no-llm",
         "--allow-degraded",
         "--filter",
+        "--format",
+        "--require-answer",
+        "--answer-mode",
+        "--trace",
+        "--full-map",
     ] {
         assert!(text.contains(flag), "missing {flag}:\n{text}");
     }
@@ -416,12 +421,24 @@ fn explain_callers_unknown_stays_empty() {
     assert!(text.contains("### Top matches"), "{text}");
     // The graph plane stays empty for unknown symbols: no caller edge
     // may render. Lexical partials can still rank (rank-only, never
-    // filtered pre-calibration).
+    // filtered pre-calibration); under Auto they answer extractively.
     assert!(
         !text.contains("calls absent_sym"),
         "no caller edges: {text}"
     );
-    assert!(!text.contains("### Answer"), "{text}");
+    for section in ["### Answer", "### Top matches", "### Call graph"] {
+        let body = text
+            .split(section)
+            .nth(1)
+            .unwrap_or("")
+            .split("### ")
+            .next()
+            .unwrap_or("");
+        assert!(
+            !body.contains("calls absent_sym"),
+            "no caller edges in {section}: {text}"
+        );
+    }
 }
 
 #[test]
@@ -456,6 +473,26 @@ fn explain_renders_both_same_basename_files() {
     assert!(out.status.success(), "explain: {out:?}");
     let text = stdout(&out);
     assert!(text.contains("### Top matches"), "{text}");
+    // Factual answers are extractive: both same-basename files render
+    // as cited Answer rows, consumed from the later sections.
+    let response = text
+        .split("### Answer")
+        .nth(1)
+        .expect("extractive answer renders")
+        .split("### Gaps")
+        .next()
+        .unwrap_or("")
+        .split("### Envelope")
+        .next()
+        .unwrap_or("");
+    assert!(
+        response.contains("sub1/same.rs"),
+        "first file renders: {response}"
+    );
+    assert!(
+        response.contains("sub2/same.rs"),
+        "second file renders: {response}"
+    );
     let top = text
         .split("### Top matches")
         .nth(1)
@@ -463,8 +500,10 @@ fn explain_renders_both_same_basename_files() {
         .split("### Citations")
         .next()
         .unwrap_or("");
-    assert!(top.contains("sub1/same.rs"), "first file renders: {top}");
-    assert!(top.contains("sub2/same.rs"), "second file renders: {top}");
+    assert!(
+        !top.contains("sub1/same.rs") && !top.contains("sub2/same.rs"),
+        "consumed rows leave Top matches: {top}"
+    );
 }
 
 /// Seed one ready capability row directly: the generator is gone, so
@@ -529,6 +568,54 @@ fn explain_renders_sections_and_envelope_v2() {
 }
 
 #[test]
+fn explain_markdown_shortens_envelope_digests_json_keeps_them() {
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let digests = |text: &str| -> Vec<String> {
+        let envelope: serde_json::Value = serde_json::from_str(text).expect("envelope parses");
+        envelope["citations"]
+            .as_array()
+            .expect("citations")
+            .iter()
+            .filter_map(|cite| cite["digest"].as_str().map(str::to_string))
+            .collect()
+    };
+    let json_out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--no-llm", "--format", "json"],
+        ),
+    );
+    assert!(json_out.status.success(), "json: {json_out:?}");
+    let full = digests(&stdout(&json_out));
+    assert!(!full.is_empty(), "fixture answers with citations");
+    assert!(full.iter().all(|digest| digest.len() == 64), "{full:?}");
+
+    let md_out = run(
+        dir,
+        &explain_args(&ws, &json_dir, &db, "alpha helper", &["--no-llm"]),
+    );
+    assert!(md_out.status.success(), "md: {md_out:?}");
+    let text = stdout(&md_out);
+    let block = text
+        .split("```json")
+        .nth(1)
+        .and_then(|tail| tail.split("```").next())
+        .expect("markdown envelope block");
+    let shortened = digests(block);
+    assert_eq!(shortened.len(), full.len(), "same citations, shorter ids");
+    assert!(
+        shortened.iter().all(|digest| digest.len() <= 8),
+        "markdown digests shorten: {shortened:?}"
+    );
+}
+
+#[test]
 fn explain_no_llm_is_model_free_and_capped_by_budget() {
     let (temp, ws, json_dir, db) = explain_fixture();
     let dir = temp.path();
@@ -551,4 +638,347 @@ fn explain_no_llm_is_model_free_and_capped_by_budget() {
         "{text}"
     );
     assert!(!String::from_utf8_lossy(&out.stderr).contains("=== LLM PROMPT ==="));
+}
+
+#[test]
+fn explain_format_json_prints_only_parseable_envelope() {
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--no-llm", "--format", "json"],
+        ),
+    );
+    assert!(out.status.success(), "explain --format json: {out:?}");
+    let text = stdout(&out);
+    assert!(
+        !text.contains("## Explain:"),
+        "no markdown in json mode: {text}"
+    );
+    assert!(!text.contains("```"), "no fence in json mode: {text}");
+    let envelope: serde_json::Value = serde_json::from_str(text.trim()).expect("json parses");
+    assert_eq!(envelope.get("schema_version"), Some(&serde_json::json!(2)));
+    assert!(
+        envelope.get("models").is_some(),
+        "models present: {envelope}"
+    );
+}
+
+#[test]
+fn explain_envelope_carries_resolution_subject() {
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    // Anchored query: the free-term subject resolves beside the route.
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "beta gamma",
+            &["--no-llm", "--format", "json"],
+        ),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let envelope: serde_json::Value =
+        serde_json::from_str(stdout(&out).trim()).expect("json parses");
+    let resolution = envelope.get("resolution").expect("resolution object");
+    assert!(resolution.get("route").is_some(), "{resolution}");
+    let subject = resolution.get("subject").expect("subject");
+    assert!(
+        subject
+            .as_array()
+            .is_some_and(|terms| terms.iter().any(|term| term == "beta" || term == "gamma")),
+        "{resolution}"
+    );
+    assert_eq!(
+        resolution.get("source"),
+        Some(&serde_json::json!("identifier")),
+        "{resolution}"
+    );
+    // Anchorless query: subject null, output shape unchanged.
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "which crate",
+            &["--no-llm", "--format", "json"],
+        ),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let envelope: serde_json::Value =
+        serde_json::from_str(stdout(&out).trim()).expect("json parses");
+    assert_eq!(
+        envelope
+            .get("resolution")
+            .and_then(|resolution| resolution.get("subject")),
+        Some(&serde_json::Value::Null),
+        "{envelope}"
+    );
+}
+#[test]
+fn explain_format_md_stays_default() {
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--no-llm", "--format", "md"],
+        ),
+    );
+    assert!(out.status.success(), "explain --format md: {out:?}");
+    let text = stdout(&out);
+    assert!(text.starts_with("## Explain: "), "{text}");
+}
+
+#[test]
+fn explain_require_answer_exits_3_when_nothing_answers() {
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "zxqy nonexistent token zzz",
+            &["--no-llm", "--require-answer"],
+        ),
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "require-answer exits 3: {out:?}"
+    );
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--no-llm", "--require-answer"],
+        ),
+    );
+    assert!(
+        out.status.success(),
+        "answerable query stays green: {out:?}"
+    );
+}
+
+#[test]
+fn explain_transport_failure_names_generative_unavailable() {
+    // Unreachable local model: the legacy prose path degrades to a
+    // gap and marks the generative role unavailable, never a verdict.
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--format", "json", "--answer-mode", "synthesis"],
+        ),
+    );
+    assert!(out.status.success(), "explain with dead model: {out:?}");
+    let text = stdout(&out);
+    let envelope: serde_json::Value = serde_json::from_str(text.trim()).expect("json parses");
+    let models = envelope.get("models").expect("models present");
+    assert_eq!(
+        models.get("generative"),
+        Some(&serde_json::json!("unavailable")),
+        "dead endpoint is unavailable, not a verdict: {envelope}"
+    );
+    assert_eq!(
+        envelope.get("degraded"),
+        Some(&serde_json::json!(true)),
+        "{envelope}"
+    );
+    assert!(
+        envelope
+            .get("gaps")
+            .and_then(|gaps| gaps.as_array())
+            .is_some_and(|gaps| gaps.iter().any(|gap| gap
+                .as_str()
+                .is_some_and(|gap| gap.contains("synthesis unavailable")))),
+        "gap names the failure: {envelope}"
+    );
+    assert!(
+        !envelope
+            .get("claims")
+            .and_then(|claims| claims.as_array())
+            .is_some_and(|claims| !claims.is_empty()),
+        "no claims without synthesis: {envelope}"
+    );
+}
+
+#[test]
+fn explain_strict_refuses_renamed_row_naming_the_file() {
+    // Rename probe through the CLI: the live range renders with a
+    // stale label, and --strict refuses while naming the file.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("src")).expect("mkdir src");
+    std::fs::write(
+        root.join("src").join("ren.rs"),
+        "/// Renames.\npub fn old_name() -> u64 {\n    1\n}\n",
+    )
+    .expect("write");
+    std::fs::create_dir(root.join(".guidance")).expect("mkdir guidance");
+    std::fs::write(
+        root.join(".guidance").join("guidance-config.json"),
+        r#"{"src_dirs": ["src"]}"#,
+    )
+    .expect("config");
+    sync(dir.path(), ".strict.db", false);
+    std::fs::write(
+        root.join("src").join("ren.rs"),
+        "/// Renames.\npub fn new_name() -> u64 {\n    1\n}\n",
+    )
+    .expect("rename without re-sync");
+    let ws = root.to_str().unwrap().to_string();
+    let json_dir = root.join(".guidance").to_str().unwrap().to_string();
+    let db = root.join(".strict.db").to_str().unwrap().to_string();
+    let out = run(
+        dir.path(),
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "where is old_name defined",
+            &["--no-llm", "--allow-degraded"],
+        ),
+    );
+    assert!(out.status.success(), "explain: {out:?}");
+    let text = stdout(&out);
+    assert!(
+        text.contains("pub fn new_name"),
+        "live bytes render: {text}"
+    );
+    assert!(
+        !text.contains("pub fn old_name()"),
+        "stored excerpt hidden: {text}"
+    );
+    assert!(text.contains("(stale)"), "row labelled stale: {text}");
+    let out = run(
+        dir.path(),
+        &[
+            "explain",
+            "where is old_name defined",
+            "--workspace",
+            &ws,
+            "--guidance",
+            &json_dir,
+            "--db",
+            &db,
+            "--no-llm",
+            "--strict",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(2), "strict refuses: {out:?}");
+    let err = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(err.contains("ren.rs"), "strict names the file: {err}");
+}
+
+#[test]
+fn explain_trace_prints_per_candidate_outcomes() {
+    // Deterministic, model-free: every candidate row names its anchor
+    // decision, judge label, and admission/budget outcome. Default
+    // output stays trace-free (byte-identical contract).
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--no-llm", "--trace"],
+        ),
+    );
+    assert!(out.status.success(), "explain --trace: {out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("### Trace"), "trace section renders: {text}");
+    assert!(text.contains("anchor:"), "anchor decision per row: {text}");
+    assert!(text.contains("judge:"), "judge label per row: {text}");
+    assert!(
+        text.contains("lib.rs") || text.contains("code-"),
+        "code candidates trace: {text}"
+    );
+    let plain = run(
+        dir,
+        &explain_args(&ws, &json_dir, &db, "alpha helper", &["--no-llm"]),
+    );
+    assert!(plain.status.success(), "explain: {plain:?}");
+    assert!(
+        !stdout(&plain).contains("### Trace"),
+        "default output stays trace-free"
+    );
+}
+
+#[test]
+fn explain_trace_json_carries_trace_array() {
+    // `--format json --trace` carries the same rows inside the
+    // envelope; without the flag the key stays absent.
+    let (temp, ws, json_dir, db) = explain_fixture();
+    let dir = temp.path();
+    sync(dir, &db, false);
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--no-llm", "--format", "json", "--trace"],
+        ),
+    );
+    assert!(out.status.success(), "explain json --trace: {out:?}");
+    let envelope: serde_json::Value =
+        serde_json::from_str(stdout(&out).trim()).expect("envelope parses");
+    let trace = envelope.get("trace").expect("trace key with flag");
+    let rows = trace.as_array().expect("trace is an array");
+    assert!(!rows.is_empty(), "trace covers candidates: {envelope}");
+    for row in rows {
+        for key in ["plane", "candidate", "anchor", "judge", "outcome"] {
+            assert!(row.get(key).is_some(), "missing {key}: {row}");
+        }
+    }
+    let out = run(
+        dir,
+        &explain_args(
+            &ws,
+            &json_dir,
+            &db,
+            "alpha helper",
+            &["--no-llm", "--format", "json"],
+        ),
+    );
+    assert!(out.status.success(), "explain json: {out:?}");
+    let envelope: serde_json::Value =
+        serde_json::from_str(stdout(&out).trim()).expect("envelope parses");
+    assert!(
+        envelope.get("trace").is_none(),
+        "default envelope stays trace-free: {envelope}"
+    );
 }

@@ -892,3 +892,54 @@ fn sync_file_keeps_nested_sidecar_in_parallel_tree() {
         "fresh file skips: {again}"
     );
 }
+
+#[test]
+fn content_generation_marker_tracks_the_tree() {
+    // The propagation fingerprint is the generation marker's content
+    // half (sorted sidecar receipts); a no-op keeps it, an edit moves it.
+    let dir = fixture();
+    let root = dir.path();
+    let content = |value: &str| {
+        value
+            .trim()
+            .split_once(':')
+            .map(|(_, content)| content.to_string())
+            .expect("schema:content marker")
+    };
+    sync(root, ".fingerprint.db", false);
+    let path = root.join("index.generation");
+    let first = std::fs::read_to_string(&path).expect("generation written");
+    let first_content = content(&first);
+    sync(root, ".fingerprint.db", false);
+    let second = std::fs::read_to_string(&path).expect("rewritten");
+    assert_eq!(
+        content(&second),
+        first_content,
+        "a no-op keeps the fingerprint"
+    );
+    std::fs::write(root.join("leaf.rs"), "pub fn leaf() -> u64 {\n    43\n}\n").expect("write");
+    sync(root, ".fingerprint.db", true);
+    let third = std::fs::read_to_string(&path).expect("rewritten");
+    assert_ne!(
+        content(&third),
+        first_content,
+        "an edit moves the fingerprint"
+    );
+}
+
+#[test]
+fn tree_fingerprint_marker_tracks_the_tree() {
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".treefp.db", false);
+    let path = root.join("index.fingerprint");
+    let first = std::fs::read_to_string(&path).expect("fingerprint written");
+    assert_eq!(first.trim().len(), 64, "blake3 hex: {first:?}");
+    sync(root, ".treefp.db", false);
+    let second = std::fs::read_to_string(&path).expect("fingerprint persists");
+    assert_eq!(first, second, "a no-op keeps the fingerprint");
+    std::fs::write(root.join("leaf.rs"), "pub fn leaf() -> u64 {\n    43\n}\n").expect("write");
+    sync(root, ".treefp.db", true);
+    let third = std::fs::read_to_string(&path).expect("fingerprint rewritten");
+    assert_ne!(second, third, "an edit moves the fingerprint");
+}

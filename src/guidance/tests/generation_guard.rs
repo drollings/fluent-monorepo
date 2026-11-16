@@ -182,3 +182,138 @@ fn guarded_graph_build_refuses_on_mismatch() {
         "unknown generation refuses"
     );
 }
+
+#[test]
+fn content_generation_is_the_sorted_header_fingerprint() {
+    // The propagation fingerprint is the generation marker's content
+    // half: sorted sidecar receipts. Bodies are not read (their hash
+    // rides in the header), so equal headers are one identity.
+    let sidecars = tempdir();
+    write_sidecar(sidecars.path(), "a.rs.json", "hdr-a");
+    write_sidecar(sidecars.path(), "b.rs.json", "hdr-b");
+    let first = crate::index_generation::content_generation(sidecars.path());
+    assert_eq!(
+        first,
+        crate::index_generation::content_generation(sidecars.path()),
+        "stable"
+    );
+    // Rewriting a body with the same receipt header is the same tree.
+    std::fs::write(sidecars.path().join("a.rs.json"), "hdr-a\n{\"ok\":false}").expect("rewrite");
+    assert_eq!(
+        first,
+        crate::index_generation::content_generation(sidecars.path()),
+        "header identity, not body bytes"
+    );
+    // A moved receipt header changes the fingerprint.
+    write_sidecar(sidecars.path(), "a.rs.json", "hdr-a2");
+    assert_ne!(
+        first,
+        crate::index_generation::content_generation(sidecars.path()),
+        "header move"
+    );
+    // Create and delete change it.
+    let moved = crate::index_generation::content_generation(sidecars.path());
+    write_sidecar(sidecars.path(), "c.rs.json", "hdr-c");
+    let created = crate::index_generation::content_generation(sidecars.path());
+    assert_ne!(moved, created, "create");
+    std::fs::remove_file(sidecars.path().join("c.rs.json")).expect("remove");
+    assert_ne!(
+        created,
+        crate::index_generation::content_generation(sidecars.path()),
+        "delete"
+    );
+}
+
+#[test]
+fn index_dir_for_db_keeps_markers_beside_the_database() {
+    assert_eq!(
+        crate::index_generation::index_dir_for_db(std::path::Path::new("root/.guidance.db")),
+        std::path::PathBuf::from("root")
+    );
+    assert_eq!(
+        crate::index_generation::index_dir_for_db(std::path::Path::new(".guidance.db")),
+        std::path::PathBuf::from("")
+    );
+}
+
+fn seed_symbol(
+    db: &search_vector::db::GuidanceDb,
+    dir: &std::path::Path,
+    name: &str,
+    content_hash: &str,
+    interface: &str,
+    module_interface: &str,
+) {
+    std::fs::write(dir.join(name), "pub fn alpha() {}\n").expect("write");
+    let mut file = crate::tests::common::db_file_record(dir, name);
+    file.content_hash = Some(content_hash.to_string());
+    let fragment = crate::tests::common::db_text_fragment(name, "alpha", "pub fn alpha() {}", 1);
+    db.upsert_fragments(&file, &[fragment], &[]).expect("seed");
+    let row = |symbol_id: String, symbol_name: &str, hash: &str| search_vector::db::SymbolRecord {
+        symbol_id,
+        file_id: name.to_string(),
+        name: Some(symbol_name.to_string()),
+        scope: None,
+        interface_hash: hash.to_string(),
+    };
+    db.replace_symbols(&[
+        row(format!("{name}#alpha"), "alpha", interface),
+        row(format!("{name}#$file"), "alpha", module_interface),
+    ])
+    .expect("symbols");
+}
+
+#[test]
+fn tree_fingerprint_tracks_content_and_interfaces() {
+    let dir = tempdir();
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    seed_symbol(&db, dir.path(), "a.rs", "content-1", "iface-1", "module-1");
+    let base = crate::index_generation::tree_fingerprint(&db);
+    assert_eq!(
+        base,
+        crate::index_generation::tree_fingerprint(&db),
+        "stable"
+    );
+    // Module-header rows never move the fingerprint.
+    seed_symbol(&db, dir.path(), "a.rs", "content-1", "iface-1", "module-2");
+    assert_eq!(
+        base,
+        crate::index_generation::tree_fingerprint(&db),
+        "module rows are comments, not interfaces"
+    );
+    // A signature move changes it.
+    seed_symbol(&db, dir.path(), "a.rs", "content-1", "iface-2", "module-1");
+    let moved = crate::index_generation::tree_fingerprint(&db);
+    assert_ne!(base, moved, "interface move");
+    // A content move changes it.
+    seed_symbol(&db, dir.path(), "a.rs", "content-2", "iface-2", "module-1");
+    let content = crate::index_generation::tree_fingerprint(&db);
+    assert_ne!(moved, content, "content move");
+    // Create and delete change it (presence is identity).
+    seed_symbol(&db, dir.path(), "b.rs", "content-1", "iface-1", "module-1");
+    let created = crate::index_generation::tree_fingerprint(&db);
+    assert_ne!(content, created, "create");
+    db.delete_file("b.rs").expect("delete");
+    assert_ne!(
+        created,
+        crate::index_generation::tree_fingerprint(&db),
+        "delete"
+    );
+}
+
+#[test]
+fn fingerprint_marker_roundtrips_beside_the_generation_marker() {
+    let dir = tempdir();
+    let index = dir.path().join("idx");
+    assert!(crate::index_generation::read_fingerprint(&index).is_none());
+    crate::index_generation::write_fingerprint(&index, "fp-1").expect("write");
+    assert_eq!(
+        crate::index_generation::read_fingerprint(&index).as_deref(),
+        Some("fp-1")
+    );
+    crate::index_generation::write_fingerprint(&index, "fp-2").expect("write");
+    assert_eq!(
+        crate::index_generation::read_fingerprint(&index).as_deref(),
+        Some("fp-2")
+    );
+}

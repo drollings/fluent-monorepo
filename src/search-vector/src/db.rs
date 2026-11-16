@@ -13,8 +13,11 @@ pub mod capabilities;
 pub mod embedding_status;
 pub mod fragments;
 pub mod graph_rows;
+pub mod answers;
 pub(crate) mod schema;
 pub mod summaries;
+
+pub use answers::AnswerCacheRecord;
 
 pub use capabilities::{
     build_capability_fts_match, CapabilityLemma, CapabilityRecord, ProjectCard, ScoredCapability,
@@ -1304,6 +1307,18 @@ impl GuidanceDb {
                  FROM symbols WHERE file_id = ?1 ORDER BY symbol_id",
                 params![file_id],
                 SymbolRecord::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Every symbol's interface hash, for the tree-level propagation
+    /// fingerprint. Module-header rows are filtered by the caller.
+    pub fn symbol_interface_hashes(&self) -> Result<Vec<(String, String, String)>, VectorDbError> {
+        self.store
+            .query_rows(
+                "SELECT file_id, symbol_id, interface_hash FROM symbols",
+                &[],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(VectorDbError::from)
     }

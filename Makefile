@@ -24,6 +24,8 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := pre-commit
 
 TARGET_BIN  := guidance
+# Recipes invoke $(CARGO_BIN), never bare `guidance`: an installed copy
+# on PATH would shadow every fresh build.
 CORAL_ROUTER_BIN := target/debug/coral-router
 CORAL_ROUTER_CONFIG := env/coral-router.json
 # Extract bind address from the config file (source of truth), with a sane
@@ -124,12 +126,12 @@ help: ## Show this help
 # This rule is kept for direct `make .guidance.db` invocations.
 $(GUIDANCE_DB): | $(CARGO_BIN)
 	$(Q)echo "Syncing database: $@"
-	$(Q)$(TARGET_BIN) sync --workspace . --json-dir $(GUIDANCE_DIR) --db $@
+	$(Q)$(CARGO_BIN) sync --workspace . --json-dir $(GUIDANCE_DIR) --db $@
 	$(Q)touch $@
 
 .PHONY: commit
 commit: $(CARGO_BIN) | STRUCTURE.md ## Generate AI commit message from staged diff + guidance JSON context
-	$(Q)$(TARGET_BIN) commit $(if $(DRY_RUN),--dry-run) $(if $(DEBUG),--debug)
+	$(Q)$(CARGO_BIN) commit $(if $(DRY_RUN),--dry-run) $(if $(DEBUG),--debug)
 
 ##@ Environment
 
@@ -181,7 +183,7 @@ explain: $(GUIDANCE_DB) ## Explain a module, function, or concept  make explain 
 		echo "     make explain QUERY=\"ast_parser\""; \
 		exit 1; \
 	fi
-	$(Q)$(TARGET_BIN) explain --guidance $(GUIDANCE_DIR) "$(QUERY)"
+	$(Q)$(CARGO_BIN) explain --guidance $(GUIDANCE_DIR) "$(QUERY)"
 
 ##@ Rust Build & RALPH Loop
 
@@ -730,7 +732,7 @@ fmt-check: format-check ## Alias for `format-check`
 # The target below is kept for direct `make STRUCTURE.md` invocations.
 
 STRUCTURE.md: $(GUIDANCE_DB) | $(CARGO_BIN)
-	$(Q)$(TARGET_BIN) structure --json-dir $(GUIDANCE_DIR) 2>&1 | grep -E "STRUCTURE|Generated|✓" || true
+	$(Q)$(CARGO_BIN) structure --json-dir $(GUIDANCE_DIR) 2>&1 | grep -E "STRUCTURE|Generated|✓" || true
 	$(Q)touch STRUCTURE.md
 
 ##@ Gate Targets
@@ -744,6 +746,6 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(CARGO_BIN)
 build: $(CARGO_BIN) $(CORAL_ROUTER_BIN) ## Build guidance and coral-router binaries
 
 pre-commit: STRUCTURE.md $(CARGO_BIN) ## Regenerate the guidance mirror
-	$(Q)$(TARGET_BIN) sync --workspace .
+	$(Q)$(CARGO_BIN) sync --workspace .
 	$(Q)echo "✓ All checks passed. Ready to commit."
 

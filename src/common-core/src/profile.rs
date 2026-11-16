@@ -5,6 +5,7 @@ use std::time::Instant;
 
 /// Whether phase timing is requested for this process.
 #[must_use]
+/// Whether phase timing is requested for this process.
 pub fn enabled() -> bool {
     std::env::var_os("GUIDANCE_PROFILE").is_some_and(|value| value != "0")
 }

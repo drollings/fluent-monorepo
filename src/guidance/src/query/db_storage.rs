@@ -442,8 +442,21 @@ pub fn symbol_record(fragment: &EntityFragment) -> Option<SymbolRecord> {
         Some(EntityMetadata::Markdown { heading, scope, .. }) => (heading.clone(), scope.clone()),
         None => return None,
     };
+    // Module headers share the fragment's `$file` identity: the module
+    // name is a display/search name, never a second symbol slot.
+    let symbol_id = if matches!(
+        fragment.metadata,
+        Some(EntityMetadata::Code {
+            symbol_type: CodeSymbolType::Module,
+            ..
+        })
+    ) {
+        crate::extractor::code::module_fragment_id(&fragment.file_id)
+    } else {
+        stable_symbol_id(&fragment.file_id, name.as_deref(), scope.as_deref())
+    };
     Some(SymbolRecord {
-        symbol_id: stable_symbol_id(&fragment.file_id, name.as_deref(), scope.as_deref()),
+        symbol_id,
         file_id: fragment.file_id.clone(),
         name,
         scope,

@@ -115,12 +115,24 @@ fn collect_comment_insertions(
         let Some(line) = line else {
             continue;
         };
-        let idx = (line as usize).saturating_sub(1);
-        if idx > 0 && idx <= lines.len() {
+        let mut idx = (line as usize).saturating_sub(1);
+        // Walk back over single-line attributes: any doc block above
+        // them already covers this member (never re-land curated text).
+        let mut covered = false;
+        while idx > 0 {
             let prev_line = lines[idx - 1].trim();
             if prev_line.starts_with("///") || prev_line.starts_with("//!") {
+                covered = true;
+                break;
+            }
+            if prev_line.starts_with("#[") && prev_line.ends_with(']') {
+                idx -= 1;
                 continue;
             }
+            break;
+        }
+        if covered {
+            continue;
         }
         let comment_lines: Vec<String> = comment_text
             .as_str()
@@ -162,7 +174,11 @@ fn apply_insertions(source: &str, mut insertions: Vec<(usize, Vec<String>)>) -> 
         line_idx += 1;
     }
 
-    result.trim_end().to_string()
+    // Preserve the source's trailing-newline state exactly.
+    if !source.ends_with('\n') && result.ends_with('\n') {
+        result.pop();
+    }
+    result
 }
 
 #[cfg(test)]

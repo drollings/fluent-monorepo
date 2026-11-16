@@ -106,6 +106,17 @@ Then you you must read
 │   ├── guidance/
 │   │   ├── ARCHITECTURE.md  # # guidance — Architecture
 │   │   ├── VISION.md  # # guidance — Vision
+│   │   ├── eval/
+│   │   │   ├── README.md  # # Guidance evaluation corpus
+│   │   │   ├── claims.jsonl
+│   │   │   ├── findings.jsonl
+│   │   │   ├── orientation_battery.jsonl
+│   │   │   ├── questions.jsonl
+│   │   │   ├── redteam_findings.md  # # Red-team findings (investigation only,
+│   │   │   ├── rerank.jsonl
+│   │   │   ├── rerank_controls.jsonl
+│   │   │   ├── scope.jsonl
+│   │   │   └── scope_controls.jsonl
 │   │   └── schemas/
 │   │       └── guidance.schema.json
 │   ├── llm/
@@ -194,10 +205,10 @@ Then you you must read
     │   │   ├── src/
     │   │   │   ├── benchmark.rs  # `benchmark` command: orchestrator-cos...
     │   │   │   ├── embed.rs  # Embedding-backend resolution from pro...
+    │   │   │   ├── freshen.rs  # Read-path freshness: converge the fil...
     │   │   │   ├── index_cmd.rs  # `index` command (P5): thin shell over...
     │   │   │   ├── main.rs
     │   │   │   ├── mcp.rs  # MCP (Model Context Protocol) server f...
-    │   │   │   ├── profile.rs
     │   │   │   ├── search.rs  # `search` command (P5): thin shell ove...
     │   │   │   ├── structure.rs
     │   │   │   └── summarize_cmd.rs  # `summarize` command (M5.7): backgroun...
@@ -210,11 +221,14 @@ Then you you must read
     │   │       ├── common.rs  # //! Shared hermetic scaffold for the bin
     │   │       ├── component_gate_cli.rs  # //! `guidance component-gate` is a read-
     │   │       ├── explain_cli.rs  # //! M4 compat: explain not-found + `--he
+    │   │       ├── explain_goldens.rs  # //! Cold-start golden harness: hermetic 
+    │   │       ├── freshen_cli.rs  # //! Read-path freshness: `--freshen` con
     │   │       ├── impact_cli.rs  # //! `impact` command goldens: index-back
     │   │       ├── index_cmd.rs  # //! Unit tests for the `index` command s
     │   │       ├── kb_cli.rs  # //! `kb` command golden: compact JSON kn
     │   │       ├── mcp_contract.rs  # //! P5 `mcp-contract` port: toolsets, ba
     │   │       ├── mcp_explain.rs  # //! Unit tests for the MCP `guidance_exp
+    │   │       ├── profile_cli.rs  # //! Profile gate: `GUIDANCE_PROFILE=1` p
     │   │       ├── prune_surface.rs  # //! Pruned surface: VISION-excluded subc
     │   │       ├── rg_cli.rs  # //! P5 `rg-cli` port: the managed-rg byp
     │   │       ├── roadmap_pins.rs  # //! Hermetic golden pins for read-path c
@@ -258,6 +272,7 @@ Then you you must read
     │   │   ├── path.rs  # Pure lexical path helpers (no I/O): s...
     │   │   ├── pcm.rs  # PCM sample math: zero-domain `f32` ...
     │   │   ├── prelude.rs  # The common-core prelude — import th...
+    │   │   ├── profile.rs  # Opt-in phase timing: `GUIDANCE_PROFIL...
     │   │   ├── registry.rs  # Generic keyed registry — the canoni...
     │   │   ├── retry.rs  # Retry and backoff primitives — the ...
     │   │   ├── runtime.rs  # Sync→async runtime bridge: run a fu...
@@ -305,6 +320,7 @@ Then you you must read
     │       ├── path.rs  # use common_core::path::{
     │       ├── pcm.rs  # //! `common_core::pcm` unit tests: scale
     │       ├── prelude.rs  # //! Prelude completeness: every symbol t
+    │       ├── profile.rs  # use common_core::profile::{count, report
     │       ├── registry.rs  # use common_core::registry::*;
     │       ├── retry.rs  # use common_core::retry::*;
     │       ├── runtime.rs  # use common_core::runtime::*;
@@ -690,6 +706,7 @@ Then you you must read
     │   │   ├── benchmark_tasks.jsonl
     │   │   ├── brief_traverse_goldens.json
     │   │   ├── capability_seed.json
+    │   │   ├── doc_admission_seed.json
     │   │   ├── doc_judge_goldens.json
     │   │   ├── excerpt_seed.json
     │   │   ├── intent_seed.json
@@ -699,6 +716,7 @@ Then you you must read
     │   │   ├── staleness_seed.json
     │   │   ├── sufficiency_seed.json
     │   │   ├── summary_index_seed.json
+    │   │   ├── support_seed.json
     │   │   ├── triage_calibration.json
     │   │   └── triage_seed.json
     │   ├── fixture_graph/
@@ -837,6 +855,7 @@ Then you you must read
     │   │   │   └── writer.rs  # Unified fragment writer: item chunks ...
     │   │   ├── query_engine.rs
     │   │   ├── read/
+    │   │   │   ├── admission.rs  # Doc-admission measurement: the labell...
     │   │   │   ├── budget.rs  # Per-intent token budgets for the read...
     │   │   │   ├── calibration.rs  # Task-value calibration for the read p...
     │   │   │   ├── claims.rs  # Claim extraction, citation binding, a...
@@ -884,15 +903,18 @@ Then you you must read
     │   └── tests/
     │       ├── answer_envelope.rs  # //! Envelope fields on exact, homonym, a
     │       ├── authorization_gates.rs  # //! Authorization gates: advisory versus
+    │       ├── budget_honesty.rs  # //! Budget honesty: sections stay within
     │       ├── calibration_capability.rs  # //! Capability-tier calibration: the `dp
     │       ├── calibration_findings.rs  # //! Finding-relevance calibration: label
     │       ├── calibration_goldens.rs  # //! Calibration corpora goldens: the che
     │       ├── calibration_intent.rs  # //! Intent calibration: the deterministi
+    │       ├── calibration_scope_rerank.rs  # //! Scope + rerank calibration: human-la
     │       ├── calibration_support.rs  # //! Claim-support calibration: hand-labe
     │       ├── capability_decision.rs  # use super::{grounded_first, member_groun
     │       ├── capability_import.rs  # //! External capability-corpus import: m
     │       ├── certified_commentary.rs  # //! Certified commentary: bad-symbol, ba
     │       ├── change_set.rs  # //! P3 `change_set` tests (port of zvec-
+    │       ├── citation_truth.rs  # //! Citation truth: excerpt digests bind
     │       ├── clippy_driver.rs  # //! Clippy-driver pins: JSON parsing, fi
     │       ├── comment_scope.rs  # //! Shared comment fixtures for scope te
     │       ├── common/
@@ -905,12 +927,14 @@ Then you you must read
     │       ├── corpus_seeds.rs  # use fluent_llm::decision::{gate_for_poin
     │       ├── decision_metrics.rs  # use super::{evaluate_with_metrics, Decis
     │       ├── decision_points.rs  # use super::{
+    │       ├── doc_admission.rs  # //! Doc-admission measurement pins: corp
     │       ├── doc_plane.rs  # //! Documentation-plane retrieval pins.
     │       ├── e2e_gen_roundtrip.rs  # use fluent_types::MemberType;
     │       ├── embed_policy.rs  # //! Embed policy pins: off by default, e
     │       ├── eval_exclusion.rs  # //! Eval/corpus exclusion: measurement f
     │       ├── evidence_set.rs  # //! Evidence-set dedupe pins.
     │       ├── excerpt_decision.rs  # use super::{excerpt_spec, relevance_gate
+    │       ├── explain_characterization.rs  # //! Orientation battery characterization
     │       ├── extract_code.rs  # //! P2 code-extraction tests (ports `tes
     │       ├── extract_markdown.rs  # //! P2 markdown-extraction tests: headin
     │       ├── extract_text.rs  # //! P2 text-extraction tests: window bud
@@ -921,6 +945,7 @@ Then you you must read
     │       ├── freshness_vocab.rs  # //! Freshness vocabulary: pending, stale
     │       ├── generation_guard.rs  # //! Generation guard: matching markers s
     │       ├── graph_accuracy.rs  # use super::{GraphIndex, HarvestInput, Re
+    │       ├── graph_callers.rs  # //! `callers of` goldens: the answer lea
     │       ├── graph_index.rs  # //! P3 `graph_index` tests: per-language
     │       ├── graph_resolution_labels.rs  # use super::{GraphIndex, HarvestInput, Re
     │       ├── graph_single_harvest.rs  # //! Single-harvest graph equivalence: on
@@ -998,11 +1023,15 @@ Then you you must read
     │       ├── read_orientation.rs  # //! Orientation plane: workspace/crate/d
     │       ├── read_perf.rs  # //! Read-plane performance pins: no pipe
     │       ├── read_render.rs  # //! Card and section rendering: order, b
+    │       ├── read_trace.rs  # //! Per-candidate trace: anchor decision
     │       ├── read_vocabulary.rs  # //! Single-vocabulary contracts: term ex
     │       ├── readiness.rs  # //! Readiness classification: coverage i
     │       ├── redteam_hardening.rs  # //! Red-team hardening: expanded corpora
+    │       ├── rerank_seam.rs  # //! Rerank seam characterization: rank-o
     │       ├── rg_backend.rs  # //! Ripgrep arm pins: exact intents norm
     │       ├── scheduler.rs  # //! P3 scheduler tests: the coalescing c
+    │       ├── scope_hypothesis.rs  # //! Scope hypothesis (shadow-only): boun
+    │       ├── scope_schema.rs  # //! Scope schema: workspace globs match 
     │       ├── scorecard.rs  # use super::{render_human, score_metrics,
     │       ├── scorecard_ratchet.rs  # use super::{
     │       ├── scorecard_read.rs  # //! Read-tier scorecard: the fast tier m
@@ -1022,6 +1051,8 @@ Then you you must read
     │       ├── symbol_identity.rs  # //! Symbol identity: body edits keep the
     │       ├── sync_embeddings.rs  # //! Semantic-unit embed backfill: select
     │       ├── sync_fixpoint.rs  # use super::absolute_or;
+    │       ├── sync_probe.rs  # //! Incremental sync pins: the stat swee
+    │       ├── synthesis_evidence.rs  # //! Evidence-complete synthesis: the pro
     │       ├── synthesis_gate.rs  # use super::{can_synthesize, stage_conten
     │       ├── synthesis_gate_wiring.rs  # use super::{QueryEngine, QueryEngineErro
     │       ├── systemic_breaker.rs  # //! Systemic breaker signal: one cause f
@@ -2904,6 +2935,7 @@ Then you you must read
     │   ├── src/
     │   │   ├── aliases.rs
     │   │   ├── db/
+    │   │   │   ├── answers.rs  # Generated-answer cache: one row per e...
     │   │   │   ├── capabilities.rs  # Capability brief storage: one derived...
     │   │   │   ├── embedding_status.rs  # Per-fragment embedding status: which ...
     │   │   │   ├── fragments.rs  # Fragment recall rows, filter pushdown...

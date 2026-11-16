@@ -77,6 +77,10 @@ path = "tests/summarize_cli.rs"
 name = "benchmark_cli"
 path = "tests/benchmark_cli.rs"
 
+[[test]]
+name = "explain_goldens"
+path = "tests/explain_goldens.rs"
+
 [dependencies]
 common-core = { path = "../../common-core" }
 guidance-core = { path = "../../guidance" }

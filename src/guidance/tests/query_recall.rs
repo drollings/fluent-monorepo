@@ -574,6 +574,7 @@ fn seed_summary_index() -> search_vector::db::GuidanceDb {
         summary_fragment("fb", "beta", "Removes two", "fn beta() {}", 4),
         crate::extractor::code::module_fragment_for(
             "f",
+            "f.rs",
             &[summary_block("$file", "Crate helpers overview")],
         )
         .expect("module fragment"),

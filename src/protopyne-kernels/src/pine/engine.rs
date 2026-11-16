@@ -913,10 +913,10 @@ impl PineEngine {
             ));
         };
         let module = refusal.module_name().to_owned();
-        return Err(KernelError::Uncompilable {
+        Err(KernelError::Uncompilable {
             module,
             construct: refusal.to_string(),
-        });
+        })
     }
 
     /// No-oracle build shape without the compiled loop: neither engine

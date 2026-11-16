@@ -402,7 +402,7 @@ fn pass_seed_db(include_module: bool) -> search_vector::db::GuidanceDb {
         },
     ];
     if include_module {
-        if let Some(module) = crate::extractor::code::module_fragment_for("f", &blocks) {
+        if let Some(module) = crate::extractor::code::module_fragment_for("f", "f.rs", &blocks) {
             fragments.push(module);
         }
     }

@@ -61,3 +61,44 @@ fn checked_in_corpus_is_well_formed() {
     assert!(tasks.iter().any(|task| task.split == "heldout"));
     assert!(tasks.iter().any(|task| task.intent == "orientation"));
 }
+
+#[test]
+fn citation_spans_parse_trailing_ranges() {
+    assert_eq!(super::citation_span_lines("src/a.rs:1-536"), 535);
+    assert_eq!(super::citation_span_lines("src/a.rs:5"), 0);
+    assert_eq!(super::citation_span_lines("src/a.rs:1-2 (stale)"), 1);
+    assert_eq!(super::citation_span_lines("src/a.rs"), 0);
+    assert_eq!(super::citation_span_lines(""), 0);
+}
+
+#[test]
+fn max_span_and_fixture_counts_pin_spam_contracts() {
+    assert_eq!(
+        super::max_citation_span(&[
+            "src/a.rs:1-10".to_string(),
+            "src/b.rs:3".to_string()
+        ]),
+        9
+    );
+    assert_eq!(super::max_citation_span(&[]), 0);
+    assert_eq!(
+        super::fixture_path_count(&[
+            "src/a.rs".to_string(),
+            "src/guidance/fixture_read/a.rs".to_string(),
+            "doc/guidance/eval/questions.jsonl".to_string(),
+        ]),
+        2
+    );
+    assert_eq!(super::fixture_path_count(&["src/a.rs".to_string()]), 0);
+    assert!(super::spam_ok(8, 0, 200));
+    assert!(!super::spam_ok(9, 0, 10));
+    assert!(!super::spam_ok(2, 1, 10));
+    assert!(!super::spam_ok(2, 0, 201));
+}
+
+#[test]
+fn rendered_citation_count_ignores_the_more_line() {
+    let rendered = "### Citations\n- a.rs:1\n- b.rs:2\n- + 3 more\n### Gaps\n- x\n";
+    assert_eq!(super::rendered_citation_count(rendered), 2);
+    assert_eq!(super::rendered_citation_count("### Coverage\n"), 0);
+}

@@ -15,6 +15,18 @@ publish = false
 # `cargo-fuzz` + nightly and must never join any gate matrix.
 [workspace]
 
+[package.metadata]
+cargo-fuzz = true
+
 [dependencies]
 libfuzzer-sys = "0.4"
 fluent-wvr = { path = ".." }
+
+# cargo-fuzz resolves `fuzz run <name>` through a [[bin]] target; without
+# this the manifest also fails cargo's target check in non-fuzz witnesses.
+[[bin]]
+name = "repair"
+path = "fuzz_targets/repair.rs"
+test = false
+doc = false
+bench = false

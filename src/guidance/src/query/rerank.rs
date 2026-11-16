@@ -65,6 +65,16 @@ pub fn collapse_manifest_rows(
     (kept, collapsed)
 }
 
+/// Whether one source path may render: eval rows never pass, fixture
+/// rows need the explicit opt-in. The single rule behind every
+/// rendered path — citations, cards, doc rows, and findings alike.
+#[must_use]
+pub fn scope_row_admitted(path: &str, include_fixtures: bool) -> bool {
+    let scope = crate::source_scope::classify(path, None);
+    scope != crate::source_scope::SourceScope::Eval
+        && (include_fixtures || scope != crate::source_scope::SourceScope::Fixture)
+}
+
 /// Drop fixture-scope findings unless the escape hatch is set.
 /// Eval rows never pass, even opted in.
 #[must_use]
@@ -76,11 +86,7 @@ pub fn exclude_fixtures(
 ) -> Vec<crate::read::engine::Finding> {
     findings
         .into_iter()
-        .filter(|finding| {
-            let scope = crate::source_scope::classify(finding.source.display(), None);
-            scope != crate::source_scope::SourceScope::Eval
-                && (include_fixtures || scope != crate::source_scope::SourceScope::Fixture)
-        })
+        .filter(|finding| scope_row_admitted(finding.source.display(), include_fixtures))
         .collect()
 }
 
@@ -176,6 +182,49 @@ pub fn demote_by_verdict<L: CandidateLabel + RerankTier>(
     let mut order: Vec<String> = prior_ids.to_vec();
     order.sort_by_key(|a| rank_of(a));
     order
+}
+
+/// Admit the top-k prior ids by verdict tier, stable: tier 0 in
+/// prior order first, then tier 1, and so on, truncated to `k`.
+/// Unjudged ids sort last, like the demotion seam. Never admits
+/// zero from a non-empty prior. A cost cap, never a relevance
+/// gate: callers report every drop with its label.
+#[must_use]
+/// Admit the top-k prior ids by verdict tier, stable: tier 0 in
+/// prior order first, then tier 1, and so on, truncated to `k`.
+/// Unjudged ids sort last, like the demotion seam. Never admits
+/// zero from a non-empty prior. A cost cap, never a relevance
+/// gate: callers report every drop with its label.
+pub fn admit_top<L: CandidateLabel + RerankTier>(
+    prior_ids: &[String],
+    verdicts: &[CandidateVerdict<L>],
+    k: usize,
+) -> Vec<String> {
+    if prior_ids.is_empty() {
+        return Vec::new();
+    }
+    let cap = k.max(1);
+    let tier_of = |id: &str| {
+        verdicts
+            .iter()
+            .find(|verdict| verdict.id == id)
+            .map_or(u8::MAX, |verdict| verdict.label.tier())
+    };
+    let mut tiers: Vec<u8> = prior_ids.iter().map(|id| tier_of(id)).collect();
+    tiers.sort_unstable();
+    tiers.dedup();
+    let mut admitted: Vec<String> = Vec::new();
+    for tier in tiers {
+        for id in prior_ids {
+            if tier_of(id) == tier {
+                admitted.push(id.clone());
+                if admitted.len() >= cap {
+                    return admitted;
+                }
+            }
+        }
+    }
+    admitted
 }
 
 #[cfg(test)]

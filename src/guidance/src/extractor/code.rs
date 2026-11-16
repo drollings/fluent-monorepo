@@ -170,12 +170,36 @@ pub fn module_fragment_id(file_id: &str) -> String {
     format!("{file_id}#$file")
 }
 
+/// Module symbol name for one file: the stem, or the owning directory
+/// for `mod`/`lib`/`main` (the module those files define).
+#[must_use]
+pub fn module_symbol_name(file_id: &str) -> String {
+    let path = std::path::Path::new(file_id);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("");
+    if matches!(stem, "mod" | "lib" | "main") {
+        path.parent()
+            .and_then(std::path::Path::file_name)
+            .and_then(|name| name.to_str())
+            .unwrap_or(stem)
+            .to_string()
+    } else {
+        stem.to_string()
+    }
+}
+
 /// Synthetic module fragment carrying the top-of-file comment block, so
-/// file-level commentary stays retrievable with its own fragment id.
+/// file-level commentary stays retrievable as an ordinary module row.
 #[must_use]
 /// Synthetic module fragment carrying the top-of-file comment block, so
-/// file-level commentary stays retrievable with its own fragment id.
-pub fn module_fragment_for(file_id: &str, blocks: &[CommentBlock]) -> Option<PreparedFragment> {
+/// file-level commentary stays retrievable as an ordinary module row.
+pub fn module_fragment_for(
+    file_id: &str,
+    relative_path: &str,
+    blocks: &[CommentBlock],
+) -> Option<PreparedFragment> {
     let block = blocks.iter().find(|block| block.node_key == "$file")?;
     Some(PreparedFragment {
         id: module_fragment_id(file_id),
@@ -190,7 +214,7 @@ pub fn module_fragment_for(file_id: &str, blocks: &[CommentBlock]) -> Option<Pre
         group: None,
         metadata: Some(FragmentMetadata::Code {
             symbol_type: CodeSymbolType::Module,
-            symbol_name: Some("$file".to_string()),
+            symbol_name: Some(module_symbol_name(relative_path)),
             scope: None,
             node_type: "module".to_string(),
             signature: None,

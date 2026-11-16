@@ -245,6 +245,50 @@ pub fn finding_judge_shadow(
     )
 }
 
+/// Claim-entailment shadow: one record per judged claim for the
+/// support corpus. The label is the verdict; claims keep their
+/// support until the support point calibrates, so the deterministic
+/// rank travels in `authoritative` for audit.
+#[must_use]
+/// Claim-entailment shadow: one record per judged claim for the
+/// support corpus. The label is the verdict; claims keep their
+/// support until the support point calibrates, so the deterministic
+/// rank travels in `authoritative` for audit.
+pub fn support_shadow(
+    claim_id: &str,
+    label: &str,
+    confidence: f64,
+    deterministic_rank: usize,
+) -> ShadowRecord {
+    let counter = match label {
+        "supported" => "contradicted",
+        _ => "supported",
+    };
+    let decision = Decision {
+        label: label.to_string(),
+        distribution: vec![
+            (label.to_string(), confidence.clamp(0.0, 1.0)),
+            (counter.to_string(), (1.0 - confidence).clamp(0.0, 1.0)),
+        ],
+        confidence: confidence.clamp(0.0, 1.0),
+        margin: (2.0 * confidence - 1.0).abs(),
+        degraded: false,
+        model: "support-judge".to_string(),
+        question_version: 1,
+        latency_ms: 0,
+        cached: false,
+    };
+    record(
+        "support",
+        &decision,
+        &ThresholdSet {
+            act: 1.0,
+            review: 1.0,
+        },
+        format!("claim:{claim_id} rank:{deterministic_rank}"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

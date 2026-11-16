@@ -252,6 +252,7 @@ fn shadow_only_serves_ranked_unfiltered_without_filtering() {
         budget_override: None,
         no_llm: true,
         include_fixtures: false,
+        answer_mode: crate::read::engine::AnswerMode::Auto,
     };
     let plain = engine.explain(&request, &ctx, None);
     for canned in ["relevant", "irrelevant"] {

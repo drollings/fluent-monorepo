@@ -39,7 +39,9 @@ pub fn can_synthesize(stages: &[Stage]) -> bool {
     })
 }
 
-pub use common_core::cite::{extract_citation_at, extract_citations, Citation};
+pub use common_core::cite::{
+    extract_citation_at, extract_citation_ranges, extract_citations, Citation, CitationRange,
+};
 
 /// Stored byte range plus hashes for one member, as stamped at parse.
 #[derive(Debug, Clone)]
@@ -469,6 +471,23 @@ pub fn grounded_names(doc: &GuidanceDoc, names: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Manifest framing over `(source, line, content)` triples: one
+/// hash protocol for stage manifests and evidence manifests alike.
+/// Changed source always wins: identical bytes hash identically.
+#[must_use]
+/// Manifest framing over `(source, line, content)` triples: one
+/// hash protocol for stage manifests and evidence manifests alike.
+/// Changed source always wins: identical bytes hash identically.
+pub fn manifest_bytes<'a>(items: impl Iterator<Item = (&'a str, u32, &'a str)>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for (source, line, content) in items {
+        bytes.extend_from_slice(source.as_bytes());
+        bytes.extend_from_slice(&line.to_le_bytes());
+        bytes.extend_from_slice(content.as_bytes());
+    }
+    bytes
+}
+
 /// Content hash over grounded stages (source + line + content) for
 /// synthesis cache keys. Changed source changes the key, so a stored
 /// summary can never override fresh bytes.
@@ -477,13 +496,98 @@ pub fn grounded_names(doc: &GuidanceDoc, names: &[String]) -> Vec<String> {
 /// synthesis cache keys. Changed source changes the key, so a stored
 /// summary can never override fresh bytes.
 pub fn stage_content_hash(stages: &[Stage]) -> String {
-    let mut bytes = Vec::new();
-    for stage in stages {
-        bytes.extend_from_slice(stage.source.as_bytes());
-        bytes.extend_from_slice(&stage.line.unwrap_or(0).to_le_bytes());
-        bytes.extend_from_slice(stage.content.as_bytes());
+    common_core::hash::blake3_hex(&manifest_bytes(stages.iter().map(|stage| {
+        (
+            stage.source.as_str(),
+            stage.line.unwrap_or(0),
+            stage.content.as_str(),
+        )
+    })))
+}
+
+/// Evidence manifest hash over admitted findings, verified docs, and
+/// project cards: the cache key for a generated answer. Same framing
+/// as [`stage_content_hash`], never a second hash protocol.
+#[must_use]
+/// Evidence manifest hash over admitted findings, verified docs, and
+/// project cards: the cache key for a generated answer. Same framing
+/// as [`stage_content_hash`], never a second hash protocol.
+pub fn evidence_manifest_hash(
+    findings: &[crate::read::engine::Finding],
+    docs: &[crate::read::planes::docs::DocHit],
+    cards: &[crate::read::planes::orientation::CardFinding],
+    model: &str,
+    prompt_version: u64,
+    mode: &str,
+) -> String {
+    let mut items: Vec<(String, u32, String)> = Vec::new();
+    for finding in findings {
+        items.push((
+            finding.source.display().to_string(),
+            finding.start_line.unwrap_or(0),
+            finding.text.clone(),
+        ));
     }
+    for hit in docs.iter().filter(|hit| hit.verified) {
+        items.push((
+            format!("{}#{}", hit.source_path, hit.anchor),
+            0,
+            hit.body.clone().unwrap_or_default(),
+        ));
+    }
+    for card in cards {
+        items.push((card.source.clone(), 0, card.body.clone()));
+    }
+    items.sort();
+    let mut bytes = manifest_bytes(
+        items
+            .iter()
+            .map(|(source, line, content)| (source.as_str(), *line, content.as_str())),
+    );
+    bytes.extend_from_slice(model.as_bytes());
+    bytes.extend_from_slice(&prompt_version.to_le_bytes());
+    // Assembly mode is identity: extractive bytes and prose bytes for
+    // the same evidence are different answers, never one cache entry.
+    bytes.extend_from_slice(mode.as_bytes());
     common_core::hash::blake3_hex(&bytes)
+}
+
+/// Read one 1-based inclusive line range from live bytes: the single
+/// implementation behind citation hashing and finding rendering, so
+/// the two can never disagree about what the range holds. `None`
+/// when the file is unreadable, empty, or the range falls outside it.
+#[must_use]
+/// Read one 1-based inclusive line range from live bytes: the single
+/// implementation behind citation hashing and finding rendering, so
+/// the two can never disagree about what the range holds. `None`
+/// when the file is unreadable, empty, or the range falls outside it.
+pub fn live_range_text(path: &std::path::Path, start: usize, end: usize) -> Option<String> {
+    if start == 0 {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() || start > lines.len() {
+        return None;
+    }
+    let end = end.min(lines.len());
+    if end < start {
+        return None;
+    }
+    Some(lines[start - 1..end].join("\n"))
+}
+
+/// Hash the live range: the citation integrity half of the read
+/// path. `None` when the range cannot be read — callers render
+/// `unverified`, never an invented hash.
+#[must_use]
+/// Hash the live range: the citation integrity half of the read
+/// path. `None` when the range cannot be read — callers render
+/// `unverified`, never an invented hash.
+pub fn live_range_hash(path: &std::path::Path, start: usize, end: usize) -> Option<String> {
+    live_range_text(path, start, end)
+        .map(|text| common_core::hash::blake3_hex(format!("{text}\n").as_bytes()))
 }
 
 #[cfg(test)]

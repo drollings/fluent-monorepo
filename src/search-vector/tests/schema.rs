@@ -30,6 +30,7 @@ fn schema_creates_exact_application_tables() {
     assert_eq!(
         tables,
         [
+            "answer_cache",
             "capabilities",
             "capabilities_fts",
             "capabilities_fts_config",
@@ -67,6 +68,42 @@ fn schema_creates_exact_application_tables() {
             "sync_state",
         ],
         "application table set changed: deliberate migration or split drift"
+    );
+}
+
+#[test]
+fn answer_cache_carries_manifest_keyed_rows() {
+    // Manifest-keyed generative answers: key plus payload plus the
+    // support label that travels with the hit. A second copy of the
+    // evidence would drift; the manifest hash is the only key.
+    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let columns: Vec<String> = db
+        .store
+        .with_conn(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT name FROM pragma_table_info('answer_cache') ORDER BY cid")
+                .expect("prepare");
+            Ok(stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query")
+                .collect::<Result<Vec<_>, rusqlite::Error>>()
+                .expect("rows"))
+        })
+        .expect("with_conn");
+    assert_eq!(
+        columns,
+        [
+            "manifest_hash",
+            "answer",
+            "claims_json",
+            "citations_json",
+            "support",
+            "model",
+            "prompt_version",
+            "generation",
+            "created_at"
+        ],
+        "answer_cache column set changed: deliberate migration"
     );
 }
 

@@ -21,6 +21,193 @@ fn tokens_use_the_shared_tokenizer() {
 }
 
 #[test]
+fn spam_helpers_reuse_the_eval_contracts() {
+    assert_eq!(super::SPAM_MAX_CITATIONS, guidance_core::eval::SPAM_MAX_CITATIONS);
+    assert_eq!(
+        super::SPAM_MAX_SPAN_LINES,
+        guidance_core::eval::SPAM_MAX_SPAN_LINES
+    );
+    assert_eq!(citation_span_lines("src/a.rs:1-536"), 535);
+    assert_eq!(max_citation_span(&["src/a.rs:1-10".to_string()]), 9);
+    assert_eq!(
+        fixture_path_count(&[
+            "src/a.rs".to_string(),
+            "src/guidance/fixture_read/a.rs".to_string(),
+        ]),
+        1
+    );
+    assert!(spam_ok(8, 0, 200));
+    assert!(!spam_ok(9, 0, 10));
+}
+
+#[test]
+fn doc_walk_covers_readme_and_docs_only() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for rel in [
+        "README.md",
+        "doc/guide.md",
+        "doc/nested/deep.md",
+        "src/code.rs",
+        "doc/guidance/eval/zz.md",
+    ] {
+        let path = dir.path().join(rel);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "walkterm here\n").expect("write");
+    }
+    let (corpus, _) = walk_corpus(&[dir.path().to_path_buf()]);
+    let docs = doc_walk_corpus(&corpus);
+    let names: Vec<String> = docs
+        .iter()
+        .map(|path| {
+            path.strip_prefix(dir.path())
+                .expect("relative")
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    assert!(names.contains(&"README.md".to_string()), "{names:?}");
+    assert!(names.contains(&"doc/guide.md".to_string()), "{names:?}");
+    assert!(names.contains(&"doc/nested/deep.md".to_string()), "{names:?}");
+    assert!(!names.iter().any(|name| name.starts_with("src/")), "{names:?}");
+    assert!(
+        !names.iter().any(|name| name.contains("eval")),
+        "measurement never enters: {names:?}"
+    );
+    let (text, files, _) = doc_walk_arm_with_paths(
+        &corpus,
+        dir.path().to_str().unwrap(),
+        &["walkterm".to_string()],
+        GREP_FILE_BUDGET,
+    );
+    assert!(text.contains("README.md"), "{text}");
+    assert!(files.contains(&"README.md".to_string()), "{files:?}");
+    assert!(!files.contains(&"code.rs".to_string()), "{files:?}");
+}
+
+#[test]
+fn benchmark_reports_spam_doc_walk_and_control_floor() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("README.md"), "# Fixture\n\nwalkterm alpha\n").expect("write");
+    std::fs::create_dir_all(dir.path().join("doc")).expect("mkdir");
+    std::fs::write(dir.path().join("doc/guide.md"), "walkterm beta\n").expect("write");
+    std::fs::write(dir.path().join("code.rs"), "fn walkterm() {}\n").expect("write");
+    let db_path = dir.path().join("bench.db");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("db");
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: "code.rs".to_string(),
+            absolute_path: dir.path().join("code.rs").to_string_lossy().into_owned(),
+            relative_path: "code.rs".to_string(),
+            root_path: dir.path().to_string_lossy().into_owned(),
+            size_bytes: 18,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "code-walkterm".to_string(),
+            group: None,
+            file_id: "code.rs".to_string(),
+            range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":1,\"start_offset\":0,\"end_offset\":14}"
+                .to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("fn walkterm() {}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("walkterm".to_string()),
+            scope: None,
+            signature: None,
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed");
+    drop(db);
+    let tasks = vec![
+        BenchTask {
+            id: "t-walk-1".to_string(),
+            query: "where is walkterm defined".to_string(),
+            relevant: vec!["code.rs".to_string()],
+            relevant_paths: vec!["code.rs".to_string()],
+            required_sections: vec!["Top matches".to_string()],
+            split: "tune".to_string(),
+            control: false,
+        },
+        BenchTask {
+            id: "c-none-2".to_string(),
+            query: "what is the zzqy nonexistent subsystem".to_string(),
+            relevant: Vec::new(),
+            relevant_paths: Vec::new(),
+            required_sections: Vec::new(),
+            split: "heldout".to_string(),
+            control: true,
+        },
+    ];
+    let report = run_benchmark(
+        dir.path().to_str().unwrap(),
+        db_path.to_str().unwrap(),
+        &tasks,
+        5,
+    );
+    assert_eq!(report.queries.len(), 2);
+    let tune = &report.queries[0];
+    let citations = tune.explain.order.len();
+    let fixtures = fixture_path_count(&tune.explain.order);
+    let span = max_citation_span(
+        &tune
+            .explain
+            .order
+            .iter()
+            .map(|base| format!("{base}:1"))
+            .collect::<Vec<_>>(),
+    );
+    assert!(spam_ok(citations, fixtures, span), "{tune:?}");
+    assert_eq!(fixtures, 0, "zero fixture paths: {tune:?}");
+    assert!(span <= SPAM_MAX_SPAN_LINES, "{span}");
+    assert!(
+        tune.explain.order.len() <= SPAM_MAX_CITATIONS + 3,
+        "citation budget holds: {:?}",
+        tune.explain.order
+    );
+    assert!(
+        !tune.doc_walk.files.is_empty(),
+        "doc-walk finds the manual baseline: {:?}",
+        tune.doc_walk.files
+    );
+    assert!(
+        tune.doc_walk.files.contains(&"README.md".to_string())
+            || tune.doc_walk.files.contains(&"guide.md".to_string()),
+        "{:?}",
+        tune.doc_walk.files
+    );
+    assert!(
+        !tune.doc_walk.files.contains(&"code.rs".to_string()),
+        "doc-walk never surfaces code: {:?}",
+        tune.doc_walk.files
+    );
+    let control = &report.queries[1];
+    assert!(
+        control.explain.control_abstained,
+        "control abstains on the explain arm: {:?}",
+        control.explain
+    );
+    assert!(
+        control.doc_walk.control_abstained,
+        "control stays silent on the doc-walk arm: {:?}",
+        control.doc_walk
+    );
+    assert!(report.totals.contains_key("doc_walk"), "totals cover doc-walk");
+}
+
+#[test]
 fn scoring_matches_by_basename() {
     let relevant: BTreeSet<String> = ["a.rs".to_string()].into_iter().collect();
     assert!(matches(&relevant, "src/a.rs"));
@@ -66,18 +253,88 @@ fn tasks_file_parses_golden_shape_with_extras_ignored() {
 #[test]
 fn orientation_tasks_file_parses_with_golden_relevant_sets() {
     // The checked-in orientation battery: six maintainer questions with
-    // golden relevant-file sets. Guards the M9 ratchet input — a malformed
-    // task file must fail here, not mid-benchmark.
+    // golden relevant-file sets plus the three cold-start controls.
+    // Guards the M9 ratchet input — a malformed task file must fail
+    // here, not mid-benchmark.
     let text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../guidance/corpora/benchmark_tasks.jsonl"
     ))
     .expect("orientation tasks read");
     let tasks = parse_tasks_file(&text).expect("orientation tasks parse");
-    assert_eq!(tasks.len(), 6, "six orientation questions");
-    for task in &tasks {
+    assert_eq!(tasks.len(), 9, "six tune questions plus three controls");
+    let tune: Vec<&BenchTask> = tasks.iter().filter(|task| !task.control).collect();
+    assert_eq!(tune.len(), 6);
+    for task in &tune {
         assert!(!task.query.is_empty(), "{:?}", task.id);
         assert!(!task.relevant.is_empty(), "{:?} carries goldens", task.id);
+        assert!(
+            !task.required_sections.is_empty(),
+            "{:?} carries sections",
+            task.id
+        );
+        assert_eq!(task.split, "tune", "{:?}", task.id);
+    }
+    let controls: Vec<&BenchTask> = tasks.iter().filter(|task| task.control).collect();
+    assert_eq!(controls.len(), 3);
+    for task in &controls {
+        assert!(task.relevant.is_empty(), "{:?} stays silent", task.id);
+        assert_eq!(task.split, "heldout", "{:?}", task.id);
+    }
+}
+
+#[test]
+fn checked_in_battery_carries_coldstart_goldens() {
+    // The battery mirrors `doc/guidance/eval/coldstart.jsonl`: same
+    // tune queries with golden sections, same heldout controls.
+    let battery = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../guidance/corpora/benchmark_tasks.jsonl"
+    ))
+    .expect("battery reads");
+    let tasks = parse_tasks_file(&battery).expect("battery parses");
+    let coldstart = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../doc/guidance/eval/coldstart.jsonl"
+    ))
+    .expect("coldstart reads");
+    let mut golden_sections = std::collections::BTreeMap::new();
+    let mut golden_splits = std::collections::BTreeMap::new();
+    for line in coldstart.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(line).expect("coldstart parses");
+        let query = value["query"].as_str().expect("query").to_string();
+        let sections: Vec<String> = value["required_sections"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|entry| entry.as_str().map(str::to_string))
+            .collect();
+        golden_sections.insert(query.clone(), sections);
+        golden_splits.insert(query, value["split"].as_str().unwrap_or("tune").to_string());
+    }
+    for task in &tasks {
+        let expected = golden_sections.get(&task.query).unwrap_or_else(|| {
+            panic!(
+                "battery query missing from coldstart goldens: {:?}",
+                task.id
+            )
+        });
+        assert_eq!(
+            &task.required_sections, expected,
+            "{:?} carries the golden sections",
+            task.id
+        );
+        assert_eq!(
+            &task.split,
+            golden_splits.get(&task.query).expect("split"),
+            "{:?} carries the golden split",
+            task.id
+        );
     }
 }
 
@@ -337,4 +594,87 @@ fn parsed_tasks_keep_exact_golden_paths_and_sections() {
     );
     assert_eq!(tasks[0].required_sections, vec!["Top matches".to_string()]);
     assert!(!tasks[0].control);
+}
+
+#[test]
+fn shipping_arm_matches_cli_compact_body_and_envelope() {
+    // Parity: the benchmark arm assembles through the same
+    // `ReadEngine` request the CLI builds, renders through the one
+    // CLI body renderer, and carries the envelope breakdown beside
+    // the body so token ratios stay honest.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("beam.rs"), "fn zzbeam() {}\n").expect("write");
+    let db_path = dir.path().join("parity.db");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("db");
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: "beam".to_string(),
+            absolute_path: dir.path().join("beam.rs").to_string_lossy().into_owned(),
+            relative_path: "beam.rs".to_string(),
+            root_path: dir.path().to_string_lossy().into_owned(),
+            size_bytes: 16,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "beam-fn".to_string(),
+            group: None,
+            file_id: "beam".to_string(),
+            range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":1,\"start_offset\":0,\"end_offset\":14}"
+                .to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("fn zzbeam() {}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("zzbeam".to_string()),
+            scope: None,
+            signature: None,
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed");
+    drop(db);
+    let ws = dir.path().to_str().unwrap();
+    let db_str = db_path.to_str().unwrap();
+    let (body, files, _, _, _) = explain_arm_detailed("where is zzbeam defined", ws, db_str, 5);
+    let (body2, compact_body, envelope, files2, _, _, _) =
+        explain_arm_with_envelope("where is zzbeam defined", ws, db_str, 5);
+    assert_eq!(body, body2, "detailed delegates to the envelope arm");
+    assert_eq!(files, files2);
+    assert!(body.contains("## Explain:"), "{body}");
+    assert!(
+        !compact_body.contains("### Coverage"),
+        "compact omits Coverage like --compact: {compact_body}"
+    );
+    assert!(
+        body.contains("### Coverage"),
+        "full body keeps Coverage: {body}"
+    );
+    assert_eq!(envelope.get("schema_version"), Some(&serde_json::json!(2)));
+    let body_tokens = tokens_for_text(&body);
+    let compact_tokens = tokens_for_text(&compact_body);
+    let envelope_text = serde_json::to_string(&envelope).unwrap_or_default();
+    let envelope_tokens = tokens_for_text(&envelope_text);
+    assert!(
+        body_tokens >= compact_tokens,
+        "{body_tokens} vs {compact_tokens}"
+    );
+    assert!(envelope_tokens > 0, "envelope breakdown counted");
+    assert!(
+        envelope
+            .get("citations")
+            .and_then(|value| value.as_array())
+            .is_some_and(|cites| !cites.is_empty()),
+        "{envelope}"
+    );
 }

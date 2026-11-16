@@ -1,0 +1,1 @@
+{"answer_present":false,"citations":["src/guidance/src/query/capability_match.rs:2-4","src/bin/guidance/src/main.rs:3-134"],"fixture_paths":[],"gaps_count":3,"id":"q6-ranking","max_span":131,"rendered_bytes":1403,"route":"code","sections":["Coverage","From the project map","From the docs","Top matches","Citations","Gaps"],"tokens_used":281}

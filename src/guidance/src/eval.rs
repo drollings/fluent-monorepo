@@ -106,6 +106,91 @@ pub fn is_eval_path(relative: &str) -> bool {
     relative == "doc/guidance/eval" || relative.starts_with("doc/guidance/eval/")
 }
 
+/// Spam ceiling: at most this many citations per answer.
+pub const SPAM_MAX_CITATIONS: usize = 8;
+
+/// Spam ceiling: the longest true citation range the battery tolerates.
+/// Catches the measured 536/1000-line spans while allowing the 131-line
+/// fixture shape; rendered excerpts stay windowed separately.
+pub const SPAM_MAX_SPAN_LINES: u64 = 200;
+
+/// Lines spanned by one rendered citation (`path:a-b` → `b - a`;
+/// single lines and ranges without numbers span zero).
+#[must_use]
+pub fn citation_span_lines(citation: &str) -> u64 {
+    let tail = citation
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .rsplit(':')
+        .next()
+        .unwrap_or("");
+    let Some((start, end)) = tail.split_once('-') else {
+        return 0;
+    };
+    let (Ok(start), Ok(end)) = (start.parse::<u64>(), end.parse::<u64>()) else {
+        return 0;
+    };
+    end.saturating_sub(start)
+}
+
+/// Longest citation range in one answer (0 when there are none).
+#[must_use]
+pub fn max_citation_span(citations: &[String]) -> u64 {
+    citations
+        .iter()
+        .map(|citation| citation_span_lines(citation))
+        .max()
+        .unwrap_or(0)
+}
+
+/// Measurement paths in one citation set: fixture or eval rows.
+/// Zero is the contract; anything else is spam.
+#[must_use]
+pub fn fixture_path_count(paths: &[String]) -> usize {
+    paths
+        .iter()
+        .filter(|path| {
+            crate::source_scope::is_fixture_path(path) || is_eval_path(path)
+        })
+        .count()
+}
+
+/// One spam verdict for one answer: citation count, fixture
+/// absence, and span ceiling all hold.
+#[must_use]
+pub fn spam_ok(citation_count: usize, fixture_count: usize, max_span: u64) -> bool {
+    citation_count <= SPAM_MAX_CITATIONS
+        && fixture_count == 0
+        && max_span <= SPAM_MAX_SPAN_LINES
+}
+
+/// Rendered citation entries in one markdown answer: `- ` lines
+/// under `### Citations`, excluding the `+ N more` aggregate. The
+/// payload trim caps this list; the structured list may be longer.
+#[must_use]
+pub fn rendered_citation_count(rendered: &str) -> usize {
+    let mut in_citations = false;
+    let mut count = 0usize;
+    for line in rendered.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("### ") {
+            in_citations = trimmed == "### Citations";
+            continue;
+        }
+        if !in_citations {
+            continue;
+        }
+        if trimmed.starts_with("- + ") {
+            continue;
+        }
+        if trimmed.starts_with("- ") {
+            count += 1;
+        }
+    }
+    count
+}
+
 #[cfg(test)]
 #[path = "../tests/read_eval.rs"]
 mod read_eval_tests;

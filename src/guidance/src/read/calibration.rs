@@ -16,9 +16,17 @@ pub const FINDING_POINT: &str = "finding";
 /// Claim-support point (supported / contradicted / insufficient).
 pub const SUPPORT_POINT: &str = "support";
 
+/// Admission point (which candidates enter synthesis). Shadow until
+/// the doc-admission bars pass; the free-term anchor and the judge
+/// thresholds stay measuring alongside it.
+pub const ADMISSION_POINT: &str = "dp.doc_admission";
+
 /// Question versions for the two new points.
 pub const FINDING_QUESTION_VERSION: u64 = 1;
 pub const SUPPORT_QUESTION_VERSION: u64 = 1;
+
+/// Question version for the admission point.
+pub const ADMISSION_QUESTION_VERSION: u64 = 1;
 
 /// Scope/rerank bars: default floors (precision ≥ 0.90, FPR ≤ 0.05,
 /// zero control fires) plus a per-point recall floor. Changes need
@@ -67,6 +75,14 @@ pub const SUPPORT_BARS: TaskBars = TaskBars {
     min_precision: 0.95,
     max_fpr: 0.05,
     min_recall: 0.90,
+};
+
+/// Initial doc-admission bars: precision ≥ 0.90, recall ≥ 0.85,
+/// FPR ≤ 0.05, zero control fires. Changes need a recorded reason.
+pub const ADMISSION_BARS: TaskBars = TaskBars {
+    min_precision: 0.90,
+    max_fpr: 0.05,
+    min_recall: 0.85,
 };
 
 /// Intent class bar: a predicted rule class below this precision
@@ -1034,6 +1050,351 @@ pub fn rerank_corpus(
         cases,
     }
 }
+
+/// Span-cap point: the excerpt window is a size budget, not a
+/// relevance score; the gate certifies anchored lines survive and
+/// far-tail lines do not.
+pub const SPAN_CAP_POINT: &str = "excerpt.span_cap";
+
+/// Answer-floor point: whether admitted evidence names the asked
+/// subject. Nothing answers on an uncertified floor.
+pub const ANSWER_FLOOR_POINT: &str = "sufficiency.answer_floor";
+
+/// Span-cap bars: keep every anchored line, drop far tails, stay
+/// precise. A control (a tail line that survives) vetoes promotion.
+pub const SPAN_CAP_BARS: TaskBars = TaskBars {
+    min_precision: 0.90,
+    max_fpr: 0.05,
+    min_recall: 0.85,
+};
+
+/// Answer-floor bars: answer what was asked, abstain otherwise.
+pub const ANSWER_FLOOR_BARS: TaskBars = TaskBars {
+    min_precision: 0.90,
+    max_fpr: 0.05,
+    min_recall: 0.85,
+};
+
+/// One span-cap golden: a real source excerpt with one line whose
+/// survival at the shipped budget is the label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpanCapCase {
+    /// Stable case id.
+    pub id: String,
+    /// Query the excerpt answers.
+    pub query: String,
+    /// Workspace-relative source path.
+    pub source: String,
+    /// Literal line that anchors the excerpt's start.
+    pub anchor: String,
+    /// Excerpt length in lines from the anchor.
+    pub span_lines: usize,
+    /// Which excerpt line the label is about.
+    pub keep_offset: usize,
+    /// True when the line must survive the budget.
+    pub expected_keep: bool,
+    /// True when a surviving line vetoes promotion.
+    pub control: bool,
+}
+
+/// One answer-floor golden: the evidence rows the index returns for a
+/// query, labelled by whether an answer is warranted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnswerFloorCase {
+    /// Stable case id.
+    pub id: String,
+    /// Question text (empty is itself a control).
+    pub query: String,
+    /// Evidence rows at hand (post-scope-exclusion).
+    pub evidence: Vec<String>,
+    /// True when the evidence warrants an answer.
+    pub expected_answer: bool,
+    /// True when an answer vetoes promotion.
+    pub control: bool,
+}
+
+fn jsonl_rows(text: &str, label: &str) -> Result<Vec<serde_json::Value>, String> {
+    let mut out = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value = serde_json::from_str(line)
+            .map_err(|error| format!("{label} line {}: {error}", index + 1))?;
+        out.push(value);
+    }
+    Ok(out)
+}
+
+fn case_string(value: &serde_json::Value, key: &str, label: &str) -> Result<String, String> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| format!("{label}: missing `{key}`"))
+}
+
+fn case_bool(value: &serde_json::Value, key: &str) -> bool {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Parse the span-cap corpus (one JSON object per line). Missing
+/// anchors or offsets reject the file — a mislabelled budget case must
+/// fail loudly, never calibrate quietly.
+pub fn parse_span_cap_cases(text: &str) -> Result<Vec<SpanCapCase>, String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for value in jsonl_rows(text, "span-cap corpus")? {
+        let id = case_string(&value, "id", "span-cap corpus")?;
+        if id.is_empty() || !seen.insert(id.clone()) {
+            return Err(format!("span-cap corpus: duplicate or empty id `{id}`"));
+        }
+        let span_lines = value
+            .get("span_lines")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as usize;
+        let keep_offset = value
+            .get("keep_offset")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as usize;
+        if span_lines == 0 || keep_offset >= span_lines {
+            return Err(format!(
+                "{id}: span_lines must be nonzero and keep_offset inside it"
+            ));
+        }
+        let case = SpanCapCase {
+            id: id.clone(),
+            query: case_string(&value, "query", &id)?,
+            source: case_string(&value, "source", &id)?,
+            anchor: case_string(&value, "anchor", &id)?,
+            span_lines,
+            keep_offset,
+            expected_keep: case_bool(&value, "expected_keep"),
+            control: case_bool(&value, "control"),
+        };
+        if case.source.is_empty() || case.anchor.is_empty() || case.query.trim().is_empty() {
+            return Err(format!("{id}: source, anchor, and query are required"));
+        }
+        out.push(case);
+    }
+    Ok(out)
+}
+
+/// Load the span-cap corpus from disk.
+pub fn load_span_cap_cases(path: &std::path::Path) -> Result<Vec<SpanCapCase>, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|error| format!("span-cap corpus read {}: {error}", path.display()))?;
+    parse_span_cap_cases(&raw)
+}
+
+/// Parse the answer-floor corpus. Empty and whitespace queries are
+/// legitimate controls, so only missing fields reject.
+pub fn parse_answer_floor_cases(text: &str) -> Result<Vec<AnswerFloorCase>, String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for value in jsonl_rows(text, "answer-floor corpus")? {
+        let id = case_string(&value, "id", "answer-floor corpus")?;
+        if id.is_empty() || !seen.insert(id.clone()) {
+            return Err(format!("answer-floor corpus: duplicate or empty id `{id}`"));
+        }
+        let evidence = value
+            .get("evidence")
+            .and_then(serde_json::Value::as_array)
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.push(AnswerFloorCase {
+            id,
+            query: case_string(&value, "query", "answer-floor corpus")?,
+            evidence,
+            expected_answer: case_bool(&value, "expected_answer"),
+            control: case_bool(&value, "control"),
+        });
+    }
+    Ok(out)
+}
+
+/// Load the answer-floor corpus from disk.
+pub fn load_answer_floor_cases(path: &std::path::Path) -> Result<Vec<AnswerFloorCase>, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|error| format!("answer-floor corpus read {}: {error}", path.display()))?;
+    parse_answer_floor_cases(&raw)
+}
+
+/// Resolve one span case against its source: the excerpt slice and the
+/// line whose survival is labelled.
+pub fn span_case_excerpt(
+    root: &std::path::Path,
+    case: &SpanCapCase,
+) -> Result<(String, String), String> {
+    let raw = std::fs::read_to_string(root.join(&case.source))
+        .map_err(|error| format!("{}: source read: {error}", case.id))?;
+    let lines: Vec<&str> = raw.lines().collect();
+    let start = lines
+        .iter()
+        .position(|line| line.contains(&case.anchor))
+        .ok_or_else(|| format!("{}: anchor `{}` not found", case.id, case.anchor))?;
+    let end = (start + case.span_lines).min(lines.len());
+    if case.keep_offset >= end - start {
+        return Err(format!("{}: keep_offset outside the span", case.id));
+    }
+    let keep = lines[start + case.keep_offset].to_string();
+    if keep.trim().is_empty() {
+        return Err(format!("{}: keep line is blank", case.id));
+    }
+    Ok((lines[start..end].join("\n"), keep))
+}
+
+/// Smallest clip budget at which the line survives. Monotonic: a
+/// bigger budget only appends whole lines, never removes the head.
+fn min_cap_to_keep(text: &str, keep: &str) -> usize {
+    let mut low = 0usize;
+    let mut high = text.len();
+    if !crate::read::planes::code::clip_finding_text(text, high).contains(keep) {
+        return usize::MAX;
+    }
+    while low < high {
+        let mid = low.midpoint(high);
+        if crate::read::planes::code::clip_finding_text(text, mid).contains(keep) {
+            high = mid;
+        } else {
+            low = mid + 1;
+        }
+    }
+    low
+}
+
+/// Measure the span-cap gate at one budget. Scores invert the budget
+/// so the shared sweep fires when a line fits: `min_cap <= cap` maps to
+/// `-min_cap >= -cap`, which is exactly the shared `score >= threshold`
+/// rule (precision, recall, FPR, and control fires all reused).
+pub fn measure_span_cap(
+    cases: &[SpanCapCase],
+    root: &std::path::Path,
+    cap: usize,
+) -> Result<GateVerdict, String> {
+    let provenance = eval_provenance();
+    let mut scored = Vec::with_capacity(cases.len());
+    for case in cases {
+        let (excerpt, keep) = span_case_excerpt(root, case)?;
+        scored.push(fluent_llm::decision::ScoredCase {
+            score: -(min_cap_to_keep(&excerpt, &keep) as f64),
+            expected: case.expected_keep,
+            control: case.control,
+            provenance: provenance.clone(),
+        });
+    }
+    Ok(gate_scored_cases(&scored, -(cap as f64), &SPAN_CAP_BARS))
+}
+
+/// Best subject coverage across the evidence rows: one row that names
+/// the asked subject grounds the answer.
+#[must_use]
+pub fn answer_floor_score(query: &str, evidence: &[String]) -> f64 {
+    evidence
+        .iter()
+        .map(|row| crate::read::vocabulary::subject_coverage(query, row))
+        .fold(0.0, f64::max)
+}
+
+/// Measure the answer-floor gate at one coverage threshold.
+pub fn measure_answer_floor(cases: &[AnswerFloorCase], threshold: f64) -> GateVerdict {
+    let provenance = eval_provenance();
+    let scored: Vec<fluent_llm::decision::ScoredCase> = cases
+        .iter()
+        .map(|case| fluent_llm::decision::ScoredCase {
+            score: answer_floor_score(&case.query, &case.evidence),
+            expected: case.expected_answer,
+            control: case.control,
+            provenance: provenance.clone(),
+        })
+        .collect();
+    gate_scored_cases(&scored, threshold, &ANSWER_FLOOR_BARS)
+}
+
+/// One measured gate as a registry entry. The stored threshold is the
+/// shipped parameter (budget or coverage), not the sweep inversion.
+fn measured_entry(
+    point: &str,
+    threshold: f64,
+    verdict: GateVerdict,
+    dataset: &str,
+    source: &str,
+) -> fluent_llm::decision::RegistryEntry {
+    let provenance = fluent_llm::decision::CorpusProvenance {
+        source: source.to_string(),
+        labeller: "guidance calibrate".to_string(),
+        date: crate::scorecard::today_utc(),
+        dataset: dataset.to_string(),
+    };
+    fluent_llm::decision::RegistryEntry {
+        point: point.to_string(),
+        model_fingerprint: "unprobed".to_string(),
+        question_version: 1,
+        thresholds: fluent_llm::decision::ThresholdSet {
+            act: threshold,
+            review: threshold,
+        },
+        gate: fluent_llm::decision::GateReport {
+            threshold,
+            precision: verdict.precision,
+            recall: verdict.recall,
+            fpr: verdict.fpr,
+            support: verdict.support,
+            control_fires: verdict.control_fires,
+            passed: verdict.passed,
+            date: crate::scorecard::today_utc(),
+        },
+        provenance,
+        dataset: dataset.to_string(),
+    }
+}
+
+/// Build the span-cap registry entry from a measured gate.
+pub fn span_cap_entry(
+    cases: &[SpanCapCase],
+    root: &std::path::Path,
+    cap: usize,
+    dataset: &str,
+) -> Result<fluent_llm::decision::RegistryEntry, String> {
+    let verdict = measure_span_cap(cases, root, cap)?;
+    Ok(measured_entry(
+        SPAN_CAP_POINT,
+        cap as f64,
+        verdict,
+        dataset,
+        "span-cap goldens",
+    ))
+}
+
+/// Build the answer-floor registry entry from a measured gate.
+#[must_use]
+pub fn answer_floor_entry(
+    cases: &[AnswerFloorCase],
+    threshold: f64,
+    dataset: &str,
+) -> fluent_llm::decision::RegistryEntry {
+    let verdict = measure_answer_floor(cases, threshold);
+    measured_entry(
+        ANSWER_FLOOR_POINT,
+        threshold,
+        verdict,
+        dataset,
+        "answer-floor goldens",
+    )
+}
+
+#[cfg(test)]
+#[path = "../../tests/calibration_trust.rs"]
+mod calibration_trust_tests;
 
 #[cfg(test)]
 #[path = "../../tests/calibration_intent.rs"]

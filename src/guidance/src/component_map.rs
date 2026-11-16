@@ -320,6 +320,50 @@ pub fn prefixes_for_scope(packages: &[String]) -> Vec<String> {
     out
 }
 
+/// Every name that can anchor a query to a crate: package, directory,
+/// and component names, sorted and deduped. The subject anchor
+/// matches query chunks against exactly this set.
+#[must_use]
+/// Every name that can anchor a query to a crate: package, directory,
+/// and component names, sorted and deduped. The subject anchor
+/// matches query chunks against exactly this set.
+pub fn known_crate_names() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for entry in ENTRIES {
+        out.push(entry.package.to_string());
+        out.push(
+            entry
+                .prefix
+                .rsplit('/')
+                .next()
+                .unwrap_or(entry.prefix)
+                .to_string(),
+        );
+        if let Some(component) = entry.component {
+            out.push(component.to_string());
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Canonical package for one anchor name: exact package, directory,
+/// or component hit. `None` when the name anchors nothing.
+#[must_use]
+/// Canonical package for one anchor name: exact package, directory,
+/// or component hit. `None` when the name anchors nothing.
+pub fn package_for_crate_name(name: &str) -> Option<&'static str> {
+    ENTRIES
+        .iter()
+        .find(|entry| {
+            entry.package == name
+                || entry.prefix.rsplit('/').next().unwrap_or(entry.prefix) == name
+                || entry.component == Some(name)
+        })
+        .map(|entry| entry.package)
+}
+
 /// Soft crate scope for a query: up to two owning packages named by
 /// the text, strongest signal first. Exact token hits on a package,
 /// directory, or component name count double; a package or component

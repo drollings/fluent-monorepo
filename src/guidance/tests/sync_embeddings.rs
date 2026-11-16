@@ -136,8 +136,9 @@ fn selector_matrix_pins_units_and_skip_reasons() {
     let function = frow("fn");
     let mut value = frow("value");
     value.symbol_type = Some("value".to_string());
-    let mut pseudo = frow("pseudo");
-    pseudo.symbol_name = Some("$file".to_string());
+    let mut module = frow("module");
+    module.symbol_type = Some("module".to_string());
+    module.symbol_name = Some("freshness".to_string());
     let mut whole = frow("whole");
     whole.symbol_type = None;
     whole.symbol_name = None;
@@ -175,18 +176,16 @@ fn selector_matrix_pins_units_and_skip_reasons() {
         let _ = (fragment, unit);
     }
     assert!(classify_embed_fragment(&function).is_ok());
+    assert!(
+        classify_embed_fragment(&module).is_ok(),
+        "module headers are units: {module:?}"
+    );
     assert!(classify_embed_fragment(&markdown).is_ok());
     assert_eq!(
         classify_embed_fragment(&value)
             .expect_err("value skips")
             .reason,
         "non-unit-symbol"
-    );
-    assert_eq!(
-        classify_embed_fragment(&pseudo)
-            .expect_err("pseudo skips")
-            .reason,
-        "module-pseudo-symbol"
     );
     assert_eq!(
         classify_embed_fragment(&whole)

@@ -149,6 +149,18 @@ fn explain_request(query: &str, no_llm: bool) -> ExplainRequest {
         budget_override: None,
         no_llm,
         include_fixtures: false,
+        answer_mode: AnswerMode::Auto,
+    }
+}
+
+fn synthesis_request(query: &str, no_llm: bool) -> ExplainRequest {
+    ExplainRequest {
+        query: query.to_string(),
+        limit: 5,
+        budget_override: None,
+        no_llm,
+        include_fixtures: false,
+        answer_mode: AnswerMode::Synthesis,
     }
 }
 
@@ -217,7 +229,7 @@ fn explain_synthesizes_support_gated_answers() {
         reply: Some("Alpha adds one (src/a.rs:1).".to_string()),
     };
     let answer = engine.explain(
-        &explain_request("what does alpha_fn do", false),
+        &synthesis_request("what does alpha_fn do", false),
         &ctx,
         Some(&synth),
     );
@@ -225,10 +237,18 @@ fn explain_synthesizes_support_gated_answers() {
     assert!(rendered.contains("### Answer"), "{rendered}");
     assert!(rendered.contains("[unverified]"), "{rendered}");
     assert!(!answer.claims.is_empty());
-    // Evidence-only when the model declines.
+    // Evidence-only when the model declines. A fresh index holds no
+    // cached answer, so the decline degrades to evidence-only.
+    let (dir, db) = explain_fixture();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
     let declined = StubSynth { reply: None };
     let answer = engine.explain(
-        &explain_request("what does alpha_fn do", false),
+        &synthesis_request("what does alpha_fn do", false),
         &ctx,
         Some(&declined),
     );
@@ -247,7 +267,7 @@ fn explain_synthesizes_support_gated_answers() {
     );
     // Evidence-only when declined at the request level.
     let answer = engine.explain(
-        &explain_request("what does alpha_fn do", true),
+        &synthesis_request("what does alpha_fn do", true),
         &ctx,
         Some(&synth),
     );
@@ -343,8 +363,7 @@ fn soft_scope_orders_in_crate_first_with_split_budget() {
     );
     let top = rendered
         .split_once("### Top matches")
-        .map(|(_, rest)| rest)
-        .unwrap_or("");
+        .map_or("", |(_, rest)| rest);
     let in_pos = top.find("src/guidance/alpha.rs");
     let out_pos = top.find("src/router/beta.rs");
     assert!(
@@ -406,7 +425,7 @@ fn graph_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
 }
 
 #[test]
-fn call_graph_section_lists_same_file_callers() {
+fn same_file_callers_answer_extractively_in_every_mode() {
     use crate::read::engine::{ExplainContext, ReadEngine};
     let (dir, db) = graph_fixture();
     let engine = ReadEngine::new();
@@ -416,15 +435,52 @@ fn call_graph_section_lists_same_file_callers() {
         nlp: None,
         coverage: Some(crate::read::readiness::Coverage::empty()),
     };
-    let answer = engine.explain(&explain_request("callers of target_fn", true), &ctx, None);
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "callers of target_fn".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
     let rendered = crate::read::render::render_answer(&answer);
     assert!(
-        rendered.contains("### Call graph"),
-        "edges render apart from code: {rendered}"
+        rendered.contains("### Answer") && rendered.contains("calls target_fn in caller_fn"),
+        "same-file caller answers extractively: {rendered}"
     );
+    // Evidence mode keeps the legacy shape: edges render apart from
+    // code excerpts; the model-free extractive answer also lands.
+    let evidence = engine.explain(
+        &ExplainRequest {
+            query: "callers of target_fn".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Evidence,
+        },
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&evidence);
     assert!(
-        rendered.contains("calls target_fn in caller_fn"),
-        "same-file caller resolves: {rendered}"
+        rendered.contains("### Answer") && rendered.contains("calls target_fn in caller_fn"),
+        "evidence mode answers extractively: {rendered}"
+    );
+    let top = rendered
+        .split("### Top matches")
+        .nth(1)
+        .unwrap_or("")
+        .split("### ")
+        .next()
+        .unwrap_or("");
+    assert!(
+        !top.contains("calls target_fn in caller_fn"),
+        "edges never hide in Top matches: {rendered}"
     );
 }
 
@@ -610,6 +666,7 @@ fn exact_fallback_finds_literal_without_an_index_row() {
             budget_override: None,
             no_llm: true,
             include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
         },
         &ctx,
         None,
@@ -624,6 +681,7 @@ fn exact_fallback_finds_literal_without_an_index_row() {
             budget_override: None,
             no_llm: true,
             include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
         },
         &ctx,
         None,
@@ -710,7 +768,7 @@ fn invented_model_path_is_dropped_not_rendered() {
         reply: Some("It lives in other.rs:99 and does things.".to_string()),
     };
     let answer = engine.explain(
-        &explain_request("what does alpha_fn do", false),
+        &synthesis_request("what does alpha_fn do", false),
         &ctx,
         Some(&synth),
     );
@@ -864,6 +922,7 @@ fn controls_abstain_with_none_found_gap() {
                 budget_override: None,
                 no_llm: false,
                 include_fixtures: false,
+                answer_mode: AnswerMode::Auto,
             },
             &ctx,
             Some(&StubSynth {
@@ -890,6 +949,7 @@ fn controls_abstain_with_none_found_gap() {
             budget_override: None,
             no_llm: false,
             include_fixtures: false,
+            answer_mode: AnswerMode::Synthesis,
         },
         &ctx,
         Some(&StubSynth {
@@ -900,5 +960,1002 @@ fn controls_abstain_with_none_found_gap() {
         !answer.gaps.iter().any(|g| g.contains("none found")),
         "{:?}",
         answer.gaps
+    );
+}
+
+fn ownership_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
+    std::fs::write(dir.path().join("lib.rs"), "pub fn guidance_sync() {}\n").expect("write");
+    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let absolute = dir.path().join("lib.rs").to_string_lossy().into_owned();
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: "lib.rs".to_string(),
+            absolute_path: absolute.clone(),
+            relative_path: "lib.rs".to_string(),
+            root_path: dir.path().to_string_lossy().into_owned(),
+            size_bytes: 26,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "lib.rs:guidance_sync".to_string(),
+            group: None,
+            file_id: "lib.rs".to_string(),
+            range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":1,\"start_offset\":0,\"end_offset\":10}"
+                .to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("pub fn guidance_sync() {}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("guidance_sync".to_string()),
+            scope: None,
+            signature: None,
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed code");
+    let card = |key: &str, title: &str, body: &str| search_vector::db::ProjectCard {
+        key: key.to_string(),
+        kind: "crate".to_string(),
+        title: title.to_string(),
+        body: body.to_string(),
+        source_path: "Cargo.toml".to_string(),
+        anchor: String::new(),
+        aliases_json: "[]".to_string(),
+        code_paths_json: "[]".to_string(),
+        symbols_json: "[]".to_string(),
+        content_hash: common_core::hash::blake3_hex(body.as_bytes()),
+        generated_at: 0,
+    };
+    db.replace_project_cards(&[
+        card(
+            "crate:guidance-core",
+            "guidance-core",
+            "Owns sync and freshness.",
+        ),
+        card(
+            "crate:fluent-router",
+            "fluent-router",
+            "Routes requests to models.",
+        ),
+    ])
+    .expect("cards seed");
+    (dir, db)
+}
+
+#[test]
+fn ownership_scopes_to_the_anchored_crate() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    use crate::read::vocabulary::AnchorSource;
+    let (dir, db) = ownership_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "which crate owns guidance-core".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
+    let subject = answer.subject.as_ref().expect("anchor resolves");
+    assert_eq!(subject.source, AnchorSource::Crate);
+    assert_eq!(subject.terms, vec!["guidance-core".to_string()]);
+    let rendered = crate::read::render::render_answer(&answer);
+    let map = rendered
+        .split("### From the project map")
+        .nth(1)
+        .unwrap_or("")
+        .split("### From the docs")
+        .next()
+        .unwrap_or("");
+    assert!(map.contains("guidance-core"), "{map}");
+    assert!(
+        !map.contains("fluent-router"),
+        "unowned crate drops out: {map}"
+    );
+    assert!(
+        !answer
+            .gaps
+            .iter()
+            .any(|gap| gap.contains("removed every card")),
+        "{:?}",
+        answer.gaps
+    );
+}
+
+#[test]
+fn ownership_anchor_removing_every_card_falls_back_with_a_gap() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = ownership_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "which crate owns spacy-rs".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
+    assert!(
+        answer
+            .gaps
+            .iter()
+            .any(|gap| gap.contains("spacy-rs") && gap.contains("removed every card")),
+        "{:?}",
+        answer.gaps
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(rendered.contains("guidance-core"), "{rendered}");
+}
+
+#[test]
+fn mechanism_query_anchors_free_term_not_context_crate() {
+    // "guidance" names a known crate but this is a mechanism
+    // question, not an ownership one: the crate word is context and
+    // the subject is the free term "sync". Crate anchors serve
+    // ownership scoping only.
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    use crate::read::vocabulary::AnchorSource;
+    let (dir, db) = ownership_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "How does guidance sync decide what to reprocess after an edit?".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
+    let subject = answer.subject.as_ref().expect("Q3 anchors");
+    assert_eq!(subject.source, AnchorSource::Identifier);
+    assert!(subject.terms.contains(&"sync".to_string()), "{subject:?}");
+    assert!(
+        !subject.terms.contains(&"guidance-core".to_string()),
+        "{subject:?}"
+    );
+}
+
+fn admission_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
+    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    for (name, symbol, text) in [
+        ("a1.rs", "alpha_probe", "pub fn alpha_probe() {}\nalpha\n"),
+        ("b2.rs", "beta_probe", "pub fn beta_probe() {}\nbeta\n"),
+    ] {
+        std::fs::write(dir.path().join(name), text).expect("write");
+        let absolute = dir.path().join(name).to_string_lossy().into_owned();
+        db.upsert_fragments(
+            &search_vector::db::FileRecord {
+                id: name.to_string(),
+                absolute_path: absolute.clone(),
+                relative_path: name.to_string(),
+                root_path: dir.path().to_string_lossy().into_owned(),
+                size_bytes: text.len() as u64,
+                last_modified_time: 100,
+                kind: Some("code".to_string()),
+                format: "rust".to_string(),
+                content_hash: None,
+                index_status: Some("indexed".to_string()),
+                fail_count: 0,
+                last_error: None,
+            },
+            &[search_vector::db::FragmentRecord {
+                id: format!("{name}:{symbol}"),
+                group: None,
+                file_id: name.to_string(),
+                range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":2,\"start_offset\":0,\"end_offset\":10}".to_string(),
+                content_kind: "text".to_string(),
+                content_text: Some(text.to_string()),
+                cjk_text: String::new(),
+                symbol_type: Some("function".to_string()),
+                symbol_name: Some(symbol.to_string()),
+                scope: None,
+                signature: None,
+                doc: None,
+                modifiers: String::new(),
+                heading: None,
+                heading_level: None,
+                embedding: None,
+            }],
+            &[],
+        )
+        .expect("seed code");
+    }
+    for (name, anchor, body) in [
+        ("d1.md", "alpha", "# Alpha\n\nAlpha syncs here.\n"),
+        ("d2.md", "beta", "# Beta\n\nBeta ships there.\n"),
+        ("d3.md", "gamma", "# Gamma\n\nGamma holds still.\n"),
+    ] {
+        std::fs::write(dir.path().join(name), body).expect("write");
+        let (chunks, _) = crate::read::doc_cards::chunk_markdown_sections(name, body);
+        let chunk = chunks
+            .iter()
+            .find(|chunk| chunk.anchor == anchor)
+            .expect("anchor chunks");
+        db.replace_project_cards(&[search_vector::db::ProjectCard {
+            key: format!("doc:{name}#{anchor}"),
+            kind: "doc".to_string(),
+            title: anchor.to_string(),
+            body: chunk.text.clone(),
+            source_path: name.to_string(),
+            anchor: anchor.to_string(),
+            aliases_json: "[]".to_string(),
+            code_paths_json: "[]".to_string(),
+            symbols_json: "[]".to_string(),
+            content_hash: chunk.content_hash.clone(),
+            generated_at: 0,
+        }])
+        .expect("seed doc");
+    }
+    (dir, db)
+}
+
+fn scripted_decision(
+    label: &str,
+    confidence: f64,
+) -> Result<fluent_llm::decision::Decision, fluent_llm::decision::DecisionError> {
+    fluent_llm::decision::Decision::from_distribution(
+        label,
+        vec![(label.to_string(), confidence)],
+        "d".to_string(),
+        1,
+        0,
+        false,
+    )
+    .map_err(|_| fluent_llm::decision::DecisionError::Unavailable("bad".to_string()))
+}
+
+fn admission_registry(dir: &std::path::Path) {
+    use fluent_llm::decision::{CalibrationRegistry, RegistryEntry, ThresholdSet};
+    let rows = crate::read::calibration::load_labeled_findings(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../doc/guidance/eval/findings.jsonl")
+            .as_path(),
+    )
+    .expect("corpus");
+    let cases = crate::read::calibration::score_findings(&rows, |row| {
+        if row.expected_relevant {
+            1.0
+        } else {
+            0.0
+        }
+    });
+    let corpus =
+        crate::read::calibration::finding_corpus(cases, "m4-test-fp", "hash", "findings.jsonl");
+    let entry = RegistryEntry::calibrate_with(
+        crate::read::calibration::ADMISSION_POINT,
+        "m4-test-fp",
+        crate::read::calibration::ADMISSION_QUESTION_VERSION,
+        &corpus,
+        1.0,
+        Some(ThresholdSet {
+            act: 1.0,
+            review: 1.0,
+        }),
+    )
+    .expect("entry");
+    let registry_path = dir.join(".guidance/state/calibration.json");
+    std::fs::create_dir_all(registry_path.parent().expect("parent")).expect("mkdir");
+    let mut registry = CalibrationRegistry::empty();
+    registry.upsert(entry);
+    registry.save(&registry_path).expect("save");
+}
+
+#[test]
+fn uncalibrated_admission_keeps_today_order() {
+    use crate::read::engine::{ExplainContext, JudgeCtx, ReadEngine};
+    use fluent_llm::decision::ScriptedDecideBackend;
+    let (dir, db) = admission_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    // Scripted judge, no admission entry: verdicts demote only,
+    // nothing filters, no admission gaps.
+    let backend = ScriptedDecideBackend::new(vec![
+        scripted_decision("strong", 0.9),
+        scripted_decision("considered", 0.8),
+        scripted_decision("considered", 0.7),
+        scripted_decision("relevant", 0.9),
+        scripted_decision("relevant", 0.9),
+    ]);
+    let judge = JudgeCtx {
+        backend: &backend,
+        model: "d".to_string(),
+        timeout_ms: 2000,
+        fingerprint: Some("m4-uncalibrated-fp".to_string()),
+    };
+    let answer = engine.explain_with_judge(
+        &explain_request("alpha beta gamma", true),
+        &ctx,
+        None,
+        Some(&judge),
+    );
+    assert!(
+        !answer.gaps.iter().any(|gap| gap.contains("admission")),
+        "{:?}",
+        answer.gaps
+    );
+    let plain = engine.explain(&explain_request("alpha beta gamma", true), &ctx, None);
+    assert_eq!(
+        answer.citations.len(),
+        plain.citations.len(),
+        "uncalibrated filters nothing"
+    );
+}
+
+#[test]
+fn calibrated_admission_filters_top_k_with_labels() {
+    use crate::read::engine::{ExplainContext, JudgeCtx, ReadEngine};
+    use fluent_llm::decision::ScriptedDecideBackend;
+    let (dir, db) = admission_fixture();
+    admission_registry(dir.path());
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let backend = ScriptedDecideBackend::new(vec![
+        scripted_decision("strong", 0.9),
+        scripted_decision("considered", 0.8),
+        scripted_decision("considered", 0.7),
+        scripted_decision("relevant", 0.9),
+        scripted_decision("relevant", 0.9),
+    ]);
+    let judge = JudgeCtx {
+        backend: &backend,
+        model: "d".to_string(),
+        timeout_ms: 2000,
+        fingerprint: Some("m4-test-fp".to_string()),
+    };
+    let answer = engine.explain_with_judge(
+        &explain_request("alpha beta gamma", true),
+        &ctx,
+        None,
+        Some(&judge),
+    );
+    // Docs admit top-2; the third drops with its label.
+    let drops: Vec<&String> = answer
+        .gaps
+        .iter()
+        .filter(|gap| gap.contains("admission dropped"))
+        .collect();
+    assert_eq!(drops.len(), 1, "{:?}", answer.gaps);
+    assert!(drops[0].contains("(considered)"), "{:?}", answer.gaps);
+    // Code admits top-5: both findings survive.
+    assert!(
+        !answer
+            .gaps
+            .iter()
+            .any(|gap| gap.contains("a1.rs") || gap.contains("b2.rs")),
+        "{:?}",
+        answer.gaps
+    );
+}
+
+#[test]
+fn judge_outage_keeps_prior_without_admission() {
+    use crate::read::engine::{ExplainContext, JudgeCtx, ReadEngine};
+    use fluent_llm::decision::{DecisionError, ScriptedDecideBackend};
+    let (dir, db) = admission_fixture();
+    admission_registry(dir.path());
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let backend = ScriptedDecideBackend::new(vec![
+        Err(DecisionError::Unavailable("down".to_string())),
+        Err(DecisionError::Unavailable("down".to_string())),
+        Err(DecisionError::Unavailable("down".to_string())),
+        Err(DecisionError::Unavailable("down".to_string())),
+        Err(DecisionError::Unavailable("down".to_string())),
+    ]);
+    let judge = JudgeCtx {
+        backend: &backend,
+        model: "d".to_string(),
+        timeout_ms: 2000,
+        fingerprint: Some("m4-test-fp".to_string()),
+    };
+    let answer = engine.explain_with_judge(
+        &explain_request("alpha beta gamma", true),
+        &ctx,
+        None,
+        Some(&judge),
+    );
+    assert!(
+        !answer.gaps.iter().any(|gap| gap.contains("admission")),
+        "outage keeps prior: {:?}",
+        answer.gaps
+    );
+    let plain = engine.explain(&explain_request("alpha beta gamma", true), &ctx, None);
+    assert_eq!(answer.citations.len(), plain.citations.len());
+}
+
+#[test]
+fn golden_q2_ownership_extracts_docs_and_keeps_code() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = admission_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    // Q2-style ownership: the verified doc answers, and the code
+    // finding stays in Top matches for owner composition and facts.
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "which crate owns alpha".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    let response = rendered
+        .split("### Answer")
+        .nth(1)
+        .expect("extractive answer renders")
+        .split("### ")
+        .next()
+        .unwrap_or("");
+    assert!(response.contains("d1.md#alpha"), "{response}");
+    assert!(
+        !response.contains("a1.rs:1-1"),
+        "ownership code evidence is never consumed: {response}"
+    );
+    let docs = rendered
+        .split("### From the docs")
+        .nth(1)
+        .unwrap_or("")
+        .split("### ")
+        .next()
+        .unwrap_or("");
+    assert!(
+        !docs.contains("Alpha syncs here"),
+        "the extracted doc row leaves From the docs: {docs}"
+    );
+    let top = rendered
+        .split("### Top matches")
+        .nth(1)
+        .unwrap_or("")
+        .split("### ")
+        .next()
+        .unwrap_or("");
+    assert!(
+        top.contains("pub fn alpha_probe") || top.contains("a1.rs"),
+        "code evidence stays in Top matches: {top}"
+    );
+    // The envelope still cites every admitted row.
+    assert_eq!(answer.citations.len(), 2, "{:?}", answer.citations);
+}
+
+#[test]
+fn golden_q1_orientation_stays_evidence_only() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = admission_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    // Q1-style orientation is not factual: evidence only, no model.
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "what are the major components of this codebase".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(!rendered.contains("### Answer"), "{rendered}");
+}
+
+#[test]
+fn golden_q5_ownership_scopes_to_the_anchored_crate() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = ownership_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    // Q5-style ownership with a crate anchor: the scoped card answers
+    // extractively instead of rendering the whole map.
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "which crate owns guidance-core".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(rendered.contains("### Answer"), "{rendered}");
+    assert!(!rendered.contains("fluent-router"), "{rendered}");
+}
+
+#[test]
+fn extractive_bodies_never_repeat_across_sections() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = admission_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    for query in [
+        "which crate owns alpha",
+        "callers of alpha_probe",
+        "where is beta_probe defined",
+    ] {
+        let answer = engine.explain(
+            &ExplainRequest {
+                query: query.to_string(),
+                limit: 5,
+                budget_override: None,
+                no_llm: true,
+                include_fixtures: false,
+                answer_mode: AnswerMode::Auto,
+            },
+            &ctx,
+            None,
+        );
+        let rendered = crate::read::render::render_answer(&answer);
+        let response = rendered
+            .split("### Answer")
+            .nth(1)
+            .map(|rest| rest.split("### ").next().unwrap_or("").to_string())
+            .unwrap_or_default();
+        if response.trim().is_empty() {
+            continue;
+        }
+        let rest = rendered.split("### Answer").nth(1).unwrap_or("");
+        let after = rest.split("### ").next().unwrap_or("").len();
+        let tail = &rest[after..];
+        for line in response.lines() {
+            let body = line.split_once(": ").map_or("", |(_, body)| body.trim());
+            if body.len() < 8 {
+                continue;
+            }
+            assert!(
+                !tail.contains(body),
+                "excerpt repeats outside Answer for {query:?}: {body}"
+            );
+        }
+    }
+}
+
+#[test]
+fn evidence_mode_never_synthesizes() {
+    use crate::read::engine::{ExplainContext, ReadEngine, Synthesizer};
+    struct Counting {
+        called: std::cell::Cell<bool>,
+    }
+    impl Synthesizer for Counting {
+        fn synthesize(&self, _prompt: &str) -> Result<Option<String>, String> {
+            self.called.set(true);
+            Ok(Some("Alpha syncs here (a1.rs:1-2).".to_string()))
+        }
+    }
+    let (dir, db) = admission_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let synth = Counting {
+        called: std::cell::Cell::new(false),
+    };
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "How does Alpha sync work".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: false,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Evidence,
+        },
+        &ctx,
+        Some(&synth),
+    );
+    assert!(!synth.called.get(), "evidence never builds an answer");
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(!rendered.contains("### Answer"), "{rendered}");
+}
+
+#[test]
+fn extractive_answers_stay_within_budget() {
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let (dir, db) = admission_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    for (query, mode) in [
+        ("which crate owns alpha", AnswerMode::Auto),
+        (
+            "what are the major components of this codebase",
+            AnswerMode::Evidence,
+        ),
+    ] {
+        let answer = engine.explain(
+            &ExplainRequest {
+                query: query.to_string(),
+                limit: 5,
+                budget_override: None,
+                no_llm: true,
+                include_fixtures: false,
+                answer_mode: mode,
+            },
+            &ctx,
+            None,
+        );
+        assert!(
+            answer.tokens_used < 4000,
+            "{query}: tokens {} exceed the golden bound",
+            answer.tokens_used
+        );
+    }
+}
+
+fn support_registry(dir: &std::path::Path, fingerprint: &str) {
+    use fluent_llm::decision::{CalibrationRegistry, RegistryEntry, ThresholdSet};
+    let rows = crate::read::calibration::load_claim_cases(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../doc/guidance/eval/claims.jsonl")
+            .as_path(),
+    )
+    .expect("corpus");
+    let scored = crate::read::calibration::score_claims(&rows, |case| {
+        if case.expected == crate::read::calibration::ExpectedSupport::Supported {
+            1.0
+        } else {
+            0.0
+        }
+    });
+    let corpus =
+        crate::read::calibration::support_corpus(scored, fingerprint, "hash", "claims.jsonl");
+    let entry = RegistryEntry::calibrate_with(
+        crate::read::calibration::SUPPORT_POINT,
+        fingerprint,
+        crate::read::calibration::SUPPORT_QUESTION_VERSION,
+        &corpus,
+        crate::read::calibration::SUPPORT_THRESHOLD,
+        Some(ThresholdSet {
+            act: 1.0,
+            review: 1.0,
+        }),
+    )
+    .expect("entry");
+    let registry_path = dir.join(".guidance/state/calibration.json");
+    std::fs::create_dir_all(registry_path.parent().expect("parent")).expect("mkdir");
+    let mut registry = CalibrationRegistry::empty();
+    registry.upsert(entry);
+    registry.save(&registry_path).expect("save");
+}
+
+fn support_script(labels: &[&str]) -> fluent_llm::decision::ScriptedDecideBackend {
+    use fluent_llm::decision::ScriptedDecideBackend;
+    let decisions: Vec<
+        Result<fluent_llm::decision::Decision, fluent_llm::decision::DecisionError>,
+    > = labels
+        .iter()
+        .map(|label| {
+            fluent_llm::decision::Decision::from_distribution(
+                label,
+                vec![(label.to_string(), 0.9)],
+                "d".to_string(),
+                1,
+                0,
+                false,
+            )
+            .expect("decision")
+        })
+        .map(Ok)
+        .collect();
+    ScriptedDecideBackend::new(decisions)
+}
+
+#[test]
+fn uncalibrated_support_leaves_unverified() {
+    use crate::read::engine::{ExplainContext, JudgeCtx, ReadEngine};
+    let (dir, db) = admission_fixture();
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: dir.path(),
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    // Finding verdicts then one supported claim verdict; no registry
+    // entry, so the verdict stays shadow and the claim unverified.
+    // The stub cites [C1], which binds whichever finding ranks first:
+    // both findings share the claim vocabulary.
+    // Backend consumption order is fixed: scope hypothesis (1),
+    // doc judge (2), finding judge (2), support judge (1).
+    let backend = support_script(&[
+        "unknown",
+        "strong",
+        "strong",
+        "relevant",
+        "relevant",
+        "supported",
+    ]);
+    let judge = JudgeCtx {
+        backend: &backend,
+        model: "d".to_string(),
+        timeout_ms: 2000,
+        fingerprint: Some("m8-uncalibrated-fp".to_string()),
+    };
+    let answer = engine.explain_with_judge(
+        &ExplainRequest {
+            query: "alpha beta sync work".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: false,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Synthesis,
+        },
+        &ctx,
+        Some(&StubSynth {
+            reply: Some("Alpha and beta probes sync here [C1].".to_string()),
+        }),
+        Some(&judge),
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(rendered.contains("### Answer"), "{rendered}");
+    assert!(
+        rendered.contains("[unverified]"),
+        "shadow stays labelled: {rendered}"
+    );
+    assert!(
+        answer
+            .claims
+            .iter()
+            .all(|claim| claim.support == crate::read::claims::Support::Unverified),
+        "no verdict without authorization: {:?}",
+        answer.claims
+    );
+}
+
+#[test]
+fn authorized_support_verifies_and_drops() {
+    use crate::read::engine::{ExplainContext, JudgeCtx, ReadEngine};
+    // A supported claim verifies verbatim; the contradicted run drops
+    // the claim instead of rendering it. Each verdict gets a fresh
+    // index so the manifest cache cannot carry answers across runs.
+    for (verdict, present, labelled) in [("supported", true, false), ("contradicted", false, false)]
+    {
+        let (dir, db) = admission_fixture();
+        support_registry(dir.path(), "m8-test-fp");
+        let engine = ReadEngine::new();
+        let ctx = ExplainContext {
+            workspace: dir.path(),
+            db: &db,
+            nlp: None,
+            coverage: None,
+        };
+        // Backend consumption order is fixed: scope (1), docs (2),
+        // findings (2), support (1).
+        let backend = support_script(&[
+            "unknown", "strong", "strong", "relevant", "relevant", verdict,
+        ]);
+        let judge = JudgeCtx {
+            backend: &backend,
+            model: "d".to_string(),
+            timeout_ms: 2000,
+            fingerprint: Some("m8-test-fp".to_string()),
+        };
+        let answer = engine.explain_with_judge(
+            &ExplainRequest {
+                query: "alpha beta sync work".to_string(),
+                limit: 5,
+                budget_override: None,
+                no_llm: false,
+                include_fixtures: false,
+                answer_mode: AnswerMode::Synthesis,
+            },
+            &ctx,
+            Some(&StubSynth {
+                reply: Some("Alpha and beta probes sync here [C1].".to_string()),
+            }),
+            Some(&judge),
+        );
+        let rendered = crate::read::render::render_answer(&answer);
+        assert_eq!(
+            rendered.contains("Alpha and beta probes sync here"),
+            present,
+            "{verdict}: {rendered}"
+        );
+        assert_eq!(
+            rendered.contains("[unverified]"),
+            labelled,
+            "{verdict}: {rendered}"
+        );
+    }
+}
+
+#[test]
+fn renamed_function_renders_live_text_marked_stale() {
+    // Rename probe: the stored signature is gone from the live file,
+    // so the live range renders instead — never the stale excerpt —
+    // with the row labelled and the file named in Gaps.
+    use crate::read::engine::{ExplainContext, ReadEngine};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::create_dir(root.join("src")).expect("mkdir");
+    std::fs::write(
+        root.join("src").join("ren.rs"),
+        "pub fn old_name() -> u64 {\n    1\n}\n",
+    )
+    .expect("write");
+    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let absolute = root
+        .join("src")
+        .join("ren.rs")
+        .to_string_lossy()
+        .into_owned();
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: absolute.clone(),
+            absolute_path: absolute.clone(),
+            relative_path: "src/ren.rs".to_string(),
+            root_path: root.to_string_lossy().into_owned(),
+            size_bytes: 100,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "ren:old_name".to_string(),
+            group: None,
+            file_id: absolute.clone(),
+            range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":2,\"start_offset\":0,\"end_offset\":10}".to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some("pub fn old_name() -> u64 {\n    1\n}".to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("old_name".to_string()),
+            scope: None,
+            signature: None,
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed");
+    std::fs::write(
+        root.join("src").join("ren.rs"),
+        "pub fn new_name() -> u64 {\n    1\n}\n",
+    )
+    .expect("rename without re-sync");
+    let engine = ReadEngine::new();
+    let ctx = ExplainContext {
+        workspace: root,
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let answer = engine.explain(
+        &ExplainRequest {
+            query: "where is old_name defined".to_string(),
+            limit: 5,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: AnswerMode::Auto,
+        },
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&answer);
+    assert!(
+        rendered.contains("pub fn new_name"),
+        "live bytes render: {rendered}"
+    );
+    assert!(
+        !rendered.contains("pub fn old_name"),
+        "stored excerpt never renders: {rendered}"
+    );
+    assert!(
+        rendered.contains("(stale)"),
+        "renamed row is labelled: {rendered}"
+    );
+    assert!(
+        answer.gaps.iter().any(|gap| gap.contains("src/ren.rs")),
+        "gaps name the file: {:?}",
+        answer.gaps
+    );
+    assert!(
+        answer
+            .citations
+            .iter()
+            .any(|cite| cite.stale && cite.source.display().contains("ren.rs")),
+        "citation carries the stale marker: {:?}",
+        answer.citations
     );
 }

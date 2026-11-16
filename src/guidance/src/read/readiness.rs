@@ -267,7 +267,9 @@ pub fn inspect(
 ) -> Readiness {
     let mut coverage = Coverage::empty();
     let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
-        vec![workspace.to_path_buf()]
+        // Same roots the sync sweep walks: the coverage counter and
+        // `status` read one source, never two tallies.
+        crate::read::project_map::default_source_roots(workspace)
     } else {
         cfg.src_dirs.iter().map(|dir| workspace.join(dir)).collect()
     };

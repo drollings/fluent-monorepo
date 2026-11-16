@@ -775,3 +775,104 @@ fn embedding_status_stale_summary_falls_back_to_comment() {
     let input = embedding_input_for_fragment(&db, &fragment, &[block]);
     assert_eq!(input.as_deref(), Some("Adds one."));
 }
+
+// ---- Converged-tree census: the write-side spend of a no-op pass and
+// the derivation blast radius of one interface edit. These numbers are
+// the baseline a propagation skip must drive down and the dependent
+// derivation it must preserve.
+
+const NOOP_FILES_INDEXED: usize = 0;
+const NOOP_FRAGMENTS_COMMITTED: usize = 0;
+const NOOP_REPROCESSED_CLEAN: usize = 0;
+const INTERFACE_EDIT_DERIVES: usize = 2;
+
+fn census_tree(root: &std::path::Path) {
+    write(root, "a.rs", "pub fn alpha() -> u64 { 1 }\n");
+    write(
+        root,
+        "b.rs",
+        "use crate::a::alpha;\n\npub fn beta() -> u64 { alpha() }\n",
+    );
+    write(root, "c.rs", "pub fn gamma() -> u64 { 3 }\n");
+}
+
+fn index_run(root: &std::path::Path, db: &Arc<GuidanceDb>) -> IndexStats {
+    let cancel = AtomicBool::new(false);
+    index_workspace(
+        Arc::clone(db),
+        StubEmbedding::ok(),
+        &selection_for(root),
+        &default_options(),
+        None,
+        &cancel,
+        &mut |_p| {},
+    )
+    .expect("index run")
+}
+
+#[test]
+fn noop_reindex_census_is_stable_and_silent() {
+    let dir = TempDir::new().expect("tempdir");
+    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    census_tree(dir.path());
+    let first = index_run(dir.path(), &db);
+    assert_eq!(first.files_indexed, 3, "populate: {first:?}");
+
+    let second = index_run(dir.path(), &db);
+    let third = index_run(dir.path(), &db);
+    assert_eq!(second, third, "no-op counters must be stable run to run");
+    assert_eq!(second.files_unchanged, 3, "{second:?}");
+    assert_eq!(second.files_indexed, NOOP_FILES_INDEXED, "{second:?}");
+    assert_eq!(
+        second.entities_created, NOOP_FRAGMENTS_COMMITTED,
+        "{second:?}"
+    );
+    assert_eq!(
+        second.reprocessed_clean, NOOP_REPROCESSED_CLEAN,
+        "{second:?}"
+    );
+    assert_eq!(
+        second.followup_graph_reads, 0,
+        "a converged tree never reads the whole edge table: {second:?}"
+    );
+}
+
+#[test]
+fn interface_edit_census_keeps_dependent_derivation() {
+    let dir = TempDir::new().expect("tempdir");
+    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    census_tree(dir.path());
+    index_run(dir.path(), &db);
+
+    write(dir.path(), "a.rs", "pub fn alpha() -> u16 { 1 }\n");
+    let after = index_run(dir.path(), &db);
+    assert_eq!(after.files_modified, 1, "{after:?}");
+    assert_eq!(
+        after.files_indexed, INTERFACE_EDIT_DERIVES,
+        "one interface edit re-derives the edited file and its import dependent: {after:?}"
+    );
+    assert!(after.entities_created > 0, "{after:?}");
+    assert!(
+        after.followup_graph_reads >= 1,
+        "an interface move reads the graph for dependents: {after:?}"
+    );
+}
+
+#[test]
+fn single_body_edit_census_keeps_cost_at_the_seed() {
+    let dir = TempDir::new().expect("tempdir");
+    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    census_tree(dir.path());
+    index_run(dir.path(), &db);
+
+    // Same interface, new body: only the edited file is re-derived.
+    write(dir.path(), "c.rs", "pub fn gamma() -> u64 { 4 }\n");
+    let after = index_run(dir.path(), &db);
+    assert_eq!(after.files_modified, 1, "{after:?}");
+    assert_eq!(after.files_indexed, 1, "seed only: {after:?}");
+    assert!(after.entities_created > 0, "{after:?}");
+    assert!(
+        after.followup_graph_reads >= 1,
+        "the sig gate still consults the graph: {after:?}"
+    );
+}

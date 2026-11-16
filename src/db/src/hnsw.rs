@@ -36,6 +36,12 @@ use crate::error::DbError;
 /// (max_nb_connection, initial_capacity, max_layer, ef_construction,
 /// DistCosine) ordering is decided in exactly one place.
 #[must_use]
+/// Build a cosine-distance HNSW index from `HnswParams` with a pluggable
+/// `initial_capacity`.
+///
+/// Centralizes the positional-argument unpacking so the
+/// (max_nb_connection, initial_capacity, max_layer, ef_construction,
+/// DistCosine) ordering is decided in exactly one place.
 pub fn make_hnsw(p: &HnswParams, initial_capacity: usize) -> Hnsw<'static, f32, DistCosine> {
     Hnsw::<f32, DistCosine>::new(
         p.max_nb_connection,

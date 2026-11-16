@@ -141,6 +141,19 @@ pub fn gate_for_point_with(
 /// assert_eq!(provenance.labeller, "team");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Corpus-level provenance (`CorpusProvenance`) for a labelled set.
+/// 
+/// ```rust
+/// use fluent_llm::decision::CorpusProvenance;
+/// 
+/// let provenance = CorpusProvenance {
+/// source: "hand labels".to_string(),
+/// labeller: "team".to_string(),
+/// date: "2026-11-08".to_string(),
+/// dataset: String::new(),
+/// };
+/// assert_eq!(provenance.labeller, "team");
+/// ```
 pub struct CorpusProvenance {
     pub source: String,
     pub labeller: String,

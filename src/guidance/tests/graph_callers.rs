@@ -138,13 +138,73 @@ fn callers_answer_leads_with_the_caller_not_the_definition() {
             budget_override: None,
             no_llm: true,
             include_fixtures: false,
+            answer_mode: crate::read::engine::AnswerMode::Auto,
         },
         &ctx,
         None,
     );
     let rendered = crate::read::render::render_answer(&answer);
-    // Caller edges render apart in their own section, never fused
-    // into code rows: the definition cannot present as a caller.
+    // Factual graph answers are extractive: the caller edge leads in
+    // `Answer`, never fused into code rows, and the definition file
+    // never presents as a caller.
+    let response = rendered
+        .split("### Answer")
+        .nth(1)
+        .unwrap_or("")
+        .split("### ")
+        .next()
+        .unwrap_or("");
+    assert!(
+        response.contains("caller.rs") && response.contains("calls target_sym in caller_fn"),
+        "answer leads with the caller edge: {rendered}"
+    );
+    for line in response.lines() {
+        if line.contains("calls target_sym in ") {
+            assert!(
+                line.contains("caller.rs"),
+                "the definition never presents as a caller: {line}"
+            );
+        }
+    }
+    let top = top_matches_blocks(&rendered).join("\n");
+    assert!(
+        !top.contains("calls target_sym in "),
+        "no edge rows hide inside Top matches: {rendered}"
+    );
+    // Evidence mode keeps the legacy shape: edges render apart in
+    // their own section; the model-free extractive answer also lands
+    // with the caller first.
+    let evidence = engine.explain(
+        &ExplainRequest {
+            query: "callers of target_sym".to_string(),
+            limit: 10,
+            budget_override: None,
+            no_llm: true,
+            include_fixtures: false,
+            answer_mode: crate::read::engine::AnswerMode::Evidence,
+        },
+        &ctx,
+        None,
+    );
+    let rendered = crate::read::render::render_answer(&evidence);
+    assert!(rendered.contains("### Answer"), "{rendered}");
+    let answer_body = rendered
+        .split("### Answer")
+        .nth(1)
+        .unwrap_or("")
+        .split("### ")
+        .next()
+        .unwrap_or("");
+    let first = answer_body
+        .lines()
+        .find(|line| line.starts_with("- "))
+        .unwrap_or("");
+    assert!(
+        first.contains("calls target_sym"),
+        "the caller leads the evidence answer: {answer_body}"
+    );
+    // A one-edge query answers extractively, so the edge lives in the
+    // Answer; a larger edge set leaves the remainder in `Call graph`.
     let graph = rendered
         .split("### Call graph")
         .nth(1)
@@ -153,16 +213,8 @@ fn callers_answer_leads_with_the_caller_not_the_definition() {
         .next()
         .unwrap_or("");
     assert!(
-        graph.contains("caller.rs") && graph.contains("calls target_sym in caller_fn"),
-        "call graph lists the caller edge: {rendered}"
-    );
-    assert!(
-        !graph.contains("callee.rs"),
-        "the definition never presents as a caller: {graph}"
-    );
-    let top = top_matches_blocks(&rendered).join("\n");
-    assert!(
-        !top.contains("calls target_sym in "),
-        "no edge rows hide inside Top matches: {rendered}"
+        answer_body.contains("calls target_sym in caller_fn")
+            || (graph.contains("caller.rs") && graph.contains("calls target_sym in caller_fn")),
+        "the caller edge is visible: {rendered}"
     );
 }

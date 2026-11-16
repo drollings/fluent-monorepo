@@ -40,6 +40,44 @@ pub const MAX_READ_BYTES: u64 = 1_000_000;
 /// Excerpt width for one grep match line.
 pub const GREP_EXCERPT_CHARS: usize = 120;
 
+/// Spam ceilings: the single eval contracts, re-exported so the
+/// benchmark and the scorecard read one value.
+pub const SPAM_MAX_CITATIONS: usize = guidance_core::eval::SPAM_MAX_CITATIONS;
+/// Spam ceilings: the single eval contracts, re-exported so the
+/// benchmark and the scorecard read one value.
+pub const SPAM_MAX_SPAN_LINES: u64 = guidance_core::eval::SPAM_MAX_SPAN_LINES;
+
+/// Lines spanned by one rendered citation (the eval contract).
+#[must_use]
+pub fn citation_span_lines(citation: &str) -> u64 {
+    guidance_core::eval::citation_span_lines(citation)
+}
+
+/// Longest citation range in one answer (the eval contract).
+#[must_use]
+pub fn max_citation_span(citations: &[String]) -> u64 {
+    guidance_core::eval::max_citation_span(citations)
+}
+
+/// Measurement paths in one citation set (the eval contract).
+#[must_use]
+pub fn fixture_path_count(paths: &[String]) -> usize {
+    guidance_core::eval::fixture_path_count(paths)
+}
+
+/// One spam verdict for one answer (the eval contract).
+#[must_use]
+pub fn spam_ok(citation_count: usize, fixture_count: usize, max_span: u64) -> bool {
+    guidance_core::eval::spam_ok(citation_count, fixture_count, max_span)
+}
+
+/// Rendered citation entries in one markdown answer (the eval
+/// contract): the payload trim caps this list.
+#[must_use]
+pub fn rendered_citation_count(rendered: &str) -> usize {
+    guidance_core::eval::rendered_citation_count(rendered)
+}
+
 /// One benchmark task: the shared eval shape plus the original golden
 /// paths (the basename list remains for continuity with older reports).
 #[derive(Debug, Clone)]
@@ -118,6 +156,8 @@ pub struct QueryReport {
     pub explain: ArmResult,
     /// Unindexed literal-grep arm.
     pub grep: ArmResult,
+    /// Competent manual baseline: README + `doc/` targeted walk.
+    pub doc_walk: ArmResult,
     /// Wholesale arm (relevant files covered by the corpus).
     pub wholesale: ArmResult,
 }
@@ -461,6 +501,47 @@ pub fn grep_arm_with_paths(
     (out, files, paths)
 }
 
+/// Competent manual baseline: the README plus `doc/` walk behind the
+/// same targeted grep. One filtered view over the walked corpus —
+/// never a second grep implementation — so the headline compares the
+/// shipping path against what a human reads first, not raw `rg`.
+#[must_use]
+pub fn doc_walk_corpus(corpus: &[PathBuf]) -> Vec<PathBuf> {
+    corpus
+        .iter()
+        .filter(|path| {
+            let parts: Vec<String> = path
+                .components()
+                .filter_map(|component| match component {
+                    std::path::Component::Normal(name) => {
+                        Some(name.to_string_lossy().replace('\\', "/"))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if parts.is_empty() {
+                return false;
+            }
+            let is_readme = parts.last().is_some_and(|base| base == "README.md");
+            let under_doc = parts.iter().any(|part| part == "doc");
+            is_readme || under_doc
+        })
+        .cloned()
+        .collect()
+}
+
+/// Doc-walk arm: the shared grep over the README + `doc/` view.
+#[must_use]
+pub fn doc_walk_arm_with_paths(
+    corpus: &[PathBuf],
+    workspace: &str,
+    tokens: &[String],
+    budget: usize,
+) -> (String, Vec<String>, Vec<String>) {
+    let docs = doc_walk_corpus(corpus);
+    grep_arm_with_paths(&docs, workspace, tokens, budget)
+}
+
 /// Indexed arm: the structural `explain` output (no model call) over the
 /// fused recall path — the same assembly `explain --no-llm` renders.
 /// Recall failure degrades to empty (never a hard error), timed like
@@ -506,22 +587,84 @@ pub fn explain_arm(
     (text, files, order)
 }
 
-/// Detailed shipping arm: rendered text, basenames, rank order,
-/// workspace-relative citation paths, and raw citations.
+/// One `ReadEngine` request shape for the shipping path: the CLI
+/// (`cmd_explain --no-llm`) and the benchmark arm build the same
+/// struct, so byte counts stay honest.
 #[must_use]
-/// Detailed shipping arm: rendered text, basenames, rank order,
-/// workspace-relative citation paths, and raw citations.
-pub fn explain_arm_detailed(
+/// One `ReadEngine` request shape for the shipping path: the CLI
+/// (`cmd_explain --no-llm`) and the benchmark arm build the same
+/// struct, so byte counts stay honest.
+pub fn cli_explain_request(
+    query: &str,
+    limit: usize,
+    budget_override: Option<usize>,
+    no_llm: bool,
+    include_fixtures: bool,
+    answer_mode: guidance_core::read::engine::AnswerMode,
+) -> guidance_core::read::engine::ExplainRequest {
+    guidance_core::read::engine::ExplainRequest {
+        query: query.to_string(),
+        limit,
+        budget_override,
+        no_llm,
+        include_fixtures,
+        answer_mode,
+    }
+}
+
+/// Render the body the CLI prints: full sections, or Coverage omitted
+/// under `--compact`. One renderer, never a second builder.
+#[must_use]
+/// Render the body the CLI prints: full sections, or Coverage omitted
+/// under `--compact`. One renderer, never a second builder.
+pub fn render_cli_body(answer: &guidance_core::read::engine::ReadAnswer, compact: bool) -> String {
+    if compact {
+        let mut compact_answer = answer.clone();
+        compact_answer
+            .sections
+            .retain(|section| section.title != "Coverage");
+        guidance_core::read::render::render_answer(&compact_answer)
+    } else {
+        guidance_core::read::render::render_answer(answer)
+    }
+}
+
+/// Shipping-arm result: `(body, compact_body, envelope, files, order,
+/// paths, raw)`.
+pub type ExplainArmWithEnvelope = (
+    String,
+    String,
+    serde_json::Value,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+);
+
+/// Detailed shipping arm with the envelope the CLI prints beside the
+/// body: `(body, compact_body, envelope, files, order, paths, raw)`.
+/// `explain_arm_detailed` delegates (body only); the parity test pins
+/// `compact_body` against `render_cli_body(_, true)` and the envelope
+/// breakdown against `envelope_json_v2`.
+#[must_use]
+/// Detailed shipping arm with the envelope the CLI prints beside the
+/// body: `(body, compact_body, envelope, files, order, paths, raw)`.
+/// `explain_arm_detailed` delegates (body only); the parity test pins
+/// `compact_body` against `render_cli_body(_, true)` and the envelope
+/// breakdown against `envelope_json_v2`.
+pub fn explain_arm_with_envelope(
     query: &str,
     workspace: &str,
     db_path: &str,
     limit: usize,
-) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
-    use guidance_core::read::engine::{ExplainContext, ExplainRequest, ReadEngine};
+) -> ExplainArmWithEnvelope {
+    use guidance_core::read::engine::{ExplainContext, ReadEngine};
     let workspace_root = PathBuf::from(workspace);
     let Ok(db) = search_vector::GuidanceDb::open(Path::new(db_path)) else {
         return (
             String::new(),
+            String::new(),
+            serde_json::json!({"schema_version": 2, "citations": []}),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -534,17 +677,40 @@ pub fn explain_arm_detailed(
         nlp: None,
         coverage: None,
     };
-    let request = ExplainRequest {
-        query: query.to_string(),
+    let request = cli_explain_request(
+        query,
         limit,
-        budget_override: None,
-        no_llm: true,
-        include_fixtures: false,
-    };
+        None,
+        true,
+        false,
+        guidance_core::read::engine::AnswerMode::Auto,
+    );
     let answer = ReadEngine::new().explain(&request, &context, None);
-    let rendered = guidance_core::read::render::render_answer(&answer);
-    // Citation sources in rank order (first wins); basenames fold
-    // workspace prefixes so scoring stays identity-based.
+    let body = render_cli_body(&answer, false);
+    let compact_body = render_cli_body(&answer, true);
+    let (subject_terms, subject_source): (Vec<String>, Option<&str>) = match answer.subject.as_ref()
+    {
+        Some(anchor) => (
+            anchor.terms.clone(),
+            Some(match anchor.source {
+                guidance_core::read::vocabulary::AnchorSource::Crate => "crate",
+                guidance_core::read::vocabulary::AnchorSource::Identifier => "identifier",
+            }),
+        ),
+        None => (Vec::new(), None),
+    };
+    let envelope = crate::search::envelope_json_v2(
+        &format!("{:?}", answer.intent),
+        &answer.route,
+        &answer,
+        0,
+        "disabled",
+        "disabled",
+        &subject_terms,
+        subject_source,
+        "auto",
+        None,
+    );
     let mut order = Vec::new();
     let mut paths = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -562,7 +728,31 @@ pub fn explain_arm_detailed(
     let mut files = order.clone();
     files.sort();
     let raw_citations: Vec<String> = answer.citations.iter().map(ToString::to_string).collect();
-    (rendered, files, order, paths, raw_citations)
+    (
+        body,
+        compact_body,
+        envelope,
+        files,
+        order,
+        paths,
+        raw_citations,
+    )
+}
+
+/// Detailed shipping arm: rendered text, basenames, rank order,
+/// workspace-relative citation paths, and raw citations.
+#[must_use]
+/// Detailed shipping arm: rendered text, basenames, rank order,
+/// workspace-relative citation paths, and raw citations.
+pub fn explain_arm_detailed(
+    query: &str,
+    workspace: &str,
+    db_path: &str,
+    limit: usize,
+) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+    let (body, _, _, files, order, paths, raw) =
+        explain_arm_with_envelope(query, workspace, db_path, limit);
+    (body, files, order, paths, raw)
 }
 
 /// Run every task through all three arms and aggregate. The wholesale
@@ -630,6 +820,12 @@ pub fn run_benchmark(
         let grep_wall = grep_started.elapsed().as_millis();
         let (grep_recall, grep_precision) = score_arm(&grep_files, &relevant);
         let (grep_path_recall, grep_path_precision) = score_paths(&grep_paths, &relevant_paths);
+        let doc_started = Instant::now();
+        let (doc_text, doc_files, doc_paths) =
+            doc_walk_arm_with_paths(&corpus_files, workspace, &tokens, GREP_FILE_BUDGET);
+        let doc_wall = doc_started.elapsed().as_millis();
+        let (doc_recall, doc_precision) = score_arm(&doc_files, &relevant);
+        let (doc_path_recall, doc_path_precision) = score_paths(&doc_paths, &relevant_paths);
         let covered: Vec<String> = relevant
             .iter()
             .filter(|base| corpus_basenames.contains(base.as_str()))
@@ -695,6 +891,21 @@ pub fn run_benchmark(
                 scope_mix: scope_mix(&grep_paths),
                 control_abstained: task.control && grep_text.trim().is_empty(),
             },
+            doc_walk: ArmResult {
+                wall_ms: doc_wall,
+                chars: doc_text.len(),
+                tokens: tokens_for_text(&doc_text),
+                files: doc_files.clone(),
+                order: doc_files,
+                recall: doc_recall,
+                precision: doc_precision,
+                path_recall: doc_path_recall,
+                path_precision: doc_path_precision,
+                required_sections_hit: 0,
+                citations_verified: 0,
+                scope_mix: scope_mix(&doc_paths),
+                control_abstained: task.control && doc_text.trim().is_empty(),
+            },
             wholesale: ArmResult {
                 wall_ms: corpus.wall_ms,
                 chars: corpus.chars,
@@ -713,11 +924,12 @@ pub fn run_benchmark(
         });
     }
     let mut totals = BTreeMap::new();
-    for arm in ["explain", "grep", "wholesale"] {
+    for arm in ["explain", "grep", "doc_walk", "wholesale"] {
         let rows: Vec<&ArmResult> = queries
             .iter()
             .map(|query| match arm {
                 "grep" => &query.grep,
+                "doc_walk" => &query.doc_walk,
                 "wholesale" => &query.wholesale,
                 _ => &query.explain,
             })
@@ -748,7 +960,7 @@ pub fn run_benchmark(
         serde_json::Value::from(queries.len() as u64),
     );
     let wholesale_tokens = corpus.tokens.max(1) as f64;
-    for arm in ["explain", "grep"] {
+    for arm in ["explain", "grep", "doc_walk"] {
         let total = totals.get(arm).map(|row| row.tokens).unwrap_or(0) as f64;
         ratios.insert(
             format!("{arm}_tokens_per_wholesale"),
@@ -811,6 +1023,7 @@ pub fn render_human(report: &BenchReport, scope_report: bool) -> String {
         for (name, arm) in [
             ("explain", &query.explain),
             ("grep", &query.grep),
+            ("doc_walk", &query.doc_walk),
             ("wholesale", &query.wholesale),
         ] {
             let top: Vec<String> = arm.order.iter().take(5).cloned().collect();
@@ -834,7 +1047,7 @@ pub fn render_human(report: &BenchReport, scope_report: bool) -> String {
         }
     }
     out.push_str("\n### Totals\n");
-    for arm in ["explain", "grep", "wholesale"] {
+    for arm in ["explain", "grep", "doc_walk", "wholesale"] {
         if let Some(total) = report.totals.get(arm) {
             out.push_str(&format!(
                 "  {arm:9} {:>6}ms ~{:>7} tok mean recall {:.2} mean precision {:.2}\n",

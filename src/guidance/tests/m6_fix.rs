@@ -52,6 +52,51 @@ fn d1_keeps_test_bytes_while_formatting() {
 }
 
 #[test]
+fn d1_formats_module_file_without_resolving_children() {
+    let dir = tempdir();
+    let path = dir.path().join("m.rs");
+    let before = "pub mod missing_child;\n\npub fn messy(  x:u8 )->u8 {\n    x\n}\n";
+    std::fs::write(&path, before).expect("write");
+    let outcome = format_rust(&path, before);
+    assert!(
+        outcome.conflict.is_none(),
+        "unresolvable child modules must not fail the run"
+    );
+    assert!(
+        outcome.text.contains("pub fn messy(x: u8) -> u8"),
+        "code formatted"
+    );
+    let again = format_rust(&path, &outcome.text);
+    assert_eq!(again.text, outcome.text, "format must converge");
+}
+
+#[test]
+fn d1_never_duplicates_docs_across_attributes() {
+    let dir = tempdir();
+    let path = dir.path().join("a.rs");
+    // Format-dirty body forces the splice; doc/attr order must survive.
+    let before = "/// First line of docs.\n/// Second line.\n#[allow(clippy::too_many_arguments)]\npub fn probe(  x:u8 )->u8 {\n    x\n}\n\n#[cfg(test)]\n#[path = \"../tests/a.rs\"]\nmod tests;\n";
+    std::fs::write(&path, before).expect("write");
+    let outcome = format_rust(&path, before);
+    assert_eq!(
+        outcome.text.matches("First line of docs").count(),
+        1,
+        "doc duplicated:\n{}",
+        outcome.text
+    );
+    assert!(
+        outcome.text.contains("pub fn probe(x: u8) -> u8"),
+        "formatted:\n{}",
+        outcome.text
+    );
+    assert!(
+        outcome.text.ends_with("mod tests;\n"),
+        "trailing test mod keeps its newline:\n{:?}",
+        &outcome.text[outcome.text.len().saturating_sub(20)..]
+    );
+}
+
+#[test]
 fn d1_reports_fmt_conflict_instead_of_looping() {
     let dir = tempdir();
     std::fs::write(

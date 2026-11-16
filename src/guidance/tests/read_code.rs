@@ -152,35 +152,70 @@ fn live_resolution_moves_ranges_with_edits() {
         provenance: "code".to_string(),
     };
     // Stored range still holds the text: kept byte-identically.
-    let (kept, gaps) = resolve_live_findings(
+    let (kept, kept_stale, gaps) = resolve_live_findings(
         dir.path(),
         vec![finding("/// Adds one.\npub fn alpha() -> u64 {", 3, 4)],
     );
     assert!(gaps.is_empty(), "{gaps:?}");
+    assert!(kept_stale.iter().all(|stale| !stale));
     assert_eq!(kept[0].start_line, Some(3));
     assert!(kept[0].text.contains("pub fn alpha"), "{}", kept[0].text);
     // Stored range is stale (pre-edit lines): the anchor re-resolves
     // to live lines 3-4.
-    let (moved, gaps) = resolve_live_findings(
+    let (moved, moved_stale, gaps) = resolve_live_findings(
         dir.path(),
         vec![finding("/// Adds one.\npub fn alpha() -> u64 {", 1, 2)],
     );
     assert!(gaps.is_empty(), "{gaps:?}");
+    assert!(moved_stale.iter().all(|stale| !stale));
     assert_eq!((moved[0].start_line, moved[0].end_line), (Some(3), Some(4)));
     assert!(moved[0].text.contains("pub fn alpha"), "{}", moved[0].text);
-    // Unresolvable text keeps its stored slice and logs a gap.
-    let (kept, gaps) =
+    // Renamed text is gone from the file: the live range renders
+    // instead, marked stale at render time with a named gap.
+    let (renamed, renamed_stale, gaps) =
         resolve_live_findings(dir.path(), vec![finding("no such line anywhere", 1, 1)]);
     assert_eq!(
         gaps,
         vec!["source changed since index: moved.rs".to_string()]
     );
-    assert_eq!(kept[0].start_line, Some(1));
+    assert_eq!(renamed_stale, vec![true]);
+    assert_eq!(renamed[0].start_line, Some(1));
+    assert!(
+        renamed[0].text.contains("header"),
+        "live range renders: {}",
+        renamed[0].text
+    );
+    assert!(
+        !renamed[0].text.contains("no such line"),
+        "stored slice never renders: {}",
+        renamed[0].text
+    );
     // Findings without line ranges pass through untouched.
     let mut edge = finding("calls x", 1, 1);
     edge.start_line = None;
     edge.end_line = None;
-    let (kept, gaps) = resolve_live_findings(dir.path(), vec![edge]);
+    let (kept, kept_stale, gaps) = resolve_live_findings(dir.path(), vec![edge]);
     assert!(gaps.is_empty());
+    assert!(kept_stale.iter().all(|stale| !stale));
     assert!(kept[0].start_line.is_none());
+}
+
+#[test]
+fn live_range_text_and_hash_share_one_read() {
+    use crate::grounding::{live_range_hash, live_range_text};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("r.rs");
+    std::fs::write(&file, "one\ntwo\nthree\n").expect("write");
+    assert_eq!(live_range_text(&file, 2, 3), Some("two\nthree".to_string()));
+    assert_eq!(
+        live_range_hash(&file, 2, 3),
+        Some(common_core::hash::blake3_hex("two\nthree\n".as_bytes()))
+    );
+    // Out-of-range and unreadable inputs have no bytes to hash.
+    assert!(live_range_text(&file, 9, 12).is_none());
+    assert!(live_range_text(&file, 0, 2).is_none());
+    assert!(live_range_hash(&file, 9, 12).is_none());
+    assert!(live_range_text(&dir.path().join("missing.rs"), 1, 2).is_none());
+    // Single-line ranges resolve exactly.
+    assert_eq!(live_range_text(&file, 1, 1), Some("one".to_string()));
 }

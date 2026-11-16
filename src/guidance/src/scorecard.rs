@@ -1114,6 +1114,8 @@ fn copy_tree(source: &Path, target: &Path) {
 struct ReadAnswer {
     rendered: String,
     citations: Vec<String>,
+    fixture_count: usize,
+    max_span: u64,
     claims_without_citation: usize,
     degraded: bool,
     tokens: u64,
@@ -1134,6 +1136,7 @@ fn answer_read_question(
         budget_override: None,
         no_llm: true,
         include_fixtures: false,
+        answer_mode: crate::read::engine::AnswerMode::Auto,
     };
     let coverage = crate::read::readiness::Coverage::empty();
     let context = ExplainContext {
@@ -1154,6 +1157,14 @@ fn answer_read_question(
             files.push(source);
         }
     }
+    // Spam contracts reuse the single eval vocabulary: fixture and
+    // eval rows are spam, citation count caps at the payload ceiling,
+    // and the longest true range catches the giant-span shape.
+    let raw_paths: Vec<String> = answer
+        .citations
+        .iter()
+        .map(|citation| citation.source.display().to_string())
+        .collect();
     let empty = |title: &str| {
         answer
             .sections
@@ -1164,6 +1175,8 @@ fn answer_read_question(
     ReadAnswer {
         rendered,
         citations: files,
+        fixture_count: crate::eval::fixture_path_count(&raw_paths),
+        max_span: crate::eval::max_citation_span(&citations),
         claims_without_citation: answer
             .claims
             .iter()
@@ -1176,6 +1189,95 @@ fn answer_read_question(
             && empty("From the capabilities"),
         latency_ms,
     }
+}
+
+/// Spam tier: per-task spam contracts over the tune set — citation
+/// count, fixture absence, and span ceiling. Each share is
+/// higher-is-better; 1.0 means the M1.x outcomes hold everywhere.
+async fn measure_explain_spam() -> Vec<Measured> {
+    const SPAM_REPRO: &str = "cargo test -p guidance-core --lib scorecard_spam";
+    let (staged, db) = tokio::task::spawn_blocking(index_read_fixture)
+        .await
+        .expect("read fixture indexes");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../doc/guidance/eval/questions.jsonl");
+    let tasks = crate::eval::load_eval_tasks(&path).expect("eval corpus loads");
+    let engine = crate::read::engine::ReadEngine::new();
+    let tune: Vec<ReadAnswer> = tasks
+        .iter()
+        .filter(|task| !task.control && task.split == "tune")
+        .map(|task| answer_read_question(&engine, &staged, &db, &task.query))
+        .collect();
+    let _ = staged;
+    let citation_ok = mean(
+        &tune
+            .iter()
+            .map(|answer| {
+                f64::from(
+                    crate::eval::rendered_citation_count(&answer.rendered)
+                        <= crate::eval::SPAM_MAX_CITATIONS,
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    let fixture_free = mean(
+        &tune
+            .iter()
+            .map(|answer| f64::from(answer.fixture_count == 0))
+            .collect::<Vec<_>>(),
+    );
+    let span_ok = mean(
+        &tune
+            .iter()
+            .map(|answer| f64::from(answer.max_span <= crate::eval::SPAM_MAX_SPAN_LINES))
+            .collect::<Vec<_>>(),
+    );
+    vec![
+        Measured {
+            name: "explain_spam.citation_ok".to_string(),
+            value: citation_ok,
+            repro: SPAM_REPRO.to_string(),
+            higher_is_better: true,
+        },
+        Measured {
+            name: "explain_spam.fixture_free".to_string(),
+            value: fixture_free,
+            repro: SPAM_REPRO.to_string(),
+            higher_is_better: true,
+        },
+        Measured {
+            name: "explain_spam.span_ok".to_string(),
+            value: span_ok,
+            repro: SPAM_REPRO.to_string(),
+            higher_is_better: true,
+        },
+    ]
+}
+
+/// Answer-floor tier: every control must abstain — no answer section.
+/// Evidence sections may still carry labelled material; the floor
+/// owns the `Answer`, never the whole output.
+async fn measure_explain_answer_floor() -> Vec<Measured> {
+    const FLOOR_REPRO: &str = "cargo test -p guidance-core --lib scorecard_spam";
+    let (staged, db) = tokio::task::spawn_blocking(index_read_fixture)
+        .await
+        .expect("read fixture indexes");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../doc/guidance/eval/questions.jsonl");
+    let tasks = crate::eval::load_eval_tasks(&path).expect("eval corpus loads");
+    let engine = crate::read::engine::ReadEngine::new();
+    let mut abstained = Vec::new();
+    for task in tasks.iter().filter(|task| task.control) {
+        let answer = answer_read_question(&engine, &staged, &db, &task.query);
+        abstained.push(f64::from(!answer.rendered.contains("### Answer")));
+    }
+    let _ = staged;
+    vec![Measured {
+        name: "explain_answer_floor.control_abstain".to_string(),
+        value: mean(&abstained),
+        repro: FLOOR_REPRO.to_string(),
+        higher_is_better: true,
+    }]
 }
 
 /// Read tier: fact recall, file recall@5, unsupported claims,
@@ -1338,6 +1440,247 @@ async fn measure_read() -> Vec<Measured> {
     });
     let _ = staged;
     out
+}
+
+/// Cold-start tier: the six cold-start questions plus three controls
+/// from `doc/guidance/eval/coldstart.jsonl`, run over the staged read
+/// fixture through the shipping path. Golden-file MRR, task-level
+/// answer error (no golden fact rendered), and the extractive-answer
+/// share (answered with zero synthesis calls under `--no-llm`).
+/// Tune reports quality; heldout holds only controls, so it reports
+/// the control abstain rate instead of vacuous quality means.
+async fn measure_coldstart() -> Vec<Measured> {
+    const COLDSTART_REPRO: &str = "cargo test -p guidance-core --lib scorecard_read";
+    // Same staged fixture as the read tier: one index build serves
+    // both, and repo-relative paths keep golden files comparable.
+    let (staged, db) = tokio::task::spawn_blocking(index_read_fixture)
+        .await
+        .expect("read fixture indexes");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../doc/guidance/eval/coldstart.jsonl");
+    let tasks = crate::eval::load_eval_tasks(&path).expect("coldstart loads");
+    let engine = crate::read::engine::ReadEngine::new();
+    let mut rows: Vec<(&crate::eval::EvalTask, ReadAnswer)> = Vec::new();
+    for task in tasks.iter().filter(|task| !task.control) {
+        rows.push((
+            task,
+            answer_read_question(&engine, &staged, &db, &task.query),
+        ));
+    }
+    let mut out = Vec::new();
+    for split in ["tune", "heldout"] {
+        let split_rows: Vec<&(&crate::eval::EvalTask, ReadAnswer)> = rows
+            .iter()
+            .filter(|(task, _)| task.split == split)
+            .collect();
+        if split_rows.is_empty() {
+            continue;
+        }
+        // Golden-file MRR over citation order (basename-folded, like
+        // the benchmark scorer — prefixes never decide relevance).
+        let rrs: Vec<f64> = split_rows
+            .iter()
+            .map(|(task, answer)| {
+                let golden: std::collections::BTreeSet<String> = task
+                    .relevant
+                    .iter()
+                    .map(|path| {
+                        std::path::Path::new(path).file_name().map_or_else(
+                            || path.clone(),
+                            |base| base.to_string_lossy().into_owned(),
+                        )
+                    })
+                    .collect();
+                if golden.is_empty() {
+                    return 1.0;
+                }
+                answer
+                    .citations
+                    .iter()
+                    .position(|file| {
+                        let base = std::path::Path::new(file).file_name().map_or_else(
+                            || file.clone(),
+                            |base| base.to_string_lossy().into_owned(),
+                        );
+                        golden.contains(&base)
+                    })
+                    .map_or(0.0, |rank| 1.0 / (rank as f64 + 1.0))
+            })
+            .collect();
+        out.push(Measured {
+            name: format!("coldstart.mrr.{split}"),
+            value: mean(&rrs),
+            repro: COLDSTART_REPRO.to_string(),
+            higher_is_better: true,
+        });
+        // Answer error: the task errors when no golden fact renders.
+        let errors: Vec<f64> = split_rows
+            .iter()
+            .map(|(task, answer)| {
+                let lowered = answer.rendered.to_lowercase();
+                let hit = task
+                    .golden_facts
+                    .iter()
+                    .any(|fact| lowered.contains(&fact.to_lowercase()));
+                f64::from(!hit)
+            })
+            .collect();
+        out.push(Measured {
+            name: format!("coldstart.answer_error.{split}"),
+            value: mean(&errors),
+            repro: COLDSTART_REPRO.to_string(),
+            higher_is_better: false,
+        });
+        // Synthesis avoided: the answer renders with no model call on
+        // any path (extractive under `--no-llm`).
+        let avoided: Vec<f64> = split_rows
+            .iter()
+            .map(|(_, answer)| f64::from(answer.rendered.contains("### Answer")))
+            .collect();
+        out.push(Measured {
+            name: format!("coldstart.synthesis_avoided.{split}"),
+            value: mean(&avoided),
+            repro: COLDSTART_REPRO.to_string(),
+            higher_is_better: true,
+        });
+    }
+    // Heldout controls must stay unanswered: no Answer, no citations.
+    let controls: Vec<ReadAnswer> = tasks
+        .iter()
+        .filter(|task| task.control)
+        .map(|task| answer_read_question(&engine, &staged, &db, &task.query))
+        .collect();
+    let abstained: Vec<f64> = controls
+        .iter()
+        .map(|answer| {
+            f64::from(answer.citations.is_empty() && !answer.rendered.contains("### Answer"))
+        })
+        .collect();
+    out.push(Measured {
+        name: "coldstart.control_abstained.heldout".to_string(),
+        value: mean(&abstained),
+        repro: COLDSTART_REPRO.to_string(),
+        higher_is_better: true,
+    });
+    let _ = staged;
+    out
+}
+
+/// Answer-cache tier: identical evidence yields identical bytes
+/// without a second model call. One counting synthesizer, two
+/// identical generative runs: the second must serve the stored
+/// answer with zero new calls.
+fn measure_answer_cache() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib synthesis_evidence";
+    struct Counting {
+        calls: std::cell::Cell<u32>,
+    }
+    impl crate::read::engine::Synthesizer for Counting {
+        fn synthesize(&self, _prompt: &str) -> Result<Option<String>, String> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(Some("alpha_probe syncs here [C1].".to_string()))
+        }
+    }
+    let dir = scratch_dir("cache");
+    let text = "pub fn alpha_probe() -> u64 {\n    1\n}\n";
+    std::fs::write(dir.join("lib.rs"), text).expect("seed");
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let absolute = dir.join("lib.rs").to_string_lossy().into_owned();
+    db.upsert_fragments(
+        &search_vector::db::FileRecord {
+            id: "lib.rs".to_string(),
+            absolute_path: absolute.clone(),
+            relative_path: "lib.rs".to_string(),
+            root_path: dir.to_string_lossy().into_owned(),
+            size_bytes: text.len() as u64,
+            last_modified_time: 100,
+            kind: Some("code".to_string()),
+            format: "rust".to_string(),
+            content_hash: None,
+            index_status: Some("indexed".to_string()),
+            fail_count: 0,
+            last_error: None,
+        },
+        &[search_vector::db::FragmentRecord {
+            id: "lib.rs:alpha_probe".to_string(),
+            group: None,
+            file_id: "lib.rs".to_string(),
+            range_json: "{\"kind\":\"text\",\"start_line\":1,\"end_line\":3,\"start_offset\":0,\"end_offset\":10}"
+                .to_string(),
+            content_kind: "text".to_string(),
+            content_text: Some(text.to_string()),
+            cjk_text: String::new(),
+            symbol_type: Some("function".to_string()),
+            symbol_name: Some("alpha_probe".to_string()),
+            scope: None,
+            signature: None,
+            doc: None,
+            modifiers: String::new(),
+            heading: None,
+            heading_level: None,
+            embedding: None,
+        }],
+        &[],
+    )
+    .expect("seed fragments");
+    let engine = crate::read::engine::ReadEngine::new();
+    let context = crate::read::engine::ExplainContext {
+        workspace: &dir,
+        db: &db,
+        nlp: None,
+        coverage: None,
+    };
+    let synth = Counting {
+        calls: std::cell::Cell::new(0),
+    };
+    let request = crate::read::engine::ExplainRequest {
+        query: "How does alpha_probe sync".to_string(),
+        limit: 5,
+        budget_override: None,
+        no_llm: false,
+        include_fixtures: false,
+        answer_mode: crate::read::engine::AnswerMode::Synthesis,
+    };
+    let first = engine.explain(&request, &context, Some(&synth));
+    let second = engine.explain(&request, &context, Some(&synth));
+    let _ = std::fs::remove_dir_all(&dir);
+    let hit_rate = f64::from(synth.calls.get() == 1 && second.cache_hit && !first.cache_hit);
+    vec![Measured {
+        name: "read.cache_hit_rate".to_string(),
+        value: hit_rate,
+        repro: REPRO.to_string(),
+        higher_is_better: true,
+    }]
+}
+
+/// No-op hash tier: the M9 fast-path budget as a ratchet. A converged
+/// tree proves freshness from timestamps alone — zero content hashes
+/// on a no-op sweep, asserted through the counting probe.
+fn measure_sync_hashes() -> Vec<Measured> {
+    const REPRO: &str = "cargo test -p guidance-core --lib sync_probe";
+    let dir = scratch_dir("hash");
+    let src = dir.join("src");
+    std::fs::create_dir(&src).expect("mkdir");
+    for name in ["a.rs", "b.rs"] {
+        std::fs::write(src.join(name), "pub fn member() -> u64 {\n    1\n}\n").expect("write");
+    }
+    // Idle past the ambiguity window before the first stamp: a
+    // converged tree then proves freshness from timestamps alone.
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    let mut engine = SyncEngine::new(dir.join(".guidance"), src.clone());
+    for name in ["a.rs", "b.rs"] {
+        engine.gen(&src.join(name)).expect("gen");
+    }
+    let probe = crate::sync_engine::CountingProbe::default();
+    let status = engine.status_with(&probe).expect("status");
+    let _ = std::fs::remove_dir_all(&dir);
+    debug_assert_eq!(status.stale_files, 0);
+    vec![Measured {
+        name: "sync.noop_hash_calls".to_string(),
+        value: probe.calls() as f64,
+        repro: REPRO.to_string(),
+        higher_is_better: false,
+    }]
 }
 
 /// Speed tier: microsecond p50/p99 of one explain sweep over the fixture.
@@ -1795,6 +2138,11 @@ pub async fn run_fast_tier() -> Vec<Measured> {
     let queries = load_nav_queries();
     let mut measured = measure_navigation(&docs, &queries);
     measured.extend(measure_read().await);
+    measured.extend(measure_explain_spam().await);
+    measured.extend(measure_explain_answer_floor().await);
+    measured.extend(measure_coldstart().await);
+    measured.extend(measure_answer_cache());
+    measured.extend(measure_sync_hashes());
     measured.extend(measure_graph());
     measured.extend(measure_freshness());
     measured.extend(measure_speed(&docs));
@@ -1847,3 +2195,7 @@ mod scorecard_ratchet_tests;
 #[cfg(test)]
 #[path = "../tests/scorecard_read.rs"]
 mod scorecard_read_tests;
+
+#[cfg(test)]
+#[path = "../tests/scorecard_spam.rs"]
+mod scorecard_spam_tests;

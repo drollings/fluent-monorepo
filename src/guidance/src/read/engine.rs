@@ -111,6 +111,27 @@ pub struct ExplainRequest {
     pub no_llm: bool,
     /// Include fixture-scope rows (default excludes them).
     pub include_fixtures: bool,
+    /// Answer assembly policy: extractive, evidence-only, or legacy
+    /// prose. `Auto` is the shipped default.
+    pub answer_mode: AnswerMode,
+}
+
+/// Answer assembly policy: extractive for factual intents,
+/// evidence-only, or the legacy generative prose path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Answer assembly policy: extractive for factual intents,
+/// evidence-only, or the legacy generative prose path.
+pub enum AnswerMode {
+    /// Factual intents render top admitted rows verbatim;
+    /// explanatory intents with enough admitted docs synthesize;
+    /// otherwise evidence-only.
+    #[default]
+    Auto,
+    /// Never synthesize: evidence sections only.
+    Evidence,
+    /// Legacy prose path: synthesize over admitted evidence exactly
+    /// like before (escape hatch and regression comparator).
+    Synthesis,
 }
 
 /// Retrieval context for one explain call (borrowed, no clones).
@@ -133,6 +154,12 @@ pub trait Synthesizer {
     /// Synthesize an answer over the evidence prompt. `None` means
     /// the model declined (empty content); `Err` is transport noise.
     fn synthesize(&self, prompt: &str) -> Result<Option<String>, String>;
+
+    /// Model identity for manifest cache keys. Ad-hoc synthesizers
+    /// stay unkeyed; the shipping client reports its role model.
+    fn model_identity(&self) -> &str {
+        ""
+    }
 }
 
 /// Judge input for shadow labelling: backend plus fingerprint. `None`
@@ -170,6 +197,7 @@ fn finding_cache() -> &'static fluent_llm::decision::DecisionCache {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// The execution plan for one request: intent plus the producers and
 /// budgets each plane gets. Pure and testable without any retrieval.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReadPlan {
     /// Routed intent (after measured demotion — the safe route).
     pub intent: QueryIntent,
@@ -192,6 +220,8 @@ pub struct ReadPlan {
     /// True when graph edges resolved through scope-owned
     /// definitions. Declared in Coverage beside the scope.
     pub scope_narrowed: bool,
+    /// Render the whole project map even when the query names a scope.
+    pub full_map: bool,
 }
 
 /// Primary plane route for one intent.
@@ -211,6 +241,30 @@ pub fn route_for(intent: QueryIntent) -> String {
         QueryIntent::Provenance | QueryIntent::CapabilityQuery => "cards",
     }
     .to_string()
+}
+
+/// One per-candidate trace row: how a doc or code candidate fared
+/// through anchor, judge, admission, and budget. Deterministic data,
+/// collected on every run and rendered only under `--trace` — the
+/// trace mechanism never triggers a model call itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// One per-candidate trace row: how a doc or code candidate fared
+/// through anchor, judge, admission, and budget. Deterministic data,
+/// collected on every run and rendered only under `--trace` — the
+/// trace mechanism never triggers a model call itself.
+pub struct TraceRow {
+    /// Which plane produced the candidate (`docs`, `code`).
+    pub plane: String,
+    /// Candidate identity (doc key, finding id, or `(anchor-filtered)`).
+    pub candidate: String,
+    /// Anchor decision affecting the candidate.
+    pub anchor: String,
+    /// Judge label, `unjudged` when no verdict ran, `-` when no
+    /// verdict could run.
+    pub judge: String,
+    /// Admission/budget outcome (`rendered`, `extractive`,
+    /// `dropped:<label>`, `budget-cap`, `excluded:<n>`).
+    pub outcome: String,
 }
 
 /// One read answer: intent, budgeted sections, and coverage.
@@ -239,19 +293,50 @@ pub struct ReadAnswer {
     pub degraded: bool,
     /// Estimated tokens across sections.
     pub tokens_used: u64,
+    /// Query subject for the envelope: crate anchor, free-term
+    /// shadow, or none. Free terms never filter before calibration.
+    pub subject: Option<crate::read::vocabulary::SubjectAnchor>,
+    /// True when the `Answer` came from the manifest cache. A hit is
+    /// reproducibility, never correctness: the support verdict rides
+    /// along, and the envelope names the hit.
+    pub cache_hit: bool,
+    /// Per-candidate trace rows (anchor, judge, admission/budget).
+    /// Collected on every run; rendered only under `--trace`.
+    pub trace: Vec<TraceRow>,
 }
 
 /// The read engine. Planes are not yet implemented: `plan` resolves
 /// intent and budgets, `answer` assembles (currently empty) sections
 /// with the caller's coverage.
-pub struct ReadEngine;
+pub struct ReadEngine {
+    full_map: bool,
+    generation: String,
+}
 
 impl ReadEngine {
     /// Build an engine. Configuration rides the project config
     /// Construction is cheap; callers own the workspace and index.
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self {
+            full_map: false,
+            generation: String::new(),
+        }
+    }
+
+    /// Key answers to one index generation: a changed marker misses
+    /// (and drops) every cached row computed over the old one.
+    #[must_use]
+    pub fn with_generation(mut self, generation: impl Into<String>) -> Self {
+        self.generation = generation.into();
+        self
+    }
+
+    /// Render the whole project map even when the query names a scope.
+    #[must_use]
+    pub fn with_full_map(mut self) -> Self {
+        self.full_map = true;
+        self
     }
 
     /// Resolve the execution plan: rule-table intent, measured
@@ -284,6 +369,7 @@ impl ReadEngine {
             ),
             scope_crates: crate::component_map::scope_packages_for_query(&request.query),
             scope_narrowed: false,
+            full_map: self.full_map,
         }
     }
 
@@ -336,6 +422,9 @@ impl ReadEngine {
             gaps,
             degraded,
             tokens_used,
+            subject: None,
+            cache_hit: false,
+            trace: Vec::new(),
         }
     }
 
@@ -398,12 +487,39 @@ impl ReadEngine {
             coverage_section(ctx.coverage.as_ref(), &plan),
             &mut tokens_used,
         );
-        let cards = orientation_cards(&plan, &request.query, ctx.db);
+        // Query subject: exact crate names filter (M3), free terms
+        // stay shadow until measured. A free term matching more than
+        // half of the doc cards is not selective and reads as no
+        // anchor (fail-open); the trace count lands with `--trace`.
+        let subject = subject_anchor_for(&request.query, ctx.db, plan.intent);
+        let enforced = subject
+            .clone()
+            .filter(|anchor| anchor.source == crate::read::vocabulary::AnchorSource::Crate);
+        // Anchor decision in trace vocabulary: the exact-crate anchor
+        // enforces, a free-term anchor stays shadow, none passes
+        // through. One string for every doc row, so the trace needs
+        // no second anchor computation.
+        let anchor_decision = match (&subject, &enforced) {
+            (Some(_), Some(anchor)) => format!("crate:{} enforced", anchor.terms.join(",")),
+            (Some(_), None) => "free-term shadow".to_string(),
+            (None, _) => "none".to_string(),
+        };
+        let (mut cards, card_gap) =
+            orientation_cards(&plan, &request.query, ctx.db, enforced.as_ref());
+        if !plan.full_map && !plan.scope_crates.is_empty() {
+            cards = scoped_project_cards(cards, &plan.scope_crates);
+        }
+        cards.retain(|card| {
+            crate::query::rerank::scope_row_admitted(&card.source, request.include_fixtures)
+        });
         push(
             "From the project map",
             crate::read::render::render_card_section(
                 "From the project map",
-                &cards,
+                &cards
+                    .iter()
+                    .map(|card| (card.title.clone(), card.body.clone()))
+                    .collect::<Vec<_>>(),
                 plan.budgets.project,
             ),
             &mut tokens_used,
@@ -415,13 +531,21 @@ impl ReadEngine {
             ctx.nlp,
             None,
         );
-        let mut doc_hits = if matches!(
+        cap_hits.retain(|hit| {
+            crate::query::rerank::scope_row_admitted(&hit.source_path, request.include_fixtures)
+        });
+        let mut doc_hits;
+        let anchor_excluded;
+        if matches!(
             plan.intent,
             QueryIntent::SingleIdentifier | QueryIntent::FilePath | QueryIntent::Graph
         ) {
-            Vec::new()
+            doc_hits = Vec::new();
+            anchor_excluded = 0;
         } else {
-            crate::read::planes::docs::retrieve_doc_sections(
+            // Exact-crate anchors filter here; free terms stay shadow
+            // and read unscoped until their calibration.
+            let (hits, excluded) = crate::read::planes::docs::retrieve_doc_sections_anchored(
                 &request.query,
                 Some(ctx.workspace),
                 ctx.db,
@@ -429,10 +553,33 @@ impl ReadEngine {
                 // verifications keep p50/p95 within budget; recall is held
                 // by the budget-capped evidence sections.
                 plan.budgets.evidence.max(8) / 32,
-            )
-        };
+                enforced.as_ref(),
+            );
+            doc_hits = hits;
+            anchor_excluded = excluded;
+        }
+        doc_hits.retain(|hit| {
+            crate::query::rerank::scope_row_admitted(&hit.source_path, request.include_fixtures)
+        });
         // Rerank briefs and doc cards (rank-only): judge via the seam,
-        // demote by tier, never filter. Unavailable keeps prior order.
+        // demote by tier, never filter. Admission filters top-k only
+        // when its own point calibrates; uncalibrated reads exactly
+        // like today. Unavailable keeps prior order.
+        let mut admission_drops: Vec<String> = Vec::new();
+        // Trace mirrors: per-doc judge labels and admission drops in
+        // prior order, so `--trace` needs no second judge run.
+        let mut doc_labels: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        let mut dropped_docs: Vec<(String, String)> = Vec::new();
+        let admission_registry = judge.as_ref().map(|_| {
+            let registry_path = ctx.workspace.join(".guidance/state/calibration.json");
+            std::fs::read(&registry_path)
+                .ok()
+                .and_then(|bytes| {
+                    serde_json::from_slice::<fluent_llm::decision::CalibrationRegistry>(&bytes).ok()
+                })
+                .unwrap_or_else(fluent_llm::decision::CalibrationRegistry::empty)
+        });
         if let Some(judge_ctx) = judge.as_ref() {
             let doc_judge = crate::read::decide::DocJudge::new(
                 judge_ctx.backend,
@@ -467,6 +614,9 @@ impl ReadEngine {
                 .collect();
             if !doc_inputs.is_empty() {
                 let doc_verdicts = doc_judge.judge(&request.query, &doc_inputs);
+                for verdict in &doc_verdicts {
+                    doc_labels.insert(verdict.id.clone(), verdict.label.as_str().to_string());
+                }
                 let prior: Vec<String> = doc_hits.iter().map(|hit| hit.key.clone()).collect();
                 let model = crate::query::rerank::demote_by_verdict(&prior, &doc_verdicts);
                 if model != prior {
@@ -482,7 +632,65 @@ impl ReadEngine {
                     );
                     let _ = crate::query::shadow::rerank_shadow(&prior, &model, &decisions);
                 }
+                // Advisory admission: top-2 judged docs only when the
+                // admission point calibrates. Every drop names its
+                // label; unavailable keeps the prior order.
+                if admission_authorized(judge_ctx, admission_registry.as_ref())
+                    && !doc_verdicts.is_empty()
+                    && crate::query::rerank::rerank_status(&doc_verdicts)
+                        == crate::query::rerank::RerankStatus::Ranked
+                {
+                    let admitted: Vec<String> =
+                        crate::query::rerank::admit_top(&prior, &doc_verdicts, 2);
+                    if admitted.len() != doc_hits.len() {
+                        let labels: std::collections::HashMap<&str, &str> = doc_verdicts
+                            .iter()
+                            .map(|verdict| (verdict.id.as_str(), verdict.label.as_str()))
+                            .collect();
+                        for key in &prior {
+                            if !admitted.contains(key) {
+                                let label = labels.get(key.as_str()).copied().unwrap_or("unjudged");
+                                admission_drops.push(format!("admission dropped {key} ({label})"));
+                                dropped_docs.push((key.clone(), label.to_string()));
+                            }
+                        }
+                        let mut by_key = std::collections::HashMap::new();
+                        for hit in doc_hits {
+                            by_key.insert(hit.key.clone(), hit);
+                        }
+                        doc_hits = admitted
+                            .iter()
+                            .filter_map(|key| by_key.remove(key))
+                            .collect();
+                    }
+                }
             }
+        }
+        // Extractive docs for factual intents: consumed rows leave
+        // the later sections, so no citation text appears twice. The
+        // citation set below still covers the admitted rows. Rows that
+        // name no asked subject are never Answer material: they stay
+        // in their labelled sections and the contract gap reports the
+        // covered index instead.
+        // Extractive rows are model-free, so every answer mode renders
+        // them; `Synthesizer` remains the only model seam.
+        let (mut extractive_rows, used_doc_keys, docs_grounded) = if is_factual_intent(plan.intent)
+        {
+            let (rows, used) = extractive_doc_rows(&doc_hits);
+            let grounded = rows.iter().any(|(_, body)| {
+                crate::read::vocabulary::evidence_names_subject(&request.query, body)
+            });
+            if grounded || rows.is_empty() {
+                (rows, used, grounded)
+            } else {
+                (Vec::new(), std::collections::HashSet::new(), false)
+            }
+        } else {
+            (Vec::new(), std::collections::HashSet::new(), false)
+        };
+        let cited_doc_hits = doc_hits.clone();
+        if !used_doc_keys.is_empty() {
+            doc_hits.retain(|hit| !used_doc_keys.contains(&hit.key));
         }
         let doc_entries: Vec<(String, String)> = doc_hits
             .iter()
@@ -501,6 +709,10 @@ impl ReadEngine {
             .collect();
         let cap_entries = crate::read::planes::docs::capability_entries(&cap_hits);
         let mut gaps: Vec<String> = Vec::new();
+        if let Some(gap) = card_gap {
+            gaps.push(gap);
+        }
+        gaps.extend(admission_drops);
         if let Some(predicted) = plan.demoted_from {
             if let Some(gap) = crate::read::calibration::intent_coverage_gap(
                 predicted,
@@ -608,10 +820,7 @@ impl ReadEngine {
         evidence.dedupe();
         let mut code_findings = evidence.into_findings();
         if !request.include_fixtures {
-            code_findings.retain(|finding| {
-                crate::source_scope::classify(finding.source.display(), None)
-                    != crate::source_scope::SourceScope::Fixture
-            });
+            code_findings = crate::query::rerank::exclude_fixtures(code_findings, false);
         }
         // Scope hypothesis (shadow-only): funnel terms first, decision
         // role judges the pinned crate choice via the ladder; the
@@ -717,18 +926,34 @@ impl ReadEngine {
         // Orientation (they are context elsewhere). Otherwise suppress with
         // an honest gap. Lexical scores alone never satisfy it.
         let floor_met = !code_findings.is_empty()
-            || doc_hits.iter().any(|hit| hit.verified)
+            || cited_doc_hits.iter().any(|hit| hit.verified)
             || cap_hits.iter().any(|hit| hit.verified)
             || (plan.intent == QueryIntent::Orientation && !cards.is_empty());
         if !floor_met {
-            gaps.push("none found in covered index".to_string());
+            push_covered_index_contract(&mut gaps, &plan, request.include_fixtures);
         }
+        // Stored identity grounds the answer even when live bytes moved:
+        // a renamed symbol resolves to its new text, marked stale.
+        let stored_grounded: std::collections::HashSet<String> = code_findings
+            .iter()
+            .filter(|finding| {
+                crate::read::vocabulary::evidence_names_subject(&request.query, &finding.text)
+            })
+            .map(|finding| finding.id.clone())
+            .collect();
         // Live bytes win over stored ranges: edits shift lines without
         // re-syncing, so excerpts re-resolve before capping — capping
         // after resolve keeps the budget honest when live text grows.
-        let (resolved_all, live_gaps) =
+        // Renamed ranges render live bytes, marked stale at render time.
+        let (resolved_all, resolved_stale, live_gaps) =
             crate::read::planes::code::resolve_live_findings(ctx.workspace, code_findings);
         gaps.extend(live_gaps);
+        let stale_ids: std::collections::HashSet<String> = resolved_all
+            .iter()
+            .zip(resolved_stale.iter())
+            .filter(|(_, stale)| **stale)
+            .map(|(finding, _)| finding.id.clone())
+            .collect();
         let clipped_all: Vec<crate::read::engine::Finding> = resolved_all
             .into_iter()
             .map(|mut finding| {
@@ -742,6 +967,17 @@ impl ReadEngine {
         // Whole findings only: truncation cuts between findings, never
         // mid-fence, so citations always name a rendered row.
         let mut kept_code = cap_findings_by_budget(&clipped_all, plan.budgets.code);
+        // Budget-cut trace: token-capped ids in clipped order, so
+        // `--trace` names the cost cap's victims without re-running it.
+        let kept_ids: std::collections::HashSet<&str> = kept_code
+            .iter()
+            .map(|finding| finding.id.as_str())
+            .collect();
+        let budget_cut: Vec<String> = clipped_all
+            .iter()
+            .filter(|finding| !kept_ids.contains(finding.id.as_str()))
+            .map(|finding| finding.id.clone())
+            .collect();
         // Deterministic spam handling first: manifest rows collapse to
         // one with a count, fixtures re-assert exclusion. Rank-only.
         let (collapsed_code, manifest_dropped) =
@@ -761,17 +997,16 @@ impl ReadEngine {
         // its own point. Caches stay cold until authorized.
         let mut judge_labels: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
+        // Trace mirrors: code admission/insufficient drops in encounter
+        // order, so `--trace` names every filtered finding with its label.
+        let mut dropped_code: Vec<(String, String)> = Vec::new();
         let mut finding_authorized = false;
         let mut support_authorized = false;
         if let Some(judge_ctx) = judge.as_ref() {
             // Authorization through the loaded registry, never a model
             // verdict: only `Calibrated` filters.
-            let registry_path = ctx.workspace.join(".guidance/state/calibration.json");
-            let registry = std::fs::read(&registry_path)
-                .ok()
-                .and_then(|bytes| {
-                    serde_json::from_slice::<fluent_llm::decision::CalibrationRegistry>(&bytes).ok()
-                })
+            let registry = admission_registry
+                .clone()
                 .unwrap_or_else(fluent_llm::decision::CalibrationRegistry::empty);
             if let Some(fingerprint) = judge_ctx.fingerprint.as_deref() {
                 use crate::query::decision_points::authorize_point_with;
@@ -917,6 +1152,36 @@ impl ReadEngine {
             if judge_ctx.fingerprint.is_none() {
                 gaps.push("decision fingerprint absent: shadow-only".to_string());
             }
+            // Advisory admission: top-5 judged findings only when the
+            // admission point calibrates. Every drop names its label;
+            // unavailable keeps the prior order, exactly like today.
+            if admission_authorized(judge_ctx, Some(&registry))
+                && !verdicts.is_empty()
+                && crate::query::rerank::rerank_status(&verdicts)
+                    == crate::query::rerank::RerankStatus::Ranked
+            {
+                let prior_ids: Vec<String> =
+                    kept_code.iter().map(|finding| finding.id.clone()).collect();
+                let admitted: Vec<String> =
+                    crate::query::rerank::admit_top(&prior_ids, &verdicts, 5);
+                if admitted.len() != kept_code.len() {
+                    for finding in &kept_code {
+                        if !admitted.contains(&finding.id) {
+                            let label = judge_labels
+                                .get(&finding.id)
+                                .cloned()
+                                .unwrap_or_else(|| "unjudged".to_string());
+                            gaps.push(format!("admission dropped {} ({label})", finding.id));
+                            dropped_code.push((finding.id.clone(), label));
+                        }
+                    }
+                    let mut by_id = std::collections::HashMap::new();
+                    for finding in kept_code {
+                        by_id.insert(finding.id.clone(), finding);
+                    }
+                    kept_code = admitted.iter().filter_map(|id| by_id.remove(id)).collect();
+                }
+            }
             if finding_authorized {
                 use crate::read::decide::FindingLabel;
                 let mut filtered = Vec::new();
@@ -933,18 +1198,63 @@ impl ReadEngine {
                         FindingLabel::Relevant => filtered.push(finding),
                         FindingLabel::Insufficient => {
                             gaps.push(format!("insufficient: {}", finding.id));
+                            dropped_code.push((finding.id.clone(), "insufficient".to_string()));
                         }
                         FindingLabel::Irrelevant => {
                             // Deterministic exact evidence is never dropped:
                             // symbol/graph structure is authoritative.
                             if finding.producer == FindingProducer::Ast {
                                 filtered.push(finding);
+                            } else {
+                                dropped_code.push((finding.id.clone(), "irrelevant".to_string()));
                             }
                         }
                     }
                 }
                 kept_code = filtered;
             }
+        }
+        // Extractive code rows for factual intents: consumed rows
+        // leave Top matches and the rendered citation set. The
+        // envelope citation set below still covers the admitted rows.
+        let (code_rows, used_code_ids) = match request.answer_mode {
+            // Extractive rows are model-free under every mode.
+            _ if is_factual_intent(plan.intent) && plan.intent != QueryIntent::Ownership => {
+                let (rows, used) = extractive_code_rows(&kept_code, &stale_ids);
+                let grounded = rows.iter().any(|(_, body)| {
+                    crate::read::vocabulary::evidence_names_subject(&request.query, body)
+                }) || used.iter().any(|id| stored_grounded.contains(id));
+                if grounded || rows.is_empty() {
+                    (rows, used)
+                } else {
+                    (Vec::new(), std::collections::HashSet::new())
+                }
+            }
+            _ => (Vec::new(), std::collections::HashSet::new()),
+        };
+        let doc_row_count = extractive_rows.len();
+        extractive_rows.extend(code_rows);
+        let cited_code_findings = kept_code.clone();
+        let code_evidence_grounded = cited_code_findings.iter().any(|finding| {
+            crate::read::vocabulary::evidence_names_subject(&request.query, &finding.text)
+                || stored_grounded.contains(&finding.id)
+        });
+        // Ownership answers are the owner list: one row per component
+        // package in evidence rank order, with the verified doc rows
+        // kept as context. Multi-owner is the truth, never ambiguity.
+        if plan.intent == QueryIntent::Ownership && (docs_grounded || code_evidence_grounded) {
+            let anchored_owner = enforced
+                .as_ref()
+                .and_then(|anchor| anchor.terms.first().map(String::as_str));
+            let owners = ownership_rows(&cited_code_findings, anchored_owner, &stale_ids);
+            if !owners.is_empty() {
+                let docs: Vec<(String, String)> = extractive_rows.drain(..doc_row_count).collect();
+                extractive_rows = owners;
+                extractive_rows.extend(docs);
+            }
+        }
+        if !used_code_ids.is_empty() {
+            kept_code.retain(|finding| !used_code_ids.contains(&finding.id));
         }
         let (edge_findings, code_rest): (Vec<Finding>, Vec<Finding>) = kept_code
             .into_iter()
@@ -974,23 +1284,27 @@ impl ReadEngine {
                     .to_string(),
             );
         }
-        // The shown set is the evidence set: citations and synthesis
-        // draw from the resolved, clipped, capped findings, never from
-        // trimmed rows.
+        // The shown set is the admitted set: citations cover every
+        // admitted row, including the extractive ones rendered in
+        // `Answer`. Rendered sections below draw from the filtered
+        // rows, so no excerpt appears twice.
         let mut code_findings = code_rest;
         code_findings.extend(edge_findings);
         // Freshness is labelled on the row, never hidden: findings
         // whose source moved since indexing cite with a ` (stale)`
-        // marker. Strict callers refuse on marked citations; everyone
-        // else reads the label and the degraded coverage beside it.
-        let stale = stale_sources(ctx, &code_findings);
-        let mut citations: Vec<crate::source_ref::Citation> = code_findings
+        // marker, as do renamed ranges served from live bytes. Strict
+        // callers refuse on marked citations; everyone else reads the
+        // label and the degraded coverage beside it.
+        let stale = stale_sources(ctx, &cited_code_findings);
+        let mut citations: Vec<crate::source_ref::Citation> = cited_code_findings
             .iter()
             .map(|finding| {
+                let row_stale =
+                    stale.contains(finding.source.display()) || stale_ids.contains(&finding.id);
                 finding
                     .source
                     .citation(finding.start_line, finding.end_line)
-                    .with_status(stale.contains(finding.source.display()), false)
+                    .with_status(row_stale, false)
                     .with_digest(common_core::hash::blake3_hex(finding.text.as_bytes()))
             })
             .collect();
@@ -998,7 +1312,7 @@ impl ReadEngine {
         // capabilities plus the project sources below. The constrain
         // prefilter accepts these paths with no line-range check.
         let mut card_paths: Vec<String> = Vec::new();
-        for hit in &doc_hits {
+        for hit in &cited_doc_hits {
             if hit.verified {
                 let excerpt = hit.body.clone().unwrap_or_default();
                 citations.push(
@@ -1055,6 +1369,9 @@ impl ReadEngine {
                     if source.is_empty() {
                         continue;
                     }
+                    if !crate::query::rerank::scope_row_admitted(source, request.include_fixtures) {
+                        continue;
+                    }
                     if !ctx.workspace.join(source).is_file() {
                         continue;
                     }
@@ -1079,7 +1396,7 @@ impl ReadEngine {
         }
         push(
             "Citations",
-            crate::read::render::render_evidence_section(
+            crate::read::render::render_capped_evidence_section(
                 "Citations",
                 &citations
                     .iter()
@@ -1089,24 +1406,96 @@ impl ReadEngine {
             ),
             &mut tokens_used,
         );
-        // Synthesis over evidence, support-gated: unsupported sentences
-        // drop, and an empty gate means evidence-only (no answer
-        // section). Until claim support calibrates, kept sentences are
-        // `[unverified]` and the evidence sections stay authoritative.
-        // Synthesis runs on synthesis-grade evidence (code, verified
-        // docs, or the map) — never refused for empty code alone, and
-        // never triggered by `considered` capability briefs alone.
+        // One cache identity for both assembly paths: evidence bytes,
+        // model, prompt version, and the assembly-mode discriminator.
+        // The index generation invalidates rows computed over an older
+        // marker before they are served.
+        let assembly_mode = match request.answer_mode {
+            AnswerMode::Auto => "auto",
+            AnswerMode::Evidence => "evidence",
+            AnswerMode::Synthesis => "synthesis",
+        };
+        let model_identity = synthesize.map_or("", Synthesizer::model_identity);
+        let manifest_hash = crate::grounding::evidence_manifest_hash(
+            &cited_code_findings,
+            &cited_doc_hits,
+            &cards,
+            model_identity,
+            crate::read::admission::ANSWER_PROMPT_VERSION,
+            assembly_mode,
+        );
+        let cached = ctx
+            .db
+            .answer_cache_get(&manifest_hash, &self.generation)
+            .ok()
+            .flatten();
+        // Answer assembly: extractive rows first for factual intents
+        // in Auto mode (no model call), then the earned-generative
+        // path, otherwise evidence-only. `Synthesis` keeps the legacy
+        // prose rule exactly; `Evidence` never synthesizes.
+        let map_grounds = plan.intent == QueryIntent::Orientation && !cards.is_empty();
         let mut claims = Vec::new();
         let mut answer_body: Option<String> = None;
-        let synthesis_evidence = !code_findings.is_empty()
+        let mut cache_hit = false;
+        if !extractive_rows.is_empty() {
+            answer_body = Some(render_extractive(&extractive_rows));
+        }
+        if let Some(hit) = cached {
+            claims = cached_claims(&hit.claims_json);
+            answer_body = Some(hit.answer);
+            cache_hit = true;
+        }
+        let legacy_evidence = !code_findings.is_empty()
             || doc_hits.iter().any(|hit| hit.verified)
             || (plan.intent == QueryIntent::Orientation && !cards.is_empty());
-        if !request.no_llm && synthesis_evidence {
-            match synthesize {
-                None => gaps.push("synthesis unavailable: evidence only".to_string()),
-                Some(synth) => {
-                    let prompt =
+        let want_synthesis = match request.answer_mode {
+            AnswerMode::Evidence => false,
+            AnswerMode::Synthesis => !request.no_llm && legacy_evidence,
+            AnswerMode::Auto => {
+                !request.no_llm
+                    && crate::read::admission::synthesis_allowed(
+                        plan.intent,
+                        doc_hits.len(),
+                        code_findings.len(),
+                        &[],
+                    ) == crate::read::admission::SynthesisDecision::Synthesize
+            }
+        };
+        if !cache_hit && want_synthesis {
+            // Abstain through the sufficiency route: admitted evidence
+            // that cannot answer skips generation (deterministic
+            // fail-closed; no authorized sufficiency verdict exists
+            // yet, so the rule is evidence presence).
+            let grounded = legacy_evidence;
+            let admitted = code_findings.len() + doc_hits.len();
+            let (sufficiency, _) = crate::query::decision_points::route_sufficiency(
+                admitted,
+                grounded,
+                None,
+                &fluent_llm::decision::ThresholdSet {
+                    act: 0.9,
+                    review: 0.7,
+                },
+            );
+            let sufficient =
+                sufficiency != crate::query::decision_points::Sufficiency::Unanswerable;
+            if !sufficient {
+                gaps.push("insufficient evidence to answer: evidence only".to_string());
+            }
+            match (sufficient, synthesize) {
+                (false, _) => {}
+                (_, None) => gaps.push("synthesis unavailable: evidence only".to_string()),
+                (_, Some(synth)) => {
+                    let (prompt, evidence) =
                         synthesis_prompt(&request.query, &cards, &doc_hits, &code_findings);
+                    let manifest: Vec<(String, String)> = evidence
+                        .iter()
+                        .map(|item| (item.token.clone(), item.canonical.clone()))
+                        .collect();
+                    let evidence_texts: Vec<(String, String)> = evidence
+                        .iter()
+                        .map(|item| (item.canonical.clone(), item.text.clone()))
+                        .collect();
                     match synth.synthesize(&prompt) {
                         Ok(Some(text)) => {
                             let constrained =
@@ -1126,24 +1515,81 @@ impl ReadEngine {
                                         .collect::<Vec<_>>(),
                                     &card_paths,
                                 );
-                            claims = crate::read::claims::bind_claims(
-                                &constrained,
-                                &citations
+                            claims = crate::read::claims::bind_claims(&constrained, &manifest);
+                            // Deterministic entailment prefilter: a cited
+                            // range without a shared identifier is
+                            // insufficient with no model call.
+                            crate::read::claims::prefilter_support(&mut claims, &evidence_texts);
+                            if let Some(judge_ctx) = judge.as_ref() {
+                                let support_judge = crate::read::decide::SupportJudge::new(
+                                    judge_ctx.backend,
+                                    judge_ctx.model.clone(),
+                                    judge_ctx.timeout_ms,
+                                );
+                                let judge_inputs: Vec<(usize, String)> = claims
                                     .iter()
-                                    .map(crate::source_ref::Citation::text)
-                                    .collect::<Vec<_>>(),
-                            );
-                            if support_authorized {
-                                for claim in &mut claims {
-                                    if claim.citation.is_some()
-                                        && claim.support == crate::read::claims::Support::Unverified
-                                    {
-                                        claim.support = crate::read::claims::Support::Verified;
+                                    .enumerate()
+                                    .filter(|(_, claim)| {
+                                        claim.citation.is_some()
+                                            && claim.support
+                                                == crate::read::claims::Support::Unverified
+                                    })
+                                    .map(|(index, claim)| {
+                                        let excerpt = evidence_texts
+                                            .iter()
+                                            .find(|(canonical, _)| {
+                                                Some(canonical.as_str())
+                                                    == claim.citation.as_deref()
+                                            })
+                                            .map_or("", |(_, text)| text.as_str());
+                                        (index, format!("{} | {}", claim.text, excerpt))
+                                    })
+                                    .collect();
+                                let verdict_inputs: Vec<(String, String)> = judge_inputs
+                                    .iter()
+                                    .map(|(_, text)| (String::new(), text.clone()))
+                                    .collect();
+                                let verdicts = support_judge.judge(&request.query, &verdict_inputs);
+                                for ((index, _), verdict) in
+                                    judge_inputs.iter().zip(verdicts.iter())
+                                {
+                                    let _ = crate::query::shadow::support_shadow(
+                                        &format!("claim-{index}"),
+                                        verdict.label.as_str(),
+                                        verdict.confidence,
+                                        index + 1,
+                                    );
+                                    if !support_authorized {
+                                        continue;
+                                    }
+                                    if let Some(claim) = claims.get_mut(*index) {
+                                        use crate::read::decide::SupportLabel;
+                                        match verdict.label {
+                                            SupportLabel::Supported => {
+                                                claim.support =
+                                                    crate::read::claims::Support::Verified;
+                                            }
+                                            SupportLabel::Contradicted => {
+                                                claim.support =
+                                                    crate::read::claims::Support::Contradicted;
+                                            }
+                                            SupportLabel::Insufficient => {
+                                                claim.support =
+                                                    crate::read::claims::Support::Insufficient;
+                                            }
+                                        }
                                     }
                                 }
                             }
                             match crate::read::claims::gate_answer(&claims) {
-                                Some(gated) => answer_body = Some(gated),
+                                Some(gated) => {
+                                    let bound = claims.iter().any(|claim| claim.citation.is_some());
+                                    if claims_name_subject(&request.query, &claims, &evidence_texts)
+                                        || (map_grounds && bound)
+                                    {
+                                        answer_body = Some(gated.clone());
+                                    }
+                                }
                                 None => {
                                     gaps.push("no supported sentence: evidence only".to_string());
                                 }
@@ -1160,13 +1606,65 @@ impl ReadEngine {
                 }
             }
         }
+        // Floor-passing answers persist on every assembly path; the
+        // negative-result contract is never an answer and never stores.
+        if !cache_hit {
+            if let Some(body) = answer_body.as_ref() {
+                let _ = ctx
+                    .db
+                    .answer_cache_put(&search_vector::db::AnswerCacheRecord {
+                        manifest_hash: manifest_hash.clone(),
+                        answer: body.clone(),
+                        claims_json: cached_claims_json(&claims),
+                        citations_json: serde_json::to_string(
+                            &citations
+                                .iter()
+                                .map(crate::source_ref::Citation::text)
+                                .collect::<Vec<_>>(),
+                        )
+                        .unwrap_or_default(),
+                        support: cached_support_status(&claims),
+                        model: model_identity.to_string(),
+                        prompt_version: crate::read::admission::ANSWER_PROMPT_VERSION as i64,
+                        generation: self.generation.clone(),
+                        created_at: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map_or(0, |elapsed| elapsed.as_millis() as i64),
+                    });
+            }
+        }
+        // Negative results name their covered scope once: either no
+        // evidence at all, or evidence that never names the asked
+        // subject. Grounded evidence without an Answer (evidence mode)
+        // is not a negative result.
+        let answer_material_grounded = map_grounds
+            || cited_doc_hits.iter().filter(|hit| hit.verified).any(|hit| {
+                hit.body.as_deref().is_some_and(|body| {
+                    crate::read::vocabulary::evidence_names_subject(&request.query, body)
+                })
+            })
+            || cited_code_findings.iter().any(|finding| {
+                crate::read::vocabulary::evidence_names_subject(&request.query, &finding.text)
+                    || stored_grounded.contains(&finding.id)
+            })
+            || claims_name_subject(&request.query, &claims, &[]);
+        let evidence_present = !cited_code_findings.is_empty()
+            || !cited_doc_hits.is_empty()
+            || !cards.is_empty()
+            || !cap_hits.is_empty();
+        if answer_body.is_none() && evidence_present && !answer_material_grounded {
+            push_covered_index_contract(&mut gaps, &plan, request.include_fixtures);
+        }
         if cards.is_empty() && plan.intent == QueryIntent::Orientation {
             gaps.push("no project cards: orientation degrades to docs".to_string());
         }
         let degraded = !gaps.is_empty();
         let mut ordered = Vec::new();
         if let Some(body) = answer_body {
-            let body = format!("### Answer\n{body}");
+            let body = format!(
+                "### Answer\n{}",
+                crate::read::render::sanitize_for_markdown(&body)
+            );
             tokens_used += tokens_for(&body);
             ordered.push(ReadSection {
                 title: "Answer".to_string(),
@@ -1189,6 +1687,84 @@ impl ReadEngine {
                 body,
             });
         }
+        // Per-candidate trace: deterministic rows over the admitted,
+        // dropped, and budget-cut candidates. Judge columns read the
+        // verdict maps collected above; unjudged rows never filtered.
+        let code_anchor = scope_hypothesis
+            .as_deref()
+            .map_or("none".to_string(), |label| {
+                format!("scope:{label} rerank-only")
+            });
+        let mut trace = Vec::new();
+        if anchor_excluded > 0 {
+            trace.push(TraceRow {
+                plane: "docs".to_string(),
+                candidate: "(anchor-filtered)".to_string(),
+                anchor: anchor_decision.clone(),
+                judge: "-".to_string(),
+                outcome: format!("excluded:{anchor_excluded}"),
+            });
+        }
+        for hit in &cited_doc_hits {
+            let outcome = if used_doc_keys.contains(&hit.key) {
+                "extractive".to_string()
+            } else if hit.verified {
+                "rendered".to_string()
+            } else {
+                "rendered:unverified".to_string()
+            };
+            trace.push(TraceRow {
+                plane: "docs".to_string(),
+                candidate: hit.key.clone(),
+                anchor: anchor_decision.clone(),
+                judge: doc_labels
+                    .get(&hit.key)
+                    .cloned()
+                    .unwrap_or_else(|| "unjudged".to_string()),
+                outcome,
+            });
+        }
+        for (key, label) in &dropped_docs {
+            trace.push(TraceRow {
+                plane: "docs".to_string(),
+                candidate: key.clone(),
+                anchor: anchor_decision.clone(),
+                judge: label.clone(),
+                outcome: format!("dropped:{label}"),
+            });
+        }
+        for id in &budget_cut {
+            trace.push(TraceRow {
+                plane: "code".to_string(),
+                candidate: id.clone(),
+                anchor: code_anchor.clone(),
+                judge: "unjudged".to_string(),
+                outcome: "budget-cap".to_string(),
+            });
+        }
+        let dropped_by_id: std::collections::HashMap<&str, &str> = dropped_code
+            .iter()
+            .map(|(id, label)| (id.as_str(), label.as_str()))
+            .collect();
+        for finding in &cited_code_findings {
+            let outcome = if used_code_ids.contains(&finding.id) {
+                "extractive".to_string()
+            } else if let Some(label) = dropped_by_id.get(finding.id.as_str()) {
+                format!("dropped:{label}")
+            } else {
+                "rendered".to_string()
+            };
+            trace.push(TraceRow {
+                plane: "code".to_string(),
+                candidate: finding.id.clone(),
+                anchor: code_anchor.clone(),
+                judge: judge_labels
+                    .get(&finding.id)
+                    .cloned()
+                    .unwrap_or_else(|| "unjudged".to_string()),
+                outcome,
+            });
+        }
         ReadAnswer {
             query: request.query.clone(),
             intent: plan.intent,
@@ -1200,6 +1776,9 @@ impl ReadEngine {
             gaps: gaps.clone(),
             degraded,
             tokens_used,
+            subject,
+            cache_hit,
+            trace,
         }
     }
 }
@@ -1298,34 +1877,368 @@ fn coverage_section(
 }
 
 /// Project-map cards for the plan intent: orientation serves the
-/// workspace-first card order; ownership scopes by the first
-/// identifier-shaped term, falling back to the full order.
+/// workspace-first card order; ownership scopes by the exact
+/// crate in the subject anchor, falling back to the symbol-term
+/// scope only when no anchor resolves. A `Gaps` line names the
+/// anchor when it removes every card.
+/// Project-map trim for scoped queries: the workspace frame plus
+/// members in scope; domain cards follow their code paths. The full
+/// map survives only when nothing matches, so a bad scope never blanks
+/// the frame.
+fn scoped_project_cards(
+    cards: Vec<crate::read::planes::orientation::CardFinding>,
+    scope: &[String],
+) -> Vec<crate::read::planes::orientation::CardFinding> {
+    let scoped: Vec<crate::read::planes::orientation::CardFinding> = cards
+        .iter()
+        .filter(|card| match card.kind.as_str() {
+            "workspace" => true,
+            "crate" => scope.iter().any(|package| package == &card.title),
+            _ => card.code_paths.iter().any(|path| {
+                scope.iter().any(|package| {
+                    crate::component_map::component_gate_for_path(path).package == *package
+                })
+            }),
+        })
+        .cloned()
+        .collect();
+    if scoped.is_empty() {
+        cards
+    } else {
+        scoped
+    }
+}
+
 fn orientation_cards(
     plan: &ReadPlan,
     query: &str,
     db: &search_vector::db::GuidanceDb,
-) -> Vec<(String, String)> {
+    anchor: Option<&crate::read::vocabulary::SubjectAnchor>,
+) -> (
+    Vec<crate::read::planes::orientation::CardFinding>,
+    Option<String>,
+) {
     let Ok(plane) = crate::read::planes::orientation::OrientationPlane::load(db) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
-    let cards = if plan.intent == QueryIntent::Ownership {
+    if plan.intent == QueryIntent::Ownership {
+        if let Some(crate::read::vocabulary::SubjectAnchor {
+            terms,
+            source: crate::read::vocabulary::AnchorSource::Crate,
+        }) = anchor
+        {
+            if let Some(package) = terms.first() {
+                let scoped = plane.ownership_cards(package);
+                if scoped.is_empty() {
+                    return (
+                        plane.orientation_cards(),
+                        Some(format!(
+                            "subject anchor {package} removed every card; ownership falls back"
+                        )),
+                    );
+                }
+                return (scoped, None);
+            }
+        }
         let package = crate::read::vocabulary::symbol_terms(query)
             .into_iter()
             .next()
             .unwrap_or_default();
         let scoped = plane.ownership_cards(&package);
         if scoped.is_empty() {
-            plane.orientation_cards()
+            (plane.orientation_cards(), None)
         } else {
-            scoped
+            (scoped, None)
         }
     } else {
-        plane.orientation_cards()
+        (plane.orientation_cards(), None)
+    }
+}
+
+/// Factual intents answer extractively: the top admitted rows
+/// render verbatim with citations, never through the model.
+fn is_factual_intent(intent: crate::query::strategy::QueryIntent) -> bool {
+    use crate::query::strategy::QueryIntent;
+    matches!(
+        intent,
+        QueryIntent::Ownership
+            | QueryIntent::SingleIdentifier
+            | QueryIntent::FilePath
+            | QueryIntent::Graph
+    )
+}
+
+/// Covered-index contract for negative results: names the scope the
+/// index actually covers, including the fixture/eval exclusions.
+fn covered_index_contract(plan: &ReadPlan, include_fixtures: bool) -> String {
+    let scope = if plan.scope_crates.is_empty() {
+        "whole workspace".to_string()
+    } else {
+        format!("crates: {}", plan.scope_crates.join(", "))
     };
-    cards
+    let exclusions = if include_fixtures {
+        "eval corpora excluded"
+    } else {
+        "fixtures and eval corpora excluded"
+    };
+    format!("none found in covered index (scope: {scope}; {exclusions})")
+}
+
+/// Push the contract once: a negative result states its covered scope
+/// exactly once, however many paths withheld answer material.
+fn push_covered_index_contract(gaps: &mut Vec<String>, plan: &ReadPlan, include_fixtures: bool) {
+    if gaps
+        .iter()
+        .any(|gap| gap.starts_with("none found in covered index"))
+    {
+        return;
+    }
+    gaps.push(covered_index_contract(plan, include_fixtures));
+}
+
+/// Whether any gated claim names the asked subject, in its own words
+/// or in the excerpt it cites: a candidate-answer path never renders
+/// prose the query did not ask about.
+fn claims_name_subject(
+    query: &str,
+    claims: &[crate::read::claims::Claim],
+    evidence: &[(String, String)],
+) -> bool {
+    claims.iter().any(|claim| {
+        let Some(citation) = claim.citation.as_deref() else {
+            return false;
+        };
+        crate::read::vocabulary::evidence_names_subject(query, &claim.text)
+            || evidence.iter().any(|(canonical, text)| {
+                canonical == citation
+                    && crate::read::vocabulary::evidence_names_subject(query, text)
+            })
+    })
+}
+
+/// Extractive doc rows: at most two verified docs, in rank order.
+/// Returns the rendered rows plus the consumed doc keys.
+fn extractive_doc_rows(
+    doc_hits: &[crate::read::planes::docs::DocHit],
+) -> (Vec<(String, String)>, std::collections::HashSet<String>) {
+    let mut rows = Vec::new();
+    let mut used = std::collections::HashSet::new();
+    for hit in doc_hits.iter().filter(|hit| hit.verified).take(2) {
+        let canonical = if hit.anchor.is_empty() {
+            hit.source_path.clone()
+        } else {
+            format!("{}#{}", hit.source_path, hit.anchor)
+        };
+        rows.push((canonical, hit.body.clone().unwrap_or_default()));
+        used.insert(hit.key.clone());
+    }
+    (rows, used)
+}
+
+/// Extractive code rows: at most two admitted findings, in rank
+/// order. Returns the rendered rows plus the consumed finding ids.
+/// Renamed ranges render live bytes with the row marked stale, so
+/// the answer never serves a silent wrong excerpt.
+fn extractive_code_rows(
+    findings: &[Finding],
+    stale: &std::collections::HashSet<String>,
+) -> (Vec<(String, String)>, std::collections::HashSet<String>) {
+    let mut rows = Vec::new();
+    let mut used = std::collections::HashSet::new();
+    for finding in findings.iter().take(2) {
+        rows.push((finding_citation(finding, stale), finding.text.clone()));
+        used.insert(finding.id.clone());
+    }
+    (rows, used)
+}
+
+/// Display citation for one finding: `path:start-end`, range omitted
+/// when unknown, ` (stale)` when the live bytes moved.
+fn finding_citation(finding: &Finding, stale: &std::collections::HashSet<String>) -> String {
+    let range = match (finding.start_line, finding.end_line) {
+        (Some(start), Some(end)) => format!("{start}-{end}"),
+        (Some(start), None) => start.to_string(),
+        _ => String::new(),
+    };
+    let mut canonical = if range.is_empty() {
+        finding.source.display().to_string()
+    } else {
+        format!("{}:{range}", finding.source.display())
+    };
+    if stale.contains(&finding.id) {
+        canonical.push_str(" (stale)");
+    }
+    canonical
+}
+
+/// Deterministic owners of the retrieved code: one row per component
+/// package, in evidence rank order, with an exact crate anchor first.
+/// Multi-owner is the truth, never ambiguity to hide.
+fn ownership_rows(
+    findings: &[Finding],
+    anchored: Option<&str>,
+    stale: &std::collections::HashSet<String>,
+) -> Vec<(String, String)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut rows = Vec::new();
+    let citation = findings
+        .first()
+        .map(|finding| finding_citation(finding, stale));
+    if let (Some(package), Some(citation)) = (anchored, citation.as_deref()) {
+        if !package.is_empty() && seen.insert(package.to_string()) {
+            rows.push((citation.to_string(), format!("owned by {package}")));
+        }
+    }
+    for finding in findings {
+        let gate = crate::component_map::component_gate_for_path(finding.source.display());
+        if gate.package.is_empty() || !seen.insert(gate.package.clone()) {
+            continue;
+        }
+        rows.push((
+            finding_citation(finding, stale),
+            format!("owned by {}", gate.package),
+        ));
+    }
+    rows
+}
+
+/// Render extractive rows: one cited verbatim line each.
+fn render_extractive(rows: &[(String, String)]) -> String {
+    rows.iter()
+        .map(|(citation, body)| {
+            format!(
+                "- {citation}: {}",
+                crate::read::planes::code::clip_finding_text(body, RG_EXCERPT_CHAR_CAP)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Rebuild bound claims from a cached claims payload. The support
+/// verdict stored with the answer rides along: a hit is
+/// reproducibility, never a fresh correctness claim.
+fn cached_claims(claims_json: &str) -> Vec<crate::read::claims::Claim> {
+    use crate::read::claims::{Claim, Support};
+    serde_json::from_str::<Vec<serde_json::Value>>(claims_json)
+        .unwrap_or_default()
         .into_iter()
-        .map(|card| (card.title, card.body))
+        .map(|value| {
+            let support = match value
+                .get("support")
+                .and_then(|support| support.as_str())
+                .unwrap_or("")
+            {
+                "verified" => Support::Verified,
+                "contradicted" => Support::Contradicted,
+                "insufficient" => Support::Insufficient,
+                _ => Support::Unverified,
+            };
+            Claim {
+                text: value
+                    .get("text")
+                    .and_then(|text| text.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                citation: value
+                    .get("citation")
+                    .and_then(|citation| citation.as_str())
+                    .map(str::to_string),
+                support,
+            }
+        })
         .collect()
+}
+
+/// Serialize bound claims for the answer cache.
+fn cached_claims_json(claims: &[crate::read::claims::Claim]) -> String {
+    let rows: Vec<serde_json::Value> = claims
+        .iter()
+        .map(|claim| {
+            serde_json::json!({
+                "text": claim.text,
+                "citation": claim.citation,
+                "support": format!("{:?}", claim.support).to_lowercase(),
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_default()
+}
+
+/// Row-level support status for a stored answer: verified only when
+/// every bound claim verified, otherwise the unverified default.
+fn cached_support_status(claims: &[crate::read::claims::Claim]) -> String {
+    if !claims.is_empty()
+        && claims
+            .iter()
+            .all(|claim| claim.support == crate::read::claims::Support::Verified)
+    {
+        "verified".to_string()
+    } else {
+        "unverified".to_string()
+    }
+}
+
+/// Whether the admission point authorizes filtering: a `Calibrated`/// entry for the judge fingerprint and the admission question
+/// version. Anything else reads shadow-only, exactly like today.
+fn admission_authorized(
+    judge: &crate::read::engine::JudgeCtx<'_>,
+    registry: Option<&fluent_llm::decision::CalibrationRegistry>,
+) -> bool {
+    let Some(registry) = registry else {
+        return false;
+    };
+    let Some(fingerprint) = judge.fingerprint.as_deref() else {
+        return false;
+    };
+    matches!(
+        crate::query::decision_points::authorize_point_with(
+            registry,
+            crate::read::calibration::ADMISSION_POINT,
+            fingerprint,
+            crate::read::calibration::ADMISSION_QUESTION_VERSION,
+        ),
+        fluent_llm::decision::CalibrationStatus::Calibrated(_)
+    )
+}
+
+/// Resolve the query subject with the free-term selectivity cap: a
+/// free term matching more than half of the doc cards reads as no
+/// anchor (fail-open). Exact-crate anchors skip the check. Crate
+/// names only anchor ownership questions: elsewhere the crate word
+/// is context ("guidance sync", "router dispatch") and the
+/// discriminative topic term is the subject.
+fn subject_anchor_for(
+    query: &str,
+    db: &search_vector::db::GuidanceDb,
+    intent: crate::query::strategy::QueryIntent,
+) -> Option<crate::read::vocabulary::SubjectAnchor> {
+    use crate::query::strategy::QueryIntent;
+    let known = if intent == QueryIntent::Ownership {
+        crate::component_map::known_crate_names()
+    } else {
+        Vec::new()
+    };
+    let anchor = crate::read::vocabulary::subject_anchor(query, &known)?;
+    if anchor.source == crate::read::vocabulary::AnchorSource::Crate {
+        return Some(anchor);
+    }
+    let bodies: Vec<String> = db
+        .project_cards_all()
+        .map(|cards| {
+            cards
+                .into_iter()
+                .filter(|card| card.kind == "doc")
+                .map(|card| card.body)
+                .collect()
+        })
+        .unwrap_or_default();
+    let refs: Vec<&str> = bodies.iter().map(String::as_str).collect();
+    if crate::read::vocabulary::anchor_selective(&anchor, &refs) {
+        Some(anchor)
+    } else {
+        None
+    }
 }
 
 /// Cap findings by token estimate, whole findings only: the first
@@ -1357,54 +2270,97 @@ pub fn cap_findings_by_budget(
 }
 
 /// Evidence prompt for the synthesizer: question plus budgeted
-/// finding excerpts with ids, source anchors, and verbatim text. Only
-/// shown ids may be cited; `constrain_answer_to_evidence` enforces it.
-/// The map and verified doc excerpts join code findings so card-backed
-/// answers ground in shown text. Capability briefs stay out: they are
-/// generated commentary and render `[considered]` until calibrated.
+/// finding excerpts with self-describing citation tokens. Code rows
+/// cite `[Cn] path:start-end`; doc and project-map rows cite
+/// `[Dn] path#anchor`. Only shown ids may be cited; the evidence
+/// beside the prompt maps every token to its canonical citation for
+/// `bind_claims` and to its excerpt for the support prefilter.
+/// Capability briefs stay out: they are generated commentary and
+/// render `[considered]` until calibrated.
+struct EvidenceItem {
+    token: String,
+    canonical: String,
+    text: String,
+}
+
 fn synthesis_prompt(
     query: &str,
-    cards: &[(String, String)],
+    cards: &[crate::read::planes::orientation::CardFinding],
     docs: &[crate::read::planes::docs::DocHit],
     findings: &[crate::read::engine::Finding],
-) -> String {
+) -> (String, Vec<EvidenceItem>) {
     use std::fmt::Write as _;
     let mut prompt = format!("Question: {query}\nEvidence:\n");
+    let mut evidence: Vec<EvidenceItem> = Vec::new();
+    let mut doc_token = 0;
     if !cards.is_empty() {
         prompt.push_str("### Project map\n");
-        for (index, (title, body)) in cards.iter().enumerate() {
-            let _ = writeln!(prompt, "- [card-map-{index}] {title}: {body}");
+        for card in cards {
+            doc_token += 1;
+            let token = format!("[D{doc_token}]");
+            let _ = writeln!(
+                prompt,
+                "- {token} {}: {}: {}",
+                card.source, card.title, card.body
+            );
+            evidence.push(EvidenceItem {
+                token,
+                canonical: card.source.clone(),
+                text: format!("{}: {}", card.title, card.body),
+            });
         }
     }
-    let verified_docs: Vec<(&str, &str)> = docs
+    let verified_docs: Vec<(&str, &str, &str)> = docs
         .iter()
         .filter(|hit| hit.verified)
         .filter_map(|hit| {
             hit.body
                 .as_deref()
-                .map(|body| (hit.source_path.as_str(), body))
+                .map(|body| (hit.source_path.as_str(), hit.anchor.as_str(), body))
         })
         .collect();
     if !verified_docs.is_empty() {
         prompt.push_str("### Docs\n");
-        for (index, (source, body)) in verified_docs.iter().enumerate() {
-            let _ = writeln!(prompt, "- [card-doc-{index}] {source}: {body}");
+        for (source, anchor, body) in &verified_docs {
+            doc_token += 1;
+            let token = format!("[D{doc_token}]");
+            let canonical = if anchor.is_empty() {
+                (*source).to_string()
+            } else {
+                format!("{source}#{anchor}")
+            };
+            let _ = writeln!(prompt, "- {token} {canonical}: {body}");
+            evidence.push(EvidenceItem {
+                token,
+                canonical,
+                text: (*body).to_string(),
+            });
         }
     }
     if !findings.is_empty() {
         prompt.push_str("### Code\n");
-        for finding in findings.iter().take(10) {
-            let _ = writeln!(
-                prompt,
-                "- [{}] {}: {}",
-                finding.id,
-                finding.source.display(),
-                finding.text
-            );
+        for (index, finding) in findings.iter().take(10).enumerate() {
+            let token = format!("[C{}]", index + 1);
+            let range = match (finding.start_line, finding.end_line) {
+                (Some(start), Some(end)) => format!("{start}-{end}"),
+                (Some(start), None) => start.to_string(),
+                _ => String::new(),
+            };
+            let canonical = if range.is_empty() {
+                finding.source.display().to_string()
+            } else {
+                format!("{}:{range}", finding.source.display())
+            };
+            let _ = writeln!(prompt, "- {token} {canonical}: {}", finding.text);
+            evidence.push(EvidenceItem {
+                token,
+                canonical,
+                text: finding.text.clone(),
+            });
         }
     }
     prompt.push_str("Answer with cited facts only. Cite only shown ids.");
-    prompt
+    (prompt, evidence)
 }
 
 /// Top-matches body with the soft crate scope applied: in-scope
@@ -1640,7 +2596,6 @@ fn edge_query_target(query: &str) -> Option<String> {
                     tail.trim()
                         .trim_matches('"')
                         .trim_matches('\'')
-                        .trim()
                         .split_whitespace()
                         .next()
                         .unwrap_or("")
@@ -1902,3 +2857,35 @@ mod graph_callers_tests;
 #[cfg(test)]
 #[path = "../../tests/synthesis_evidence.rs"]
 mod synthesis_evidence_tests;
+
+#[cfg(test)]
+#[path = "../../tests/read_trace.rs"]
+mod read_trace_tests;
+
+#[cfg(test)]
+#[path = "../../tests/explain_golden.rs"]
+mod explain_golden_tests;
+
+#[cfg(test)]
+#[path = "../../tests/answer_path.rs"]
+mod answer_path_tests;
+
+#[cfg(test)]
+#[path = "../../tests/scope_filter.rs"]
+mod scope_filter_tests;
+
+#[cfg(test)]
+#[path = "../../tests/answer_floor.rs"]
+mod answer_floor_tests;
+
+#[cfg(test)]
+#[path = "../../tests/payload_trim.rs"]
+mod payload_trim_tests;
+
+#[cfg(test)]
+#[path = "../../tests/ownership.rs"]
+mod ownership_tests;
+
+#[cfg(test)]
+#[path = "../../tests/redteam.rs"]
+mod redteam_tests;

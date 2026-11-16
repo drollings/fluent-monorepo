@@ -152,8 +152,8 @@ fn member_type_for_symbol(
 /// text is normalized (comment markers stripped), so verification
 /// compares normalized cores, never raw bytes. A finding whose
 /// normalized text still appears live is kept; a moved block is
-/// re-sliced to its live lines; text gone from the live file keeps
-/// its stored slice with a gap (labelled, never silently wrong).
+/// re-sliced to its live lines; a renamed block whose text is gone
+/// renders the live range text instead, marked stale at render time.
 /// Findings without line ranges (graph edges, ownership notes)
 /// pass through — they are relation facts, not excerpts.
 #[must_use]
@@ -162,33 +162,46 @@ fn member_type_for_symbol(
 /// text is normalized (comment markers stripped), so verification
 /// compares normalized cores, never raw bytes. A finding whose
 /// normalized text still appears live is kept; a moved block is
-/// re-sliced to its live lines; text gone from the live file keeps
-/// its stored slice with a gap (labelled, never silently wrong).
+/// re-sliced to its live lines; a renamed block whose text is gone
+/// renders the live range text instead, marked stale at render time.
 /// Findings without line ranges (graph edges, ownership notes)
 /// pass through — they are relation facts, not excerpts.
 pub fn resolve_live_findings(
     _workspace: &std::path::Path,
     findings: Vec<crate::read::engine::Finding>,
-) -> (Vec<crate::read::engine::Finding>, Vec<String>) {
+) -> (Vec<crate::read::engine::Finding>, Vec<bool>, Vec<String>) {
     use crate::read::engine::FindingKind;
     let mut gaps = Vec::new();
+    let mut stale = Vec::new();
     let mut out = Vec::with_capacity(findings.len());
+    // Push one resolved finding with its staleness and optional gap.
+    // Inlined (not a closure) so partially moved rows still name
+    // their source for the gap line.
+    macro_rules! push {
+        ($finding:expr, $is_stale:expr, $gap:expr) => {{
+            if let Some(gap) = $gap {
+                gaps.push(gap);
+            }
+            stale.push($is_stale);
+            out.push($finding);
+        }};
+    }
     for mut finding in findings {
         let (Some(_), Some(_)) = (finding.start_line, finding.end_line) else {
-            out.push(finding);
+            push!(finding, false, None);
             continue;
         };
         if !matches!(
             finding.kind,
             FindingKind::Code | FindingKind::Symbol | FindingKind::Edge
         ) {
-            out.push(finding);
+            push!(finding, false, None);
             continue;
         }
         let path = finding.source.live_path();
         let Ok(live) = std::fs::read_to_string(&path) else {
-            gaps.push(format!("source changed since index: {}", finding.source));
-            out.push(finding);
+            let gap = format!("source changed since index: {}", finding.source);
+            push!(finding, false, Some(gap));
             continue;
         };
         let live_lines: Vec<String> = live.lines().map(normalize_line).collect();
@@ -199,17 +212,18 @@ pub fn resolve_live_findings(
             .filter(|line| !line.is_empty())
             .collect();
         if finding_lines.is_empty() {
-            out.push(finding);
+            push!(finding, false, None);
             continue;
         }
         // Shifted block: the first substantial line anchors a live
         // search. A stored range that still names the anchor stands;
         // otherwise the range moves with the anchor. No anchor at all
-        // means the text is gone from the live file.
+        // means the text is gone from the live file: render the live
+        // range text instead, marked stale at render time.
         let anchor = finding_lines.iter().find(|line| line.len() >= 4);
         let Some(anchor) = anchor else {
-            gaps.push(format!("source changed since index: {}", finding.source));
-            out.push(finding);
+            let gap = format!("source changed since index: {}", finding.source);
+            push!(finding, false, Some(gap));
             continue;
         };
         let positions: Vec<usize> = live_lines
@@ -219,13 +233,24 @@ pub fn resolve_live_findings(
             .map(|(index, _)| index + 1)
             .collect();
         if positions.is_empty() {
-            gaps.push(format!("source changed since index: {}", finding.source));
-            out.push(finding);
+            let start = finding.start_line.unwrap_or(1).max(1) as usize;
+            let end = finding.end_line.unwrap_or(start as u32).max(1) as usize;
+            match crate::grounding::live_range_text(&path, start, end) {
+                Some(live_text) if live_text != finding.text => {
+                    finding.text = live_text;
+                    let gap = format!("source changed since index: {}", finding.source);
+                    push!(finding, true, Some(gap));
+                }
+                _ => {
+                    let gap = format!("source changed since index: {}", finding.source);
+                    push!(finding, false, Some(gap));
+                }
+            }
             continue;
         }
         let stored = finding.start_line.unwrap_or(0) as usize;
         if positions.contains(&stored) {
-            out.push(finding);
+            push!(finding, false, None);
             continue;
         }
         let position = positions[0] - 1;
@@ -236,9 +261,9 @@ pub fn resolve_live_findings(
         finding.start_line = Some(from as u32);
         finding.end_line = Some(end as u32);
         finding.text = raw[position..end].join("\n");
-        out.push(finding);
+        push!(finding, false, None);
     }
-    (out, gaps)
+    (out, stale, gaps)
 }
 
 /// Normalized line core: leading comment fences, quote markers, and

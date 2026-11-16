@@ -127,10 +127,36 @@ enum Commands {
         #[arg(long)]
         compact: bool,
 
+        /// Render the whole project map even when the query names a scope.
+        #[arg(long)]
+        full_map: bool,
+
         /// Converge the stale files behind the citations over bounded runs.
         /// Sidecars plus index only: no fix waves.
         #[arg(long)]
         freshen: bool,
+
+        /// Output shape: `md` renders markdown plus the envelope block,
+        /// `json` prints only the envelope JSON.
+        #[arg(long, default_value = "md")]
+        format: String,
+
+        /// Answer assembly: `auto` (extractive for factual intents,
+        /// generative only when earned), `evidence` (never synthesize),
+        /// `synthesis` (legacy prose path).
+        #[arg(long, default_value = "auto")]
+        answer_mode: String,
+
+        /// Exit 3 when no section can answer (no cited evidence and no
+        /// verified claim). Default off.
+        #[arg(long)]
+        require_answer: bool,
+
+        /// Print per-candidate trace rows (anchor decision, judge
+        /// label, admission/budget outcome). Deterministic; the trace
+        /// itself never triggers a model call.
+        #[arg(long)]
+        trace: bool,
 
         #[arg(long, default_value = "auto")]
         filter: String,
@@ -628,10 +654,23 @@ async fn main() {
             budget,
             decision_fingerprint,
             compact,
+            full_map,
             freshen,
+            format,
+            require_answer,
+            answer_mode,
+            trace,
             filter: _,
         }) => {
             if cli.strict && strict_refuse(workspace) {
+                std::process::exit(2);
+            }
+            if format != "md" && format != "json" {
+                eprintln!("error: unknown format '{format}' (md|json)");
+                std::process::exit(2);
+            }
+            if answer_mode != "auto" && answer_mode != "evidence" && answer_mode != "synthesis" {
+                eprintln!("error: unknown answer-mode '{answer_mode}' (auto|evidence|synthesis)");
                 std::process::exit(2);
             }
             let readiness = readiness_preflight(workspace, db, *allow_degraded);
@@ -651,8 +690,13 @@ async fn main() {
                 started,
                 decision_fingerprint.clone(),
                 *compact,
+                *full_map,
                 *allow_degraded,
                 *freshen,
+                format,
+                *require_answer,
+                answer_mode,
+                *trace,
             );
         }
         Some(Commands::Test) => cmd_test(),
@@ -1002,11 +1046,21 @@ fn cmd_explain(
     started: std::time::Instant,
     decision_fingerprint_flag: Option<String>,
     compact: bool,
+    full_map: bool,
     allow_degraded: bool,
     freshen: bool,
+    format: &str,
+    require_answer: bool,
+    answer_mode: &str,
+    trace: bool,
 ) {
     let _explain = profile::Phase::new("explain.total");
-    use guidance_core::read::engine::{ExplainContext, ExplainRequest, ReadEngine, Synthesizer};
+    use guidance_core::read::engine::{AnswerMode, ExplainContext, ReadEngine, Synthesizer};
+    let mode = match answer_mode {
+        "evidence" => AnswerMode::Evidence,
+        "synthesis" => AnswerMode::Synthesis,
+        _ => AnswerMode::Auto,
+    };
     let workspace_root = PathBuf::from(workspace);
     let cfg = load_project_config(&workspace_root);
     let db_file = if Path::new(db_path).is_absolute() {
@@ -1032,17 +1086,16 @@ fn cmd_explain(
         nlp,
         coverage: Some(readiness.coverage().clone()),
     };
-    let request = ExplainRequest {
-        query: query.to_string(),
-        limit,
-        budget_override: budget,
-        no_llm,
-        include_fixtures,
-    };
+    let request =
+        crate::benchmark::cli_explain_request(query, limit, budget, no_llm, include_fixtures, mode);
     struct CodeSynth<'a> {
         backend: &'a dyn fluent_llm::client::ChatBackend,
+        model: String,
     }
     impl Synthesizer for CodeSynth<'_> {
+        fn model_identity(&self) -> &str {
+            &self.model
+        }
         fn synthesize(&self, prompt: &str) -> Result<Option<String>, String> {
             let messages = vec![fluent_llm::protocol::ChatMessage::with_role(
                 fluent_llm::roles::ChatRole::User,
@@ -1059,12 +1112,24 @@ fn cmd_explain(
             }
         }
     }
-    let engine = ReadEngine::new();
+    let index_dir = guidance_core::index_generation::index_dir_for_db(Path::new(db_path));
+    let generation =
+        guidance_core::index_generation::read_generation(&index_dir).unwrap_or_default();
+    let engine = if full_map {
+        ReadEngine::new().with_full_map()
+    } else {
+        ReadEngine::new()
+    }
+    .with_generation(generation);
     // Shadow judge wiring: SystemOne decision role only; anything else
     // stays shadow-only with a labelled gap. `--no-llm` builds no judge.
     let fingerprint = decision_fingerprint_flag.or(cfg.decision_fingerprint.clone());
     let _calibration = guidance_core::config::calibration_path(&cfg, &workspace_root);
-    let judge_backend: Option<fluent_llm::decision::SystemOneBackend> = if no_llm
+    // Evidence mode never builds a model client: no generative
+    // synthesis and no judge backend on any path.
+    let evidence_only = mode == AnswerMode::Evidence;
+    let judge_backend: Option<fluent_llm::decision::SystemOneBackend> = if evidence_only
+        || no_llm
         || !cfg.decision.enabled
         || cfg.decision.transport != guidance_core::config::ModelTransport::SystemOne
     {
@@ -1083,7 +1148,7 @@ fn cmd_explain(
             timeout_ms: cfg.decision.timeout_ms,
             fingerprint: fingerprint.clone(),
         });
-    let client = if !no_llm && cfg.generative.enabled {
+    let client = if !evidence_only && !no_llm && cfg.generative.enabled {
         let role = &cfg.generative;
         let mut client = fluent_llm::client::LlmClient::new(&role.base_url, &role.model);
         client.config.timeout_ms = role.timeout_ms;
@@ -1092,7 +1157,10 @@ fn cmd_explain(
     } else {
         None
     };
-    let code_synth = client.as_ref().map(|backend| CodeSynth { backend });
+    let code_synth = client.as_ref().map(|backend| CodeSynth {
+        backend,
+        model: cfg.generative.model.clone(),
+    });
     let synth: Option<&dyn Synthesizer> = code_synth
         .as_ref()
         .map(|code_synth| code_synth as &dyn Synthesizer);
@@ -1139,17 +1207,102 @@ fn cmd_explain(
             }
         }
     }
-    if compact {
-        let mut compact_answer = answer.clone();
-        compact_answer
+    // Availability is transport truth, never a verdict: a failed
+    // model call marks the role unavailable beside the degraded gap.
+    let generative_state = if client.is_none() {
+        "disabled"
+    } else if answer
+        .gaps
+        .iter()
+        .any(|gap| gap.starts_with("synthesis unavailable"))
+    {
+        "unavailable"
+    } else {
+        "available"
+    };
+    let decision_state = if judge_backend.is_none() {
+        "disabled"
+    } else if answer
+        .gaps
+        .iter()
+        .any(|gap| gap.contains("judge unavailable"))
+    {
+        "unavailable"
+    } else {
+        "available"
+    };
+    if require_answer
+        && answer.citations.is_empty()
+        && !answer
+            .claims
+            .iter()
+            .any(|claim| claim.support == guidance_core::read::claims::Support::Verified)
+        && !answer
             .sections
-            .retain(|section| section.title != "Coverage");
-        print!(
+            .iter()
+            .any(|section| section.title == "Answer")
+    {
+        eprintln!("no answer: nothing admitted and no verified claim");
+        std::process::exit(3);
+    }
+    let latency_ms = started.elapsed().as_millis() as u64;
+    let (subject_terms, subject_source): (Vec<String>, Option<&str>) = match answer.subject.as_ref()
+    {
+        Some(anchor) => (
+            anchor.terms.clone(),
+            Some(match anchor.source {
+                guidance_core::read::vocabulary::AnchorSource::Crate => "crate",
+                guidance_core::read::vocabulary::AnchorSource::Identifier => "identifier",
+            }),
+        ),
+        None => (Vec::new(), None),
+    };
+    let answer_mode_label = match mode {
+        AnswerMode::Auto => "auto",
+        AnswerMode::Evidence => "evidence",
+        AnswerMode::Synthesis => "synthesis",
+    };
+    let trace_rows = if trace {
+        Some(answer.trace.as_slice())
+    } else {
+        None
+    };
+    let envelope = search::envelope_json_v2(
+        &format!("{:?}", answer.intent),
+        &answer.route,
+        &answer,
+        latency_ms,
+        generative_state,
+        decision_state,
+        &subject_terms,
+        subject_source,
+        answer_mode_label,
+        trace_rows,
+    );
+    if format == "json" {
+        println!(
             "{}",
-            guidance_core::read::render::render_answer(&compact_answer)
+            serde_json::to_string_pretty(&envelope).unwrap_or_default()
         );
     } else {
-        print!("{}", guidance_core::read::render::render_answer(&answer));
+        // Machine JSON keeps full digests; the markdown view shortens
+        // them to 8 hex chars and never changes any other field.
+        let envelope = guidance_core::read::render::markdown_envelope(envelope);
+        if compact {
+            print!("{}", crate::benchmark::render_cli_body(&answer, true));
+        } else {
+            print!("{}", guidance_core::read::render::render_answer(&answer));
+        }
+        if trace {
+            print!(
+                "\n{}",
+                guidance_core::read::render::render_trace(&answer.trace)
+            );
+        }
+        println!(
+            "\n### Envelope\n```json\n{}\n```",
+            serde_json::to_string_pretty(&envelope).unwrap_or_default()
+        );
     }
     // Strict refuses stale or unverified citations the same way the
     // readiness gate refuses stale trees: a wrong line is never
@@ -1171,17 +1324,6 @@ fn cmd_explain(
             std::process::exit(2);
         }
     }
-    let latency_ms = started.elapsed().as_millis() as u64;
-    let envelope = search::envelope_json_v2(
-        &format!("{:?}", answer.intent),
-        &answer.route,
-        &answer,
-        latency_ms,
-    );
-    println!(
-        "\n### Envelope\n```json\n{}\n```",
-        serde_json::to_string_pretty(&envelope).unwrap_or_default()
-    );
 }
 
 fn cmd_test() {
@@ -1363,6 +1505,8 @@ async fn cmd_sync(
                     1,
                     0,
                     1,
+                    0,
+                    0,
                     &guidance_core::waves::WaveReport::default(),
                     &guidance_core::waves::ModelDraftReport::default(),
                     autonomy,
@@ -1454,7 +1598,9 @@ async fn cmd_sync(
             }
             let stale = report.residual.len() + report.escalated.len();
             let indexed = usize::from(!no_db);
-            print_sync_summary(1, indexed, stale, &report, &drafts, autonomy, false, no_db);
+            print_sync_summary(
+                1, indexed, stale, 0, 0, &report, &drafts, autonomy, false, no_db,
+            );
             print_fix_handoff(&report.escalated, &drafts, &report.package_failures);
             return if autonomy == "L0" { 0 } else { exits };
         }
@@ -1487,6 +1633,8 @@ async fn cmd_sync(
 
         let mut total_files = 0usize;
         let mut stale_files = 0usize;
+        let mut fresh_files = 0usize;
+        let mut revalidated_files = 0usize;
         let mut generated = 0usize;
 
         // Rotation sweep and rename adoption run before derivation so
@@ -1509,9 +1657,21 @@ async fn cmd_sync(
             }
             let engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
             for path in engine.stale_files() {
-                if path.extension().and_then(|ext| ext.to_str()) == Some("rs") && path.is_file() {
-                    dirty.push(path);
+                if path.extension().and_then(|ext| ext.to_str()) != Some("rs") || !path.is_file() {
+                    continue;
                 }
+                // Corpora (fixture/eval/data) never build: fixing and
+                // witnessing them can only escalate and stall convergence.
+                let rel = path.strip_prefix(&workspace_path).unwrap_or(&path);
+                let scope = guidance_core::source_scope::classify(&rel.to_string_lossy(), None);
+                if !matches!(
+                    scope,
+                    guidance_core::source_scope::SourceScope::Product
+                        | guidance_core::source_scope::SourceScope::Test
+                ) {
+                    continue;
+                }
+                dirty.push(path);
             }
         }
         dirty.sort();
@@ -1587,6 +1747,8 @@ async fn cmd_sync(
             };
             total_files += status.total_files;
             stale_files += status.stale_files;
+            fresh_files += status.fresh_files;
+            revalidated_files += status.revalidated_files;
 
             if !dry_run && (stale_files > 0 || force) {
                 let _phase = profile::Phase::new("sync.walk_and_gen");
@@ -1693,6 +1855,8 @@ async fn cmd_sync(
             total_files,
             generated,
             stale_after,
+            fresh_files,
+            revalidated_files,
             &report,
             &drafts,
             autonomy,
@@ -1744,10 +1908,7 @@ async fn refresh_search_index(
     // rebuilds fully (stored rows may misread); content drift alone
     // rides the normal incremental ingest below, which re-derives
     // exactly the changed rows from sidecars.
-    let index_dir = Path::new(db_path)
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let index_dir = guidance_core::index_generation::index_dir_for_db(Path::new(db_path));
     let mut full_rebuild = false;
     {
         let _phase = profile::Phase::new("index.generation_guard");
@@ -1803,6 +1964,30 @@ async fn refresh_search_index(
         }
     };
     drop(ingest_phase);
+    // Tree-level propagation gate: sorted (content hash, sig-set hash)
+    // pairs over the post-ingest tree. Only a change run computes it,
+    // so a converged sync spends nothing here. A matching fingerprint
+    // (touch-only) skips the dependent stage; a moved one runs it.
+    let ingest_changed = !frag_stats.changed.is_empty()
+        || !frag_stats.deleted.is_empty()
+        || !frag_stats.deleted_dependents.is_empty();
+    // A rebuild stores the identity but never propagates: every file is
+    // already re-derived from sidecars.
+    let tree_fingerprint = if ingest_changed || full_rebuild {
+        GuidanceDb::open(Path::new(db_path))
+            .map(|db| guidance_core::index_generation::tree_fingerprint(&db))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let fingerprint_unchanged = !full_rebuild
+        && ingest_changed
+        && !tree_fingerprint.is_empty()
+        && guidance_core::index_generation::read_fingerprint(&index_dir).as_deref()
+            == Some(tree_fingerprint.as_str());
+    if fingerprint_unchanged && verbose {
+        eprintln!("propagation skipped: tree fingerprint unchanged");
+    }
     let _propagation = profile::Phase::new("index.propagation");
     // Regen roots for sidecar mapping: ingest roots may be file-scoped
     // (`sync --file`), but sidecars mirror source roots, so file entries
@@ -1821,11 +2006,7 @@ async fn refresh_search_index(
     // their JSON sidecars with the existing deleter.
     // A rebuild's changed set is every file; sidecars remain the source of
     // truth, so dependency-driven regeneration would rewrite the mirror.
-    if !full_rebuild
-        && (!frag_stats.changed.is_empty()
-            || !frag_stats.deleted.is_empty()
-            || !frag_stats.deleted_dependents.is_empty())
-    {
+    if !full_rebuild && ingest_changed && !fingerprint_unchanged {
         let roots: Vec<String> = regen_roots
             .iter()
             .map(|dir| dir.to_string_lossy().into_owned())
@@ -1937,6 +2118,13 @@ async fn refresh_search_index(
         }
         for prefix in &frag_stats.deleted {
             remove_sidecars(guidance_dir, &existing_dirs, Path::new(prefix));
+        }
+    }
+    if !tree_fingerprint.is_empty() {
+        if let Err(error) =
+            guidance_core::index_generation::write_fingerprint(&index_dir, &tree_fingerprint)
+        {
+            eprintln!("warning: fingerprint marker not written: {error}");
         }
     }
     drop(_propagation);
@@ -3603,14 +3791,184 @@ fn cmd_calibrate(
         } else {
             println!("verdict: HELD (below the bars; nothing stored)");
         }
+    } else if point == guidance_core::read::admission::DOC_ADMISSION_POINT {
+        let Some(fingerprint) = model_fingerprint.as_deref() else {
+            eprintln!("calibrate: --model-fingerprint is required for --point dp.doc_admission");
+            std::process::exit(2);
+        };
+        let rows = match guidance_core::read::admission::load_doc_admission_rows(Path::new(dataset))
+        {
+            Ok(rows) => rows,
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        };
+        let dataset_bytes = std::fs::read(dataset).unwrap_or_default();
+        let dataset_hash = common_core::hash::blake3_hex(&dataset_bytes);
+        // Score the real judge (fail-closed when the endpoint is down):
+        // one single-candidate judgment per row, in corpus order.
+        let backend = fluent_llm::decision::SystemOneBackend::new(
+            "http://localhost:8080",
+            fluent_llm::decision::DecisionTransport::local_only(),
+        );
+        let judge =
+            guidance_core::read::decide::DocJudge::new(&backend, "decision".to_string(), 2000);
+        let mut scores = Vec::new();
+        let mut support = 0usize;
+        let mut control_fires = 0usize;
+        for row in &rows {
+            let verdicts =
+                judge.judge(&row.query, &[(row.section_id.clone(), row.excerpt.clone())]);
+            let score = verdicts.first().map_or(0.0, |verdict| {
+                if verdict.label == guidance_core::read::decide::DocLabel::Strong {
+                    1.0
+                } else {
+                    0.0
+                }
+            });
+            if row.control && score >= 1.0 {
+                control_fires += 1;
+            }
+            if !row.control {
+                support += 1;
+            }
+            scores.push(fluent_llm::decision::ScoredCase {
+                score,
+                expected: row.relevant,
+                control: row.control,
+                provenance: fluent_llm::decision::CaseProvenance::human(
+                    "guidance-eval",
+                    "2026-11-16",
+                ),
+            });
+        }
+        let verdict = guidance_core::read::calibration::gate_scored_cases(
+            &scores,
+            1.0,
+            &guidance_core::read::calibration::ADMISSION_BARS,
+        );
+        println!("point: {point}");
+        println!(
+            "precision: {:.3} recall: {:.3} fpr: {:.3}",
+            verdict.precision, verdict.recall, verdict.fpr
+        );
+        println!("support: {support} control fires: {control_fires}");
+        if verdict.passed && control_fires == 0 {
+            let corpus = guidance_core::read::calibration::finding_corpus(
+                scores,
+                fingerprint,
+                &dataset_hash,
+                dataset,
+            );
+            let entry = match fluent_llm::decision::RegistryEntry::calibrate_with(
+                guidance_core::read::calibration::ADMISSION_POINT,
+                fingerprint,
+                guidance_core::read::calibration::ADMISSION_QUESTION_VERSION,
+                &corpus,
+                1.0,
+                None,
+            ) {
+                Ok(entry) => entry,
+                Err(detail) => {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+            };
+            let path = Path::new(state_dir).join("calibration.json");
+            match guidance_core::read::calibration::store_entry_if_passed(&path, entry, true, "") {
+                Ok(guidance_core::read::calibration::StoreOutcome::Authorized { path }) => {
+                    println!("verdict: AUTHORIZED (entry stored at {path})");
+                }
+                Ok(guidance_core::read::calibration::StoreOutcome::Held { reason }) => {
+                    println!("verdict: HELD ({reason}; nothing stored)");
+                }
+                Err(detail) => {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+            }
+        } else {
+            println!("verdict: HELD (below the bars; nothing stored)");
+        }
+    } else if point == guidance_core::read::admission::SUBJECT_ANCHOR_POINT {
+        // Deterministic anchor report: no model, no registry, never
+        // stored. The anchor is measured, not authorized.
+        let rows = match guidance_core::read::admission::load_doc_admission_rows(Path::new(dataset))
+        {
+            Ok(rows) => rows,
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        };
+        let mut cases = guidance_core::read::admission::anchor_cases_from_doc_admission(&rows);
+        let coldstart = Path::new("doc/guidance/eval/coldstart.jsonl");
+        if coldstart.is_file() {
+            match guidance_core::read::admission::anchor_cases_from_coldstart(coldstart) {
+                Ok(cold) => cases.extend(cold),
+                Err(detail) => {
+                    eprintln!("calibrate: {detail}");
+                    std::process::exit(2);
+                }
+            }
+        } else {
+            eprintln!("note: cold-start corpus absent; measuring doc admission only");
+        }
+        let report = guidance_core::read::admission::report_subject_anchor(&cases);
+        println!("point: {point}");
+        println!("cases: {}", report.cases);
+        println!("mrr: {:.3}", report.mrr);
+        println!(
+            "retention: {:.3} ({}/{})",
+            report.retention, report.retained, report.cases
+        );
+        println!(
+            "excluded: {:.3} ({}/{})",
+            report.excluded_rate, report.excluded, report.distractors_support
+        );
+        println!("bars: retention >= 0.95, excluded >= 0.80");
+        if report.retention >= 0.95 && report.excluded_rate >= 0.80 {
+            println!("verdict: PASS (bars met; anchors are measured, never stored)");
+        } else {
+            println!("verdict: HELD (below the bars; free terms stay shadow)");
+        }
+    } else if point == guidance_core::query::decision_points::SUFFICIENCY_POINT {
+        // Deterministic abstain report over must-answer and
+        // must-refuse cases: grounded evidence answers, anything else
+        // refuses. No endpoint, no registry, never stored.
+        let rows = match guidance_core::read::admission::load_sufficiency_cases(Path::new(dataset))
+        {
+            Ok(rows) => rows,
+            Err(detail) => {
+                eprintln!("calibrate: {detail}");
+                std::process::exit(2);
+            }
+        };
+        let report = guidance_core::read::admission::report_sufficiency(&rows);
+        println!("point: {point}");
+        println!("support: {}", report.support);
+        println!("correct: {}/{}", report.correct, report.support);
+        println!(
+            "controls refused: {}/{}",
+            report.controls_refused, report.controls
+        );
+        if report.passed {
+            println!("verdict: PASS (abstain rule holds; nothing stored)");
+        } else {
+            println!("verdict: HELD (abstain rule broken; nothing stored)");
+        }
     } else {
         eprintln!(
-            "calibrate: unknown point {point} ({TRIAGE_POINT}, {ROUTE_POINT}, {}, {}, {}, {}, {})",
+            "calibrate: unknown point {point} ({TRIAGE_POINT}, {ROUTE_POINT}, {}, {}, {}, {}, {}, {}, {}, {})",
             guidance_core::capability::CAPABILITY_POINT,
             guidance_core::read::calibration::FINDING_POINT,
             guidance_core::read::calibration::SUPPORT_POINT,
             guidance_core::query::decision_points::SCOPE_POINT,
-            guidance_core::query::decision_points::RERANK_POINT
+            guidance_core::query::decision_points::RERANK_POINT,
+            guidance_core::read::admission::DOC_ADMISSION_POINT,
+            guidance_core::read::admission::SUBJECT_ANCHOR_POINT,
+            guidance_core::query::decision_points::SUFFICIENCY_POINT
         );
         std::process::exit(2);
     }
@@ -3867,6 +4225,31 @@ fn cmd_status(guidance_dir: &str, db_path: &str, json: bool) {
         guidance_core::read::readiness::MirrorState::Missing => (0, 0),
     };
     let up_to_date = total_files.saturating_sub(stale_files);
+    // Fresh/revalidated split behind the same sweep: re-read the
+    // configured roots through the shared classifier so the counters
+    // agree with `explain` coverage exactly.
+    let mut fresh_files = 0usize;
+    let mut revalidated_files = 0usize;
+    {
+        let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
+            guidance_core::read::project_map::default_source_roots(&workspace_path)
+        } else {
+            cfg.src_dirs
+                .iter()
+                .map(|dir| workspace_path.join(dir))
+                .collect()
+        };
+        for src_dir in &src_dirs {
+            if !src_dir.is_dir() {
+                continue;
+            }
+            let engine = guidance_core::sync_engine::SyncEngine::new(gdir.clone(), src_dir.clone());
+            if let Ok(status) = engine.status() {
+                fresh_files += status.fresh_files;
+                revalidated_files += status.revalidated_files;
+            }
+        }
+    }
     let snapshot = gdir.join("state").join("queue.json");
     let mut queue = guidance_core::maintenance::MaintenanceQueue::new();
     let counts = if queue.load_snapshot(&snapshot).is_ok() {
@@ -3885,6 +4268,8 @@ fn cmd_status(guidance_dir: &str, db_path: &str, json: bool) {
         let out = serde_json::json!({
             "total": total_files,
             "stale": stale_files,
+            "fresh": fresh_files,
+            "revalidated": revalidated_files,
             "up_to_date": up_to_date,
             "clean": stale_files == 0,
             "mirror_fresh": stale_files == 0,
@@ -3904,6 +4289,8 @@ fn cmd_status(guidance_dir: &str, db_path: &str, json: bool) {
     println!("Sync Status:");
     println!("  Total files: {total_files}");
     println!("  Stale files: {stale_files}");
+    println!("  Fresh (stat-only): {fresh_files}");
+    println!("  Revalidated (one hash): {revalidated_files}");
     println!("  Up to date:  {up_to_date}");
     println!(
         "  Mirror:      {}",
@@ -4322,6 +4709,8 @@ fn print_sync_summary(
     files: usize,
     generated: usize,
     stale: usize,
+    fresh: usize,
+    revalidated: usize,
     report: &guidance_core::waves::WaveReport,
     drafts: &guidance_core::waves::ModelDraftReport,
     autonomy: &str,
@@ -4329,7 +4718,9 @@ fn print_sync_summary(
     no_db: bool,
 ) {
     if dry_run {
-        println!("sync: dry run ({files} files, {stale} stale; no writes)");
+        println!(
+            "sync: dry run ({files} files, {stale} stale, {fresh} fresh, {revalidated} revalidated; no writes)"
+        );
         return;
     }
     if autonomy == "L0" {

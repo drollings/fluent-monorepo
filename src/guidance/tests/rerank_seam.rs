@@ -265,3 +265,50 @@ fn seam_judges_through_candidate_judge_only() {
     assert_eq!(demoted[0], "keep", "relevant first: {demoted:?}");
     assert_eq!(demoted[2], "drop", "irrelevant last: {demoted:?}");
 }
+
+#[test]
+fn admit_top_partitions_by_tier_then_truncates() {
+    use crate::read::decide::DocLabel;
+    let prior = vec![
+        "a".to_string(),
+        "b".to_string(),
+        "c".to_string(),
+        "d".to_string(),
+    ];
+    let verdicts = vec![
+        verdict("a", DocLabel::Considered, 0.9),
+        verdict("b", DocLabel::Strong, 0.7),
+        verdict("c", DocLabel::Strong, 0.8),
+    ];
+    // Strong first in prior order (b, c — not confidence order),
+    // then considered, then unjudged d.
+    assert_eq!(
+        admit_top(&prior, &verdicts, 10),
+        vec![
+            "b".to_string(),
+            "c".to_string(),
+            "a".to_string(),
+            "d".to_string()
+        ]
+    );
+    assert_eq!(
+        admit_top(&prior, &verdicts, 2),
+        vec!["b".to_string(), "c".to_string()]
+    );
+    // Never to zero: k=0 still admits the first row.
+    assert_eq!(admit_top(&prior, &verdicts, 0), vec!["b".to_string()]);
+    // Empty prior admits nothing.
+    assert!(admit_top(&Vec::new(), &verdicts, 5).is_empty());
+}
+
+#[test]
+fn admit_top_keeps_all_when_k_covers() {
+    let prior = vec!["a".to_string(), "b".to_string()];
+    let verdicts = vec![
+        verdict("a", FindingLabel::Relevant, 0.9),
+        verdict("b", FindingLabel::Insufficient, 0.4),
+    ];
+    assert_eq!(admit_top(&prior, &verdicts, 5), prior);
+    let no_verdicts: Vec<CandidateVerdict<FindingLabel>> = Vec::new();
+    assert_eq!(admit_top(&prior, &no_verdicts, 5), prior);
+}

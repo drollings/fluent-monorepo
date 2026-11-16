@@ -393,9 +393,9 @@ fn run_rustfmt(text: &str, config: Option<&Path>, source_dir: Option<&Path>) -> 
         std::process::id(),
         &common_core::hash::blake3_hex(text.as_bytes())[..16]
     );
-    // Beside-source first (module resolution), temp dir as fallback.
-    // A caller-supplied directory that cannot hold the scratch is not
-    // an error by itself — the fallback decides.
+    // Beside-source first, temp dir as fallback. A caller-supplied
+    // directory that cannot hold the scratch is not an error by
+    // itself — the fallback decides.
     let beside = source_dir
         .map(|dir| dir.join(&stem))
         .filter(|path| std::fs::write(path, text).is_ok());
@@ -417,7 +417,15 @@ fn run_rustfmt(text: &str, config: Option<&Path>, source_dir: Option<&Path>) -> 
         path
     };
     let path = scratch.to_string_lossy().into_owned();
-    let mut argv: Vec<&str> = vec!["rustfmt", "--edition", "2021"];
+    // skip_children: the scratch name cannot resolve the file's child
+    // modules, and only this text is in scope for formatting anyway.
+    let mut argv: Vec<&str> = vec![
+        "rustfmt",
+        "--edition",
+        "2021",
+        "--config",
+        "skip_children=true",
+    ];
     let config_str;
     if let Some(cfg) = config {
         config_str = cfg.to_string_lossy().into_owned();

@@ -6,6 +6,7 @@
 //! every row derives from repository bytes plus the external corpus.
 //! `engine` is the single DB-backed read path.
 
+pub mod admission;
 pub mod budget;
 pub mod calibration;
 pub mod claims;

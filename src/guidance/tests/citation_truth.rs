@@ -72,7 +72,8 @@ fn no_envelope_claim_with_null_citation() {
         .to_string();
     assert_ne!(stable, stale_display);
     let answer = format!("Sync reprocesses stale files ({stable}).");
-    let claims = crate::read::claims::bind_claims(&answer, std::slice::from_ref(&stable));
+    let manifest = vec![("[C1]".to_string(), stable.clone())];
+    let claims = crate::read::claims::bind_claims(&answer, &manifest);
     assert!(!claims.is_empty());
     assert!(
         claims.iter().all(|c| c.citation.is_some()),

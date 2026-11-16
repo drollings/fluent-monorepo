@@ -239,6 +239,64 @@ pub fn retrieve_doc_sections(
     db: &GuidanceDb,
     limit: usize,
 ) -> Vec<DocHit> {
+    retrieve_doc_sections_anchored(query, workspace, db, limit, None).0
+}
+
+/// Anchor-scoped doc sections plus the exclusion count: keeps the
+/// candidates mentioning any anchor term (path, anchor, title, body,
+/// or code scope), fail-open to the full set when the anchor would
+/// remove everything. `None` anchors and shadow identifier anchors
+/// pass through unchanged; only exact-crate anchors filter before
+/// their calibration. The count rides `--trace`.
+#[must_use]
+/// Anchor-scoped doc sections plus the exclusion count: keeps the
+/// candidates mentioning any anchor term (path, anchor, title, body,
+/// or code scope), fail-open to the full set when the anchor would
+/// remove everything. `None` anchors and shadow identifier anchors
+/// pass through unchanged; only exact-crate anchors filter before
+/// their calibration. The count rides `--trace`.
+pub fn retrieve_doc_sections_anchored(
+    query: &str,
+    workspace: Option<&Path>,
+    db: &GuidanceDb,
+    limit: usize,
+    anchor: Option<&crate::read::vocabulary::SubjectAnchor>,
+) -> (Vec<DocHit>, usize) {
+    let hits = retrieve_doc_sections_unscoped(query, workspace, db, limit);
+    let Some(anchor) = anchor else {
+        return (hits, 0);
+    };
+    if anchor.source != crate::read::vocabulary::AnchorSource::Crate {
+        return (hits, 0);
+    }
+    let kept: Vec<DocHit> = hits
+        .iter()
+        .filter(|hit| {
+            let mut text =
+                format!("{} {} {}", hit.source_path, hit.anchor, hit.title).to_lowercase();
+            text.push(' ');
+            text.push_str(&hit.body.clone().unwrap_or_default().to_lowercase());
+            text.push(' ');
+            text.push_str(&hit.code_paths.join(" ").to_lowercase());
+            anchor.terms.iter().any(|term| text.contains(term.as_str()))
+        })
+        .cloned()
+        .collect();
+    if kept.is_empty() {
+        return (hits, 0);
+    }
+    let excluded = hits.len() - kept.len();
+    (kept, excluded)
+}
+
+/// Unscoped retrieval: the one FTS-plus-verify path both entry
+/// points share, so `None` anchors read byte-identically.
+fn retrieve_doc_sections_unscoped(
+    query: &str,
+    workspace: Option<&Path>,
+    db: &GuidanceDb,
+    limit: usize,
+) -> Vec<DocHit> {
     let cards = db
         .search_project_cards("doc", query, limit.max(1))
         .unwrap_or_default();
