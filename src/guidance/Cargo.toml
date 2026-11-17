@@ -8,7 +8,7 @@ autobenches = false
 [dependencies]
 common-core = { path = "../common-core" }
 fluent-concept = { path = "../concept" }
-guidance-ontology = { path = "../ontology" }
+fluent-ontology = { path = "../ontology" }
 fluent-knowledge = { path = "../knowledge" }
 fluent-types = { path = "../types" }
 search-vector = { path = "../search-vector" }
@@ -42,6 +42,7 @@ notify = { workspace = true }
 ignore = { workspace = true }
 which = { workspace = true }
 dirs = { workspace = true }
+rusqlite = { workspace = true }
 
 [dev-dependencies]
 httpmock = { workspace = true }

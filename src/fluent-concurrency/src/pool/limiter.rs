@@ -44,8 +44,9 @@ impl Limiter {
     }
 
     /// Synchronous version of `run` for callers without an async context.
-    /// Uses `Handle::block_on` if a tokio runtime is active, otherwise bridges
-    /// on `common_core::runtime::block_on_shared`.
+    /// Composes `common_core::runtime::block_on` for both in-runtime arms
+    /// (multi-thread via `block_in_place`, current-thread direct) and
+    /// `common_core::runtime::block_on_shared` when no runtime is active.
     ///
     /// When invoked from *inside* a running multi-threaded tokio runtime (the
     /// router's HTTP handler does this), the future is driven via
@@ -92,12 +93,13 @@ impl Limiter {
             let _permit = self.sem.acquire().await.expect("semaphore closed");
             f().await
         };
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
-                tokio::task::block_in_place(|| handle.block_on(block))
-            }
-            Ok(handle) => handle.block_on(block),
-            Err(_) => common_core::runtime::block_on_shared(block),
+        // `block_on` owns the in-runtime dispatch (no duplicated flavor
+        // match); the no-runtime arm stays on the shared multi-thread bridge
+        // documented above — never the single-threaded `block_on` fallback.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            common_core::runtime::block_on(block)
+        } else {
+            common_core::runtime::block_on_shared(block)
         }
     }
 }

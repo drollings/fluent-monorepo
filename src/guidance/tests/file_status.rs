@@ -1,7 +1,7 @@
 //! P2 file-status tests: `replace_file` / `mark_file_failed` /
 //! `delete_file` lifecycle (ports `service.test.mjs:957` storage half).
 
-use crate::db::{FileRecord, GuidanceDb};
+use crate::query::search_db::{FileRecord, GuidanceSearchDb};
 
 fn file(id: &str) -> FileRecord {
     FileRecord {
@@ -22,7 +22,7 @@ fn file(id: &str) -> FileRecord {
 
 #[test]
 fn replace_file_upserts_status_columns() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_file(&file("a.rs"), &[], &[]).expect("replace");
     let got = db.get_file("a.rs").expect("get").expect("present");
     assert_eq!(got.content_hash.as_deref(), Some("hash-1"));
@@ -32,7 +32,7 @@ fn replace_file_upserts_status_columns() {
 
 #[test]
 fn mark_file_failed_records_error_and_counts() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_file(&file("f.rs"), &[], &[]).expect("replace");
     db.mark_file_failed(&file("f.rs"), "boom").expect("mark");
     let got = db.get_file("f.rs").expect("get").expect("present");
@@ -47,7 +47,7 @@ fn mark_file_failed_records_error_and_counts() {
 
 #[test]
 fn delete_file_removes_fragments_and_record() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_file(&file("d.rs"), &[], &[]).expect("replace");
     db.delete_file("d.rs").expect("delete");
     assert!(db.get_file("d.rs").expect("get").is_none());
@@ -56,7 +56,7 @@ fn delete_file_removes_fragments_and_record() {
 
 #[test]
 fn failed_files_are_listed_for_retry() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_file(&file("ok.rs"), &[], &[]).expect("replace");
     db.replace_file(&file("bad.rs"), &[], &[]).expect("replace");
     db.mark_file_failed(&file("bad.rs"), "x").expect("mark");

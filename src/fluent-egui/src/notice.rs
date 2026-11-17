@@ -19,7 +19,7 @@ use std::time::Instant;
 use common_core::sync::lock;
 use fluent_concurrency::stream::StreamAbort;
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 
 use crate::error::EguiError;
@@ -108,7 +108,7 @@ impl WorkUnit for Notice {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "notice invalid")?;
-        Ok(valid_output(format!("notice ready ({})", self.text)))
+        Ok(WorkOutput::ok(format!("notice ready ({})", self.text)))
     }
 }
 

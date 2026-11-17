@@ -321,9 +321,9 @@ pub const CAPABILITY_CORPUS_FILE: &str = "corpus.json";
 pub fn import_capability_corpus(
     workspace: &Path,
     cfg: &ProjectConfig,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
 ) -> Result<CapabilityImportReport, String> {
-    use search_vector::db::{CapabilityLemma, CapabilityRecord, CAPABILITY_SCHEMA_VERSION};
+    use crate::query::search_db::{CapabilityLemma, CapabilityRecord, CAPABILITY_SCHEMA_VERSION};
     let dir = cfg
         .capabilities_dir
         .clone()

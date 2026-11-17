@@ -1,3 +1,8 @@
+//! Timing middleware example over `fluent_wvr::wrapper::Middleware`.
+//!
+//! **Status: compatibility surface (scaffold).** Exercised by tests today;
+//! kept as the canonical `LatencyHistogram`-recording example so timing
+//! middleware never grows a second spelling.
 use std::sync::Arc;
 
 use common_core::metrics::LatencyHistogram;

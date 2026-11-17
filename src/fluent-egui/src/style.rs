@@ -25,7 +25,7 @@
 use std::collections::BTreeMap;
 
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 
 use crate::config::ThemeConfig;
@@ -286,7 +286,7 @@ impl WorkUnit for IndicatorStyle {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "indicator style invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "indicator style ready ({:.2} px, {} overrides)",
             self.line_width,
             self.colors.len()

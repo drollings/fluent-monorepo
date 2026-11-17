@@ -29,10 +29,6 @@ use crate::hierarchy::HierarchyIndex;
 /// Construct via [`TypeInference::build`], then query with
 /// [`TypeInference::is_subclass_of`]. Once built the struct is read-only.
 #[derive(Debug)]
-/// A precomputed subclass-closure index over an ontology's inheritance graph.
-///
-/// Construct via [`TypeInference::build`], then query with
-/// [`TypeInference::is_subclass_of`]. Once built the struct is read-only.
 pub struct TypeInference {
     index: HierarchyIndex<i64>,
     class_count: usize,
@@ -72,6 +68,18 @@ impl TypeInference {
             return false;
         }
         self.index.is_subclass_of(&child, &parent)
+    }
+
+    /// The memoized ancestor closure of `id` as a shared slice (no per-call
+    /// `Vec` clone). Empty for unregistered ids. Exposed so callers that
+    /// scan closures (mutual-reachability precomputes) compose the memoized
+    /// form instead of re-walking.
+    #[must_use]
+    pub fn ancestors_arc(&self, id: i64) -> std::sync::Arc<[i64]> {
+        if !self.index.contains(&id) {
+            return std::sync::Arc::from([]);
+        }
+        self.index.ancestors_arc(&id)
     }
 
     /// Number of classes registered during [`TypeInference::build`].

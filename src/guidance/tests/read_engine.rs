@@ -87,7 +87,7 @@ impl crate::read::engine::Synthesizer for StubSynth {
     }
 }
 
-fn explain_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn explain_fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     std::fs::write(
@@ -101,10 +101,10 @@ fn explain_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
         "[package]\nname = \"alpha\"\ndescription = \"Alpha crate.\"\n",
     )
     .expect("manifest");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     crate::read::project_map::import_project_cards(root, "fixture", &db, None).expect("cards");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: "/repo/src/a.rs".to_string(),
             absolute_path: "/repo/src/a.rs".to_string(),
             relative_path: "src/a.rs".to_string(),
@@ -118,7 +118,7 @@ fn explain_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "fn".to_string(),
             group: None,
             file_id: "/repo/src/a.rs".to_string(),
@@ -291,7 +291,7 @@ fn soft_scope_orders_in_crate_first_with_split_budget() {
         std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
         std::fs::write(&path, body).expect("write");
         let meta = std::fs::metadata(&path).expect("mtime");
-        (search_vector::db::FileRecord {
+        (crate::query::search_db::FileRecord {
             id: relative.to_string(),
             absolute_path: path.to_string_lossy().into_owned(),
             relative_path: relative.to_string(),
@@ -309,7 +309,7 @@ fn soft_scope_orders_in_crate_first_with_split_budget() {
             index_status: Some("indexed".to_string()),
             fail_count: 0,
             last_error: None,
-        }, search_vector::db::FragmentRecord {
+        }, crate::query::search_db::FragmentRecord {
             id: format!("{relative}:{symbol}"),
             group: None,
             file_id: relative.to_string(),
@@ -328,7 +328,7 @@ fn soft_scope_orders_in_crate_first_with_split_budget() {
             embedding: None,
         })
     };
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let (in_file, in_frag) = seed(
         "src/guidance/alpha.rs",
         "alpha_guidance_fn",
@@ -380,7 +380,7 @@ fn soft_scope_orders_in_crate_first_with_split_budget() {
     );
 }
 
-fn graph_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn graph_fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     // One file where a same-file caller invokes its callee: the
     // regression case for the dropped same-file edge.
     let dir = tempfile::tempdir().expect("tempdir");
@@ -391,10 +391,10 @@ fn graph_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
         "pub fn caller_fn() { target_fn(); }\npub fn target_fn() {}\n",
     )
     .expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let abs_text = abs.to_string_lossy().into_owned();
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: abs_text.clone(),
             absolute_path: abs_text.clone(),
             relative_path: "a.rs".to_string(),
@@ -511,7 +511,7 @@ fn call_graph_without_edges_is_an_explicit_gap() {
     );
 }
 
-fn two_crate_graph_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn two_crate_graph_fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     // One homonym split across two table crates: `target_fn` defined
     // and called in both `src/guidance` and `src/router`.
     let dir = tempfile::tempdir().expect("tempdir");
@@ -528,14 +528,14 @@ fn two_crate_graph_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceD
         )
         .expect("write");
     }
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     for (relative, caller) in [
         ("src/guidance/g.rs", "g_caller_fn"),
         ("src/router/r.rs", "r_caller_fn"),
     ] {
         let absolute = root.join(relative).to_string_lossy().into_owned();
         db.upsert_fragments(
-            &search_vector::db::FileRecord {
+            &crate::query::search_db::FileRecord {
                 id: absolute.clone(),
                 absolute_path: absolute.clone(),
                 relative_path: relative.to_string(),
@@ -651,7 +651,7 @@ fn exact_fallback_finds_literal_without_an_index_row() {
         "fn unique_needle_fn() {}\n",
     )
     .expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let engine = ReadEngine::new();
     let ctx = ExplainContext {
         workspace: dir.path(),
@@ -963,14 +963,14 @@ fn controls_abstain_with_none_found_gap() {
     );
 }
 
-fn ownership_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn ownership_fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
     std::fs::write(dir.path().join("lib.rs"), "pub fn guidance_sync() {}\n").expect("write");
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let absolute = dir.path().join("lib.rs").to_string_lossy().into_owned();
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: "lib.rs".to_string(),
             absolute_path: absolute.clone(),
             relative_path: "lib.rs".to_string(),
@@ -984,7 +984,7 @@ fn ownership_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "lib.rs:guidance_sync".to_string(),
             group: None,
             file_id: "lib.rs".to_string(),
@@ -1006,7 +1006,7 @@ fn ownership_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
         &[],
     )
     .expect("seed code");
-    let card = |key: &str, title: &str, body: &str| search_vector::db::ProjectCard {
+    let card = |key: &str, title: &str, body: &str| crate::query::search_db::ProjectCard {
         key: key.to_string(),
         kind: "crate".to_string(),
         title: title.to_string(),
@@ -1157,10 +1157,10 @@ fn mechanism_query_anchors_free_term_not_context_crate() {
     );
 }
 
-fn admission_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn admission_fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     for (name, symbol, text) in [
         ("a1.rs", "alpha_probe", "pub fn alpha_probe() {}\nalpha\n"),
         ("b2.rs", "beta_probe", "pub fn beta_probe() {}\nbeta\n"),
@@ -1168,7 +1168,7 @@ fn admission_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
         std::fs::write(dir.path().join(name), text).expect("write");
         let absolute = dir.path().join(name).to_string_lossy().into_owned();
         db.upsert_fragments(
-            &search_vector::db::FileRecord {
+            &crate::query::search_db::FileRecord {
                 id: name.to_string(),
                 absolute_path: absolute.clone(),
                 relative_path: name.to_string(),
@@ -1182,7 +1182,7 @@ fn admission_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
                 fail_count: 0,
                 last_error: None,
             },
-            &[search_vector::db::FragmentRecord {
+            &[crate::query::search_db::FragmentRecord {
                 id: format!("{name}:{symbol}"),
                 group: None,
                 file_id: name.to_string(),
@@ -1215,7 +1215,7 @@ fn admission_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
             .iter()
             .find(|chunk| chunk.anchor == anchor)
             .expect("anchor chunks");
-        db.replace_project_cards(&[search_vector::db::ProjectCard {
+        db.replace_project_cards(&[crate::query::search_db::ProjectCard {
             key: format!("doc:{name}#{anchor}"),
             kind: "doc".to_string(),
             title: anchor.to_string(),
@@ -1866,14 +1866,14 @@ fn renamed_function_renders_live_text_marked_stale() {
         "pub fn old_name() -> u64 {\n    1\n}\n",
     )
     .expect("write");
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let absolute = root
         .join("src")
         .join("ren.rs")
         .to_string_lossy()
         .into_owned();
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: absolute.clone(),
             absolute_path: absolute.clone(),
             relative_path: "src/ren.rs".to_string(),
@@ -1887,7 +1887,7 @@ fn renamed_function_renders_live_text_marked_stale() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "ren:old_name".to_string(),
             group: None,
             file_id: absolute.clone(),

@@ -8,14 +8,14 @@ fn anchored_retrieval_scopes_to_the_named_crate_and_fails_open() {
     let sync_text = "# Sync\n\nReprocesses stale files.\n";
     std::fs::write(dir.path().join("router.md"), router_text).expect("write");
     std::fs::write(dir.path().join("sync.md"), sync_text).expect("write");
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let seed = |key: &str, source: &str, anchor: &str, text: &str, codes: &[&str]| {
         let (chunks, _) = crate::read::doc_cards::chunk_markdown_sections(source, text);
         let chunk = chunks
             .iter()
             .find(|chunk| chunk.anchor == anchor)
             .expect("anchor chunks");
-        search_vector::db::ProjectCard {
+        crate::query::search_db::ProjectCard {
             key: key.to_string(),
             kind: "doc".to_string(),
             title: key.to_string(),
@@ -115,7 +115,7 @@ fn doc_cards_resolve_verbatim_and_point_at_code() {
         "# Root\n\n## Guidance\n\nSync reprocesses stale files from docs.\n",
     )
     .expect("write");
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let cfg = crate::config::ProjectConfig::default();
     let cards = crate::read::project_map::build_doc_cards(dir.path(), &cfg, None);
     db.replace_project_cards(&cards).expect("cards");
@@ -145,7 +145,7 @@ fn doc_cards_resolve_verbatim_and_point_at_code() {
 fn drifted_doc_section_is_unverified() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("README.md"), "# Root\n\nOriginal.\n").expect("write");
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let cfg = crate::config::ProjectConfig::default();
     let cards = crate::read::project_map::build_doc_cards(dir.path(), &cfg, None);
     db.replace_project_cards(&cards).expect("cards");

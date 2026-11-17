@@ -20,7 +20,7 @@ use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{ChartType, DateRange};
 
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 
 use crate::chart::TimeframeKey;
 
@@ -188,7 +188,7 @@ impl WorkUnit for TopBarMenuState {
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "top bar menu invalid")?;
-        Ok(valid_output("top bar menu ready".to_owned()))
+        Ok(WorkOutput::ok("top bar menu ready".to_owned()))
     }
 }
 

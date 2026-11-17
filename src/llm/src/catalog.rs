@@ -49,9 +49,6 @@ pub struct PinnedArtifact {
 /// backends; every entry always carries reference/backend/provider/model,
 /// dimension, metric, artifacts and `max_batch_size`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// One pinned catalog row. Backend-specific fields are `None` for other
-/// backends; every entry always carries reference/backend/provider/model,
-/// dimension, metric, artifacts and `max_batch_size`.
 pub struct CatalogEntry {
     pub reference: &'static str,
     pub backend: EmbeddingBackend,

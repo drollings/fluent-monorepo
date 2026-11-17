@@ -1,5 +1,10 @@
 //! Version-constraint resolution for package imports.
 //!
+//! **Status: compatibility surface (scaffold).** Exercised by unit tests
+//! today; kept as the resolver's stable version-selection home
+//! (`resolve_versioned` + [`VersionReq`]) so versioned imports never grow
+//! a second implementation.
+//!
 //! A seed like `libBars/11` is a versioned import: capability `libBars` at
 //! exactly version 11. [`VersionReq`] also spells `>=` floors (`>=1.2`) and
 //! inclusive ranges (`10..12`). [`DependencyResolver::resolve_versioned`]
@@ -17,15 +22,13 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use common_core::error::ResolverError;
+use crate::error::ResolverError;
 
 use crate::target::Target;
 
 /// A parsed dotted-numeric version (`11`, `1.2`, `1.2.3`). Trailing zeros are
 /// trimmed at parse time, so `1.2 == 1.2.0` under `Eq`/`Ord`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// A parsed dotted-numeric version (`11`, `1.2`, `1.2.3`). Trailing zeros are
-/// trimmed at parse time, so `1.2 == 1.2.0` under `Eq`/`Ord`.
 pub struct Version {
     parts: Vec<u64>,
 }
@@ -139,13 +142,6 @@ pub fn split_import(seed: &str) -> (&str, Option<&str>) {
 /// versions that do exist; several exact-version holders refuse with an
 /// `AmbiguousDependency` carrying every candidate.
 #[allow(clippy::implicit_hasher)]
-/// Pick the single provider of `capability` satisfying `req`.
-///
-/// Providers with no entry in `versions` never match a constraint (running
-/// unversioned code against a pinned import would be a silent downgrade).
-/// Zero matches refuse with a `MissingDependency` naming the request and the
-/// versions that do exist; several exact-version holders refuse with an
-/// `AmbiguousDependency` carrying every candidate.
 pub fn select_provider<'t>(
     capability: &str,
     req: &VersionReq,
@@ -177,8 +173,6 @@ pub fn select_provider<'t>(
 /// `(found versions: a@9, b@10)` suffix for refusal messages, or `""` when
 /// no provider is versioned at all.
 #[allow(clippy::implicit_hasher)]
-/// `(found versions: a@9, b@10)` suffix for refusal messages, or `""` when
-/// no provider is versioned at all.
 fn available_versions(capability: &str, versions: &HashMap<String, Version>) -> String {
     if versions.is_empty() {
         return format!(" (no versioned provider of '{capability}' known)");

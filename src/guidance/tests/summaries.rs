@@ -1,6 +1,6 @@
 use super::*;
-use crate::db::fragments::{FileRecord, FragmentRecord};
-use crate::db::GuidanceDb;
+use crate::query::search_db::fragments::{FileRecord, FragmentRecord};
+use crate::query::search_db::GuidanceSearchDb;
 
 fn file_a() -> FileRecord {
     FileRecord {
@@ -55,14 +55,14 @@ fn summary(fragment_id: &str, text: &str) -> SummaryRecord {
     }
 }
 
-fn seed_file(db: &GuidanceDb) {
+fn seed_file(db: &GuidanceSearchDb) {
     db.upsert_fragments(&file_a(), &[frag("entity-a"), frag("entity-b")], &[])
         .expect("upsert");
 }
 
 #[test]
 fn summary_rows_round_trip_with_provenance() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed_file(&db);
     let rows = vec![summary("entity-a", "Adds one to the total.")];
     assert_eq!(db.replace_summaries(&rows).expect("replace"), 1);
@@ -82,7 +82,7 @@ fn summary_rows_round_trip_with_provenance() {
 fn summary_fts_finds_generated_terms_only() {
     // Generated text is lexically reachable through its own FTS index;
     // source-only terms must not match the summary route.
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed_file(&db);
     db.replace_summaries(&[summary("entity-a", "Adds one to the total.")])
         .expect("replace");
@@ -99,7 +99,7 @@ fn summary_fts_finds_generated_terms_only() {
 
 #[test]
 fn summary_replace_updates_fts_rows() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed_file(&db);
     db.replace_summaries(&[summary("entity-a", "Adds one to the total.")])
         .expect("replace");
@@ -118,7 +118,7 @@ fn summary_replace_updates_fts_rows() {
 #[test]
 fn summary_search_skips_fragments_without_rows() {
     // Summaries whose fragment row is gone stay invisible to recall.
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed_file(&db);
     db.replace_summaries(&[summary("missing-fragment", "Adds one to the total.")])
         .expect("replace");
@@ -130,7 +130,7 @@ fn summary_search_skips_fragments_without_rows() {
 
 #[test]
 fn summary_fts_never_matches_everything() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed_file(&db);
     db.replace_summaries(&[summary("entity-a", "Adds one to the total.")])
         .expect("replace");

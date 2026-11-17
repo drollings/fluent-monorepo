@@ -832,9 +832,13 @@ impl WorkUnit for RouterServer {
         };
         let rt = ctx.rt.clone();
 
-        // The `WorkUnit`/`SupervisedBatch` entry runs the server as a
-        // supervised task; it holds its own (never-fired) shutdown watch so
-        // `run_http`'s accept loop runs for the task's lifetime.
+        // The `WorkUnit`/`SupervisedBatch` entry DETACHES the server: the
+        // accept loop is spawned onto the runtime and its handle dropped,
+        // so it outlives this `execute` call (supervision records one
+        // immediate completion, never the server lifetime). The never-fired
+        // shutdown watch only bounds the loop if the runtime itself is
+        // dropped; graceful shutdown drains connections at the serve layer,
+        // not through this task.
         let (_, shutdown_rx) = watch::channel(false);
         let _handle = rt.spawn(Box::pin(async move {
             if let Err(e) = run_http(&bind_addr, deps, shutdown_rx).await {

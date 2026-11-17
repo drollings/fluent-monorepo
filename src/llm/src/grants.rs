@@ -71,8 +71,6 @@ impl RemoteEmbeddingTarget {
 /// Grant store failures. Absent keys/documents are clean negatives (`false`
 /// / empty), never errors.
 #[derive(Debug, thiserror::Error)]
-/// Grant store failures. Absent keys/documents are clean negatives (`false`
-/// / empty), never errors.
 pub enum GrantError {
     #[error("grant store I/O failed: {0}")]
     Io(#[from] std::io::Error),

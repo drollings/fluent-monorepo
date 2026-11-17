@@ -284,9 +284,12 @@ pub const LIVENESS_CTX_KEY: &str = "role_liveness";
 impl RoleExpansion {
     pub fn from_ctx(ctx: &WorkContext) -> Self {
         Self {
-            recency: ctx.get::<Arc<RoleRecency>>(RECENCY_CTX_KEY).cloned(),
+            recency: ctx
+                .get::<Arc<RoleRecency>>(RECENCY_CTX_KEY)
+                .map(|both| (*both).clone()),
             liveness: ctx
                 .get::<LivenessProbe>(LIVENESS_CTX_KEY)
+                .as_deref()
                 .cloned()
                 .unwrap_or_default(),
             // The handler stamps the effective session id into the request

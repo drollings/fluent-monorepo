@@ -585,7 +585,7 @@ async fn m3_retry_runs_bounded_attempts_then_fails_once() {
     let rt = fluent_concurrency::tokio_runtime();
     let config = fluent_concurrency::batch::SupervisedBatchConfig {
         backoff_base_ms: 10,
-        backoff_jitter_ms: 0,
+        backoff_jitter_pct: 0,
         ..Default::default()
     };
     let mut batch = fluent_concurrency::batch::SupervisedBatch::new_with_config(

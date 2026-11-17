@@ -35,7 +35,7 @@ fn clear_works() {
 }
 
 #[test]
-fn lru_eviction_works() {
+fn oldest_eviction_works() {
     let dir = tempdir();
     let cache = TtlCache::open(&dir.path().join("cache.db"), 3600, 3).unwrap();
     cache.put("q1", "r1").unwrap();
@@ -45,8 +45,21 @@ fn lru_eviction_works() {
     let (count, _, _) = cache.stats().unwrap();
     assert!(
         count <= 3,
-        "expected <= 3 entries after LRU eviction, got {count}"
+        "expected <= 3 entries after oldest-first eviction, got {count}"
     );
+}
+
+#[test]
+fn in_memory_cap_is_configurable() {
+    fn identity(key: &str) -> String {
+        key.to_string()
+    }
+    let cache = TtlCache::open_in_memory_with_key_and_cap(3600, identity, 2).unwrap();
+    cache.put("q1", "r1").unwrap();
+    cache.put("q2", "r2").unwrap();
+    cache.put("q3", "r3").unwrap();
+    let (count, _, _) = cache.stats().unwrap();
+    assert_eq!(count, 2, "entries over the configured cap must evict");
 }
 
 #[test]

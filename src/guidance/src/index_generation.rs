@@ -131,7 +131,7 @@ pub const FINGERPRINT_FILE: &str = "index.fingerprint";
 /// sig-set hash) triples over the indexed tree. Identity for the
 /// propagation gate — no confidence value is involved.
 #[must_use]
-pub fn tree_fingerprint(db: &search_vector::db::GuidanceDb) -> String {
+pub fn tree_fingerprint(db: &crate::query::search_db::GuidanceSearchDb) -> String {
     use std::collections::HashMap;
     let files = db.list_files().unwrap_or_default();
     let symbols = db.symbol_interface_hashes().unwrap_or_default();

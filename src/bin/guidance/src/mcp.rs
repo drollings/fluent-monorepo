@@ -11,13 +11,13 @@ use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::LazyNlp;
 use guidance_core::query::recall::run_recall;
+use guidance_core::query::search_db::GuidanceSearchDb;
 use guidance_core::query::strategy::FsmEngine;
 use guidance_core::search_types::{
     CodeSymbolType, FragmentContent, FragmentSpan, SearchHit, SearchMatchedBy, SearchPlan,
     SearchPlanRoute, SearchPlanRouteMode,
 };
 use guidance_core::sync_engine::SyncEngine;
-use search_vector::GuidanceDb;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -37,7 +37,7 @@ impl From<std::io::Error> for McpError {
 }
 
 pub struct McpServer {
-    db: Arc<GuidanceDb>,
+    db: Arc<GuidanceSearchDb>,
     workspace: Option<PathBuf>,
     json_dir: Option<PathBuf>,
     toolset: Toolset,
@@ -442,7 +442,7 @@ pub fn render_explain(
 }
 
 impl McpServer {
-    pub fn new(db: Arc<GuidanceDb>) -> Self {
+    pub fn new(db: Arc<GuidanceSearchDb>) -> Self {
         Self {
             db,
             workspace: None,
@@ -860,9 +860,9 @@ pub fn serve_stdio_with_options(
     toolset: Toolset,
 ) -> Result<(), McpError> {
     let db = if db_path.exists() {
-        GuidanceDb::open(db_path).map_err(|e| McpError::Db(e.to_string()))?
+        GuidanceSearchDb::open(db_path).map_err(|e| McpError::Db(e.to_string()))?
     } else {
-        GuidanceDb::open_in_memory().map_err(|e| McpError::Db(e.to_string()))?
+        GuidanceSearchDb::open_in_memory().map_err(|e| McpError::Db(e.to_string()))?
     };
 
     let server = McpServer::new(Arc::new(db)).with_workspace(workspace, json_dir, toolset);
@@ -878,7 +878,7 @@ mod tests {
     use super::*;
 
     fn make_server() -> McpServer {
-        let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+        let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
         McpServer::new(db)
     }
 
@@ -914,7 +914,7 @@ mod tests {
 
     #[test]
     fn test_tools_list_full_adds_status() {
-        let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+        let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
         let server = McpServer::new(db).with_workspace(None, None, Toolset::Full);
         let req = r#"{"jsonrpc":"2.0","method":"tools/list","id":1,"params":{}}"#;
         let response = server.handle_request(req).expect("handle");
@@ -948,7 +948,7 @@ mod tests {
 
     #[test]
     fn test_guidance_status_full_toolset() {
-        let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+        let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
         let server = McpServer::new(db).with_workspace(None, None, Toolset::Full);
         let req = r#"{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"guidance_status","arguments":{}}}"#;
         let response = server.handle_request(req).expect("handle");
@@ -958,10 +958,10 @@ mod tests {
 
     #[test]
     fn status_counts_derive_from_fragments_not_nodes() {
-        use search_vector::db::{FileRecord, FragmentRecord};
+        use guidance_core::query::search_db::{FileRecord, FragmentRecord};
         // No `nodes` rows at all: counts must come from the
         // fragment index, with the same JSON keys as before.
-        let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+        let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
         let file = FileRecord {
             id: "f".to_string(),
             absolute_path: "/repo/lib.rs".to_string(),

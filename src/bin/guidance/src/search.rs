@@ -13,13 +13,13 @@ use guidance_core::query::hybrid::{plan_from_query, stages_from_hits};
 use guidance_core::query::ingest::LazyNlp;
 use guidance_core::query::recall::{run_recall, run_recall_with_policy};
 use guidance_core::query::rg_backend::{RgBackend, RgHit, RgOptions};
+use guidance_core::query::search_db::GuidanceSearchDb;
 use guidance_core::query::strategy::FsmEngine;
 use guidance_core::query::strategy::QueryIntent;
 use guidance_core::query_engine::{OutputFormat, QueryEngine};
 use guidance_core::search_types::{
     CodeSymbolType, SearchHit, SearchPlan, SearchPlanRoute, SearchPlanRouteMode,
 };
-use search_vector::GuidanceDb;
 
 /// Recall route selection. At most one non-default mode flag may be set
 /// (one-probe discipline: combined mode flags are rejected, never merged).
@@ -431,7 +431,7 @@ fn run_search_impl(
     // a silent lemma fallback: the route is populated only by `sync` with
     // a configured backend.
     if mode == SearchMode::Vector {
-        let empty = search_vector::GuidanceDb::open(Path::new(db_path))
+        let empty = guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(db_path))
             .map(|db| db.embedded_fragment_count().unwrap_or(0) == 0)
             .unwrap_or(true);
         if empty {
@@ -542,7 +542,7 @@ fn run_search_impl(
             "index not found at {db_path} (run `guidance index` first)"
         ));
     }
-    let db = match GuidanceDb::open(&db_file) {
+    let db = match GuidanceSearchDb::open(&db_file) {
         Ok(db) => db,
         Err(error) => return Err(format!("cannot open index at {db_path}: {error}")),
     };
@@ -739,7 +739,7 @@ fn recall_on_index(
         ));
     }
     let open_phase = crate::profile::Phase::new("recall.db_open");
-    let db = match GuidanceDb::open(&db_file) {
+    let db = match GuidanceSearchDb::open(&db_file) {
         Ok(db) => db,
         Err(error) => return Err(format!("cannot open index at {db_path}: {error}")),
     };
@@ -903,7 +903,7 @@ pub fn envelope_json(
 /// CLI warns, the MCP tool degrades silently).
 pub fn context_lines_for_hits(
     hits: &[SearchHit],
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     workspace: &str,
 ) -> Result<Vec<String>, String> {
     let anchors = anchor_files(hits, guidance_core::graph_index::CLOSURE_ANCHOR_FILES);
@@ -996,7 +996,7 @@ pub fn cite_hits(hits: &[SearchHit], workspace: &str) -> Vec<String> {
 fn freshen_hit_files(workspace: &str, db_path: &str, hits: &[SearchHit]) -> Result<bool, String> {
     use guidance_core::sync_engine::absolute_or;
     let root = absolute_or(PathBuf::from(workspace));
-    let db = GuidanceDb::open(Path::new(db_path))
+    let db = GuidanceSearchDb::open(Path::new(db_path))
         .map_err(|error| format!("cannot open index at {db_path}: {error}"))?;
     let mut files = Vec::new();
     for hit in hits {

@@ -3,7 +3,7 @@
 //! `:1042` error context, plus `index-status` diff counts).
 
 use super::*;
-use search_vector::db::GuidanceDb;
+use crate::query::search_db::GuidanceSearchDb;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -103,7 +103,7 @@ fn lifecycle_index_search_refresh_drop_rebuild() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     write(root, "good.ts", "export const GoodNeedle = 1;\n");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = StubEmbedding::ok();
 
     // Index.
@@ -126,7 +126,7 @@ fn lifecycle_index_search_refresh_drop_rebuild() {
         .search_fts(
             "GoodNeedle",
             10,
-            &search_vector::db::FragmentFilter::default(),
+            &crate::query::search_db::FragmentFilter::default(),
         )
         .expect("search");
     assert!(!hits.is_empty(), "indexed content must be searchable");
@@ -177,7 +177,7 @@ fn lifecycle_index_search_refresh_drop_rebuild() {
         .search_fts(
             "GoodNeedle",
             10,
-            &search_vector::db::FragmentFilter::default()
+            &crate::query::search_db::FragmentFilter::default()
         )
         .expect("search")
         .is_empty());
@@ -200,7 +200,7 @@ fn lifecycle_index_search_refresh_drop_rebuild() {
         .search_fts(
             "GoodNeedle",
             10,
-            &search_vector::db::FragmentFilter::default()
+            &crate::query::search_db::FragmentFilter::default()
         )
         .expect("search")
         .is_empty());
@@ -233,7 +233,7 @@ fn embedding_status_unavailable_marks_without_failing_file() {
     let root = dir.path();
     write(root, "good.ts", "export const GoodNeedle = 1;\n");
     write(root, "failing.ts", "export const FailureNeedle = 2;\n");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = StubEmbedding {
         dims: 4,
         fail_marker: Some("FailureNeedle".to_string()),
@@ -256,7 +256,7 @@ fn embedding_status_unavailable_marks_without_failing_file() {
         !db.search_fts(
             "FailureNeedle",
             10,
-            &search_vector::db::FragmentFilter::default()
+            &crate::query::search_db::FragmentFilter::default()
         )
         .expect("search")
         .is_empty(),
@@ -347,7 +347,7 @@ fn fail_fast_errors_abort_without_retry() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     write(root, "a.ts", "export const FailureNeedle = 1;\n");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = StubEmbedding {
         dims: 4,
         fail_marker: Some("FailureNeedle".to_string()),
@@ -376,7 +376,7 @@ fn per_file_isolation_keeps_siblings() {
     write(root, "ok1.ts", "export const OkOne = 1;\n");
     write(root, "ok2.ts", "export const OkTwo = 2;\n");
     write(root, "bad.ts", "export const FailureNeedle = 3;\n");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = StubEmbedding {
         dims: 4,
         fail_marker: Some("FailureNeedle".to_string()),
@@ -393,11 +393,19 @@ fn per_file_isolation_keeps_siblings() {
         &mut |_| {},
     );
     assert!(!db
-        .search_fts("OkOne", 10, &search_vector::db::FragmentFilter::default())
+        .search_fts(
+            "OkOne",
+            10,
+            &crate::query::search_db::FragmentFilter::default()
+        )
         .expect("search")
         .is_empty());
     assert!(!db
-        .search_fts("OkTwo", 10, &search_vector::db::FragmentFilter::default())
+        .search_fts(
+            "OkTwo",
+            10,
+            &crate::query::search_db::FragmentFilter::default()
+        )
         .expect("search")
         .is_empty());
 }
@@ -408,7 +416,7 @@ fn images_are_counted_not_embedded() {
     let root = dir.path();
     write(root, "notes.md", "# Hi\n");
     std::fs::write(root.join("photo.png"), vec![0x89u8, 0x50, 0x4e, 0x47]).expect("write");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = StubEmbedding::ok();
     let mut sel = selection_for(root);
     sel.include_globs = vec!["*.png".to_string(), "*.md".to_string()];
@@ -443,7 +451,7 @@ fn batch_commit_lemmas_come_from_comment_docs() {
         "lib.rs",
         "/// Adds one to the total.\npub fn alpha_beta() {}\n",
     );
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = StubEmbedding::ok();
     index_workspace(
         Arc::clone(&db),
@@ -475,7 +483,7 @@ fn batch_commit_lemmas_come_from_comment_docs() {
         !db.search_fts(
             "alpha_beta",
             10,
-            &search_vector::db::FragmentFilter::default()
+            &crate::query::search_db::FragmentFilter::default()
         )
         .expect("search")
         .is_empty(),
@@ -488,7 +496,7 @@ fn zero_file_rerun_is_clean() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     write(root, "a.rs", "fn a() {}\n");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = StubEmbedding::ok();
     index_workspace(
         Arc::clone(&db),
@@ -523,7 +531,7 @@ fn embedding_status_embedder_rotation_backfills() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
     write(root, "a.rs", "/// Adds one.\npub fn alpha() -> i32 { 1 }\n");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let first_provider = StubEmbedding {
         dims: 4,
         fail_marker: None,
@@ -687,7 +695,7 @@ fn embedding_status_stale_summary_falls_back_to_comment() {
     // A summary row whose hash no longer matches the current block is
     // stale: the builder falls back to the comment instead of embedding
     // stale text.
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let fragment = PreparedFragment {
         id: "fa".to_string(),
         content_text: "fn alpha() {}".to_string(),
@@ -710,7 +718,7 @@ fn embedding_status_stale_summary_falls_back_to_comment() {
         }),
         calls: Vec::new(),
     };
-    let file = search_vector::db::FileRecord {
+    let file = crate::query::search_db::FileRecord {
         id: "f".to_string(),
         absolute_path: "/repo/lib.rs".to_string(),
         relative_path: "lib.rs".to_string(),
@@ -726,7 +734,7 @@ fn embedding_status_stale_summary_falls_back_to_comment() {
     };
     db.upsert_fragments(
         &file,
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "fa".to_string(),
             group: None,
             file_id: "f".to_string(),
@@ -747,7 +755,7 @@ fn embedding_status_stale_summary_falls_back_to_comment() {
         &[],
     )
     .expect("upsert");
-    let stale = search_vector::db::SummaryRecord {
+    let stale = crate::query::search_db::SummaryRecord {
         fragment_id: "fa".to_string(),
         comment_hash: "outdated-hash".to_string(),
         model: "test-model".to_string(),
@@ -796,7 +804,7 @@ fn census_tree(root: &std::path::Path) {
     write(root, "c.rs", "pub fn gamma() -> u64 { 3 }\n");
 }
 
-fn index_run(root: &std::path::Path, db: &Arc<GuidanceDb>) -> IndexStats {
+fn index_run(root: &std::path::Path, db: &Arc<GuidanceSearchDb>) -> IndexStats {
     let cancel = AtomicBool::new(false);
     index_workspace(
         Arc::clone(db),
@@ -813,7 +821,7 @@ fn index_run(root: &std::path::Path, db: &Arc<GuidanceDb>) -> IndexStats {
 #[test]
 fn noop_reindex_census_is_stable_and_silent() {
     let dir = TempDir::new().expect("tempdir");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     census_tree(dir.path());
     let first = index_run(dir.path(), &db);
     assert_eq!(first.files_indexed, 3, "populate: {first:?}");
@@ -840,7 +848,7 @@ fn noop_reindex_census_is_stable_and_silent() {
 #[test]
 fn interface_edit_census_keeps_dependent_derivation() {
     let dir = TempDir::new().expect("tempdir");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     census_tree(dir.path());
     index_run(dir.path(), &db);
 
@@ -861,7 +869,7 @@ fn interface_edit_census_keeps_dependent_derivation() {
 #[test]
 fn single_body_edit_census_keeps_cost_at_the_seed() {
     let dir = TempDir::new().expect("tempdir");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     census_tree(dir.path());
     index_run(dir.path(), &db);
 
@@ -874,5 +882,58 @@ fn single_body_edit_census_keeps_cost_at_the_seed() {
     assert!(
         after.followup_graph_reads >= 1,
         "the sig gate still consults the graph: {after:?}"
+    );
+}
+
+#[test]
+fn wave_unit_reports_per_file_outcomes_through_outputs() {
+    use fluent_wvr::{ArcIntern, WorkContext, WorkUnit};
+
+    let dir = TempDir::new().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("good.ts"), "export const GoodNeedle = 3;\n").unwrap();
+    let abs = root.join("good.ts").to_string_lossy().to_string();
+    let file = crate::diff::ScannedFile {
+        id: crate::diff::make_file_id(&abs),
+        absolute_path: abs.clone(),
+        relative_path: "good.ts".to_string(),
+        root_path: root.to_string_lossy().to_string(),
+        size_bytes: std::fs::metadata(&abs).unwrap().len(),
+        last_modified_time: 1,
+        kind: None,
+        format: "typescript".to_string(),
+        content_hash: None,
+    };
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
+    let shared = Arc::new(SharedPipeline {
+        db,
+        provider: Arc::new(fluent_llm::embeddings::CachedEmbeddingProvider::new(
+            StubEmbedding::ok(),
+        )),
+        nlp: None,
+        options: default_options(),
+        histogram_embed: Arc::new(common_core::metrics::LatencyHistogram::new()),
+        histogram_commit: Arc::new(common_core::metrics::LatencyHistogram::new()),
+        histogram_wave: Arc::new(common_core::metrics::LatencyHistogram::new()),
+    });
+    let unit = IndexWaveUnit {
+        name: "wave-0".to_string(),
+        depends: vec![],
+        provides: vec![ArcIntern::from("wave-0")],
+        files: vec![file],
+        shared,
+    };
+    let ctx = WorkContext::default();
+    unit.execute(&ctx).expect("wave executes");
+    // The typed channel (not a side mutex) carries the per-file outcomes.
+    let outcomes = ctx
+        .outputs
+        .get::<Vec<FileOutcome>>("file-outcomes")
+        .expect("unit publishes per-file outcomes through outputs");
+    assert_eq!(outcomes.len(), 1, "one file in, one outcome out");
+    assert!(
+        matches!(outcomes[0], FileOutcome::Indexed { .. }),
+        "stub provider indexes cleanly: {:?}",
+        std::mem::discriminant(&outcomes[0])
     );
 }

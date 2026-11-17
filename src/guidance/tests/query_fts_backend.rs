@@ -24,7 +24,7 @@ fn file_info(id: &str, relative: &str) -> FileInfo {
     }
 }
 
-fn seed_two_files(db: &search_vector::db::GuidanceDb) {
+fn seed_two_files(db: &crate::query::search_db::GuidanceSearchDb) {
     ingest_text_file(
         db,
         &file_info("file-a", "src/a.ts"),
@@ -55,7 +55,7 @@ fn test_context(filter: &LlmFilter) -> SearchContext<'_> {
 
 #[test]
 fn fts_backend_answers_from_the_index() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     seed_two_files(&db);
     let storage = GuidanceDbStorage::new(&db);
     let filter = LlmFilter::new(Some(Box::new(NoopLlmFilter)));
@@ -77,7 +77,7 @@ fn fts_backend_answers_from_the_index() {
 
 #[test]
 fn fts_backend_declines_when_nothing_matches() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     seed_two_files(&db);
     let storage = GuidanceDbStorage::new(&db);
     let filter = LlmFilter::new(Some(Box::new(NoopLlmFilter)));
@@ -96,7 +96,7 @@ fn fts_backend_declines_when_nothing_matches() {
 fn fts_backend_finds_comment_only_terms() {
     // A term present only in the comment finds the row through the FTS
     // route; body terms keep working exactly as before.
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     ingest_text_file(
         &db,
         &file_info("file-a", "src/a.ts"),

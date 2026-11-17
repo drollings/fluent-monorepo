@@ -24,7 +24,7 @@ pub use crate::sse::drain_sse_lines;
 // ---------------------------------------------------------------------------
 
 /// Merge wire-format `params` into `body` in place, skipping `protected`
-/// keys. The single parameter-merge implementation (M12): overlay wins on
+/// keys. The single parameter-merge implementation: overlay wins on
 /// key conflicts, non-object `params` degrade to a no-op. Both wire-format
 /// consumers (the chat body below, the embeddings request body) and the
 /// client's config-layer merge (`client.rs::merge_extra_params`, composed on

@@ -9,9 +9,9 @@ fn file_record(
     workspace: &std::path::Path,
     name: &str,
     text: &str,
-) -> search_vector::db::FileRecord {
+) -> crate::query::search_db::FileRecord {
     let absolute = workspace.join(name).to_string_lossy().into_owned();
-    search_vector::db::FileRecord {
+    crate::query::search_db::FileRecord {
         id: name.to_string(),
         absolute_path: absolute,
         relative_path: name.to_string(),
@@ -27,8 +27,8 @@ fn file_record(
     }
 }
 
-fn code_fragment(name: &str, symbol: &str, text: &str) -> search_vector::db::FragmentRecord {
-    search_vector::db::FragmentRecord {
+fn code_fragment(name: &str, symbol: &str, text: &str) -> crate::query::search_db::FragmentRecord {
+    crate::query::search_db::FragmentRecord {
         id: format!("{name}:{symbol}"),
         group: None,
         file_id: name.to_string(),
@@ -49,13 +49,13 @@ fn code_fragment(name: &str, symbol: &str, text: &str) -> search_vector::db::Fra
     }
 }
 
-fn seed_doc(db: &search_vector::db::GuidanceDb, name: &str, anchor: &str, body: &str) {
+fn seed_doc(db: &crate::query::search_db::GuidanceSearchDb, name: &str, anchor: &str, body: &str) {
     let (chunks, _) = crate::read::doc_cards::chunk_markdown_sections(name, body);
     let chunk = chunks
         .iter()
         .find(|chunk| chunk.anchor == anchor)
         .expect("anchor chunks");
-    db.replace_project_cards(&[search_vector::db::ProjectCard {
+    db.replace_project_cards(&[crate::query::search_db::ProjectCard {
         key: format!("doc:{name}#{anchor}"),
         kind: "doc".to_string(),
         title: anchor.to_string(),
@@ -71,10 +71,10 @@ fn seed_doc(db: &search_vector::db::GuidanceDb, name: &str, anchor: &str, body: 
     .expect("seed doc");
 }
 
-fn trace_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn trace_fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     for (name, symbol, text) in [
         ("a1.rs", "alpha_probe", "pub fn alpha_probe() {}\nalpha\n"),
         ("b2.rs", "beta_probe", "pub fn beta_probe() {}\nbeta\n"),
@@ -97,10 +97,10 @@ fn trace_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
     (dir, db)
 }
 
-fn anchored_fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn anchored_fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let text = "pub fn guidance_sync() {}\n";
     std::fs::write(dir.path().join("lib.rs"), text).expect("write");
     db.upsert_fragments(
@@ -343,7 +343,7 @@ fn trace_marks_budget_cap() {
     // render, the rest trace as `budget-cap` victims of the cost cap.
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     for index in 0..10 {
         let name = format!("m{index}.rs");
         let text = format!(

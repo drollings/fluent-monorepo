@@ -88,12 +88,12 @@ fn fragment_ingestion_populates_fts_and_skips_image_noise() {
     assert_eq!(stats.files, 1, "{stats:?}");
     assert_eq!(stats.failed, 0, "{stats:?}");
     assert!(stats.fragments >= 1, "{stats:?}");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open");
     let hits = db
         .search_fts(
             "ingested_anchor",
             5,
-            &search_vector::db::FragmentFilter::default(),
+            &guidance_core::query::search_db::FragmentFilter::default(),
         )
         .expect("fts");
     assert!(!hits.is_empty(), "ingested text must be FTS-visible");
@@ -119,12 +119,12 @@ fn fragment_ingest_skips_unchanged_files_on_second_pass() {
     assert_eq!(second.skipped_unchanged, 2, "{second:?}");
     assert_eq!(second.failed, 0, "{second:?}");
     // The index itself is intact — skipping is a read shortcut, not a wipe.
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open");
     let hits = db
         .search_fts(
             "steady_one",
             5,
-            &search_vector::db::FragmentFilter::default(),
+            &guidance_core::query::search_db::FragmentFilter::default(),
         )
         .expect("fts");
     assert!(!hits.is_empty(), "skipped files must stay FTS-visible");
@@ -187,7 +187,7 @@ fn fragment_ingest_filters_structural_punctuation_and_stop_words() {
     let db_path = dir.path().join("frag.db");
     let roots = [src.clone()];
     ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open");
     for noise in ["[", "]", "=", "\n", "pub", "fn"] {
         assert!(
             db.fragments_for_lemmas(&[noise.to_string()], 10)
@@ -209,7 +209,7 @@ fn fragment_ingest_filters_structural_punctuation_and_stop_words() {
         !db.search_fts(
             "alpha_beta",
             5,
-            &search_vector::db::FragmentFilter::default()
+            &guidance_core::query::search_db::FragmentFilter::default()
         )
         .expect("fts")
         .is_empty(),
@@ -232,7 +232,7 @@ fn live_ingest_lemmas_come_from_comments_not_bodies() {
     let db_path = dir.path().join("frag.db");
     let roots = [src.clone()];
     ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open");
     for word in ["adds", "total"] {
         assert!(
             !db.fragments_for_lemmas(&[word.to_string()], 10)
@@ -267,8 +267,8 @@ fn missing_path_is_a_named_error() {
     assert!(error.contains("path not found"), "{error}");
 }
 
-fn propagation_db() -> GuidanceDb {
-    let db = GuidanceDb::open_in_memory().expect("db");
+fn propagation_db() -> GuidanceSearchDb {
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     // `files` rows seed the hydration's known-file set (paths resolve
     // against indexed files, never rows alone).
     for (id, path) in [
@@ -277,7 +277,7 @@ fn propagation_db() -> GuidanceDb {
         ("c", "/repo/c.rs"),
     ] {
         db.replace_file(
-            &search_vector::db::FileRecord {
+            &guidance_core::query::search_db::FileRecord {
                 id: id.to_string(),
                 absolute_path: path.to_string(),
                 relative_path: path.to_string(),
@@ -373,7 +373,7 @@ fn ingest_reports_changed_and_purges_deleted() {
     assert!(second.deleted[0].ends_with("gone.rs"));
 
     // Purged rows are gone from every table (fragments + graph).
-    let db = GuidanceDb::open(&db_path).expect("open");
+    let db = GuidanceSearchDb::open(&db_path).expect("open");
     let files: Vec<String> = db
         .list_files()
         .expect("files")
@@ -407,7 +407,7 @@ fn live_ingest_writes_item_chunks_with_graph() {
     let first = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
     assert_eq!(first.files, 1, "{first:?}");
     assert_eq!(first.failed, 0, "{first:?}");
-    let db = GuidanceDb::open(&db_path).expect("open");
+    let db = GuidanceSearchDb::open(&db_path).expect("open");
     let file_id = db
         .list_files()
         .expect("files")
@@ -454,7 +454,7 @@ fn live_ingest_writes_no_embedding_status() {
     let db_path = dir.path().join("frag.db");
     let roots = [src.clone()];
     ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open");
     let file_id = db
         .list_files()
         .expect("files")
@@ -506,10 +506,14 @@ fn fragment_ingestion_scopes_to_a_single_file() {
         "{scoped:?}"
     );
     // The bystander keeps its rows: scoping is a lens, not a wipe.
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open");
     for term in ["scoped_anchor", "bystander_fn"] {
         let hits = db
-            .search_fts(term, 5, &search_vector::db::FragmentFilter::default())
+            .search_fts(
+                term,
+                5,
+                &guidance_core::query::search_db::FragmentFilter::default(),
+            )
             .expect("fts");
         assert!(!hits.is_empty(), "{term} must stay FTS-visible");
     }

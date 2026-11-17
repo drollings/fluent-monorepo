@@ -274,6 +274,11 @@ Facade `decision/mod.rs` re-exports all submodules.
   (raw_response → `Decision`, choice-only), `PolicyVerdictUnit` (decision →
   `Verdict`). Full `impl_fieldless/impl_component/Describable/
   describe_work_unit` stack.
+- `decision/systemone.rs` — Native `/v1/systemone` decision transport:
+  `SystemOneBackend` (bounded classifier over shared `state` + named
+  `choice`/`score`/`noul` questions) mapped onto the `DecideBackend` seam,
+  so decision points never send chat-completion JSON to a non-generative
+  model. Loopback-only transport by default.
 
 ### Utilities
 

@@ -3,14 +3,14 @@
 //! with the covered scope, and the ungrounded rows stay in their
 //! labelled evidence sections.
 use super::*;
-use search_vector::db::GuidanceDb;
+use crate::query::search_db::GuidanceSearchDb;
 
 fn answer_for(query: &str) -> ReadAnswer {
     let (dir, db) = super::explain_golden_tests::golden_workspace();
     explain_in(dir.path(), &db, query)
 }
 
-fn explain_in(dir: &std::path::Path, db: &GuidanceDb, query: &str) -> ReadAnswer {
+fn explain_in(dir: &std::path::Path, db: &GuidanceSearchDb, query: &str) -> ReadAnswer {
     let engine = ReadEngine::new();
     let ctx = ExplainContext {
         workspace: dir,

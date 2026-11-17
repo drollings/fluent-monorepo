@@ -51,10 +51,6 @@ pub const MAX_SYMLINK_HOPS: u32 = 40;
 /// Pure separator step shared by [`normalize_lexical`] and the glob-pattern
 /// cleaners (which must NOT resolve `.`/`..` — pattern syntax, not paths).
 #[must_use]
-/// Replace `\` with `/` and collapse runs of `/` to one.
-///
-/// Pure separator step shared by [`normalize_lexical`] and the glob-pattern
-/// cleaners (which must NOT resolve `.`/`..` — pattern syntax, not paths).
 pub fn collapse_separators(path: &str) -> String {
     let slashed = path.replace('\\', "/");
     let mut collapsed = String::with_capacity(slashed.len());
@@ -76,8 +72,6 @@ pub fn collapse_separators(path: &str) -> String {
 /// Normalize separators to `/` and clean `.`/`..` lexically (no I/O, so
 /// deleted paths stay representable).
 #[must_use]
-/// Normalize separators to `/` and clean `.`/`..` lexically (no I/O, so
-/// deleted paths stay representable).
 pub fn normalize_lexical(path: &str) -> String {
     let slashed = collapse_separators(path);
     let mut parts: Vec<&str> = Vec::new();
@@ -112,18 +106,6 @@ pub fn normalize_lexical(path: &str) -> String {
 ///
 /// No filesystem access: symlinks are not examined here.
 #[must_use]
-/// Lexically normalize a `std::path::Path` through its platform components.
-///
-/// `..` pops exactly one component, `.` is ignored, every other component is
-/// appended verbatim (including a root/prefix), and duplicate or trailing
-/// separators collapse because `components()` already yields them once.
-/// Failure to pop — a relative `..` at the start, or `..` above the
-/// filesystem root — returns `None`: this helper **fails closed**, unlike
-/// [`normalize_lexical`], whose string algorithm drops a leading relative
-/// `..` (so `normalize_std_path("../a")` is `None` while
-/// `normalize_lexical("../a")` is `"a"`).
-///
-/// No filesystem access: symlinks are not examined here.
 pub fn normalize_std_path(path: &Path) -> Option<PathBuf> {
     let mut normal = PathBuf::new();
     for component in path.components() {
@@ -143,8 +125,6 @@ pub fn normalize_std_path(path: &Path) -> Option<PathBuf> {
 /// Parent directory of a lexically-cleaned path (`None` when the path has no
 /// `/` — including root `/`, whose trimmed form carries no separator).
 #[must_use]
-/// Parent directory of a lexically-cleaned path (`None` when the path has no
-/// `/` — including root `/`, whose trimmed form carries no separator).
 pub fn parent_lexical(path: &str) -> Option<String> {
     let trimmed = path.trim_end_matches('/');
     let index = trimmed.rfind('/')?;

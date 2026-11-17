@@ -470,10 +470,10 @@ fn m5e_rrf_fusion_golden_and_stability() {
 
 #[test]
 fn m5f_keyword_min_matches_rule() {
-    // 5f [B]: the 30% token-overlap rule through the real `GuidanceDb`
+    // 5f [B]: the 30% token-overlap rule through the real generic store
     // (in-memory, hermetic). 3-token queries need ≥2 matches; 1–2 token
     // queries need 1; an incidental single-token overlap returns empty.
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = search_vector::VectorDocStore::open_in_memory().expect("db");
     db.insert_node("alpha", "s", None, Some("quantum triage"), "m", "l", None)
         .expect("insert");
     db.insert_node("beta", "s", None, Some("module"), "m", "l", None)

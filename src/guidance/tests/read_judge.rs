@@ -87,10 +87,7 @@ fn from_label_edge_table() {
     assert_eq!(DocLabel::from_label(" strong "), DocLabel::Strong);
     assert_eq!(DocLabel::from_label("weak"), DocLabel::Considered);
     assert_eq!(DocLabel::from_label(""), DocLabel::Considered);
-    assert_eq!(
-        FindingLabel::from_label("RELEVANT"),
-        FindingLabel::Relevant
-    );
+    assert_eq!(FindingLabel::from_label("RELEVANT"), FindingLabel::Relevant);
     assert_eq!(
         FindingLabel::from_label("  irrelevant\n"),
         FindingLabel::Irrelevant
@@ -107,8 +104,5 @@ fn from_label_edge_table() {
         SupportLabel::from_label("contradicted"),
         SupportLabel::Contradicted
     );
-    assert_eq!(
-        SupportLabel::from_label("nope"),
-        SupportLabel::Insufficient
-    );
+    assert_eq!(SupportLabel::from_label("nope"), SupportLabel::Insufficient);
 }

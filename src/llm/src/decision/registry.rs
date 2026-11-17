@@ -15,8 +15,6 @@ use crate::decision::{control_fires, ThresholdSet};
 /// model predictions are measurements to calibrate, never ground truth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// `CaseOrigin`: where a label came from. There is deliberately no model-output variant:
-/// model predictions are measurements to calibrate, never ground truth.
 pub enum CaseOrigin {
     Human,
     HumanReviewed,
@@ -55,16 +53,6 @@ impl CaseProvenance {
 /// assert_eq!(params.max_control_fires, 0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Explicit per-point gate floors. Defaults mirror the shared harness gate
-/// (precision ≥ 0.90, FPR ≤ 0.05) plus nonzero recall and zero control fires.
-///
-/// ```rust
-/// use fluent_llm::decision::GateParams;
-///
-/// let params = GateParams::default();
-/// assert!((params.min_precision - 0.90).abs() < 1e-12);
-/// assert_eq!(params.max_control_fires, 0);
-/// ```
 pub struct GateParams {
     pub min_precision: f64,
     pub max_fpr: f64,
@@ -142,10 +130,10 @@ pub fn gate_for_point_with(
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// Corpus-level provenance (`CorpusProvenance`) for a labelled set.
-/// 
+///
 /// ```rust
 /// use fluent_llm::decision::CorpusProvenance;
-/// 
+///
 /// let provenance = CorpusProvenance {
 /// source: "hand labels".to_string(),
 /// labeller: "team".to_string(),
@@ -194,10 +182,6 @@ pub struct GateReport {
 /// Calibrate over a [`Corpus`] (see `RegistryEntry::calibrate`); the
 /// round trip is exercised in `tests/decision_registry.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// Thresholds plus the gate that earned them, keyed for lookup (`RegistryEntry`).
-///
-/// Calibrate over a [`Corpus`] (see `RegistryEntry::calibrate`); the
-/// round trip is exercised in `tests/decision_registry.rs`.
 pub struct RegistryEntry {
     pub point: String,
     pub model_fingerprint: String,
@@ -319,15 +303,6 @@ impl CalibrationStatus {
 /// assert!(registry.entries.is_empty());
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-/// Owned threshold registry with JSON persistence.
-///
-/// ```rust
-/// use fluent_llm::decision::CalibrationRegistry;
-/// use std::path::PathBuf;
-///
-/// let registry = CalibrationRegistry::empty();
-/// assert!(registry.entries.is_empty());
-/// ```
 pub struct CalibrationRegistry {
     pub entries: Vec<RegistryEntry>,
 }
@@ -414,15 +389,6 @@ impl CalibrationRegistry {
 /// assert!(status.is_shadow_only());
 /// ```
 #[must_use]
-/// Authorize a decision point: passing entry on all three keys yields its
-/// thresholds, anything else is shadow-only with the reason named.
-///
-/// ```rust
-/// use fluent_llm::decision::{authorize, CalibrationRegistry};
-///
-/// let status = authorize(&CalibrationRegistry::empty(), "intent", "fp", 1);
-/// assert!(status.is_shadow_only());
-/// ```
 pub fn authorize(
     registry: &CalibrationRegistry,
     point: &str,
@@ -443,9 +409,6 @@ pub fn authorize(
 /// ordering-and-priority-only authority, never side-effect authority.
 /// Same evidence bar as `authorize`; narrower grant.
 #[must_use]
-/// Advisory authorization: a passing entry on all three keys yields
-/// ordering-and-priority-only authority, never side-effect authority.
-/// Same evidence bar as `authorize`; narrower grant.
 pub fn authorize_advisory(
     registry: &CalibrationRegistry,
     point: &str,
@@ -467,10 +430,6 @@ pub fn authorize_advisory(
 /// with an unpinned expectation against a pinned entry) reverts the
 /// point to measuring until recalibrated.
 #[must_use]
-/// Dataset-pinned authorization: the passing entry must additionally
-/// record the expected dataset hash. Rotating the dataset (or asking
-/// with an unpinned expectation against a pinned entry) reverts the
-/// point to measuring until recalibrated.
 pub fn authorize_pinned(
     registry: &CalibrationRegistry,
     point: &str,

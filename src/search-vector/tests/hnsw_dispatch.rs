@@ -1,7 +1,7 @@
 use super::*;
 
-fn dispatch_db() -> GuidanceDb {
-    GuidanceDb::open_in_memory().expect("in-memory db")
+fn dispatch_db() -> VectorDocStore {
+    VectorDocStore::open_in_memory().expect("in-memory db")
 }
 
 fn dispatch_vec(i: usize) -> Vec<f32> {
@@ -10,7 +10,7 @@ fn dispatch_vec(i: usize) -> Vec<f32> {
         .collect()
 }
 
-fn insert_embedded(db: &GuidanceDb, n: usize) {
+fn insert_embedded(db: &VectorDocStore, n: usize) {
     for i in 0..n {
         let emb = dispatch_vec(i);
         db.insert_node(&format!("n{i}"), "s", None, None, "m", "l", Some(&emb))

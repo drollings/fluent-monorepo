@@ -7,17 +7,8 @@
 //! Threshold *selection* stays in [`crate::calibration`]; this module
 //! answers "does this output match the pinned fixture", not "where should
 //! the threshold sit".
-//!
-//! [`StageTimer`] is the per-stage timer shorthand: hold it for a stage's
-//! duration and it observes once into the shared [`LatencyHistogram`] on
-//! drop. `Instrumented::with_metrics` in `fluent-wvr` stays the `WorkUnit`
-//! path — this is the free-function path for stages that are not units
-//! (kernel batch eval in tests, fixture regeneration scripts).
 
 use std::fmt;
-use std::time::Instant;
-
-use crate::metrics::LatencyHistogram;
 
 /// How one position mismatched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,13 +71,6 @@ pub struct CompareReport {
 /// length skew, or a non-finite actual — is one [`Mismatch`]. Empty series
 /// match empty series.
 #[must_use]
-/// Compare `actual` against a pinned `expected` series at absolute tolerance
-/// `eps`.
-///
-/// `None` equals `None` (warmup/`na` agreement matters as much as values);
-/// anything else unequal — value drift beyond `eps`, `None` vs `Some`,
-/// length skew, or a non-finite actual — is one [`Mismatch`]. Empty series
-/// match empty series.
 pub fn compare_series(actual: &[Option<f64>], expected: &[Option<f64>], eps: f64) -> CompareReport {
     let compared = actual.len().max(expected.len());
     let mut mismatches = Vec::new();
@@ -139,36 +123,4 @@ pub fn compare_series(actual: &[Option<f64>], expected: &[Option<f64>], eps: f64
         mismatches,
         max_abs_diff,
     }
-}
-
-/// RAII per-stage timer: observes its lifetime into `hist` exactly once, on
-/// drop. Hold it for a stage's duration; never reuse it.
-pub struct StageTimer<'h> {
-    hist: &'h LatencyHistogram,
-    start: Instant,
-}
-
-impl<'h> StageTimer<'h> {
-    /// Start timing a stage into `hist`.
-    #[must_use]
-    pub fn start(hist: &'h LatencyHistogram) -> Self {
-        Self {
-            hist,
-            start: Instant::now(),
-        }
-    }
-}
-
-impl Drop for StageTimer<'_> {
-    fn drop(&mut self) {
-        self.hist.observe_duration(self.start);
-    }
-}
-
-/// Run `stage`, observe its duration into `hist`, return its value. The
-/// closure shorthand for a one-shot stage; hold a [`StageTimer`] instead
-/// when the stage spans awaits or early returns.
-pub fn measure<T>(hist: &LatencyHistogram, stage: impl FnOnce() -> T) -> T {
-    let _timer = StageTimer::start(hist);
-    stage()
 }

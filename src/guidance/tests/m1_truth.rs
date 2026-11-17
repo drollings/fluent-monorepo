@@ -194,7 +194,7 @@ fn node_index_rebuilds_from_sidecars() {
     let vector = test_receipt(&[("parser", "p1")]);
     json_store::save_guidance(&sidecars.join("a.json"), &test_doc(), &vector).expect("save");
     let db_a = dir.path().join("a.db");
-    let first = search_vector::GuidanceDb::open(&db_a).expect("open");
+    let first = crate::query::search_db::GuidanceSearchDb::open(&db_a).expect("open");
     let synced = first.sync_from_dir(&sidecars).expect("sync");
     assert!(synced > 0);
     let count = first.get_node_count().expect("count");
@@ -203,7 +203,7 @@ fn node_index_rebuilds_from_sidecars() {
     drop(first);
     // A deleted index rebuilds the same node set from sidecars alone.
     std::fs::remove_file(&db_a).expect("delete index");
-    let second = search_vector::GuidanceDb::open(&db_a).expect("reopen");
+    let second = crate::query::search_db::GuidanceSearchDb::open(&db_a).expect("reopen");
     assert!(second.sync_from_dir(&sidecars).expect("rebuild") > 0);
     assert_eq!(second.get_node_count().expect("count"), count);
 }

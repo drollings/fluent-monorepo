@@ -292,7 +292,7 @@ pub fn calibrate_capability_corpus(
 ) -> Result<CapabilityCalibration, String> {
     use crate::query::capability_match::{funneled_query_signals, rank_briefs, BriefCandidate};
     use crate::query::funnel::funnel_terms;
-    use search_vector::db::{CapabilityLemma, CapabilityRecord, CAPABILITY_SCHEMA_VERSION};
+    use crate::query::search_db::{CapabilityLemma, CapabilityRecord, CAPABILITY_SCHEMA_VERSION};
     let corpus = load_capability_corpus(dataset)?;
     let Some(cases) = &corpus.cases else {
         return Err("corpus has no cases: labels are required for calibration".to_string());
@@ -300,11 +300,11 @@ pub fn calibrate_capability_corpus(
     if cases.is_empty() {
         return Err("corpus has no cases: labels are required for calibration".to_string());
     }
-    let aliases = search_vector::aliases::SemanticAliases::new();
+    let aliases = crate::query::aliases::SemanticAliases::new();
     // Throwaway index over the corpus briefs: same rows, SVO, and
     // lemma postings the ingest pass persists, so the harness
     // measures the production branch-1 path end to end.
-    let db = search_vector::db::GuidanceDb::open_in_memory()
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory()
         .map_err(|error| format!("calibration index: {error}"))?;
     let mut rows = Vec::with_capacity(corpus.briefs.len());
     let mut postings = Vec::new();

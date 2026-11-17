@@ -5,11 +5,11 @@
 > the curated sample). There is no `doc/skills/ontology/SKILL.md`; the
 > authorities are the crate docs, `doc/router/ARCHITECTURE.md`
 > (one-loader/two-consumers reconciliation), and this pointer pair. Crate
-> directory is `src/ontology/`; package name is `guidance-ontology`.
+> directory is `src/ontology/`; package name is `fluent-ontology` (lib `guidance_ontology`).
 
 ## Mission
 
-`guidance-ontology` is the YaGO taxonomy and entity layer: registry loading
+`fluent-ontology` (lib `guidance_ontology`) is the YaGO taxonomy and entity layer: registry loading
 with deterministic content-addressed ids, TTL→JSON taxonomy conversion, the
 runtime `YagoView`, and the lexicon normalization pipeline. One loader
 (`YaGoLoader`) feeds two consumers (coral's durable graph + the router's

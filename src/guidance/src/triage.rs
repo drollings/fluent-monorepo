@@ -628,13 +628,8 @@ fn verdict_label(verdict: &TriageVerdict) -> String {
 /// (reverted drafts as negatives) need revert records, which the
 /// journal does not keep yet — goldens and the blind fixture set below
 /// supply labels until that follow-up lands.
-pub fn calibrate(
-    cases: &[GoldCase],
-    classify: impl Fn(&str) -> TriageVerdict,
-) -> TriageReport {
-    use common_core::calibration::{
-        macro_precision_or, macro_recall_or, ClassCounts,
-    };
+pub fn calibrate(cases: &[GoldCase], classify: impl Fn(&str) -> TriageVerdict) -> TriageReport {
+    use common_core::calibration::{macro_precision_or, macro_recall_or, ClassCounts};
     use std::collections::BTreeMap;
     let mut correct = 0usize;
     let mut counts: BTreeMap<String, ClassCounts> = BTreeMap::new();

@@ -57,8 +57,6 @@ impl Device {
 /// Runtime GPU mode. `Cpu` disables offload (`gpuLayers: 0`); anything else
 /// attempts the named backend with CPU fallback on failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Runtime GPU mode. `Cpu` disables offload (`gpuLayers: 0`); anything else
-/// attempts the named backend with CPU fallback on failure.
 pub enum GpuSelection {
     Cpu,
     Auto,
@@ -82,8 +80,6 @@ impl From<Device> for GpuSelection {
 /// Document inputs embed raw; query inputs take the catalog format's query
 /// shaping (instruct/task prefixes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Document inputs embed raw; query inputs take the catalog format's query
-/// shaping (instruct/task prefixes).
 pub enum EmbedPurpose {
     Document,
     Query,
@@ -233,8 +229,6 @@ pub trait GgufRuntimeLoader: Send + Sync {
 /// Artifact-plane seam: resolves the GGUF snapshot, reporting plan,
 /// progress and mirror fallback through the caller's hooks.
 #[async_trait]
-/// Artifact-plane seam: resolves the GGUF snapshot, reporting plan,
-/// progress and mirror fallback through the caller's hooks.
 pub trait GgufArtifactResolver: Send + Sync {
     async fn resolve(
         &self,

@@ -11,6 +11,7 @@ common-core = { path = "../common-core" }
 internment = { workspace = true, features = ["arc"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 smol_str = { workspace = true, features = ["serde"] }
 
 [lints]

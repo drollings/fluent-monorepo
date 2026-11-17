@@ -276,7 +276,7 @@ mod tests {
             serde_json::json!(["fn hello() void", "fn greet() void"]),
         );
         let out = handle.execute(&ctx).expect("execute");
-        let scores: Vec<RelevanceScore> = out.data_as().expect("typed scores");
+        let scores: Vec<RelevanceScore> = out.data_ref().expect("typed scores");
         assert_eq!(scores.len(), 2);
         assert_eq!(scores[0].member_name, "fn hello() void");
         assert_eq!(scores[0].score.to_bits(), 0.9f32.to_bits());

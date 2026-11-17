@@ -1,5 +1,5 @@
-//! Taxonomy plausibility scoring — the knowledge half of the M3 triple
-//! spike (ROADMAP_20260903_SPACY_RS_SPLIT M5).
+//! Taxonomy plausibility scoring — the knowledge half of the text/knowledge
+//! bridge.
 //!
 //! Moved here from `spacy-rs` `triple.rs`: scoring subject/object noun
 //! lemmas against the YaGO taxonomy reads the knowledge half of the
@@ -9,7 +9,7 @@
 //! `guidance` edge enters `spacy-rs`, no `spacy-rs` edge enters this crate.
 //!
 //! The score stays a separate `ParseConfidence` field wherever it is
-//! consumed (roadmap E7 — never blended into `oracle_margins`); this module
+//! consumed — never blended into `oracle_margins`; this module
 //! structurally cannot touch margins (it returns a bare `f64` over shared
 //! types only).
 
@@ -35,16 +35,6 @@ pub use fluent_concept::{
 /// When `store` is in `Loading` state the call returns `None` (provisional —
 /// taxonomy not yet ready, mirrors `FrameKey` provisional gating).
 #[must_use]
-/// Score `triples` against the YaGO taxonomy: for each triple, test whether
-/// the subject/object lemmas are known in `store`
-/// (`store.contains` on the content id, else the `yago:Capitalized` /
-/// `schema:Capitalized` curie fallback). A known argument counts as
-/// plausible; the per-triple score is `1.0` (both), `0.5` (one), `0.0`
-/// (neither). The sentence-level plausibility is the mean over triples;
-/// `None` when there are no triples.
-///
-/// When `store` is in `Loading` state the call returns `None` (provisional —
-/// taxonomy not yet ready, mirrors `FrameKey` provisional gating).
 pub fn score_plausibility(triples: &[PlausibilityTriple], store: &dyn ConceptStore) -> Option<f64> {
     if triples.is_empty() {
         return None;
@@ -81,11 +71,9 @@ pub fn score_plausibility(triples: &[PlausibilityTriple], store: &dyn ConceptSto
         };
         scores.push(triple_score);
     }
-    if scores.is_empty() {
-        None
-    } else {
-        Some(scores.iter().sum::<f64>() / scores.len() as f64)
-    }
+    // `triples` is non-empty (checked above) and every triple pushes
+    // exactly one score, so the mean is always defined.
+    Some(scores.iter().sum::<f64>() / scores.len() as f64)
 }
 
 fn lemma_known(lemma: &ScoredLemma, store: &dyn ConceptStore) -> bool {

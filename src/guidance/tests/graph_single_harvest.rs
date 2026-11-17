@@ -33,7 +33,7 @@ fn harvest_persisted_and_memory_agree() {
     let (_fragments_a, harvest_a) = harvest_once(text_a);
     let (_fragments_b, harvest_b) = harvest_once(text_b);
 
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let symbols_a: Vec<(String, Vec<String>)> = harvest_a
         .symbols
         .iter()

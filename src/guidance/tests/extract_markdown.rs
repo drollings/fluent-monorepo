@@ -155,25 +155,13 @@ fn compute_markdown_overlap_lines_table() {
     assert_eq!(super::compute_markdown_overlap_lines(&lines, 0, 3, 0), 0);
     assert_eq!(super::compute_markdown_overlap_lines(&lines, 0, 3, 2), 1);
     assert_eq!(super::compute_markdown_overlap_lines(&lines, 0, 3, 1), 0);
-    assert_eq!(
-        super::compute_markdown_overlap_lines(&lines, 0, 3, 100),
-        1
-    );
-    assert_eq!(
-        super::compute_markdown_overlap_lines(&lines, 1, 2, 100),
-        0
-    );
-    assert_eq!(
-        super::compute_markdown_overlap_lines(&lines, 0, 0, 100),
-        0
-    );
+    assert_eq!(super::compute_markdown_overlap_lines(&lines, 0, 3, 100), 1);
+    assert_eq!(super::compute_markdown_overlap_lines(&lines, 1, 2, 100), 0);
+    assert_eq!(super::compute_markdown_overlap_lines(&lines, 0, 0, 100), 0);
     let nine = ["a", "b", "c", "d", "e", "f", "g", "h", "i"];
     assert_eq!(super::compute_markdown_overlap_lines(&nine, 0, 9, 5), 2);
     let heavy = ["aaaaaaaaaa", "b", "c", "d"];
-    assert_eq!(
-        super::compute_markdown_overlap_lines(&heavy, 0, 4, 12),
-        2
-    );
+    assert_eq!(super::compute_markdown_overlap_lines(&heavy, 0, 4, 12), 2);
 }
 
 /// M1.1 characterization: `split_long_md_line` window boundaries

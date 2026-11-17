@@ -5,8 +5,8 @@
 //! deterministic; the concept stage keeps unknowns (fail-open, the
 //! member-groundedness discipline) instead of filtering them.
 
+use crate::query::aliases::SemanticAliases;
 use fluent_concept::ConceptStore;
-use search_vector::aliases::SemanticAliases;
 
 /// Question scaffolding and prepositions that never carry topic
 /// meaning. Single home for the relevance gate's list: the gate
@@ -27,11 +27,11 @@ pub const SCAFFOLDING_STOPWORDS: &[&str] = &[
 /// gate (which delegates here).
 pub fn significant_terms(query: &str) -> Vec<String> {
     let mut tokens = Vec::new();
-    for token in search_vector::tokens::split_tokens(query) {
+    for token in crate::query::tokens::split_tokens(query) {
         if token.len() < 3 || SCAFFOLDING_STOPWORDS.contains(&token.as_str()) {
             continue;
         }
-        search_vector::tokens::lower_dedup_push(&mut tokens, &token);
+        crate::query::tokens::lower_dedup_push(&mut tokens, &token);
     }
     tokens
 }
@@ -112,7 +112,7 @@ pub fn funnel_terms(
             }
         })
         .collect();
-    let symbols = search_vector::tokens::symbol_names(&significant.join(" "));
+    let symbols = crate::query::tokens::symbol_names(&significant.join(" "));
     FunneledTerms {
         significant,
         expanded,

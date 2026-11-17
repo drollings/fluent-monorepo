@@ -5,15 +5,15 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use common_core::ensure_dir_or_panic;
-use common_core::profile;
 use common_core::shell::run_command;
 use fluent_concurrency::pool::ResultPoolError;
 use guidance_core::config;
+use guidance_core::profile;
 use guidance_core::query::ingest::LazyNlp;
+use guidance_core::query::search_db::GuidanceSearchDb;
 use guidance_core::runtime;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_core::walk;
-use search_vector::GuidanceDb;
 
 mod benchmark;
 mod embed;
@@ -834,7 +834,7 @@ async fn main() {
             db: _,
             force,
         }) => {
-            // The fragment index (`GuidanceDb`) is populated by `sync --db`;
+            // The fragment index (`GuidanceSearchDb`) is populated by `sync --db`;
             // `index` owns member-doc generation for the path scope.
             index_cmd::cmd_index(workspace, json_dir, Some(path), *force);
         }
@@ -1068,7 +1068,7 @@ fn cmd_explain(
     } else {
         workspace_root.join(db_path)
     };
-    let db = match search_vector::GuidanceDb::open(&db_file) {
+    let db = match guidance_core::query::search_db::GuidanceSearchDb::open(&db_file) {
         Ok(db) => db,
         Err(error) => {
             eprintln!("error: cannot open index at {}: {error}", db_file.display());
@@ -1473,17 +1473,18 @@ async fn cmd_sync(
             let json_path = engine.sidecar_path(source_path);
             // Stored source hashes for the member-JSON clock gate (empty on
             // any failure — the gate then keeps mtime behavior).
-            let stored_hash: Option<String> = search_vector::GuidanceDb::open(Path::new(db_path))
-                .ok()
-                .and_then(|db| db.source_content_hashes().ok())
-                .and_then(|map| {
-                    map.get(
-                        guidance_core::sync_engine::absolute_or(source_path.to_path_buf())
-                            .to_string_lossy()
-                            .as_ref(),
-                    )
-                    .cloned()
-                });
+            let stored_hash: Option<String> =
+                guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(db_path))
+                    .ok()
+                    .and_then(|db| db.source_content_hashes().ok())
+                    .and_then(|map| {
+                        map.get(
+                            guidance_core::sync_engine::absolute_or(source_path.to_path_buf())
+                                .to_string_lossy()
+                                .as_ref(),
+                        )
+                        .cloned()
+                    });
             let fresh = match stored_hash.as_deref() {
                 Some(stored) => !guidance_core::sync::staleness::should_generate_with_stored(
                     &json_path,
@@ -1974,7 +1975,7 @@ async fn refresh_search_index(
     // A rebuild stores the identity but never propagates: every file is
     // already re-derived from sidecars.
     let tree_fingerprint = if ingest_changed || full_rebuild {
-        GuidanceDb::open(Path::new(db_path))
+        GuidanceSearchDb::open(Path::new(db_path))
             .map(|db| guidance_core::index_generation::tree_fingerprint(&db))
             .unwrap_or_default()
     } else {
@@ -2025,7 +2026,7 @@ async fn refresh_search_index(
             "index.deleted_dependents",
             frag_stats.deleted_dependents.len(),
         );
-        let affected = match GuidanceDb::open(Path::new(db_path)) {
+        let affected = match GuidanceSearchDb::open(Path::new(db_path)) {
             Ok(db) => {
                 let mut affected =
                     index_cmd::affected_for_sync(&db, &seeds, &frag_stats.deleted, &roots);
@@ -2171,7 +2172,7 @@ fn run_embed_phase(workspace_path: &Path, db_path: &str, verbose: bool, embed_fl
     if embedder.is_none() {
         return;
     }
-    let db = match search_vector::GuidanceDb::open(Path::new(db_path)) {
+    let db = match guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(db_path)) {
         Ok(db) => db,
         Err(error) => {
             eprintln!("warning: embed phase skipped (cannot open index at {db_path}): {error}");
@@ -2206,7 +2207,7 @@ fn run_embed_phase(workspace_path: &Path, db_path: &str, verbose: bool, embed_fl
 /// readiness reports the resulting coverage.
 fn import_derived_cards(workspace_path: &Path, guidance_dir: &Path, db_path: &str, verbose: bool) {
     let cfg = load_project_config(workspace_path);
-    let db = match search_vector::GuidanceDb::open(Path::new(db_path)) {
+    let db = match guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(db_path)) {
         Ok(db) => db,
         Err(error) => {
             eprintln!("warning: card import skipped (cannot open index at {db_path}): {error}");
@@ -2399,7 +2400,9 @@ async fn walk_and_gen_async(
     // listing; empty on any failure — the gate then keeps mtime behavior).
     let hash_phase = profile::Phase::new("sync.walk_and_gen.source_hashes");
     let source_hashes: std::collections::HashMap<String, String> = db_path
-        .and_then(|path| search_vector::GuidanceDb::open(Path::new(path)).ok())
+        .and_then(|path| {
+            guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(path)).ok()
+        })
         .and_then(|db| db.source_content_hashes().ok())
         .unwrap_or_default();
     drop(hash_phase);
@@ -3582,7 +3585,7 @@ fn cmd_calibrate(
         for row in &rows {
             let funnel = guidance_core::query::funnel::funnel_terms(
                 &row.query,
-                &search_vector::SemanticAliases::new(),
+                &guidance_core::query::aliases::SemanticAliases::new(),
                 None,
             );
             let spec = guidance_core::query::decision_points::scope_spec(&crates);

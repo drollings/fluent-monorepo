@@ -1,6 +1,6 @@
 //! Content-node store seam + eager LOD policy + in-memory double.
 //!
-//! Moved mechanics from `fluent-router`'s `node_store.rs` (M10.4): the read
+//! Moved mechanics from `fluent-router`'s `node_store.rs`: the read
 //! seam the LOD machinery (`fluent-knowledge`) is generic over, the eager-fill
 //! policy (`ensure_lod_eager`/`derive_label`), and the hermetic double —
 //! following the existing `ConceptStore`/`InMemoryConceptStore` pattern.
@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::RwLock;
 
+use common_core::sync::{lock_read, lock_write};
 use fluent_types::{ContentHash, ContentNode, NodeId, OriginRole, LOD5_LABEL};
 
 /// The read seam over a content-node store: snapshots, single-tier text, and
@@ -35,8 +36,6 @@ pub trait ContentNodeStore: Send + Sync {
 /// Derive a display label from `content`: its first sentence, UTF-8-truncated
 /// to 64 bytes (ellipsis past the cut); the role when content is empty.
 #[must_use]
-/// Derive a display label from `content`: its first sentence, UTF-8-truncated
-/// to 64 bytes (ellipsis past the cut); the role when content is empty.
 pub fn derive_label(role: &str, content: &str) -> String {
     let sentence = common_core::string::first_sentence(content);
     let snippet = if sentence.is_empty() {
@@ -86,9 +85,6 @@ pub fn ensure_lod_eager(node: &mut ContentNode) {
 /// insert and cached-or-absent lazy reads. Never production (mirrors
 /// `InMemoryConceptStore`'s role beside `ConceptStore`).
 #[derive(Debug, Default)]
-/// Hermetic test double: `HashMap`-backed nodes with verbatim eager fill on
-/// insert and cached-or-absent lazy reads. Never production (mirrors
-/// `InMemoryConceptStore`'s role beside `ConceptStore`).
 pub struct InMemoryContentNodeStore {
     nodes: RwLock<HashMap<NodeId, ContentNode>>,
     next_id: AtomicI64,
@@ -105,21 +101,13 @@ impl InMemoryContentNodeStore {
         let id = NodeId::from_int(self.next_id.fetch_add(1, Ordering::SeqCst) + 1);
         node.id = Some(id);
         ensure_lod_eager(&mut node);
-        self.nodes
-            .write()
-            .expect("in-memory store lock")
-            .insert(id, node);
+        lock_write(&self.nodes).insert(id, node);
         id
     }
 
     /// Overwrite one tier (test control for cached lazy tiers / markers).
     pub fn set_tier(&self, id: NodeId, level: u8, text: impl Into<String>) {
-        if let Some(node) = self
-            .nodes
-            .write()
-            .expect("in-memory store lock")
-            .get_mut(&id)
-        {
+        if let Some(node) = lock_write(&self.nodes).get_mut(&id) {
             while node.lod.len() <= level as usize {
                 node.lod.push(String::new());
             }
@@ -130,15 +118,11 @@ impl InMemoryContentNodeStore {
 
 impl ContentNodeStore for InMemoryContentNodeStore {
     fn snapshot(&self, id: NodeId) -> Option<ContentNode> {
-        self.nodes
-            .read()
-            .expect("in-memory store lock")
-            .get(&id)
-            .cloned()
+        lock_read(&self.nodes).get(&id).cloned()
     }
 
     fn lod_text(&self, id: NodeId, level: u8) -> Option<String> {
-        let nodes = self.nodes.read().expect("in-memory store lock");
+        let nodes = lock_read(&self.nodes);
         let node = nodes.get(&id)?;
         let text = node.lod.get(level as usize)?.clone();
         if text.is_empty() {
@@ -149,7 +133,7 @@ impl ContentNodeStore for InMemoryContentNodeStore {
     }
 
     fn session_node_ids(&self, session_id: &str) -> Vec<NodeId> {
-        let nodes = self.nodes.read().expect("in-memory store lock");
+        let nodes = lock_read(&self.nodes);
         let mut ids: Vec<(i64, NodeId)> = nodes
             .iter()
             .filter(|(_, n)| n.session_id.as_deref() == Some(session_id))

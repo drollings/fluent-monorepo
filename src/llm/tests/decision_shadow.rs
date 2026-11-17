@@ -95,7 +95,7 @@ fn instrumented_shadow_times_and_logs() {
         outcome(),
     );
     let out = wrapped.execute(&WorkContext::default()).expect("exec");
-    let items: Vec<String> = out.data_as().expect("typed");
+    let items: Vec<String> = out.data_ref().expect("typed");
     assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
     assert_eq!(hist.count(), 1);
     assert_eq!(log.len(), 1);

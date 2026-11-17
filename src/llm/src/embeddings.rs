@@ -338,7 +338,7 @@ pub struct CachedEmbeddingProvider<T: EmbeddingProvider> {
 /// Lock-striping shard count. Pure concurrency tuning — NOT a quality,
 /// recall, or correctness threshold: every key routes to exactly one shard
 /// and lookup is exact key-equality, so any count preserves identical
-/// hit/miss semantics (M11.5). Sixteen keeps per-shard contention negligible
+/// hit/miss semantics. Sixteen keeps per-shard contention negligible
 /// while keeping the total bound tight (`shards × per-shard cap`).
 const CACHE_SHARDS: usize = 16;
 
@@ -586,7 +586,7 @@ impl OpenAiEmbedding {
 
     /// Build the request body merging model-level `params` into the standard
     /// `{"model", "input"}` shape. Core fields cannot be overwritten. The
-    /// merge is the shared wire-format helper (`openai::apply_params`, M12) —
+    /// merge is the shared wire-format helper (`openai::apply_params`) —
     /// same overlay-wins/protected-keys discipline as the chat body.
     fn request_body(&self, input: &serde_json::Value) -> serde_json::Value {
         let mut body = serde_json::json!({

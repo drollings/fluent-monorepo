@@ -17,7 +17,7 @@ use protopyne_chart_model::ChartRow;
 use protopyne_kernels::indicator::OwnedOhlcv;
 use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 
 use fluent_egui::{
     needs_column_aggregation, paint_oscillator_styled, proportional_line_points,
@@ -362,7 +362,7 @@ impl WorkUnit for FastMasConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "fast mas config invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "fast mas ready (first {})",
             self.first_ma_type
         )))

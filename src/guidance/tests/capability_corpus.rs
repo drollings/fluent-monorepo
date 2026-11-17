@@ -3,7 +3,7 @@
 //! ranked briefs from the populated corpus.
 use super::*;
 use crate::config::ProjectConfig;
-use search_vector::db::GuidanceDb;
+use crate::query::search_db::GuidanceSearchDb;
 
 fn workspace_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -38,7 +38,7 @@ fn every_authored_card_resolves_to_a_live_section() {
 #[test]
 fn corpus_import_is_idempotent() {
     let root = workspace_root();
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let first =
         import_capability_corpus(&root, &ProjectConfig::default(), &db).expect("first import");
     assert!(first.present, "manifest found");
@@ -58,7 +58,7 @@ fn corpus_import_is_idempotent() {
 
 fn imported_answer(query: &str) -> crate::read::engine::ReadAnswer {
     let root = workspace_root();
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let report =
         import_capability_corpus(&root, &ProjectConfig::default(), &db).expect("capability import");
     assert_eq!(report.ready, report.cards, "{report:?}");

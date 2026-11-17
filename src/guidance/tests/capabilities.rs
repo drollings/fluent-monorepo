@@ -1,5 +1,7 @@
-use crate::db::capabilities::{build_capability_fts_match, CapabilityLemma, CapabilityRecord};
-use crate::db::GuidanceDb;
+use crate::query::search_db::capabilities::{
+    build_capability_fts_match, CapabilityLemma, CapabilityRecord,
+};
+use crate::query::search_db::GuidanceSearchDb;
 
 fn row(id: &str, purpose: &str) -> CapabilityRecord {
     CapabilityRecord {
@@ -29,7 +31,7 @@ fn row(id: &str, purpose: &str) -> CapabilityRecord {
 
 #[test]
 fn capability_rows_round_trip_with_provenance() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let rows = vec![row(
         "doc/guidance/index.md#index",
         "Indexes fragments for recall.",
@@ -58,7 +60,7 @@ fn capability_rows_round_trip_with_provenance() {
 fn capability_ready_count_covers_only_ready_rows() {
     // The tier-honesty read: `held` and `gap` rows persist for retry but
     // never count toward the available tier.
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     assert_eq!(db.capability_ready_count().expect("count"), 0);
     let mut held = row("b#held", "Brief the model could not serve.");
     held.status = "held".to_string();
@@ -73,7 +75,7 @@ fn capability_ready_count_covers_only_ready_rows() {
 fn capability_fts_finds_brief_terms_only() {
     // Brief text and the SVO predicate are lexically reachable;
     // source-file terms outside briefs must not match this route.
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_capabilities(&[row("a#index", "Indexes fragments for recall.")])
         .expect("replace");
     let hits = db.search_capabilities("fragments", 10).expect("search");
@@ -89,7 +91,7 @@ fn capability_fts_finds_brief_terms_only() {
 
 #[test]
 fn capability_fts_never_matches_everything() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_capabilities(&[row("a#index", "Indexes fragments for recall.")])
         .expect("replace");
     assert!(build_capability_fts_match("").is_none());
@@ -107,7 +109,7 @@ fn capability_fts_never_matches_everything() {
 
 #[test]
 fn capability_replace_updates_fts_rows() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_capabilities(&[row("a#index", "Indexes fragments for recall.")])
         .expect("replace");
     let mut second = row("a#index", "Summarizes comments for retrieval.");
@@ -126,7 +128,7 @@ fn capability_replace_updates_fts_rows() {
 
 #[test]
 fn capability_title_and_keywords_are_lexically_reachable() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let mut card = row("a#card", "Indexes fragments for recall.");
     card.title = "Zebra routing".to_string();
     card.keywords_json = r#"["quuxalpha"]"#.to_string();
@@ -139,8 +141,8 @@ fn capability_title_and_keywords_are_lexically_reachable() {
 
 #[test]
 fn project_cards_round_trip_in_key_order() {
-    use crate::db::ProjectCard;
-    let db = GuidanceDb::open_in_memory().expect("db");
+    use crate::query::search_db::ProjectCard;
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     assert_eq!(db.project_card_count().expect("count"), 0);
     let card = |key: &str, kind: &str| ProjectCard {
         key: key.to_string(),
@@ -167,7 +169,7 @@ fn project_cards_round_trip_in_key_order() {
 
 #[test]
 fn capability_ids_fetch_ready_rows_only() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let mut held = row("a#held", "Held brief text.");
     held.status = "held".to_string();
     db.replace_capabilities(&[row("a#one", "First brief."), held])
@@ -188,7 +190,7 @@ fn capability_ids_fetch_ready_rows_only() {
 fn capability_lemmas_post_and_recall() {
     // Lemma postings mirror the fragment route: most matches first,
     // empty input recalls nothing.
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_capabilities(&[
         row("a#one", "Indexes fragments for recall."),
         row("a#two", "Indexes summaries for fusion."),
@@ -225,7 +227,7 @@ fn capability_lemmas_post_and_recall() {
 #[test]
 fn capability_lemmas_ignore_unknown_ids() {
     // Postings for rows that do not exist are skipped, never stored.
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_capabilities(&[row("a#one", "Indexes fragments.")])
         .expect("replace");
     let postings = vec![CapabilityLemma {

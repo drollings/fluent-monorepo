@@ -159,7 +159,7 @@ impl WorkUnit for RiskLimits {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         fluent_wvr::validate::check_for_execute(self, "risk limits invalid")?;
-        Ok(fluent_wvr::validate::valid_output("risk limits valid"))
+        Ok(fluent_wvr::WorkOutput::ok("risk limits valid"))
     }
 }
 

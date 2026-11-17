@@ -14,7 +14,7 @@ use std::sync::Arc;
 use common_core::metrics::LatencyHistogram;
 use fluent_egui::{EguiError, PaneConfig};
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{heikin_ashi, rows_of, ChartRow, ChartType, DateRange};
 use protopyne_types::Bar;
@@ -508,7 +508,10 @@ impl WorkUnit for ChartConfig {
             .map_err(|e| WorkError::execution_context("chart config invalid", e))?
             .order()
             .map_err(|e| WorkError::execution_context("chart config invalid", e))?;
-        Ok(valid_output(format!("plan ready ({} panes)", panes.len())))
+        Ok(WorkOutput::ok(format!(
+            "plan ready ({} panes)",
+            panes.len()
+        )))
     }
 }
 

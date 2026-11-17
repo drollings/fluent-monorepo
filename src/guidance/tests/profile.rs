@@ -1,4 +1,4 @@
-use common_core::profile::{count, report, Phase};
+use super::{count, report, Phase};
 
 #[test]
 fn phase_timer_reports_elapsed_without_panicking() {

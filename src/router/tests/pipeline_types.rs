@@ -106,6 +106,7 @@ fn stage_metadata_typed_accessors() {
     crate::stages::common::publish_routing_target(&mut ctx, &mut decision, rt);
     assert_eq!(
         ctx.get::<crate::pipeline::RoutingTarget>(crate::stages::common::ROUTING_TARGET_TYPED_KEY)
+            .as_deref()
             .expect("typed routing target")
             .model,
         "fast"

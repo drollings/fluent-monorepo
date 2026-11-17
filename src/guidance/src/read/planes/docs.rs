@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use search_vector::db::{CapabilityRecord, GuidanceDb};
+use crate::query::search_db::{CapabilityRecord, GuidanceSearchDb};
 
 use crate::query::capability_match::{rank_briefs, BriefCandidate, RankedBrief};
 
@@ -66,13 +66,13 @@ pub const DOC_CANDIDATE_LIMIT: usize = 20;
 pub fn retrieve_cards(
     query: &str,
     workspace: Option<&Path>,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
     judge: Option<&crate::read::decide::DocJudge>,
 ) -> Vec<DocCardHit> {
     use crate::query::capability_match::funneled_query_signals;
     use crate::query::funnel::funnel_terms;
-    let funnel = funnel_terms(query, &search_vector::SemanticAliases::new(), None);
+    let funnel = funnel_terms(query, &crate::query::aliases::SemanticAliases::new(), None);
     if funnel.is_empty() {
         return Vec::new();
     }
@@ -236,7 +236,7 @@ pub fn resolve_and_verify_section(
 pub fn retrieve_doc_sections(
     query: &str,
     workspace: Option<&Path>,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     limit: usize,
 ) -> Vec<DocHit> {
     retrieve_doc_sections_anchored(query, workspace, db, limit, None).0
@@ -258,7 +258,7 @@ pub fn retrieve_doc_sections(
 pub fn retrieve_doc_sections_anchored(
     query: &str,
     workspace: Option<&Path>,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     limit: usize,
     anchor: Option<&crate::read::vocabulary::SubjectAnchor>,
 ) -> (Vec<DocHit>, usize) {
@@ -294,7 +294,7 @@ pub fn retrieve_doc_sections_anchored(
 fn retrieve_doc_sections_unscoped(
     query: &str,
     workspace: Option<&Path>,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     limit: usize,
 ) -> Vec<DocHit> {
     let cards = db
@@ -361,7 +361,7 @@ pub fn capability_entries(hits: &[DocCardHit]) -> Vec<(String, String)> {
 /// scope, code recall ranks inside it.
 pub fn branch2_pulls(
     card: &DocCardHit,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
 ) -> Vec<crate::read::engine::Finding> {
     use crate::query::db_storage::GuidanceDbStorage;

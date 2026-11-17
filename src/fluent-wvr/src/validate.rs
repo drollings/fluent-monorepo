@@ -1,4 +1,4 @@
-use crate::{WorkError, WorkOutput};
+use crate::WorkError;
 
 /// Fail-closed self-consistency check shared by supervision (`execute`)
 /// and the decision path. Implementors keep their existing error type.
@@ -14,13 +14,6 @@ pub fn check_for_execute<T: Validate>(value: &T, context: &str) -> Result<(), Wo
         .validate()
         .map_err(|e| WorkError::execution_context(context, e))?;
     Ok(())
-}
-
-/// Success [`WorkOutput`] for a validated surface.
-#[must_use]
-/// Success [`WorkOutput`] for a validated surface.
-pub fn valid_output(message: impl Into<String>) -> WorkOutput {
-    WorkOutput::ok(message.into())
 }
 
 #[cfg(test)]

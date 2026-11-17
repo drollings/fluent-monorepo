@@ -304,11 +304,11 @@ pub struct EntityFragment {
 
 /// Fused RRF composite score: an ordinal over within-route positions,
 /// not a confidence and not a magnitude. Canonical home is
-/// `search_vector::fusion::RrfScore` (M6) — this re-export keeps the P0
+/// [`crate::query::rrf::RrfScore`] — this re-export keeps the P0
 /// contract surface stable. See the canonical item for the full stance
 /// (no arithmetic, `PartialOrd` ordering, [`RrfScore::value`] display
 /// reads, transparent wire serialization).
-pub use search_vector::fusion::RrfScore;
+pub use crate::query::rrf::RrfScore;
 
 /// Recall route mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -879,15 +879,15 @@ pub fn validate_fragment_groups(
 }
 
 /// One fused candidate: id + RRF score + 1-based rank. Canonical home is
-/// `search_vector::fusion::FusedHit` (M6) — re-exported here for surface
+/// [`crate::query::rrf::FusedHit`] — re-exported here for surface
 /// stability.
-pub use search_vector::fusion::FusedHit;
+pub use crate::query::rrf::FusedHit;
 
 /// N-route RRF fusion: `score = Σ 1/(K + rank)` over every found recall,
 /// lexicographic id tie-break, 1-based ranks. Canonical implementation
-/// lives in `search_vector::fusion::rrf_fuse` (M6); this re-export keeps
+/// lives in [`crate::query::rrf::rrf_fuse`]; this re-export keeps
 /// the P0 contract surface stable.
-pub use search_vector::fusion::rrf_fuse;
+pub use crate::query::rrf::rrf_fuse;
 
 /// Recall provenance from the contributing paths.
 /// Source: `pipeline/search/index.ts` (`deriveMatchedBy`; empty defaults
@@ -924,7 +924,7 @@ pub fn derive_matched_by(paths: &[RecallPath]) -> SearchMatchedBy {
 
 /// Single storage contract for recall: lexical + vector + lemma recall,
 /// entity lookup, file listing. Canonical home is
-/// [`crate::query::recall::RecallStorage`] (live: the `GuidanceDb` adapter
+/// [`crate::query::recall::RecallStorage`] (live: the `GuidanceSearchDb` adapter
 /// plus the hermetic test fake) — re-exported here for the stable
 /// `search_types` surface. The earlier zero-impl storage skeleton is retired
 /// (it had no implementors); narrower views take `&dyn RecallStorage` and

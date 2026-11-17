@@ -12,15 +12,10 @@
 //! composes and which is not LLM policy. This module owns only the LLM
 //! *policy/keying*: the one `"{model}:…"` key format in the workspace.
 //!
-//! M11 deleted the `common-core::cache` byte-identical shim copies (kept
-//! through M10 under `#[deprecated]`); the owner goldens in
-//! `tests/cache.rs` are the lasting contract.
+//! The owner goldens in `tests/cache.rs` are the lasting contract.
 //!
-//! Calibration (roadmap §1, M10): cache identity is task-value
-//! freshness/identity, not endorsement — a cache hit is never a correctness
-//! vote, and a different model or an expired TTL must miss even on
-//! identical text. The key format and TTL semantics move unchanged here;
-//! earning the right to trust cached outputs is M10.
+//! Cache identity is task-value freshness/identity, not endorsement — a
+//! cache hit is never a correctness vote. Never silently change key/TTL.
 
 use common_core::hash::sha256_hex;
 use common_core::time::now_secs;

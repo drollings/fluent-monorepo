@@ -333,8 +333,8 @@ impl ChatBackend for CountingBackend {
 const PASS_TEXT: &str =
     "//! Crate helpers.\npub fn other() {}\n/// Adds one.\npub fn alpha() -> i32 {\n    1\n}\n";
 
-fn pass_file_record() -> search_vector::db::FileRecord {
-    search_vector::db::FileRecord {
+fn pass_file_record() -> crate::query::search_db::FileRecord {
+    crate::query::search_db::FileRecord {
         id: "f".to_string(),
         absolute_path: "/repo/lib.rs".to_string(),
         relative_path: "lib.rs".to_string(),
@@ -350,9 +350,9 @@ fn pass_file_record() -> search_vector::db::FileRecord {
     }
 }
 
-fn pass_seed_db(include_module: bool) -> search_vector::db::GuidanceDb {
+fn pass_seed_db(include_module: bool) -> crate::query::search_db::GuidanceSearchDb {
     use crate::extractor::{FragmentMetadata, FragmentRange, PreparedFragment};
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let mut parser = crate::ast_parser::AstParser::new();
     let blocks = parser.comment_blocks("rust", PASS_TEXT).expect("blocks");
     let mut fragments = vec![
@@ -422,7 +422,7 @@ fn pass_seed_db(include_module: bool) -> search_vector::db::GuidanceDb {
 
 fn pass_parts() -> (
     tempfile::TempDir,
-    search_vector::db::GuidanceDb,
+    crate::query::search_db::GuidanceSearchDb,
     crate::model_lanes::LaneGate,
 ) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -434,7 +434,7 @@ fn pass_parts() -> (
 fn new_pass<'a>(
     backend: &'a CountingBackend,
     gate: &'a crate::model_lanes::LaneGate,
-    db: &'a search_vector::db::GuidanceDb,
+    db: &'a crate::query::search_db::GuidanceSearchDb,
 ) -> SummaryPass<'a> {
     SummaryPass::new(backend, "test-model".to_string(), gate, db)
 }

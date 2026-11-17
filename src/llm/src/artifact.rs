@@ -88,8 +88,6 @@ pub struct ResolvedModelArtifacts {
 /// Download failure taxonomy. Only `fallback_allowed` kinds try the next
 /// mirror; anything else surfaces immediately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Download failure taxonomy. Only `fallback_allowed` kinds try the next
-/// mirror; anything else surfaces immediately.
 pub enum FailureKind {
     Http,
     Network,
@@ -143,8 +141,6 @@ impl std::error::Error for ArtifactDownloadError {}
 /// Resolution outcome: either one source's failure, or both sources'
 /// failures preserved together.
 #[derive(Debug)]
-/// Resolution outcome: either one source's failure, or both sources'
-/// failures preserved together.
 pub enum ArtifactError {
     Download(ArtifactDownloadError),
     Resolution {
@@ -705,9 +701,6 @@ fn create_source_manifest(
 /// (repo, revision, artifact bytes, layout) changes the fingerprint, so
 /// stale caches never validate against a new recipe.
 #[must_use]
-/// Fingerprint identifying one model snapshot recipe. Changing any pin
-/// (repo, revision, artifact bytes, layout) changes the fingerprint, so
-/// stale caches never validate against a new recipe.
 pub fn snapshot_fingerprint(
     model: &str,
     source: &ModelArtifactSource,
@@ -908,15 +901,6 @@ fn has_valid_complete_marker(
 /// stamp that did not is not evidence of change *or* of its absence, so
 /// validation falls back to the pinned content hash.
 #[derive(Debug, Clone, Copy)]
-/// The change signal recorded for one cached artifact.
-///
-/// Nanosecond resolution is load-bearing. A millisecond stamp cannot tell a
-/// same-size in-place rewrite from no rewrite at all, so an artifact mutated
-/// inside the same millisecond as the recorded stamp still matched its marker
-/// and the cache trusted mutated bytes. `resolved` records whether the
-/// filesystem actually reported a sub-millisecond remainder for this file; a
-/// stamp that did not is not evidence of change *or* of its absence, so
-/// validation falls back to the pinned content hash.
 struct MarkerStamp {
     mtime_ns: u64,
     ctime_ns: u64,

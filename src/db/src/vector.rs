@@ -14,7 +14,7 @@
 pub use common_core::score::top_k_by_score;
 pub use vector_math::cosine_similarity_f32;
 
-/// Vector index abstraction (M7) — `knn` via cosine distance.
+/// Vector index abstraction — `knn` via cosine distance.
 pub trait VectorIndex {
     fn knn(&self, query: &[f32], k: usize) -> Vec<fluent_types::KnnHit>;
 }
@@ -259,8 +259,6 @@ pub fn cosine_similarity_q8(a: &QuantizedEmbedding, b: &QuantizedEmbedding) -> f
 /// int8 storage codec (P6): `scale` (f32 LE) + `dimensions` (u32 LE) + raw
 /// i8 values. Stored bytes per vector = `dims + 8` vs `4 * dims` FP32.
 #[must_use]
-/// int8 storage codec (P6): `scale` (f32 LE) + `dimensions` (u32 LE) + raw
-/// i8 values. Stored bytes per vector = `dims + 8` vs `4 * dims` FP32.
 pub fn quantized_to_bytes(quantized: &QuantizedEmbedding) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(8 + quantized.values.len());
     bytes.extend_from_slice(&quantized.scale.to_le_bytes());
@@ -272,8 +270,6 @@ pub fn quantized_to_bytes(quantized: &QuantizedEmbedding) -> Vec<u8> {
 /// Decode [`quantized_to_bytes`]; `None` on truncation or dimension
 /// mismatch (corrupt rows never poison recall — callers skip them).
 #[must_use]
-/// Decode [`quantized_to_bytes`]; `None` on truncation or dimension
-/// mismatch (corrupt rows never poison recall — callers skip them).
 pub fn quantized_from_bytes(bytes: &[u8]) -> Option<QuantizedEmbedding> {
     if bytes.len() < 8 {
         return None;
@@ -339,6 +335,18 @@ pub fn knn_brute_force_q8<'a, Id: Clone>(
 /// previous `f32` surface had no live callers.
 pub use fluent_types::rounds::{ProducerConfidenceThreshold, TaskRelevanceThreshold};
 
+/// Reciprocal Rank Fusion (RRF): merges two ranked candidate lists into a
+/// single fused ranking.
+///
+/// RRF score = sum(1 / (k + rank(engine))) for each id appearing in either
+/// list; ids not present in a list contribute 0. On id collision the item
+/// from the first (`keyword_results`) list wins and the scores are summed.
+/// Results are returned sorted descending by score.
+///
+/// The inputs are `(id, item)` pairs in rank order (index 0 = best rank), so
+/// this is generic over the candidate item type — `search-vector`'s
+/// `SearchResult` and coral's `KnnHit` both fuse through this single
+/// implementation.
 pub fn rrf_merge<T>(
     keyword_results: Vec<(i64, T)>,
     vector_results: Vec<(i64, T)>,

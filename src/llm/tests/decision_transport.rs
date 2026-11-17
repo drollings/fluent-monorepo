@@ -170,7 +170,7 @@ fn wvr_units_are_pure_sync() {
     ctx.set("state".to_string(), "STATE".to_string());
     ctx.set("question".to_string(), "Q?".to_string());
     let out = render.execute(&ctx).expect("render");
-    let text: String = out.data_as().expect("typed prompt");
+    let text: String = out.data_ref().expect("typed prompt");
     assert!(text.starts_with("STATE"));
     assert!(text.ends_with("Q?"));
 
@@ -196,7 +196,7 @@ fn wvr_units_are_pure_sync() {
         }),
     );
     let out = decode.execute(&ctx).expect("decode");
-    let d: fluent_llm::decision::Decision = out.data_as().expect("typed decision");
+    let d: fluent_llm::decision::Decision = out.data_ref().expect("typed decision");
     assert_eq!(d.label, "B");
 
     let policy = fluent_llm::decision::PolicyVerdictUnit::new(ThresholdSet {
@@ -206,7 +206,7 @@ fn wvr_units_are_pure_sync() {
     let mut ctx = WorkContext::default();
     ctx.set("decision".to_string(), d);
     let out = policy.execute(&ctx).expect("policy");
-    let v: Verdict = out.data_as().expect("typed verdict");
+    let v: Verdict = out.data_ref().expect("typed verdict");
     assert_eq!(v, Verdict::Act);
 }
 

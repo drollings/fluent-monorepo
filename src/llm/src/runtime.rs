@@ -45,9 +45,6 @@ use fluent_wvr::runtime::Runtime;
 /// vtable discriminator (no code branches on it to dispatch).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// The runtime that owns a weights instance: a spawned `llama-server` process
-/// or an in-process ort session. Data for `ps` / envelope rendering — never a
-/// vtable discriminator (no code branches on it to dispatch).
 pub enum LlmRuntime {
     /// A supervised `llama-server` process (VRAM-resident).
     Llama,
@@ -59,9 +56,6 @@ pub enum LlmRuntime {
 /// The two fleets' orderings are deliberately distinct and must never be
 /// unified (roadmap §5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// The eviction ordering a weights instance injects into the shared engine.
-/// The two fleets' orderings are deliberately distinct and must never be
-/// unified (roadmap §5).
 pub enum EvictionPolicy {
     /// llama: footprint × coldness (`eviction_score`), newest `last_used`
     /// kept on tie. Ordered by `common_core::cache::eviction_order`.
@@ -75,9 +69,6 @@ pub enum EvictionPolicy {
 /// pool; CPU RAM is the onnx fleet's. The engine carries both budgets and runs
 /// one per-pool over-budget check per pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// The memory pool an eviction budget applies to. VRAM is the llama fleet's
-/// pool; CPU RAM is the onnx fleet's. The engine carries both budgets and runs
-/// one per-pool over-budget check per pass.
 pub enum MemoryPool {
     /// Device VRAM — the `FootprintColdness` pool.
     Vram,
@@ -100,9 +91,6 @@ impl EvictionPolicy {
 /// variants mirror `InstanceError` (llama management) + `OrtError` (onnx),
 /// suffixed where the source kept them distinct.
 #[derive(Debug, thiserror::Error)]
-/// Runtime-agnostic error for weights/context/KV lifecycle operations. The
-/// variants mirror `InstanceError` (llama management) + `OrtError` (onnx),
-/// suffixed where the source kept them distinct.
 pub enum LlmRuntimeError {
     /// 429/503/504/507/other 5xx — transient; a 507/503 also signals an
     /// allocation/eviction trigger.
@@ -186,13 +174,6 @@ impl std::fmt::Display for ResidencyState {
 /// `last_used_ms` clock). The engine keeps each fleet's unit so its ordering
 /// and idle-release rules stay exact with zero conversion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// One row of a weights instance's residency view — the trait-object form of
-/// `InstanceInfo` (llama) / `ResidencyReportEntry` + pool context (onnx).
-///
-/// `last_used` is **pool-native**: seconds for `runtime: Llama` (the fork's
-/// `/instances` clock), milliseconds for `runtime: Onnx` (the registry's
-/// `last_used_ms` clock). The engine keeps each fleet's unit so its ordering
-/// and idle-release rules stay exact with zero conversion.
 pub struct LlmResidencyRow {
     /// Public `<model_key>:<context_name>` identifier.
     pub context_key: String,
@@ -230,8 +211,6 @@ pub struct LlmResidencyRow {
 /// Metadata for one context KV snapshot — the trait-object form of
 /// `SnapshotInfo` (llama) / the RAM snapshot index entry (onnx).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-/// Metadata for one context KV snapshot — the trait-object form of
-/// `SnapshotInfo` (llama) / the RAM snapshot index entry (onnx).
 pub struct SnapshotMeta {
     /// Snapshot name (e.g. `<instance>-resume`).
     pub name: String,
@@ -247,9 +226,6 @@ pub struct SnapshotMeta {
 /// The engine, the `/instances` facade, `ps`, and the context registry drive
 /// fleets through this surface; the hot decode loop never sees it.
 #[async_trait::async_trait]
-/// One loaded weights instance — a llama-server process or an ort session.
-/// The engine, the `/instances` facade, `ps`, and the context registry drive
-/// fleets through this surface; the hot decode loop never sees it.
 pub trait LlmWeights: Send + Sync {
     /// The public model key (e.g. `"onnx/llm"` or `"lfm2.5-2.6b"`).
     fn model_key(&self) -> &str;
@@ -318,9 +294,6 @@ pub trait LlmWeights: Send + Sync {
 /// instance. The onnx side gains this in M2 (the defining capability of the
 /// llama fork) as an additive layer.
 #[async_trait::async_trait]
-/// One named context window with its own KV cache, allocated from a weights
-/// instance. The onnx side gains this in M2 (the defining capability of the
-/// llama fork) as an additive layer.
 pub trait LlmContext: Send + Sync {
     /// The bare context name (e.g. `"scratch"`, `"swarm-0"`).
     fn name(&self) -> &str;
@@ -352,7 +325,7 @@ pub trait LlmContext: Send + Sync {
     /// The KV-cache surface for this context (snapshot/restore/list/delete).
     fn kv_cache(&self) -> Arc<dyn LlmKVCache>;
     /// Evict this context. Default = `destroy`; the llama adapter overrides to
-    /// run the resume-snapshot-before-destroy order first (M5).
+    /// run the resume-snapshot-before-destroy order first.
     async fn evict(&self) -> Result<(), LlmRuntimeError> {
         self.destroy().await
     }
@@ -362,9 +335,6 @@ pub trait LlmContext: Send + Sync {
 /// the fork's `POST /instances/:name/snapshot` + the `SnapshotStore` metadata
 /// index; onnx clones the context's `PastState` tensors to a named RAM map.
 #[async_trait::async_trait]
-/// Snapshot/restore/list/delete of one context's KV state. Llama delegates to
-/// the fork's `POST /instances/:name/snapshot` + the `SnapshotStore` metadata
-/// index; onnx clones the context's `PastState` tensors to a named RAM map.
 pub trait LlmKVCache: Send + Sync {
     /// Save the context's current KV under `name`.
     async fn save(&self, name: &str) -> Result<(), LlmRuntimeError>;

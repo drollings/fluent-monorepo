@@ -237,7 +237,7 @@ fn index_dir_for_db_keeps_markers_beside_the_database() {
 }
 
 fn seed_symbol(
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     dir: &std::path::Path,
     name: &str,
     content_hash: &str,
@@ -249,13 +249,14 @@ fn seed_symbol(
     file.content_hash = Some(content_hash.to_string());
     let fragment = crate::tests::common::db_text_fragment(name, "alpha", "pub fn alpha() {}", 1);
     db.upsert_fragments(&file, &[fragment], &[]).expect("seed");
-    let row = |symbol_id: String, symbol_name: &str, hash: &str| search_vector::db::SymbolRecord {
-        symbol_id,
-        file_id: name.to_string(),
-        name: Some(symbol_name.to_string()),
-        scope: None,
-        interface_hash: hash.to_string(),
-    };
+    let row =
+        |symbol_id: String, symbol_name: &str, hash: &str| crate::query::search_db::SymbolRecord {
+            symbol_id,
+            file_id: name.to_string(),
+            name: Some(symbol_name.to_string()),
+            scope: None,
+            interface_hash: hash.to_string(),
+        };
     db.replace_symbols(&[
         row(format!("{name}#alpha"), "alpha", interface),
         row(format!("{name}#$file"), "alpha", module_interface),
@@ -266,7 +267,7 @@ fn seed_symbol(
 #[test]
 fn tree_fingerprint_tracks_content_and_interfaces() {
     let dir = tempdir();
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     seed_symbol(&db, dir.path(), "a.rs", "content-1", "iface-1", "module-1");
     let base = crate::index_generation::tree_fingerprint(&db);
     assert_eq!(

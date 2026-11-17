@@ -21,19 +21,6 @@ use crate::error::RegistryError;
 /// targets); dispatch reads it, the resolver itself does not execute.
 #[derive(Debug, Clone, Builder)]
 #[builder(start_fn = new)]
-/// Resolver-plane record: bitset capabilities plus identity.
-///
-/// `depends`/`provides` are `BitVec` indexed by [`CapabilityRegistry`]
-/// bit index (compact, O(1) membership). Execution-plane [`WorkUnit`]s use
-/// `Vec<ArcIntern<str>>` for the same names instead — convert at the bridge
-/// (`TargetWorkUnit::from_target` maps each set bit through the registry;
-/// unmapped bits warn and skip). `id` is the target's bit index in the
-/// *target-id* space, which shares the `usize` representation with the
-/// capability-bit space but is never interchangeable: use [`get`](Self::get)
-/// (by name), [`get_by_index`](Self::get_by_index) (Vec position), or
-/// [`get_by_bit_index`](Self::get_by_bit_index) (by `id`) accordingly.
-/// `executor` records the intended runtime (`Native` for yamake-loaded
-/// targets); dispatch reads it, the resolver itself does not execute.
 pub struct Target {
     pub id: i64,
     pub name: ArcIntern<str>,
@@ -71,8 +58,19 @@ impl TargetRegistry {
                 name: target.name.to_string(),
             });
         }
-        let idx = self.targets.len();
+        // `id as usize` would silently wrap a negative id into a huge index.
+        if target.id < 0 {
+            return Err(RegistryError::NegativeTargetId(target.id));
+        }
         let bit_idx = target.id as usize;
+        // `insert` would silently overwrite the previous owner.
+        if let Some(&existing) = self.by_bit_index.get(&bit_idx) {
+            return Err(RegistryError::DuplicateBitIndex {
+                index: bit_idx,
+                name: self.targets[existing].name.to_string(),
+            });
+        }
+        let idx = self.targets.len();
         self.by_name.insert(target.name.clone(), idx);
         self.by_bit_index.insert(bit_idx, idx);
         // Store Vec position (not target id): capability and target-id spaces

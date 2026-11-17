@@ -48,7 +48,7 @@ where
     /// (first-wins): `Ok(())` on a fresh registration, `Err(value)` with
     /// the value handed back — unstored — on a duplicate. Unlike
     /// `contains` + `insert`, the check and the store are one map
-    /// operation, so a duplicate can never overwrite the winner (M8.1).
+    /// operation, so a duplicate can never overwrite the winner.
     pub fn try_insert(&mut self, key: K, value: V) -> Result<(), V> {
         use std::collections::btree_map::Entry;
         match self.entries.entry(key) {
@@ -211,8 +211,7 @@ where
     /// the value handed back — unstored — on a duplicate. The check and
     /// the store hold the write lock together, so two threads racing one
     /// id cannot both pass (unlike `get` + `insert`, which can). This is
-    /// the registration path; upserts keep using [`insert`](Self::insert)
-    /// (M8.1).
+    /// the registration path; upserts keep using [`insert`](Self::insert).
     pub fn try_insert(&self, key: K, value: V) -> Result<(), V> {
         use std::collections::hash_map::Entry;
         match lock_write(&self.inner).entry(key) {

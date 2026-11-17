@@ -26,10 +26,6 @@ pub fn lower_dedup_push(out: &mut Vec<String>, value: &str) {
 /// `role_overlap` does). Underscore splits (it is not alphanumeric), so
 /// `Foo.Bar` and `foo_bar` both split. Source: `graph_index::extend_tokens`.
 #[must_use]
-/// Split on non-alphanumeric separators, lowercase, drop empties.
-/// Duplicates are preserved (collect into a `HashSet` for membership, as
-/// `role_overlap` does). Underscore splits (it is not alphanumeric), so
-/// `Foo.Bar` and `foo_bar` both split. Source: `graph_index::extend_tokens`.
 pub fn split_tokens(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric())
         .map(str::to_lowercase)
@@ -41,9 +37,6 @@ pub fn split_tokens(text: &str) -> Vec<String> {
 /// Source: `pipeline/search/index.ts` (`extractSymbolNames`), via
 /// `guidance-core::search_types::extract_symbol_names` (moved, not copied).
 #[must_use]
-/// Query tokens that name code symbols, minus the keyword stoplist.
-/// Source: `pipeline/search/index.ts` (`extractSymbolNames`), via
-/// `guidance-core::search_types::extract_symbol_names` (moved, not copied).
 pub fn symbol_names(query: &str) -> Vec<String> {
     const KEYWORDS: &[&str] = &[
         "class",
@@ -94,9 +87,6 @@ pub fn symbol_names(query: &str) -> Vec<String> {
 /// Source: `pipeline/search/index.ts` (`symbolNameFromToken`), via
 /// `guidance-core::search_types::symbol_name_from_token` (moved, not copied).
 #[must_use]
-/// Owner-aware symbol name: keeps `Owner::name` only for uppercase owners.
-/// Source: `pipeline/search/index.ts` (`symbolNameFromToken`), via
-/// `guidance-core::search_types::symbol_name_from_token` (moved, not copied).
 pub fn symbol_name_from_token(token: &str) -> Option<String> {
     let parts: Vec<&str> = token.split("::").filter(|p| !p.is_empty()).collect();
     let name = parts.last().copied().unwrap_or(token);
@@ -119,65 +109,5 @@ pub fn symbol_name_from_token(token: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lower_dedup_push_collapses_case_variants_and_empties() {
-        let mut out = Vec::new();
-        lower_dedup_push(&mut out, "Find");
-        lower_dedup_push(&mut out, "find");
-        lower_dedup_push(&mut out, "");
-        lower_dedup_push(&mut out, "gamma");
-        assert_eq!(out, vec!["find".to_string(), "gamma".to_string()]);
-    }
-
-    #[test]
-    fn split_tokens_edges() {
-        assert!(split_tokens("").is_empty());
-        assert_eq!(
-            split_tokens("Foo.Bar"),
-            vec!["foo".to_string(), "bar".to_string()]
-        );
-        // Underscore is not alphanumeric: it splits too.
-        assert_eq!(
-            split_tokens("foo_bar"),
-            vec!["foo".to_string(), "bar".to_string()]
-        );
-        assert_eq!(
-            split_tokens("a::b c-d"),
-            vec![
-                "a".to_string(),
-                "b".to_string(),
-                "c".to_string(),
-                "d".to_string()
-            ]
-        );
-        // Duplicates preserved; empties dropped.
-        assert_eq!(split_tokens("x..x"), vec!["x".to_string(), "x".to_string()]);
-    }
-
-    #[test]
-    fn symbol_names_edges() {
-        assert!(symbol_names("").is_empty());
-        assert_eq!(
-            symbol_names("foo bar foo"),
-            vec!["foo".to_string(), "bar".to_string()]
-        );
-        assert_eq!(symbol_names("~temp"), vec!["~temp".to_string()]);
-        assert!(symbol_names("a:b:c").is_empty());
-        assert_eq!(symbol_names("café"), vec!["caf".to_string()]);
-    }
-
-    #[test]
-    fn symbol_name_from_token_edges() {
-        assert_eq!(symbol_name_from_token("foo::"), Some("foo".to_string()));
-        assert_eq!(symbol_name_from_token("::foo"), Some("foo".to_string()));
-        assert_eq!(
-            symbol_name_from_token("Foo::Bar::baz"),
-            Some("Bar::baz".to_string())
-        );
-        assert_eq!(symbol_name_from_token(""), None);
-        assert_eq!(symbol_name_from_token("::"), None);
-    }
-}
+#[path = "../../tests/tokens.rs"]
+mod tests;

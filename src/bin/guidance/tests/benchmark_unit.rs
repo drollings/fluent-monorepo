@@ -22,7 +22,10 @@ fn tokens_use_the_shared_tokenizer() {
 
 #[test]
 fn spam_helpers_reuse_the_eval_contracts() {
-    assert_eq!(super::SPAM_MAX_CITATIONS, guidance_core::eval::SPAM_MAX_CITATIONS);
+    assert_eq!(
+        super::SPAM_MAX_CITATIONS,
+        guidance_core::eval::SPAM_MAX_CITATIONS
+    );
     assert_eq!(
         super::SPAM_MAX_SPAN_LINES,
         guidance_core::eval::SPAM_MAX_SPAN_LINES
@@ -67,8 +70,14 @@ fn doc_walk_covers_readme_and_docs_only() {
         .collect();
     assert!(names.contains(&"README.md".to_string()), "{names:?}");
     assert!(names.contains(&"doc/guide.md".to_string()), "{names:?}");
-    assert!(names.contains(&"doc/nested/deep.md".to_string()), "{names:?}");
-    assert!(!names.iter().any(|name| name.starts_with("src/")), "{names:?}");
+    assert!(
+        names.contains(&"doc/nested/deep.md".to_string()),
+        "{names:?}"
+    );
+    assert!(
+        !names.iter().any(|name| name.starts_with("src/")),
+        "{names:?}"
+    );
     assert!(
         !names.iter().any(|name| name.contains("eval")),
         "measurement never enters: {names:?}"
@@ -87,14 +96,18 @@ fn doc_walk_covers_readme_and_docs_only() {
 #[test]
 fn benchmark_reports_spam_doc_walk_and_control_floor() {
     let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join("README.md"), "# Fixture\n\nwalkterm alpha\n").expect("write");
+    std::fs::write(
+        dir.path().join("README.md"),
+        "# Fixture\n\nwalkterm alpha\n",
+    )
+    .expect("write");
     std::fs::create_dir_all(dir.path().join("doc")).expect("mkdir");
     std::fs::write(dir.path().join("doc/guide.md"), "walkterm beta\n").expect("write");
     std::fs::write(dir.path().join("code.rs"), "fn walkterm() {}\n").expect("write");
     let db_path = dir.path().join("bench.db");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("db");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("db");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &guidance_core::query::search_db::FileRecord {
             id: "code.rs".to_string(),
             absolute_path: dir.path().join("code.rs").to_string_lossy().into_owned(),
             relative_path: "code.rs".to_string(),
@@ -108,7 +121,7 @@ fn benchmark_reports_spam_doc_walk_and_control_floor() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[guidance_core::query::search_db::FragmentRecord {
             id: "code-walkterm".to_string(),
             group: None,
             file_id: "code.rs".to_string(),
@@ -204,7 +217,10 @@ fn benchmark_reports_spam_doc_walk_and_control_floor() {
         "control stays silent on the doc-walk arm: {:?}",
         control.doc_walk
     );
-    assert!(report.totals.contains_key("doc_walk"), "totals cover doc-walk");
+    assert!(
+        report.totals.contains_key("doc_walk"),
+        "totals cover doc-walk"
+    );
 }
 
 #[test]
@@ -460,9 +476,9 @@ fn explain_arm_runs_the_shipping_engine() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("beam.rs"), "fn zzbeam() {}\n").expect("write");
     let db_path = dir.path().join("bench.db");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("db");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("db");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &guidance_core::query::search_db::FileRecord {
             id: "beam".to_string(),
             absolute_path: dir.path().join("beam.rs").to_string_lossy().into_owned(),
             relative_path: "beam.rs".to_string(),
@@ -476,7 +492,7 @@ fn explain_arm_runs_the_shipping_engine() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[guidance_core::query::search_db::FragmentRecord {
             id: "beam-fn".to_string(),
             group: None,
             file_id: "beam".to_string(),
@@ -605,9 +621,9 @@ fn shipping_arm_matches_cli_compact_body_and_envelope() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("beam.rs"), "fn zzbeam() {}\n").expect("write");
     let db_path = dir.path().join("parity.db");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("db");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("db");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &guidance_core::query::search_db::FileRecord {
             id: "beam".to_string(),
             absolute_path: dir.path().join("beam.rs").to_string_lossy().into_owned(),
             relative_path: "beam.rs".to_string(),
@@ -621,7 +637,7 @@ fn shipping_arm_matches_cli_compact_body_and_envelope() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[guidance_core::query::search_db::FragmentRecord {
             id: "beam-fn".to_string(),
             group: None,
             file_id: "beam".to_string(),

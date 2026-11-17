@@ -32,15 +32,13 @@
 //! targets through uncontested capabilities. The shared `kahn_sort` core
 //! sidesteps both: it orders only the nodes handed to it, and each caller
 //! builds its own `in_degree`/`adjacency` from its own source of truth.
-//!
-//! See also: `REVIEW_20260804_PROGRESS.md` §3.3 for the design rationale.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::closure::{self, ClosureCtx};
+use crate::error::ResolverError;
 use crate::narrowing;
 use crate::target::{Target, TargetRegistry};
-use common_core::error::ResolverError;
 use common_core::interner::CapabilityRegistry;
 use fluent_types::TargetType;
 
@@ -506,11 +504,6 @@ impl<'a> DependencyResolver<'a> {
 /// while the abstract self-provision branch ignores it (the capability may
 /// simply have no other claimant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// How a contested capability with zero surviving providers resolves after
-/// narrowing. The two narrowing call sites differ exactly here: the
-/// dependency-driven branch treats it as a missing provider (strict error),
-/// while the abstract self-provision branch ignores it (the capability may
-/// simply have no other claimant).
 enum EmptyNarrowing {
     Error,
     Ignore,

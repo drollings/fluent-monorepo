@@ -10,7 +10,7 @@
 //! cursor wiring) compose these shapes in the terminal crate.
 
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 
 use crate::error::EguiError;
@@ -161,7 +161,7 @@ impl WorkUnit for PaneConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "pane config invalid")?;
-        Ok(valid_output(format!("pane ready ({})", self.name)))
+        Ok(WorkOutput::ok(format!("pane ready ({})", self.name)))
     }
 }
 
@@ -411,7 +411,7 @@ impl WorkUnit for ThemeConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "theme config invalid")?;
-        Ok(valid_output(format!("theme ready ({})", self.name)))
+        Ok(WorkOutput::ok(format!("theme ready ({})", self.name)))
     }
 }
 

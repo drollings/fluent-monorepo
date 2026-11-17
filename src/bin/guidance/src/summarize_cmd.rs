@@ -52,7 +52,7 @@ pub async fn run_summarize(
         .timeout_ms(cfg.generative.timeout_ms)
         .build();
     let client = fluent_llm::client::LlmClient::with_config(config);
-    let db = search_vector::GuidanceDb::open(Path::new(db_path))
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(db_path))
         .map_err(|error| format!("cannot open index at {db_path}: {error}"))?;
     let known: std::collections::HashMap<String, String> = db
         .list_files()

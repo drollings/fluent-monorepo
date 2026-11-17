@@ -1,5 +1,9 @@
 //! Database `Component`/`WorkUnit` adapters.
 //!
+//! **Status: compatibility surface (scaffold).** No production callers today;
+//! kept as the canonical supervised-offload exemplar for blocking store work
+//! (`DbWorkUnit` + [`store_unit`] over any [`DbStore`]).
+//!
 //! `DbWorkUnit` wraps a synchronous store operation so it can run under a
 //! `SupervisedBatch` supervisor (or any `WorkUnit` orchestrator) without violating the
 //! WorkUnit purity contract (`fluent-wvr` SKILL §10): `execute` is
@@ -54,6 +58,18 @@ impl DbStore for SqliteStore {
     }
 }
 
+impl DbStore for Arc<SqliteStore> {
+    fn with_conn_blocking<R>(
+        &self,
+        f: impl FnOnce(&rusqlite::Connection) -> Result<R, DbError> + Send + 'static,
+    ) -> Result<R, DbError>
+    where
+        R: Send + 'static,
+    {
+        self.with_conn(f)
+    }
+}
+
 impl DbStore for Arc<SqlitePool> {
     fn with_conn_blocking<R>(
         &self,
@@ -91,18 +107,6 @@ impl DbStore for Arc<SqlitePool> {
 /// Construct with [`DbWorkUnit::builder`], or use the concrete
 /// [`store_unit`] factory for store operations over an `Arc<SqliteStore>`.
 #[derive(bon::Builder)]
-/// A `Component`/`WorkUnit` that runs a synchronous database operation on a
-/// dedicated blocking thread.
-///
-/// The op receives the `WorkContext` and returns a `WorkOutput`. `execute`
-/// offloads it via `tokio::task::block_in_place` when on a multi-threaded
-/// runtime worker, so the async executor is never starved — this is what makes
-/// DB work safe to run under `SupervisedBatch` supervision (timeout/retry/cancellation)
-/// and inside `ResultPool` handlers without violating the WorkUnit purity
-/// contract.
-///
-/// Construct with [`DbWorkUnit::builder`], or use the concrete
-/// [`store_unit`] factory for store operations over an `Arc<SqliteStore>`.
 pub struct DbWorkUnit<F> {
     /// The unit's `WorkUnit::name()`.
     #[builder(into)]
@@ -154,8 +158,9 @@ where
         // runtimes alike. A worker panic is the only failure the combinator
         // reports; the op's own `WorkError` travels inside the result.
         let caps = ctx.caps.clone();
-        fluent_wvr::run_gated_blocking(caps, || (self.op)(ctx))
-            .map_err(|_| WorkError::Execution("db work unit thread panicked".into()))?
+        fluent_wvr::run_gated_blocking(caps, || (self.op)(ctx)).map_err(|join| {
+            WorkError::Execution(format!("db work unit thread panicked: {}", join.detail))
+        })?
     }
 }
 
@@ -179,18 +184,20 @@ pub type StoreUnitOp = Box<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError>
 /// A shared, boxed store operation closure (connection → `WorkOutput`).
 type StoreOp = Arc<dyn Fn(&rusqlite::Connection) -> Result<WorkOutput, DbError> + Send + Sync>;
 
-/// Build a `DbWorkUnit` that runs a store operation over a shared
-/// `Arc<SqliteStore>`.
+/// Build a `DbWorkUnit` that runs a store operation over a shared store.
 ///
 /// The `op` closure runs against the store's connection on a blocking thread
 /// (via `DbWorkUnit::execute`'s offload); a `DbError` is mapped to
 /// `WorkError::Execution`. `depends`/`provides` default to empty and the
-/// timeout to `30_000` ms.
-pub fn store_unit(
-    store: Arc<SqliteStore>,
+/// timeout to `30_000` ms. Generic over [`DbStore`] so pool-backed units
+/// (`Arc<SqlitePool>`) compose this instead of hand-building
+/// `DbWorkUnit::builder()`.
+pub fn store_unit<S: DbStore + 'static>(
+    store: S,
     name: &str,
     op: impl Fn(&rusqlite::Connection) -> Result<WorkOutput, DbError> + Send + Sync + 'static,
 ) -> DbWorkUnit<StoreUnitOp> {
+    let store = Arc::new(store);
     let name = name.to_string();
     let op: StoreOp = Arc::new(op);
     DbWorkUnit::builder()

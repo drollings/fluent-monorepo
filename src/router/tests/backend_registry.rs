@@ -229,3 +229,39 @@ fn onnx_backend_contract_without_a_session() {
         fluent_llm::backend::Readiness::Unloaded
     );
 }
+
+#[test]
+fn inventory_backends_refuse_direct_execution() {
+    // `LlamaBackend`/`OnnxBackend` are inventory + routing adapters: their
+    // `WorkUnit::execute` is never a runnable step. A supervisor that
+    // schedules one must get a loud refusal, never a fake completion.
+    use fluent_wvr::{WorkContext, WorkUnit};
+    let pool =
+        crate::instances::InstancePool::from_managers(std::collections::HashMap::new(), None);
+    let corpus = golden_corpus_config();
+    let llama = crate::instances::traits::LlamaBackend::new(
+        pool,
+        corpus.models.clone(),
+        corpus.roles.clone(),
+        corpus.onnx_role_keys(),
+        corpus.sidecar.clone(),
+    );
+    let err = llama
+        .execute(&WorkContext::default())
+        .expect_err("llama execute is inventory-only");
+    assert!(
+        matches!(err, fluent_wvr::WorkError::Execution(_)),
+        "fail-closed, not a dependency/timeout: {err:?}"
+    );
+    use fluent_llm::testutil::StubSessionLoader as StubLoader;
+    let registry: crate::ort::OrtRegistry = Arc::new(
+        fluent_llm::onnx_session::OrtSessionRegistry::new(Arc::new(StubLoader)),
+    );
+    let corpus = golden_corpus_config();
+    let onnx =
+        crate::ort::OnnxBackend::from_config(&corpus, &registry).expect("llm role configured");
+    let err = onnx
+        .execute(&WorkContext::default())
+        .expect_err("onnx execute is inventory-only");
+    assert!(matches!(err, fluent_wvr::WorkError::Execution(_)));
+}

@@ -8,8 +8,8 @@
 use super::*;
 use crate::query::funnel::funnel_terms;
 
-fn alias_table() -> search_vector::aliases::SemanticAliases {
-    search_vector::aliases::SemanticAliases::from_json(r#"{"components": ["modules", "parts"]}"#)
+fn alias_table() -> crate::query::aliases::SemanticAliases {
+    crate::query::aliases::SemanticAliases::from_json(r#"{"components": ["modules", "parts"]}"#)
         .expect("alias fixture parses")
 }
 

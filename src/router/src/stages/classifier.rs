@@ -855,6 +855,7 @@ impl ClassifierStage {
             system_prompt_len = messages[0].content.len(),
             retry_attempt = ctx
                 .get::<i64>(crate::stages::retry_classifier::METADATA_RETRY_ATTEMPT)
+                .as_deref()
                 .copied(),
             "classifier LLM request"
         );

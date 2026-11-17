@@ -27,12 +27,6 @@ use crate::error::DbError;
 /// across multiple statements use `with_conn`/`with_conn_mut` and the typed
 /// helpers inside one closure.
 #[derive(Debug)]
-/// A single-connection SQLite store with WAL mode enabled.
-///
-/// The connection is wrapped in a `Mutex` because `rusqlite::Connection` is not
-/// `Sync`; every operation serializes on it. Consumers that need to hold the lock
-/// across multiple statements use `with_conn`/`with_conn_mut` and the typed
-/// helpers inside one closure.
 pub struct SqliteStore {
     pub(crate) conn: Mutex<Connection>,
 }
@@ -156,9 +150,14 @@ impl SqliteStore {
         let mut attempts = 0u32;
         loop {
             match self.transaction(|tx| crate::outbox::claim_batch(tx, limit, lease_ms, now_ms)) {
-                Err(DbError::Busy(_)) if attempts < 20 => {
+                Err(e)
+                    if crate::outbox::is_claim_retryable(&e)
+                        && attempts < crate::outbox::OUTBOX_CLAIM_MAX_ATTEMPTS =>
+                {
                     attempts += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        crate::outbox::OUTBOX_CLAIM_RETRY_DELAY_MS,
+                    ));
                 }
                 done => return done,
             }

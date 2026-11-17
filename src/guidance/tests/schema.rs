@@ -1,11 +1,12 @@
-//! Schema snapshot golden: opening a `GuidanceDb` creates exactly this set
+//! Schema snapshot golden: opening a `GuidanceSearchDb` creates exactly this set
 //! of application tables, indexes, and triggers. The M6 module split moves
 //! SQL text verbatim — this pins it byte-identical across the move.
 
-use crate::db::GuidanceDb;
+use crate::query::search_db::GuidanceSearchDb;
 
-fn object_names(db: &GuidanceDb, kind: &str) -> Vec<String> {
-    db.store
+fn object_names(db: &GuidanceSearchDb, kind: &str) -> Vec<String> {
+    db.docs
+        .sqlite_store()
         .with_conn(|conn| {
             let mut stmt = conn
                 .prepare("SELECT name FROM sqlite_master WHERE type = ?1 ORDER BY name")
@@ -21,7 +22,7 @@ fn object_names(db: &GuidanceDb, kind: &str) -> Vec<String> {
 
 #[test]
 fn schema_creates_exact_application_tables() {
-    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let db = GuidanceSearchDb::open_in_memory().expect("in-memory db");
     let mut tables = object_names(&db, "table");
     tables.retain(|name| !name.starts_with("sqlite_"));
     // Note: `fragments_fts_*` shadow tables are FTS5 internals created with
@@ -76,9 +77,10 @@ fn answer_cache_carries_manifest_keyed_rows() {
     // Manifest-keyed generative answers: key plus payload plus the
     // support label that travels with the hit. A second copy of the
     // evidence would drift; the manifest hash is the only key.
-    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let db = GuidanceSearchDb::open_in_memory().expect("in-memory db");
     let columns: Vec<String> = db
-        .store
+        .docs
+        .sqlite_store()
         .with_conn(|conn| {
             let mut stmt = conn
                 .prepare("SELECT name FROM pragma_table_info('answer_cache') ORDER BY cid")
@@ -112,9 +114,10 @@ fn symbols_table_carries_identity_only() {
     // One row per (file, symbol, scope): the stable id plus the
     // interface hash. Signature, content, and range live on the
     // fragment rows — a second copy here would drift.
-    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let db = GuidanceSearchDb::open_in_memory().expect("in-memory db");
     let columns: Vec<String> = db
-        .store
+        .docs
+        .sqlite_store()
         .with_conn(|conn| {
             let mut stmt = conn
                 .prepare("SELECT name FROM pragma_table_info('symbols') ORDER BY cid")
@@ -137,9 +140,10 @@ fn symbols_table_carries_identity_only() {
 fn fragment_lemmas_is_without_rowid() {
     // The composite PK is the access path; a rowid table adds a second
     // B-tree that duplicates every key, so WITHOUT ROWID removes it.
-    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let db = GuidanceSearchDb::open_in_memory().expect("in-memory db");
     let sql: String = db
-        .store
+        .docs
+        .sqlite_store()
         .with_conn(|conn| {
             Ok(conn.query_row(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fragment_lemmas'",
@@ -150,7 +154,8 @@ fn fragment_lemmas_is_without_rowid() {
         .expect("ddl");
     assert!(sql.contains("WITHOUT ROWID"), "{sql}");
     let autoindexes: Vec<String> = db
-        .store
+        .docs
+        .sqlite_store()
         .with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'index' \
@@ -167,7 +172,7 @@ fn fragment_lemmas_is_without_rowid() {
 
 #[test]
 fn schema_creates_exact_application_indexes_and_triggers() {
-    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let db = GuidanceSearchDb::open_in_memory().expect("in-memory db");
     let mut indexes = object_names(&db, "index");
     indexes.retain(|name| !name.starts_with("sqlite_"));
     assert_eq!(
@@ -217,9 +222,10 @@ fn schema_creates_exact_application_indexes_and_triggers() {
 fn fts_triggers_cover_doc_column() {
     // The insert/update/delete triggers must carry `doc` or comment-only
     // terms silently leave the FTS index.
-    let db = GuidanceDb::open_in_memory().expect("in-memory db");
+    let db = GuidanceSearchDb::open_in_memory().expect("in-memory db");
     let sql: String = db
-        .store
+        .docs
+        .sqlite_store()
         .with_conn(|conn| {
             Ok(conn.query_row(
                 "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'fragments_ai'",
@@ -237,8 +243,8 @@ fn old_fts_table_gains_doc_column_on_open() {
     // from the content table the next time the database opens.
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("mig.db");
-    let db = GuidanceDb::open(&path).expect("open");
-    db.store
+    let db = GuidanceSearchDb::open(&path).expect("open");
+    db.docs.sqlite_store()
         .with_conn(|conn| {
             conn.execute_batch(
                 "DROP TRIGGER IF EXISTS fragments_ai;
@@ -269,7 +275,7 @@ fn old_fts_table_gains_doc_column_on_open() {
         })
         .expect("with_conn");
     db.upsert_fragments(
-        &crate::db::fragments::FileRecord {
+        &crate::query::search_db::fragments::FileRecord {
             id: "file-a".to_string(),
             absolute_path: "/repo/a.rs".to_string(),
             relative_path: "a.rs".to_string(),
@@ -283,7 +289,7 @@ fn old_fts_table_gains_doc_column_on_open() {
             fail_count: 0,
             last_error: None,
         },
-        &[crate::db::fragments::FragmentRecord {
+        &[crate::query::search_db::fragments::FragmentRecord {
             id: "entity-a".to_string(),
             group: None,
             file_id: "file-a".to_string(),
@@ -305,12 +311,12 @@ fn old_fts_table_gains_doc_column_on_open() {
     )
     .expect("upsert");
     drop(db);
-    let db = GuidanceDb::open(&path).expect("reopen");
+    let db = GuidanceSearchDb::open(&path).expect("reopen");
     let hits = db
         .search_fts(
             "total",
             10,
-            &crate::db::fragments::FragmentFilter::default(),
+            &crate::query::search_db::fragments::FragmentFilter::default(),
         )
         .expect("search");
     assert!(

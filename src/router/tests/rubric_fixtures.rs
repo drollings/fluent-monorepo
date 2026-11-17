@@ -48,7 +48,7 @@ fn test_scorer_accepts_correct_math_answer() {
     );
     let ctx = scorer_ctx("What is 2+2?", "4");
     let output = scorer.execute(&ctx).expect("execute");
-    let result: ScoredResult = output.data_as().expect("data_as");
+    let result: ScoredResult = output.data_ref().expect("data_as");
     assert!(result.accepted, "correct answer should be accepted");
     assert!(result.score >= 0.7);
     assert_eq!(result.content, "4");
@@ -66,7 +66,7 @@ fn test_scorer_rejects_garbage_answer() {
     );
     let ctx = scorer_ctx("Write a Rust function", "purple monkey dishwasher");
     let output = scorer.execute(&ctx).expect("execute");
-    let result: ScoredResult = output.data_as().expect("data_as");
+    let result: ScoredResult = output.data_ref().expect("data_as");
     assert!(!result.accepted, "garbage answer should be rejected");
     assert!(result.score < 0.7);
 }
@@ -83,7 +83,7 @@ fn test_scorer_borderline_answer_below_threshold() {
     );
     let ctx = scorer_ctx("Explain Rust ownership", "Ownership is a set of rules.");
     let output = scorer.execute(&ctx).expect("execute");
-    let result: ScoredResult = output.data_as().expect("data_as");
+    let result: ScoredResult = output.data_ref().expect("data_as");
     assert!(
         !result.accepted,
         "borderline answer should be rejected at 0.7 threshold"
@@ -104,7 +104,7 @@ fn test_scorer_borderline_answer_above_threshold() {
         "Ownership ensures memory safety without a garbage collector.",
     );
     let output = scorer.execute(&ctx).expect("execute");
-    let result: ScoredResult = output.data_as().expect("data_as");
+    let result: ScoredResult = output.data_ref().expect("data_as");
     assert!(
         result.accepted,
         "borderline answer at 0.75 should be accepted at 0.7 threshold"
@@ -124,7 +124,7 @@ fn test_scorer_rejection_produces_compact_summary() {
     );
     let ctx = scorer_ctx("Write Fibonacci", "The sky is blue.");
     let output = scorer.execute(&ctx).expect("execute");
-    let result: ScoredResult = output.data_as().expect("data_as");
+    let result: ScoredResult = output.data_ref().expect("data_as");
     assert!(!result.accepted);
     assert!(
         !result.summary.is_empty(),
@@ -151,7 +151,7 @@ fn test_summarizer_condenses_long_text() {
     let ctx =
         summarizer_ctx("fn fib(n: u64) -> u64 { if n <= 1 { n } else { fib(n-1) + fib(n-2) } }");
     let output = summarizer.execute(&ctx).expect("execute");
-    let data: serde_json::Value = output.data_as().expect("data_as");
+    let data: serde_json::Value = output.data_ref().expect("data_as");
     let summary = data["summary"].as_str().expect("summary");
     assert!(!summary.is_empty(), "summary should not be empty");
 }
@@ -177,7 +177,7 @@ fn test_scorer_uses_stub_not_live_model() {
     );
     let ctx = scorer_ctx("test", "stub response");
     let output = scorer.execute(&ctx).expect("execute");
-    let result: ScoredResult = output.data_as().expect("data_as");
+    let result: ScoredResult = output.data_ref().expect("data_as");
     assert_eq!(result.score, 0.99);
     assert_eq!(result.reason, "stub");
 }

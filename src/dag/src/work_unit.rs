@@ -60,44 +60,62 @@ impl WorkUnit for CommandUnit {
     }
 }
 
-impl FieldAccess for CommandUnit {
-    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        match name {
-            "name" => {
-                self.name = value.to_string();
-                Ok(())
+/// Shared `name`/`command` [`FieldAccess`] + [`Describable`] glue for the
+/// shell-backed units (`CommandUnit`, `TargetWorkUnit`), following the
+/// [`delegate_component_fields`](fluent_wvr::delegate_component_fields) shape.
+/// The `command` lane is a plain `String` on both; `$set_name`/`$get_name`
+/// adapt the `name` representation (`String` vs `ArcIntern<str>`), and
+/// `$name_desc` names the unit kind in the schema.
+macro_rules! impl_name_command_fields {
+    ($type:ty, $set_name:expr, $get_name:expr, $name_desc:literal) => {
+        impl FieldAccess for $type {
+            fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+                match name {
+                    "name" => {
+                        $set_name(self, value);
+                        Ok(())
+                    }
+                    "command" => {
+                        self.command = value.to_string();
+                        Ok(())
+                    }
+                    _ => Err(FieldError::NotFound(name.into())),
+                }
             }
-            "command" => {
-                self.command = value.to_string();
-                Ok(())
+            fn get_field(&self, name: &str) -> Result<String, FieldError> {
+                match name {
+                    "name" => Ok($get_name(self)),
+                    "command" => Ok(self.command.clone()),
+                    _ => Err(FieldError::NotFound(name.into())),
+                }
             }
-            _ => Err(FieldError::NotFound(name.into())),
+            fn field_names(&self) -> &'static [&'static str] {
+                &["name", "command"]
+            }
         }
-    }
-    fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        match name {
-            "name" => Ok(self.name.clone()),
-            "command" => Ok(self.command.clone()),
-            _ => Err(FieldError::NotFound(name.into())),
-        }
-    }
-    fn field_names(&self) -> &'static [&'static str] {
-        &["name", "command"]
-    }
-}
 
-impl fluent_wvr::Describable for CommandUnit {
-    fn describe(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string", "description": "Task name" },
-                "command": { "type": "string", "description": "Shell command to execute" }
-            },
-            "required": ["name", "command"]
-        })
-    }
+        impl fluent_wvr::Describable for $type {
+            fn describe(&self) -> serde_json::Value {
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": $name_desc },
+                        "command": { "type": "string", "description": "Shell command to execute" }
+                    },
+                    "required": ["name", "command"]
+                })
+            }
+        }
+    };
 }
+pub(crate) use impl_name_command_fields;
+
+impl_name_command_fields!(
+    CommandUnit,
+    |unit: &mut CommandUnit, value: &str| unit.name = value.to_string(),
+    |unit: &CommandUnit| unit.name.clone(),
+    "Task name"
+);
 
 impl_component!(CommandUnit);
 

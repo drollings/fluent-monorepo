@@ -78,6 +78,8 @@ impl Describable for LlamaBackend {
     }
 }
 
+/// Inventory-only adapter: routing goes through [`InferenceBackend`]
+/// (`weights`/`chat_backend`), never through supervised execution.
 impl WorkUnit for LlamaBackend {
     fn name(&self) -> &str {
         "llama"
@@ -89,7 +91,11 @@ impl WorkUnit for LlamaBackend {
         &[]
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        Ok(WorkOutput::ok("llama backend adapter"))
+        // Fail closed: a supervisor that schedules the inventory must hear
+        // a refusal, never a fake completion.
+        Err(WorkError::Execution(
+            "llama backend is inventory-only; route through weights/chat_backend".to_string(),
+        ))
     }
 }
 

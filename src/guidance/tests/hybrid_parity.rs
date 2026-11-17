@@ -10,9 +10,9 @@ use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::ingest_text_file;
 use guidance_core::query::recall::run_recall;
+use guidance_core::query::search_db::GuidanceSearchDb;
 use guidance_core::query::strategy::QueryIntent;
 use guidance_core::search_types::FileInfo;
-use search_vector::db::GuidanceDb;
 use std::time::Instant;
 
 fn file_info(id: &str, relative: &str, format: &str) -> FileInfo {
@@ -30,7 +30,7 @@ fn file_info(id: &str, relative: &str, format: &str) -> FileInfo {
     }
 }
 
-fn seed_matrix(db: &GuidanceDb, nlp: &spacy_rs::pipeline::NlpPipeline) {
+fn seed_matrix(db: &GuidanceSearchDb, nlp: &spacy_rs::pipeline::NlpPipeline) {
     let docs = [
         (
             "sym",
@@ -67,7 +67,7 @@ fn seed_matrix(db: &GuidanceDb, nlp: &spacy_rs::pipeline::NlpPipeline) {
 }
 
 fn top_path(
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     query: &str,
     intent: QueryIntent,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
@@ -97,7 +97,7 @@ fn top_path(
 
 #[test]
 fn known_item_parity_matrix() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let nlp = spacy_rs::pipeline::NlpPipeline::en_default().expect("pipeline");
     seed_matrix(&db, &nlp);
     // The lemma case is a genuine inflection proof: neither "service" the

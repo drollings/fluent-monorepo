@@ -24,7 +24,7 @@ use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily, MA_PERIOD_MAX
 use crate::topology::{describe_kernel, kernel_preview_frame, kernel_series, source_frame};
 use protopyne_kernels::price_source::PriceSource;
 
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 
 use fluent_egui::EguiError;
 use fluent_egui::{
@@ -1959,7 +1959,7 @@ impl WorkUnit for IntegrationLiteConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "integration lite config invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "integration lite ready (alpha {})",
             self.eit_alpha
         )))

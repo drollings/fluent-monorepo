@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use search_vector::db::GuidanceDb;
+use crate::query::search_db::GuidanceSearchDb;
 
 use crate::graph_index::{CallEdge, GraphIndex, ResolutionMethod};
 
@@ -79,7 +79,7 @@ pub struct GraphPlane {
 
 impl GraphPlane {
     /// Hydrate from a committed index (no file reads, no parsing).
-    pub fn hydrate(db: &GuidanceDb, roots: &[String]) -> Result<Self, String> {
+    pub fn hydrate(db: &GuidanceSearchDb, roots: &[String]) -> Result<Self, String> {
         let index = GraphIndex::hydrate_from_db(db, roots).map_err(|error| error.to_string())?;
         let mut calls_by_symbol: HashMap<(String, String), Vec<String>> = HashMap::new();
         for row in db

@@ -14,8 +14,6 @@ use crate::decision::Decision;
 /// A `CanaryCase`: full prompt text, option labels, and the expected
 /// per-label masses in label order with an absolute tolerance.
 #[derive(Debug, Clone, PartialEq)]
-/// A `CanaryCase`: full prompt text, option labels, and the expected
-/// per-label masses in label order with an absolute tolerance.
 pub struct CanaryCase {
     pub id: &'static str,
     pub prompt: String,
@@ -35,16 +33,6 @@ pub struct CanaryCase {
 /// assert!(suite.iter().all(|c| c.options.len() >= 2));
 /// ```
 #[must_use]
-/// The fixed two-case suite. Prompts force single tokens the logprobs path
-/// discriminates; expectations are tight majorities, not model output.
-///
-/// ```rust
-/// use fluent_llm::decision::canary_suite;
-///
-/// let suite = canary_suite();
-/// assert_eq!(suite.len(), 2);
-/// assert!(suite.iter().all(|c| c.options.len() >= 2));
-/// ```
 pub fn canary_suite() -> Vec<CanaryCase> {
     vec![
         CanaryCase {

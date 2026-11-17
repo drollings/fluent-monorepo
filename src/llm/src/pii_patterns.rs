@@ -36,7 +36,7 @@ use crate::pii_label::PiiLabel;
 /// derived from them so the names and regex strings can never drift from the
 /// compiled patterns used by `anonymize`.
 ///
-/// M6: exactly 5 of the 12 statics are exposed here — deliberately, not an
+/// Exactly 5 of the 12 statics are exposed here — deliberately, not an
 /// oversight. `RegexPiiDetector` (the review pre-filter baseline) consumes
 /// this table, and widening it would change which spans the pre-filter
 /// reports (a behavior change). The other 7 (`NINO_UK`, `SIN_CA`, `BEARER`,
@@ -145,7 +145,7 @@ pub struct AnonymizeAction {
     pub placeholder: &'static str,
 }
 
-/// The `anonymize` action table (M12): all 12 compiled statics with their
+/// The `anonymize` action table: all 12 compiled statics with their
 /// placeholders, in the historical application order. Derived beside the
 /// statics so the mapping can never drift from them — `anonymize` consumes
 /// this table instead of an inline chain, making `pii_patterns.rs` the

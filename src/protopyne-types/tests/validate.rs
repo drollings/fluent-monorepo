@@ -1,6 +1,7 @@
 use crate::{Adjustment, Bar, Money, OptionContract, OptionKind, Portfolio, PortfolioId};
 use chrono::TimeZone as _;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
+use fluent_wvr::WorkOutput;
 
 fn sample_ts() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc
@@ -27,7 +28,7 @@ fn sample_bar() -> Bar {
 
 #[test]
 fn valid_output_shape() {
-    let out = valid_output("ok");
+    let out = WorkOutput::ok("ok");
     assert!(out.success);
 }
 

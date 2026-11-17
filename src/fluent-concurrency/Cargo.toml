@@ -60,3 +60,4 @@ path = "tests/pool_submit_all.rs"
 
 [lints]
 workspace = true
+

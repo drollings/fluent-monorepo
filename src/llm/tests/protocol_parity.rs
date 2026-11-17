@@ -182,3 +182,69 @@ async fn queue_propagates_handler_errors() {
 }
 
 // The builder/merge/variant/smoke goldens above are the lasting contract.
+
+#[test]
+fn queue_full_is_capacity_not_confidence_and_never_retried() {
+    // Axis: producer-side transport/capacity. Local saturation is not model
+    // uncertainty and not a wrong answer; remedy is backpressure, not re-asking.
+    let full = LlmError::QueueFull;
+    assert!(!full.is_retryable(), "QueueFull must not amplify via retry");
+    assert!(full.to_string().to_lowercase().contains("queue full"));
+    // Control group: transient stays retryable; permanent stays terminal.
+    assert!(LlmError::Http("boom".into()).is_retryable());
+    assert!(LlmError::RateLimited.is_retryable());
+    assert!(!LlmError::Api("nope".into()).is_retryable());
+    assert!(!LlmError::NoResponse.is_retryable());
+}
+
+#[tokio::test]
+async fn saturated_queue_returns_queue_full_without_retry_amplification() {
+    use std::sync::Arc;
+
+    // Hermetic saturation (no real endpoints): one worker with one buffer
+    // slot and a slow handler; five concurrent submitters race — exactly
+    // two fit (in-flight + buffered), the rest must fail fast with
+    // QueueFull. No sleeps, no ordering assumptions.
+    let runtime: Arc<dyn fluent_wvr::Runtime> = fluent_concurrency::tokio_runtime();
+    let queue = Arc::new(LlmRequestQueue::new(
+        runtime,
+        &LlmQueueConfig {
+            worker_count: 1,
+            queue_capacity: 1,
+        },
+        |_task: LlmTask| async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            Ok::<String, LlmError>("done".to_string())
+        },
+    ));
+    let mk_task = |content: &str| LlmTask {
+        messages: vec![ChatMessage {
+            role: "user".into(),
+            content: content.into(),
+        }],
+        config: LlmConfig::new()
+            .api_url("http://localhost:11434/v1".into())
+            .model("test".into())
+            .build(),
+    };
+    let mut handles = Vec::new();
+    for i in 0..5 {
+        let queue = Arc::clone(&queue);
+        let task = mk_task(&format!("job-{i}"));
+        handles.push(tokio::spawn(async move { queue.submit(task).await }));
+    }
+    let mut oks = 0;
+    let mut fulls = 0;
+    for handle in handles {
+        match handle.await.expect("task") {
+            Ok(_) => oks += 1,
+            Err(LlmError::QueueFull) => fulls += 1,
+            Err(other) => panic!("saturation must surface QueueFull, got {other:?}"),
+        }
+    }
+    assert!(
+        fulls >= 1,
+        "at least one submitter refused: oks={oks} fulls={fulls}"
+    );
+    assert_eq!(oks + fulls, 5);
+}

@@ -24,10 +24,6 @@ static HYPHEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[-–—]").un
 /// Shared by [`normalize_yago_name`] and the full-IRI branch of the
 /// taxonomy converter so the decode logic lives in exactly one place.
 #[must_use]
-/// Apply the local-name pipeline (Wikidata `_Q\d+` strip, `_UXXXX` decode,
-/// `_`→space, lowercase, WS collapse) to an already-extracted name.
-/// Shared by [`normalize_yago_name`] and the full-IRI branch of the
-/// taxonomy converter so the decode logic lives in exactly one place.
 pub fn normalize_extracted_name(name: &str) -> String {
     let mut s = Q_SUFFIX_RE.replace(name, "").to_string();
     s = UNICODE_ESC_RE
@@ -58,11 +54,6 @@ pub fn normalize_extracted_name(name: &str) -> String {
 /// [`normalize_extracted_name`] pipeline.
 /// `yago:Adult_Video_Game_Q3362070` → `adult video game`.
 #[must_use]
-/// Normalize a YaGO IRI local name for lexicon matching.
-///
-/// Extracts the local part (after the last `/`, `#`, or `:`) and runs the
-/// [`normalize_extracted_name`] pipeline.
-/// `yago:Adult_Video_Game_Q3362070` → `adult video game`.
 pub fn normalize_yago_name(iri: &str) -> String {
     let local = iri
         .rsplit('/')
@@ -91,12 +82,6 @@ pub fn normalize_lexicon_name(curie: &str) -> String {
 /// Matches on the closed [`crate::prefix::CuriePrefix`] IRI bases so new
 /// code never repeats the raw base strings.
 #[must_use]
-/// Compress a full IRI to its canonical short name: `schema:Person` for
-/// schema.org, `yago:Person` for the YaGO resource namespace, else the IRI
-/// unchanged. The single shared prefix table behind the loader
-/// (`canonical_class_name`), the view's curie keys, and [`lemma_to_curies`].
-/// Matches on the closed [`crate::prefix::CuriePrefix`] IRI bases so new
-/// code never repeats the raw base strings.
 pub fn iri_to_curie(iri: &str) -> String {
     if let Some(local) = iri.strip_prefix(crate::prefix::SCHEMA_IRI_BASE) {
         format!("{}:{local}", crate::prefix::CuriePrefix::Schema)
@@ -123,10 +108,6 @@ pub fn capitalize(s: &str) -> String {
 /// [`capitalize`]. Used by the plausibility fallback when a lemma id is not
 /// directly in the concept store.
 #[must_use]
-/// The `yago:`/`schema:` curie fallbacks for a raw lemma (`dog` →
-/// `yago:Dog` + `schema:Dog`), sharing [`iri_to_curie`]'s prefix table and
-/// [`capitalize`]. Used by the plausibility fallback when a lemma id is not
-/// directly in the concept store.
 pub fn lemma_to_curies(lemma: &str) -> [String; 2] {
     let capitalized = capitalize(lemma);
     [

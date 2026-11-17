@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use common_core::sync::lock;
@@ -16,16 +17,23 @@ use common_core::sync::lock;
 use crate::decision::{Decision, DecisionError};
 
 /// One in-flight load shared by concurrent misses on a key.
+///
+/// The waiter control flow only needs to know *that* the leader published
+/// an outcome (then it re-loops into the cache/election); the payload
+/// itself travels via the cache on success or a fresh load on failure.
+/// A flag replaces the dead `Mutex<Option<Result>>` clone per load. The
+/// sync `get_or_load` seam cannot drive the async load (it blocks the
+/// executor on a `Condvar`), so no second cache is introduced.
 struct Inflight {
     notify: tokio::sync::Notify,
-    result: Mutex<Option<Result<Decision, DecisionError>>>,
+    published: std::sync::atomic::AtomicBool,
 }
 
 impl Inflight {
     fn new() -> Self {
         Self {
             notify: tokio::sync::Notify::new(),
-            result: Mutex::new(None),
+            published: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -140,55 +148,7 @@ impl CacheKeyInput {
     }
 }
 
-/// Legacy constructor: identical bytes to the struct form with no
-/// fingerprint. Prefer `CacheKeyInput` for new callers.
-///
-/// ```rust
-/// use fluent_llm::decision::decision_cache_key;
-///
-/// let extras = serde_json::json!({});
-/// let a = decision_cache_key("s", "q?", "id", 1, "m", "http://a", &extras, None);
-/// let b = decision_cache_key("s", "q!", "id", 1, "m", "http://a", &extras, None);
-/// assert_ne!(a, b);
-/// ```
-#[must_use]
-#[allow(clippy::too_many_arguments)]
-/// Legacy constructor: identical bytes to the struct form with no
-/// fingerprint. Prefer `CacheKeyInput` for new callers.
-///
-/// ```rust
-/// use fluent_llm::decision::decision_cache_key;
-///
-/// let extras = serde_json::json!({});
-/// let a = decision_cache_key("s", "q?", "id", 1, "m", "http://a", &extras, None);
-/// let b = decision_cache_key("s", "q!", "id", 1, "m", "http://a", &extras, None);
-/// assert_ne!(a, b);
-/// ```
-pub fn decision_cache_key(
-    state: &str,
-    question: &str,
-    question_id: &str,
-    version: u64,
-    model: &str,
-    endpoint: &str,
-    extras: &serde_json::Value,
-    think: Option<bool>,
-) -> String {
-    CacheKeyInput {
-        state: state.to_string(),
-        question: question.to_string(),
-        question_id: question_id.to_string(),
-        version,
-        model: model.to_string(),
-        endpoint: endpoint.to_string(),
-        extras: extras.clone(),
-        think,
-        fingerprint: None,
-    }
-    .key()
-}
-
-/// Bounded LRU cache of decisions keyed by [`decision_cache_key`].
+/// Bounded LRU cache of decisions keyed by [`CacheKeyInput::key`].
 ///
 /// ```rust
 /// use fluent_llm::decision::{Decision, DecisionCache, DecisionError};
@@ -260,10 +220,10 @@ impl DecisionCache {
                 std::collections::hash_map::Entry::Occupied(entry) => Some(Arc::clone(entry.get())),
             };
             if let Some(shared) = shared {
-                // Waiter: share the outcome when published, else re-loop
-                // into a fresh election (leader failed or vanished).
+                // Waiter: when published, re-loop into the cache/election
+                // (leader failed or vanished); else await the publish.
                 let notified = shared.notify.notified();
-                if lock(&shared.result).is_some() {
+                if shared.published.load(Ordering::Acquire) {
                     continue;
                 }
                 notified.await;
@@ -283,7 +243,7 @@ impl DecisionCache {
             // A staggered arrival may have populated the cache between the
             // outer miss and the election win.
             if let Some(hit) = self.inner.get(&key) {
-                *lock(&shared.result) = Some(Ok(hit.clone()));
+                shared.published.store(true, Ordering::Release);
                 let mut decision = hit;
                 decision.cached = true;
                 return Ok(decision);
@@ -293,11 +253,11 @@ impl DecisionCache {
                 // them would cement an uncalibrated prior as a result.
                 Ok(decision) if !decision.degraded => {
                     self.inner.insert(key, decision.clone());
-                    *lock(&shared.result) = Some(Ok(decision.clone()));
+                    shared.published.store(true, Ordering::Release);
                     return Ok(decision);
                 }
                 outcome => {
-                    *lock(&shared.result) = Some(outcome.clone());
+                    shared.published.store(true, Ordering::Release);
                     return outcome;
                 }
             }

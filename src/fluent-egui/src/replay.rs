@@ -17,7 +17,7 @@
 //! [`ready`]: ReplayController::ready
 
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 
 use crate::error::EguiError;
 use crate::plan::{PaneCache, PanePlan};
@@ -102,7 +102,7 @@ impl WorkUnit for ReplayState {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "replay state invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "replay ready (cursor {}/{})",
             self.cursor, self.total_bars
         )))

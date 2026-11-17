@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use common_core::hash::fingerprint_framed;
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 
 use crate::config::ThemeConfig;
@@ -295,7 +295,7 @@ impl WorkUnit for MaterialTokens {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "material tokens invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "tokens ready ({} roles)",
             self.roles.len()
         )))

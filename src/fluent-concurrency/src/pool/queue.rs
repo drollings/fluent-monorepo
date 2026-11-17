@@ -14,7 +14,8 @@ struct QueueInner<T> {
     waker: crate::close::CloseWaker,
 }
 
-/// A bounded, concurrent, single-consumer queue with close-wakes-waiters semantics.
+/// A bounded, concurrent, multi-producer/multi-consumer queue with
+/// close-wakes-waiters semantics.
 ///
 /// The queue's backing store is a `std::sync::Mutex` — never held across an
 /// `.await` (every guard is scoped so it drops before the future yields), so

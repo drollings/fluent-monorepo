@@ -68,29 +68,20 @@ impl FileKind {
         }
     }
 
-    /// Coarse [`super::FileType`] bucket for this ingest kind — the single
-    /// shared bridge table between the two taxonomies (the only match; the
-    /// `FileType::from_kind` spelling delegates here). Deliberately lossy:
-    /// `Text` folds `rst`/`txt`/`html` in with `Markdown`, and `Image` maps
-    /// to `Unknown` because the structure-rendering side has no image
-    /// variant. Never used for ingest dispatch — that reads the kind maps
-    /// above directly.
+    /// Extension → ingest kind for every extension the shared tables
+    /// classify, or `None`. Single source for extension→kind knowledge
+    /// (the D1/D2 divergences live in the tables below). Callers
+    /// lowercase the extension first; a leading dot is tolerated.
     #[must_use]
-    pub fn coarse_type(self) -> super::FileType {
-        match self {
-            Self::Code => super::FileType::Source,
-            Self::Text => super::FileType::Markdown,
-            Self::Data => super::FileType::Data,
-            Self::Image => super::FileType::Unknown,
-        }
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        let bare = ext.strip_prefix('.').unwrap_or(ext);
+        kind_format_for_extension(bare).map(|(kind, _)| kind)
     }
 }
 
 /// Tree-sitter format for a lowercase extension (adapter authority —
 /// D1: `h` parses as C here while ingest tags C++).
 #[must_use]
-/// Tree-sitter format for a lowercase extension (adapter authority —
-/// D1: `h` parses as C here while ingest tags C++).
 pub fn code_format_for_extension(ext: &str) -> Option<&'static str> {
     match ext {
         "rs" => Some("rust"),
@@ -110,8 +101,6 @@ pub fn code_format_for_extension(ext: &str) -> Option<&'static str> {
 /// Ingest `(kind, format)` for a lowercase extension (selection
 /// authority — D1: `h` tags C++ here; D2: `mts`/`cts` fall to text).
 #[must_use]
-/// Ingest `(kind, format)` for a lowercase extension (selection
-/// authority — D1: `h` tags C++ here; D2: `mts`/`cts` fall to text).
 pub fn kind_format_for_extension(ext: &str) -> Option<(FileKind, &'static str)> {
     if let Some(format) = code_kind_format(ext) {
         return Some((FileKind::Code, format));
@@ -200,9 +189,11 @@ pub fn image_kind_format(ext: &str) -> Option<&'static str> {
     }
 }
 
-/// Ingest kind for extensionless well-known file names.
+/// Extension → ingest kind for every extension the shared tables classify,
+/// or `None`. Single source for extension→kind knowledge (the D1/D2
+/// divergences live in the tables below). Callers lowercase the extension
+/// first; a leading dot is tolerated.
 #[must_use]
-/// Ingest kind for extensionless well-known file names.
 pub fn named_file_kind(name: &str) -> Option<(FileKind, &'static str)> {
     match name {
         "Dockerfile" => Some((FileKind::Code, "dockerfile")),

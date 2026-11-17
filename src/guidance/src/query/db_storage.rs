@@ -1,4 +1,4 @@
-//! `GuidanceDb` as recall storage: converts between the P0 `search_types`
+//! `GuidanceSearchDb` as recall storage: converts between the P0 `search_types`
 //! contracts and the fragment tables. P2 indexing writes through the
 //! same seam (`upsert_fragments`); P1 ingestion and recall share it.
 //!
@@ -11,8 +11,8 @@
 //! a thin-seam milestone. Single consumer, no promotion. Stays — pinned
 //! by the `query_db_storage` round-trip tests.
 
-use search_vector::db::{
-    FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceDb,
+use crate::query::search_db::{
+    FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceSearchDb,
     SymbolRecord,
 };
 
@@ -23,16 +23,16 @@ use crate::search_types::{
     FragmentContent, FragmentSpan, ImageFormat, StorageFilter, StorageHit,
 };
 
-/// Recall storage over a `GuidanceDb` fragment index.
+/// Recall storage over a `GuidanceSearchDb` fragment index.
 pub struct GuidanceDbStorage<'a> {
     /// Open fragment index.
-    pub db: &'a GuidanceDb,
+    pub db: &'a GuidanceSearchDb,
 }
 
 impl<'a> GuidanceDbStorage<'a> {
     /// Wrap an open database.
     #[must_use]
-    pub fn new(db: &'a GuidanceDb) -> Self {
+    pub fn new(db: &'a GuidanceSearchDb) -> Self {
         Self { db }
     }
 
@@ -70,7 +70,7 @@ impl<'a> GuidanceDbStorage<'a> {
     }
 }
 
-fn db_error(error: &search_vector::db::VectorDbError) -> RecallError {
+fn db_error(error: &search_vector::VectorDbError) -> RecallError {
     RecallError::Db(error.to_string())
 }
 

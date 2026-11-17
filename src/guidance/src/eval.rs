@@ -150,9 +150,7 @@ pub fn max_citation_span(citations: &[String]) -> u64 {
 pub fn fixture_path_count(paths: &[String]) -> usize {
     paths
         .iter()
-        .filter(|path| {
-            crate::source_scope::is_fixture_path(path) || is_eval_path(path)
-        })
+        .filter(|path| crate::source_scope::is_fixture_path(path) || is_eval_path(path))
         .count()
 }
 
@@ -160,9 +158,7 @@ pub fn fixture_path_count(paths: &[String]) -> usize {
 /// absence, and span ceiling all hold.
 #[must_use]
 pub fn spam_ok(citation_count: usize, fixture_count: usize, max_span: u64) -> bool {
-    citation_count <= SPAM_MAX_CITATIONS
-        && fixture_count == 0
-        && max_span <= SPAM_MAX_SPAN_LINES
+    citation_count <= SPAM_MAX_CITATIONS && fixture_count == 0 && max_span <= SPAM_MAX_SPAN_LINES
 }
 
 /// Rendered citation entries in one markdown answer: `- ` lines

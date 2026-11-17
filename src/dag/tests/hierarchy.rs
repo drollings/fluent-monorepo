@@ -194,3 +194,21 @@ fn static_superclass_chain_golden() {
     chain.extend(index.ancestors(&"http://schema.org/Person").iter().copied());
     assert_eq!(chain[1], "http://yago-knowledge.org/resource/Entity");
 }
+
+#[test]
+fn ancestors_arc_matches_ancestors_without_cloning_per_call() {
+    let index = HierarchyIndex::from_edges([(2, 1), (3, 1), (4, 2), (4, 3)]);
+    for node in [1, 2, 3, 4, 99] {
+        assert_eq!(
+            index.ancestors_arc(&node).to_vec(),
+            index.ancestors(&node),
+            "arc and vec paths agree for {node}"
+        );
+    }
+    // The memoized arc is shared, not recomputed: two calls return the
+    // same allocation.
+    assert!(Arc::ptr_eq(
+        &index.ancestors_arc(&4),
+        &index.ancestors_arc(&4)
+    ));
+}

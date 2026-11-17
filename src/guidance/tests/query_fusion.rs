@@ -291,7 +291,7 @@ fn lemma_route_carries_full_recall_where_fts_finds_nothing() {
     // Exact assertions, not thresholds: any regression in lemma
     // normalization or lemma-route attachment fails this pin.
     let nlp = spacy_rs::pipeline::NlpPipeline::en_default().expect("pipeline");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let file = crate::search_types::FileInfo {
         id: "file-a".to_string(),
         absolute_path: "/repo/src/a.ts".to_string(),

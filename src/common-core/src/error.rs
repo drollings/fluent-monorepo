@@ -1,4 +1,4 @@
-//! Shared leaf error types: `IoError`, `ResolverError`, `SqliteError` (feature-gated).
+//! Shared leaf error types: `IoError`, `SqliteError` (feature-gated).
 
 use thiserror::Error;
 
@@ -15,17 +15,6 @@ use thiserror::Error;
 /// `ErrorKind::InvalidData` instead.
 #[derive(Error, Debug)]
 #[error("I/O error: {0}")]
-/// I/O error wrapper.
-///
-/// Single-variant tuple struct that wraps `std::io::Error`. Consumers can use
-/// the `IoError(e)` constructor directly (or, equivalently, `e.into()` thanks
-/// to the `#[from]` derive). `kind()` mirrors `std::io::Error::kind()` so
-/// callers do not need to unwrap an `Option` to inspect the I/O error kind.
-///
-/// The older `FileTooLarge` / `PathNotFound` / `InvalidPath` variants were
-/// dead and have been removed; the `MAX_FILE_SIZE` guard in
-/// `crate::io::read_to_string_err` emits a plain `io::Error` with
-/// `ErrorKind::InvalidData` instead.
 pub struct IoError(#[from] pub std::io::Error);
 
 impl IoError {
@@ -42,32 +31,12 @@ impl IoError {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum ResolverError {
-    #[error("circular dependency detected")]
-    CircularDependency,
-    #[error("target not found: {0}")]
-    TargetNotFound(String),
-    #[error("missing dependency: {0}")]
-    MissingDependency(String),
-    #[error("ambiguous dependency: '{name}' could be provided by {}", candidates.join(", "))]
-    AmbiguousDependency {
-        name: String,
-        candidates: Vec<String>,
-    },
-    #[error("execution failed: {0}")]
-    ExecutionFailed(String),
-}
-
 /// Shared SQLite error wrapper. Feature-gated on `sqlite` so the crate stays
 /// zero-domain by default — `rusqlite` is a generic storage dep, not a
 /// domain concern.
 #[cfg(feature = "sqlite")]
 #[derive(Error, Debug)]
 #[error("sqlite error: {0}")]
-/// Shared SQLite error wrapper. Feature-gated on `sqlite` so the crate stays
-/// zero-domain by default — `rusqlite` is a generic storage dep, not a
-/// domain concern.
 pub struct SqliteError(#[from] pub rusqlite::Error);
 
 /// Generate the standard `impl From<std::io::Error>` that wraps the source

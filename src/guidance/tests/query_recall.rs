@@ -502,8 +502,8 @@ fn independent_routes_fuse_into_one_ranked_list() {
     assert_eq!(output.hits.len(), 1);
 }
 
-fn summary_file(id: &str, relative: &str) -> search_vector::db::FileRecord {
-    search_vector::db::FileRecord {
+fn summary_file(id: &str, relative: &str) -> crate::query::search_db::FileRecord {
+    crate::query::search_db::FileRecord {
         id: id.to_string(),
         absolute_path: format!("/repo/{relative}"),
         relative_path: relative.to_string(),
@@ -566,9 +566,9 @@ fn summary_block(node_key: &str, text: &str) -> crate::ast_parser::CommentBlock 
     }
 }
 
-fn seed_summary_index() -> search_vector::db::GuidanceDb {
+fn seed_summary_index() -> crate::query::search_db::GuidanceSearchDb {
     use crate::query::writer::{FragmentWriter, VectorPolicy};
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let fragments = vec![
         summary_fragment("fa", "alpha", "Adds one", "fn alpha() {}", 1),
         summary_fragment("fb", "beta", "Removes two", "fn beta() {}", 4),
@@ -632,7 +632,7 @@ fn seed_summary_index() -> search_vector::db::GuidanceDb {
     )
     .expect("commit");
     db.replace_summaries(&[
-        search_vector::db::SummaryRecord {
+        crate::query::search_db::SummaryRecord {
             fragment_id: "f#$file".to_string(),
             comment_hash: "hash-file".to_string(),
             model: "test-model".to_string(),
@@ -644,7 +644,7 @@ fn seed_summary_index() -> search_vector::db::GuidanceDb {
             generated_at: 1700000000000,
             authorized: false,
         },
-        search_vector::db::SummaryRecord {
+        crate::query::search_db::SummaryRecord {
             fragment_id: "fa".to_string(),
             comment_hash: "hash-a".to_string(),
             model: "test-model".to_string(),
@@ -656,7 +656,7 @@ fn seed_summary_index() -> search_vector::db::GuidanceDb {
             generated_at: 1700000000000,
             authorized: false,
         },
-        search_vector::db::SummaryRecord {
+        crate::query::search_db::SummaryRecord {
             fragment_id: "fb".to_string(),
             comment_hash: "hash-b".to_string(),
             model: "test-model".to_string(),
@@ -668,7 +668,7 @@ fn seed_summary_index() -> search_vector::db::GuidanceDb {
             generated_at: 1700000000000,
             authorized: false,
         },
-        search_vector::db::SummaryRecord {
+        crate::query::search_db::SummaryRecord {
             fragment_id: "fx".to_string(),
             comment_hash: "hash-old".to_string(),
             model: "test-model".to_string(),

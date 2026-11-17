@@ -26,7 +26,7 @@ fn vector_index_brute_force_vs_hnsw_recall() {
     let n = 100;
     let k = 10;
 
-    let brute = BruteForceIndex::new();
+    let brute = BruteForceStore::new();
     let hnsw = HnswVectorIndex::new();
 
     for i in 0..n {
@@ -58,7 +58,7 @@ fn vector_index_brute_force_vs_hnsw_recall() {
 
 #[test]
 fn vector_index_empty_search_returns_empty() {
-    let brute = BruteForceIndex::new();
+    let brute = BruteForceStore::new();
     let hnsw = HnswVectorIndex::new();
     assert!(brute.search(&[1.0, 0.0], 5).is_empty());
     assert!(hnsw.search(&[1.0, 0.0], 5).is_empty());
@@ -70,7 +70,7 @@ fn ann_calibration_control_50_unrelated_queries_must_not_fire_high_confidence() 
     // 50 unrelated queries over 1k-node ledger — top-1 score >0.9 must not fire
     let n = 1000;
     let dim = 32;
-    let index = BruteForceIndex::new();
+    let index = BruteForceStore::new();
     for i in 0..n {
         let emb = random_embedding(dim, i as u64 * 7919 + 7);
         index
@@ -98,7 +98,7 @@ fn ann_calibration_recall_and_latency_baseline() {
     let dim = 32;
     let n = 500;
     let k = 10;
-    let brute = BruteForceIndex::new();
+    let brute = BruteForceStore::new();
     let hnsw = HnswVectorIndex::new();
     for i in 0..n {
         let emb = random_embedding(dim, i as u64 * 7919 + 13);
@@ -138,7 +138,7 @@ fn store_and_math_seams_coexist_without_qualification_clash() {
     use fluent_db::vector::VectorIndex;
     fn takes_math<T: VectorIndex>(_: &T) {}
     fn takes_store<T: VectorStore>(_: &T) {}
-    let brute = BruteForceIndex::new();
+    let brute = BruteForceStore::new();
     takes_store(&brute);
     let math = fluent_db::vector::BruteForceIndex::new(vec![(
         NodeId::from_int(1),

@@ -30,6 +30,11 @@ pub enum ResultPoolError<E> {
 
 /// Worker pool where the handler returns a `Result<R, E>` and `submit`
 /// returns a future resolving to that result.
+///
+/// **Fail-fast:** `submit` returns `Pool(Full)` immediately when the queue
+/// is at capacity; [`submit_with_backpressure`](Self::submit_with_backpressure)
+/// waits for space instead. Contrast [`PriorityResultPool`](super::priority::PriorityResultPool),
+/// whose `submit` always applies backpressure.
 pub struct ResultPool<T, R, E>
 where
     T: Send + 'static,
@@ -90,8 +95,31 @@ where
     /// Submits a job and awaits the handler's result.
     /// Returns `ResultPoolError::Canceled` if the worker panics, the pool shuts
     /// down, or the submission's abort signal fires.
+    ///
+    /// Fail-fast: a full queue yields `Pool(Full)` immediately (no waiting).
+    /// See [`submit_with_backpressure`](Self::submit_with_backpressure).
     pub async fn submit(&self, job: T) -> Result<R, ResultPoolError<E>> {
         self.submit_with_abort(job, None).await
+    }
+
+    /// Submits a job, waiting for queue space instead of failing when full.
+    ///
+    /// Unlike [`submit`](Self::submit) (fail-fast `Pool(Full)`), this waits
+    /// for capacity via [`Queue::push_wait`](super::queue::Queue::push_wait),
+    /// then awaits the handler's result exactly like `submit_with_abort`
+    /// with `None`. A closed queue still errors immediately; cancellation
+    /// semantics are unchanged.
+    pub async fn submit_with_backpressure(&self, job: T) -> Result<R, ResultPoolError<E>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let wrapped = WrappedJob {
+            job,
+            result_tx: tx,
+            abort: None,
+        };
+        self.queue.push_wait(wrapped).await?;
+        rx.await
+            .map_err(|_| ResultPoolError::Canceled)?
+            .map_err(ResultPoolError::Inner)
     }
 
     /// Submits a job with an optional abort signal and awaits the handler's

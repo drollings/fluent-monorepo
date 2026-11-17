@@ -2,7 +2,7 @@
 //!
 //! `TtlCache` is the canonical home for the TTL/LRU SQLite cache shape that
 //! `knowledge::QueryCache` hand-rolled (open, get-with-expiry, put,
-//! evict_expired, evict_lru, stats). The `query_cache` table DDL and all
+//! evict_expired, evict_oldest, stats). The `query_cache` table DDL and all
 //! eviction SQL move here verbatim so existing `.db` files keep working
 //! unchanged and behavior stays byte-identical.
 //!
@@ -92,23 +92,34 @@ impl TtlCache {
         Ok(cache)
     }
 
-    /// Open an in-memory cache with the default (identity) key derivation.
+    /// Open an in-memory cache with the default (identity) key derivation
+    /// and the default 4096-entry cap.
     pub fn open_in_memory(default_ttl_seconds: u64) -> Result<Self, DbError> {
         Self::open_in_memory_with_key(default_ttl_seconds, identity_key)
     }
 
     /// Like [`TtlCache::open_in_memory`] with a consumer-provided key
-    /// derivation.
+    /// derivation (cap stays 4096).
     pub fn open_in_memory_with_key(
         default_ttl_seconds: u64,
         hash_key: fn(&str) -> String,
+    ) -> Result<Self, DbError> {
+        Self::open_in_memory_with_key_and_cap(default_ttl_seconds, hash_key, 4096)
+    }
+
+    /// Like [`TtlCache::open_in_memory_with_key`] with a configurable
+    /// entry cap.
+    pub fn open_in_memory_with_key_and_cap(
+        default_ttl_seconds: u64,
+        hash_key: fn(&str) -> String,
+        max_entries: usize,
     ) -> Result<Self, DbError> {
         let store = SqliteStore::open_in_memory()?;
         store.init_schema(QUERY_CACHE_DDL)?;
         Ok(Self {
             store,
             default_ttl_seconds,
-            max_entries: 4096,
+            max_entries,
             hash_key,
         })
     }
@@ -145,8 +156,8 @@ impl TtlCache {
         }
     }
 
-    /// Insert (or replace) `result` under `key`, then evict LRU entries when
-    /// over capacity.
+    /// Insert (or replace) `result` under `key`, then evict oldest entries
+    /// when over capacity.
     pub fn put(&self, key: &str, result: &str) -> Result<(), DbError> {
         let hashed = (self.hash_key)(key);
         let now = now_secs();
@@ -155,7 +166,7 @@ impl TtlCache {
              VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![hashed, result, now, self.default_ttl_seconds],
         )?;
-        self.evict_lru()?;
+        self.evict_oldest()?;
         Ok(())
     }
 
@@ -169,9 +180,10 @@ impl TtlCache {
         )
     }
 
-    /// Evict the oldest entries (LRU by timestamp) when over capacity.
+    /// Evict the oldest entries (by write timestamp — FIFO, not true LRU:
+    /// reads do not refresh recency) when over capacity.
     /// Returns the number of rows deleted.
-    pub fn evict_lru(&self) -> Result<usize, DbError> {
+    pub fn evict_oldest(&self) -> Result<usize, DbError> {
         let count: usize = self
             .store
             .query_row("SELECT COUNT(*) FROM query_cache", &[], |row| row.get(0))?

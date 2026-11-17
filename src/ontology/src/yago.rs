@@ -179,8 +179,8 @@ pub fn is_whitelisted(iri: &str) -> bool {
     WHITELIST_SET.contains(iri)
 }
 
-/// Whether an [`InterlinguaId`] names a whitelisted YaGO class (ROADMAP
-/// §13.6 — namespace-aware, truncation-correct). Compares the **48-bit local**
+/// Whether an [`InterlinguaId`] names a whitelisted YaGO class
+/// (namespace-aware, truncation-correct). Compares the **48-bit local**
 /// against the truncated whitelist hashes.
 pub fn is_whitelisted_id(id: InterlinguaId) -> bool {
     id.is_yago() && WHITELIST_LOCALS.contains(&id.local_id())
@@ -194,8 +194,8 @@ pub fn is_whitelisted_hash(hash: i64) -> bool {
     WHITELIST_LOCALS.contains(&local_id_of(hash))
 }
 
-/// The deterministic `RDF_PROPERTY` interlingua id for an ontology property
-/// (ROADMAP §13.4). Lets the ledger reference typed relations by id.
+/// The deterministic `RDF_PROPERTY` interlingua id for an ontology property.
+/// Lets the ledger reference typed relations by id.
 pub fn property_interlingua_id(prop: &OntologyProperty) -> InterlinguaId {
     property_id_for_iri(prop.iri)
 }

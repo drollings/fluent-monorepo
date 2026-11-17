@@ -1,7 +1,10 @@
 //! Test-support vector-store seam: the `VectorStore` trait and its two
 //! implementations.
 //!
-//! Moved verbatim from `fluent-router`'s `testing/vector_index.rs` (M7.3):
+//! `BruteForceIndex` was renamed to `BruteForceStore` to end the
+//! collision with the `fluent_db::vector` math type.
+//!
+//! Moved verbatim from `fluent-router`'s `testing/vector_index.rs`:
 //! no production caller consumes this trait (ranking/retrieval use
 //! ledger-backed signals, not vectors), so it lives here as a recall harness
 //! and test double — HNSW recall is measured against the byte-identical
@@ -31,11 +34,11 @@ pub trait VectorStore: Send + Sync {
 
 /// Byte-identical brute-force implementation — the ground-truth recall
 /// baseline for the HNSW harness.
-pub struct BruteForceIndex {
+pub struct BruteForceStore {
     entries: Mutex<Vec<(NodeId, Vec<f32>)>>,
 }
 
-impl BruteForceIndex {
+impl BruteForceStore {
     pub fn new() -> Self {
         Self {
             entries: Mutex::new(Vec::new()),
@@ -43,13 +46,13 @@ impl BruteForceIndex {
     }
 }
 
-impl Default for BruteForceIndex {
+impl Default for BruteForceStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl VectorStore for BruteForceIndex {
+impl VectorStore for BruteForceStore {
     fn insert(&self, id: NodeId, emb: &[f32]) -> Result<(), fluent_db::error::DbError> {
         common_core::sync::lock(&self.entries).push((id, emb.to_vec()));
         Ok(())

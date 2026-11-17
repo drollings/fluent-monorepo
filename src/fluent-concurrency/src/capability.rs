@@ -3,7 +3,6 @@
 
 use fluent_wvr::CapabilitySet;
 
-use crate::io::db::DbCapability;
 use crate::io::fs::FsCapability;
 use crate::io::net::NetCapability;
 
@@ -19,8 +18,9 @@ pub fn default_capability_set() -> CapabilitySet {
 ///
 /// `DbCapability` is provided by `fluent-db`; the error taxonomy is
 /// `fluent_db::error::DbError`.
+#[cfg(feature = "db")]
 pub fn capability_set_with_db(path: &str) -> Result<CapabilitySet, fluent_db::error::DbError> {
-    let db = DbCapability::open(path)?;
+    let db = crate::io::db::DbCapability::open(path)?;
     Ok(CapabilitySet::new()
         .with(FsCapability::new())
         .with(NetCapability::new())

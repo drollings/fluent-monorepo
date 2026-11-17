@@ -2,7 +2,7 @@
 //! `symbols` table. No fuzzy matching, no guessing: homonyms stay
 //! listed, unknown names yield empty.
 
-use search_vector::db::{GuidanceDb, SymbolRecord};
+use crate::query::search_db::{GuidanceSearchDb, SymbolRecord};
 
 /// One exact definition site.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,13 +65,13 @@ pub trait StructureStore {
 
 /// `StructureStore` over a committed index.
 pub struct GuidanceStructureStore<'a> {
-    db: &'a GuidanceDb,
+    db: &'a GuidanceSearchDb,
 }
 
 impl<'a> GuidanceStructureStore<'a> {
     /// Borrow the committed index (no copy; rows read per query).
     #[must_use]
-    pub fn new(db: &'a GuidanceDb) -> Self {
+    pub fn new(db: &'a GuidanceSearchDb) -> Self {
         Self { db }
     }
 }

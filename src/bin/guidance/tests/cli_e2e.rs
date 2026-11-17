@@ -255,7 +255,8 @@ fn sync_imports_external_corpus_and_project_cards() {
     let text = common::sync(root, ".cards.db", true);
     assert!(text.contains("Imported 1 capability cards"), "{text}");
     assert!(text.contains("project cards"), "{text}");
-    let db = search_vector::GuidanceDb::open(&root.join(".cards.db")).expect("open db");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&root.join(".cards.db"))
+        .expect("open db");
     assert_eq!(db.capability_ready_count().expect("count"), 1);
     let rows = db
         .capabilities_for_source("doc/guide.md")

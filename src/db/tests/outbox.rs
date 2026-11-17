@@ -233,3 +233,21 @@ fn outbox_claim_calibration() {
         ),
     );
 }
+
+#[test]
+fn claim_retry_policy_is_shared_and_busy_only() {
+    // Pins the factored policy both claim loops compose: 20 attempts max,
+    // 5 ms fixed delay, Busy-only retries. The schedule is byte-identical
+    // to the pre-factor loops.
+    assert_eq!(crate::outbox::OUTBOX_CLAIM_MAX_ATTEMPTS, 20);
+    assert_eq!(crate::outbox::OUTBOX_CLAIM_RETRY_DELAY_MS, 5);
+    assert!(crate::outbox::is_claim_retryable(
+        &crate::error::DbError::Busy("database is locked".into())
+    ));
+    assert!(!crate::outbox::is_claim_retryable(
+        &crate::error::DbError::Other("boom".into())
+    ));
+    assert!(!crate::outbox::is_claim_retryable(
+        &crate::error::DbError::NotFound("missing".into())
+    ));
+}

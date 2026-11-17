@@ -27,7 +27,7 @@ fn stale_names_with_file_comment_report_gap_not_prose() {
     // Fragment names that resolve to no current member, on a doc that
     // carries a file comment: synthesis from no excerpts is blocked.
     let engine = QueryEngine::new();
-    let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.insert_node(
         "stale_name",
         "src/stale.rs",

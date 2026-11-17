@@ -1,6 +1,6 @@
 //! `AnnotationStore` — the tiered annotation store over content hashes.
 //!
-//! Moved verbatim from `fluent-router`'s `ledger/annotations.rs` (M10.4):
+//! Moved verbatim from `fluent-router`'s `ledger/annotations.rs`:
 //! node-annotation/claim linkage lives with the content seam. Tiers compose
 //! `fluent-types::provenance` (never duplicated); the sqlite home stays in
 //! the router — this struct operates on the shared `Arc<SqliteStore>` handle
@@ -34,7 +34,7 @@ fn bind(h: ContentHash) -> i64 {
 
 /// The `ledger_annotations` table name (single source of truth for the schema;
 /// the DDL itself lives in the router's `ledger_migrations` — the sqlite
-/// home stays router-side per M10.4).
+/// home stays router-side).
 pub const ANNOTATIONS_TABLE: &str = "ledger_annotations";
 
 /// The tiered annotation store over the shared ledger connection.
@@ -194,24 +194,25 @@ fn row_to_claim(row: &rusqlite::Row<'_>) -> rusqlite::Result<AnnotationClaim> {
 /// `(content_hash, claim_key)` — the row the write's tier comparison is decided
 /// against.
 ///
-/// NOTE: transaction-scoped (`&Transaction`), so it uses rusqlite
-/// directly — the `db::query` free functions take `&Connection` and there is
-/// no pool/transaction variant without an async rewrite. Same statement
-/// shape (`prepare` → single-row → `Ok(None)` on no rows).
+/// Reads through the shared `query_row` helper (`Transaction` derefs to
+/// `Connection`, so no transaction variant is needed). Same statement shape
+/// (`prepare` → single-row → `Ok(None)` on no rows).
 fn current_row(
     tx: &rusqlite::Transaction<'_>,
     content_hash: ContentHash,
     claim_key: &str,
 ) -> Result<Option<Row>, DbError> {
-    let mut stmt = tx.prepare(&format!(
-        "SELECT claim_id, tier, status \
+    fluent_db::query::query_row(
+        tx,
+        &format!(
+            "SELECT claim_id, tier, status \
              FROM ledger_annotations \
              WHERE content_hash = ?1 AND claim_key = ?2 AND status != 'superseded' \
              ORDER BY {STATUS_PRIORITY}, claim_id DESC LIMIT 1",
-    ))?;
-    let mut rows = stmt.query(params![bind(content_hash), claim_key])?;
-    let row = rows.next()?.map(row_to_row).transpose()?;
-    Ok(row)
+        ),
+        params![bind(content_hash), claim_key],
+        row_to_row,
+    )
 }
 
 /// The next `claim_id` for `(content_hash, claim_key)` (max + 1, 1-based).
@@ -268,7 +269,7 @@ fn row_to_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
 /// Plain snake_case storage for [`ProvenanceTier`] (exhaustive over the enum,
 /// so a new tier fails to compile here and can never be dropped from parsing).
 ///
-/// M8.2 disposition: single-store shape (only `ledger_annotations` maps these
+/// Single-store shape (only `ledger_annotations` maps these
 /// enums) — stays here, not in `fluent-db`. The `storage_text_matches_serde_snake_case`
 /// test guards the serde lockstep.
 fn tier_as_text(t: ProvenanceTier) -> &'static str {

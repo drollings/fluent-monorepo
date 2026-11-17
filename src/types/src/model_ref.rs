@@ -54,8 +54,6 @@ impl ModelRef {
 /// Strip the provider prefix from a model reference.
 /// e.g. "ollama:llama3" -> "llama3", "model" -> "model"
 #[must_use]
-/// Strip the provider prefix from a model reference.
-/// e.g. "ollama:llama3" -> "llama3", "model" -> "model"
 pub fn model_name(model_ref: &str) -> &str {
     ModelRef::model_name(model_ref)
 }

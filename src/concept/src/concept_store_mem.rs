@@ -4,10 +4,8 @@
 //! reconciliation locks them equal. This store exists so resolver/pipeline
 //! unit tests run with no SQLite and no disk.
 //!
-//! NOTE (M3): `InMemoryConceptStore::from_n2_fixture` was deliberately **not**
-//! moved with the double — it composes `spacy-rs`' `YagoView`, and this crate
-//! must not depend on `spacy-rs` (neutral-home acyclicity). It had no callers;
-//! tests that need YaGO-backed seeding build the store via `insert` directly.
+//! `InMemoryConceptStore::from_n2_fixture` stays in `spacy-rs` (it composes
+//! `YagoView`); YaGO-backed seeding in tests builds the store via `insert`.
 
 use std::collections::HashMap;
 use std::sync::RwLock;

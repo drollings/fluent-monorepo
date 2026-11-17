@@ -13,7 +13,7 @@
 //! terms. They leave the term set unless they are the only content
 //! term left.
 
-use search_vector::aliases::SemanticAliases;
+use crate::query::aliases::SemanticAliases;
 
 /// Generic action words: topic-free unless they are all that remains.
 pub const LIGHT_VERBS: &[&str] = &[
@@ -79,7 +79,7 @@ pub fn expand_terms(query: &str, aliases: &SemanticAliases) -> Vec<String> {
 /// Scaffolding never reaches this set: it runs over significant
 /// terms, not raw query text.
 pub fn symbol_terms(query: &str) -> Vec<String> {
-    search_vector::tokens::symbol_names(&query_terms(query).join(" "))
+    crate::query::tokens::symbol_names(&query_terms(query).join(" "))
 }
 
 /// Scaffolding words that name no subject: they scope the question,
@@ -228,7 +228,7 @@ pub const ANSWER_FLOOR_COVERAGE: f64 = 0.5;
 #[must_use]
 pub fn subject_coverage(query: &str, evidence: &str) -> f64 {
     let fold = evidence.to_lowercase();
-    let identifiers: Vec<String> = search_vector::tokens::symbol_names(query)
+    let identifiers: Vec<String> = crate::query::tokens::symbol_names(query)
         .into_iter()
         .filter(|name| names_identifier(name))
         .collect();

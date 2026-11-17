@@ -4,21 +4,21 @@
 //! model-optional and cache-persistence changes flip these
 //! expectations deliberately instead of drifting into them.
 use super::*;
+use crate::query::search_db::GuidanceSearchDb;
 use crate::tests::common::{db_file_record, db_project_card, db_text_fragment};
-use search_vector::db::GuidanceDb;
 use std::cell::Cell;
 
 /// Workspace with one code file, one doc, and the workspace card: the
 /// minimum evidence set where factual intents get extractive rows and
 /// synthesis has something to ground on.
-fn answer_workspace() -> (tempfile::TempDir, GuidanceDb) {
+fn answer_workspace() -> (tempfile::TempDir, GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("write");
     std::fs::write(dir.path().join("lib.rs"), "pub fn alpha_sync() {}\n").expect("write");
     std::fs::create_dir(dir.path().join("doc")).expect("mkdir");
     let doc_text = "# Alpha\n\nAlpha sync engine overview.\n";
     std::fs::write(dir.path().join("doc").join("alpha.md"), doc_text).expect("write");
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
         &db_file_record(dir.path(), "lib.rs"),
         &[db_text_fragment(
@@ -41,7 +41,7 @@ fn answer_workspace() -> (tempfile::TempDir, GuidanceDb) {
             "Cargo.toml",
             "",
         ),
-        search_vector::db::ProjectCard {
+        crate::query::search_db::ProjectCard {
             content_hash: chunk.content_hash.clone(),
             anchor: chunk.anchor.clone(),
             ..db_project_card(
@@ -98,7 +98,7 @@ fn request(query: &str, mode: AnswerMode) -> ExplainRequest {
 
 fn run(
     dir: &std::path::Path,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     query: &str,
     mode: AnswerMode,
     synth: Option<&dyn crate::read::engine::Synthesizer>,
@@ -108,7 +108,7 @@ fn run(
 
 fn run_with(
     dir: &std::path::Path,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     query: &str,
     mode: AnswerMode,
     no_llm: bool,
@@ -119,7 +119,7 @@ fn run_with(
 
 fn run_generation(
     dir: &std::path::Path,
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     query: &str,
     mode: AnswerMode,
     no_llm: bool,

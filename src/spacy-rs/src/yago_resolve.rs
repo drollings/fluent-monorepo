@@ -149,10 +149,13 @@ impl WorkUnit for YagoResolveStage {
         &*PROVIDES
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let state = ctx
+        let stored = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.into()))?;
-        let mut state = common_core::sync::lock(state);
+        // The store wraps every value in an `Arc`: a stored `Arc` handle
+        // reads back double-wrapped, so unwrap one layer (one atomic bump).
+        let state = (*stored).clone();
+        let mut state = common_core::sync::lock(&state);
         let doc = state
             .doc
             .as_ref()

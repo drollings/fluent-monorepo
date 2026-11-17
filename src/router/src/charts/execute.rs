@@ -420,7 +420,7 @@ impl ChartExecutionPlan {
         match event {
             SupervisedBatchEvent::Completed { name, output } => {
                 let decision: StageDecision =
-                    output.data_as().map_err(|e| ChartError::Compile {
+                    output.data_ref().map_err(|e| ChartError::Compile {
                         reason: format!("chart target '{name}' output unreadable: {e}"),
                     })?;
                 let Some(target) = self.targets.iter().find(|t| t.name == *name) else {

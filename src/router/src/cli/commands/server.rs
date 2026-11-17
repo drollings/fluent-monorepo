@@ -131,19 +131,24 @@ pub async fn stop(
         )));
     }
 
-    for attempt in 0..6 {
-        let loaded = loaded_model_ids(&client, &base).await;
-        if !loaded.contains(&model_key) {
+    // Unload poll composes the shared backoff primitive (same 6-check /
+    // 1s cadence as the hand-rolled loop it replaces): the tick asks
+    // whether the model drained, `Ready` reports the unload, `Exhausted`
+    // reports the stall.
+    let poll =
+        common_core::retry::PollWithBackoff::new(Duration::from_secs(1), 1).with_max_failures(5);
+    match poll
+        .run(|| async { !loaded_model_ids(&client, &base).await.contains(&model_key) })
+        .await
+    {
+        common_core::retry::PollResult::Ready => {
             println!("Model '{model_key}' unloaded");
-            return Ok(());
+            Ok(())
         }
-        if attempt < 5 {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
+        common_core::retry::PollResult::Exhausted { .. } => Err(cli_err(format!(
+            "Model '{model_key}' still listed as loaded after unload"
+        ))),
     }
-    Err(cli_err(format!(
-        "Model '{model_key}' still listed as loaded after unload"
-    )))
 }
 
 /// One-command frame rollback: close the running router's frame-resolution

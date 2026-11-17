@@ -15,9 +15,9 @@ use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::{default_en_pipeline, ingest_text_file};
 use guidance_core::query::recall::{run_recall, RecallStorage};
+use guidance_core::query::search_db::GuidanceSearchDb;
 use guidance_core::query::strategy::QueryIntent;
 use guidance_core::search_types::{FileInfo, SearchPlan, StorageFilter};
-use search_vector::GuidanceDb;
 
 const PROBES: &[(&str, &str, &str)] = &[
     // (query, relevant doc id, note)
@@ -68,8 +68,8 @@ fn file_info(id: &str) -> FileInfo {
     }
 }
 
-fn seed() -> GuidanceDb {
-    let db = GuidanceDb::open_in_memory().expect("db");
+fn seed() -> GuidanceSearchDb {
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let nlp = default_en_pipeline().expect("hermetic pipeline");
     for (id, text) in CORPUS {
         ingest_text_file(&db, &file_info(id), text, None, Some(&nlp)).expect("ingest");
@@ -84,7 +84,7 @@ fn fused_plan(query: &str) -> SearchPlan {
 /// Pure lexical baseline (the zvec-lexical role): storage FTS directly,
 /// bypassing recall's always-on lemma route. zvec has no lemma layer; its
 /// lexical behavior is token-exact like FTS MATCH.
-fn lexical_only_hits(db: &GuidanceDb, query: &str, relevant: &str) -> f64 {
+fn lexical_only_hits(db: &GuidanceSearchDb, query: &str, relevant: &str) -> f64 {
     let storage = GuidanceDbStorage::new(db);
     let hits = storage
         .search_fts(query, 3, &StorageFilter::default())
@@ -97,7 +97,7 @@ fn lexical_only_hits(db: &GuidanceDb, query: &str, relevant: &str) -> f64 {
 }
 
 /// P@3: 1.0 when the relevant doc is in the top 3, else 0.0.
-fn precision_at_3(db: &GuidanceDb, plan: &SearchPlan, relevant: &str) -> f64 {
+fn precision_at_3(db: &GuidanceSearchDb, plan: &SearchPlan, relevant: &str) -> f64 {
     let storage = GuidanceDbStorage::new(db);
     let nlp = default_en_pipeline().expect("hermetic pipeline");
     let output = run_recall(plan, &storage, None, Some(&nlp)).expect("recall");

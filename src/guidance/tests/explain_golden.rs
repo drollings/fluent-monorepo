@@ -6,9 +6,9 @@
 //! manifest, never silently.
 use super::*;
 use crate::eval::load_eval_tasks;
+use crate::query::search_db::GuidanceSearchDb;
 use crate::read::render::render_answer;
 use crate::tests::common::{db_file_record, db_project_card, db_text_fragment};
-use search_vector::db::GuidanceDb;
 
 const BATTERY: &str = "corpora/benchmark_tasks.jsonl";
 const GOLDEN_DIR: &str = "tests/goldens/explain";
@@ -107,7 +107,7 @@ fn long_body() -> String {
 /// Fixture workspace + seeded index reproducing the measured shapes:
 /// a workspace/doc/code battery plus one fixture-scope manifest card
 /// and one oversized code span.
-pub(super) fn golden_workspace() -> (tempfile::TempDir, GuidanceDb) {
+pub(super) fn golden_workspace() -> (tempfile::TempDir, GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\n").expect("write");
@@ -148,7 +148,7 @@ pub(super) fn golden_workspace() -> (tempfile::TempDir, GuidanceDb) {
     std::fs::create_dir_all(root.join("doc/guidance")).expect("mkdir");
     std::fs::write(root.join("doc/guidance/calibration.md"), doc_text).expect("write");
 
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let seed = |name: &str, symbol: &str, text: &str, end_line: u32| {
         db.upsert_fragments(
             &db_file_record(root, name),
@@ -198,7 +198,7 @@ pub(super) fn golden_workspace() -> (tempfile::TempDir, GuidanceDb) {
             "",
         ),
     ];
-    cards.push(search_vector::db::ProjectCard {
+    cards.push(crate::query::search_db::ProjectCard {
         content_hash: chunk.content_hash.clone(),
         anchor: chunk.anchor.clone(),
         ..db_project_card(
@@ -214,7 +214,7 @@ pub(super) fn golden_workspace() -> (tempfile::TempDir, GuidanceDb) {
     (dir, db)
 }
 
-fn snapshot(task: &crate::eval::EvalTask, root: &std::path::Path, db: &GuidanceDb) -> Golden {
+fn snapshot(task: &crate::eval::EvalTask, root: &std::path::Path, db: &GuidanceSearchDb) -> Golden {
     let engine = ReadEngine::new();
     let ctx = ExplainContext {
         workspace: root,

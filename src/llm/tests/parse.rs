@@ -329,7 +329,10 @@ fn parse_rerank_output_rejects_garbage() {
 #[test]
 fn first_json_span_matches_model_text_contract() {
     use super::extract_first_json_span;
-    assert_eq!(extract_first_json_span(r#"{"1": 85}"#), Some(r#"{"1": 85}"#));
+    assert_eq!(
+        extract_first_json_span(r#"{"1": 85}"#),
+        Some(r#"{"1": 85}"#)
+    );
     assert_eq!(extract_first_json_span("[1, 2]"), Some("[1, 2]"));
     assert_eq!(
         extract_first_json_span("<think>x</think>{\"1\": 85}"),

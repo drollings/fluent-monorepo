@@ -31,10 +31,6 @@ use crate::pool::{PoolError, SinkPool, WorkerPool};
 /// `initial = limit.max(1)`, `more_after = (limit / 2).max(1)`).
 /// Defaults reproduce those values byte-for-byte.
 #[derive(Debug, Clone, Copy)]
-/// Tuning for [`CreditGatedPool`]: the worker cap and the credit-formula
-/// parameters, previously hard-coded magic (`WORKER_CAP = 2`,
-/// `initial = limit.max(1)`, `more_after = (limit / 2).max(1)`).
-/// Defaults reproduce those values byte-for-byte.
 pub struct CreditGatedConfig {
     /// Worker task count.
     pub worker_cap: usize,
@@ -234,18 +230,6 @@ impl<J: Send + Sync + 'static> CreditGatedPool<J> {
                 ),
             }
         }
-    }
-
-    /// Alias for [`drain`](Self::drain) matching `WorkerPool::shutdown`
-    /// spelling at generic `SinkPool` call sites.
-    pub async fn shutdown(&self) {
-        self.drain().await;
-    }
-
-    /// Alias for [`drain`](Self::drain) matching `Queue::close` spelling
-    /// at queue-lifecycle call sites.
-    pub async fn close(&self) {
-        self.drain().await;
     }
 
     /// The number of worker tasks processing jobs.

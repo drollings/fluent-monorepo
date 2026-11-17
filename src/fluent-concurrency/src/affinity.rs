@@ -142,6 +142,10 @@ where
     /// Submit a task with a base priority. If the task's identity matches
     /// the current affinity session, an affinity bonus is added.
     ///
+    /// For a known identity the cached base wins over the `base_priority`
+    /// argument (first submit wins); the argument applies only to new
+    /// identities.
+    ///
     /// Also runs aging if the configured interval has elapsed — all under
     /// one guard, so the aging check costs no extra lock on any submit.
     ///
@@ -283,7 +287,9 @@ where
 fn age_locked(base: &mut LruCache<String, i32>, affinity: Option<&str>, aging: &AgingConfig) {
     for (identity, prio) in base.iter_mut() {
         if Some(identity.as_str()) != affinity {
-            *prio = (*prio + aging.aging_rate).min(aging.max_priority);
+            *prio = prio
+                .saturating_add(aging.aging_rate)
+                .min(aging.max_priority);
         }
     }
 }

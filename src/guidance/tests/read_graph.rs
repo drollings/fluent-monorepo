@@ -7,9 +7,9 @@
 use super::graph::{CallerFilter, GraphPlane};
 use super::symbol::{normalize_symbol_query, GuidanceStructureStore, StructureStore};
 
-fn seed_db() -> search_vector::db::GuidanceDb {
-    use search_vector::db::{FileRecord, FragmentRecord};
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+fn seed_db() -> crate::query::search_db::GuidanceSearchDb {
+    use crate::query::search_db::{FileRecord, FragmentRecord};
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let file = |id: &str, abs: &str| FileRecord {
         id: id.to_string(),
         absolute_path: abs.to_string(),
@@ -48,7 +48,7 @@ fn seed_db() -> search_vector::db::GuidanceDb {
             frag("a-fn", "file-a", "dispatch"),
             frag("a-help", "file-a", "helper"),
         ],
-        &[search_vector::db::FragmentLemma {
+        &[crate::query::search_db::FragmentLemma {
             fragment_id: "a-fn".to_string(),
             lemma: "dispatch".to_string(),
             confidence: 1.0,
@@ -80,7 +80,7 @@ fn seed_db() -> search_vector::db::GuidanceDb {
         db.replace_symbols(
             &rows
                 .into_iter()
-                .map(|(symbol_id, name)| search_vector::db::SymbolRecord {
+                .map(|(symbol_id, name)| crate::query::search_db::SymbolRecord {
                     symbol_id: symbol_id.to_string(),
                     file_id: file_id.to_string(),
                     name: Some(name.to_string()),
@@ -189,11 +189,11 @@ fn callers_expand_homonyms_with_tiers() {
     assert!(plane.callers("").is_empty());
 }
 
-fn two_crate_db() -> search_vector::db::GuidanceDb {
+fn two_crate_db() -> crate::query::search_db::GuidanceSearchDb {
     // One homonym split across two crates: alpha defines and calls
     // `duet`, beta defines and calls `duet`.
-    use search_vector::db::{FileRecord, FragmentRecord};
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    use crate::query::search_db::{FileRecord, FragmentRecord};
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let file = |id: &str, abs: &str| FileRecord {
         id: id.to_string(),
         absolute_path: abs.to_string(),

@@ -5,7 +5,7 @@ edition.workspace = true
 autotests = false
 
 [dependencies]
-common-core = { path = "../common-core", features = ["sqlite"] }
+common-core = { path = "../common-core" }
 fluent-types = { path = "../types" }
 fluent-wvr = { path = "../fluent-wvr" }
 bitvec = { workspace = true }

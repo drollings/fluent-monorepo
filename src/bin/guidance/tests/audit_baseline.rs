@@ -89,8 +89,9 @@ fn q1_orientation_query_carries_no_symbol_signal() {
         "What are the major components of this codebase?",
     );
     assert!(!tokens.is_empty());
-    let symbols =
-        search_vector::tokens::symbol_names("What are the major components of this codebase?");
+    let symbols = guidance_core::query::tokens::symbol_names(
+        "What are the major components of this codebase?",
+    );
     // Over-minting characterization: every prose word passes the symbol
     // filter, yet none is identifier-shaped (no `_` or `::`), so the
     // symbol-filtered routes fuse prose matches into rank. M4 gates this.

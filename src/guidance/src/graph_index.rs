@@ -7,9 +7,9 @@ use crate::ast_parser::AstParser;
 use crate::extractor::code::harvest_file_entities;
 use crate::extractor::ExtractSource;
 use crate::query::fusion::RecallCandidate;
+use crate::query::tokens::{lower_dedup_push, split_tokens};
 use crate::search_types::{EntityMetadata, FileKind};
 use fluent_dag::dep_graph::{DependencyGraph, GraphError};
-use search_vector::tokens::{lower_dedup_push, split_tokens};
 use spacy_rs::routing::RoutingSignal;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -250,9 +250,9 @@ pub fn signals_from_routing(signals: &[RoutingSignal]) -> GraphQuerySignals {
 }
 
 /// L4 boost weights (additive over fused RRF scores; deterministic).
-/// Canonical home is `search_vector::fusion` (M6) — re-exported here with
+/// Canonical home is [`crate::query::rrf`] — re-exported here with
 /// identical values so the L4 contract surface stays stable.
-pub use search_vector::fusion::{
+pub use crate::query::rrf::{
     CALL_BOOST as L4_CALL_BOOST, DEPENDENT_BOOST as L4_DEPENDENT_BOOST,
     ROLE_EPSILON as L4_ROLE_EPSILON, SAME_FILE_BOOST as L4_SAME_FILE_BOOST,
     SCOPE_BOOST as L4_SCOPE_BOOST,
@@ -342,10 +342,10 @@ impl GraphIndex {
     /// the shared row-to-graph assembly behind the binary's sync and
     /// the read plane's graph queries. One implementation, two callers.
     pub fn hydrate_from_db(
-        db: &search_vector::db::GuidanceDb,
+        db: &crate::query::search_db::GuidanceSearchDb,
         roots: &[String],
     ) -> Result<Self, GraphIndexError> {
-        use search_vector::db::VectorDbError;
+        use search_vector::VectorDbError;
         let files = db.list_files().map_err(|error| match error {
             VectorDbError::Serialization(detail) => GraphIndexError::Harvest(detail),
             other => GraphIndexError::Harvest(other.to_string()),
@@ -723,7 +723,7 @@ impl GraphIndex {
         for (index, candidate) in candidates.iter().enumerate() {
             // Structural applicability stays here (anchor/closure/scope are
             // graph-discipline decisions); the addition itself composes the
-            // shared algebra (`search_vector::fusion::apply_boosts`).
+            // shared algebra (`crate::query::rrf::apply_boosts`).
             let mut boosts = Vec::with_capacity(3);
             let file = candidate.file.absolute_path.as_str();
             if anchor_files.contains(file) {
@@ -743,7 +743,7 @@ impl GraphIndex {
             // Local ordering key only: the composite magnitude plus the
             // structural boosts, sorted here and never stored back into
             // the candidate (composites never combine — see `RrfScore`).
-            let boosted = search_vector::fusion::apply_boosts(candidate.score.value(), boosts);
+            let boosted = crate::query::rrf::apply_boosts(candidate.score.value(), boosts);
             scored.push((index, boosted, overlap));
         }
         let scored = common_core::sort::sorted_by_vec(scored, |a, b| {

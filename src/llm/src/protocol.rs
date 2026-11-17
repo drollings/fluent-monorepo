@@ -18,18 +18,16 @@
 //! and `llm_queue::build_default_queue` the one-step wiring; both now build
 //! on these canonical types.
 //!
-//! M11 deleted the `fluent-concurrency::llm_queue` byte-identical shim
-//! copies (kept through M10 under `#[deprecated]`) with the whole module;
 //! the owner goldens in `tests/protocol_parity.rs` are the lasting
 //! contract. No `Cargo.toml` edge flipped: the queue composes the generic
 //! `fluent_concurrency::pool` executor, so the `fluent-llm →
-//! fluent-concurrency` edge stands unchanged (defer-by-default, per M9).
+//! fluent-concurrency` edge stands unchanged (defer-by-default).
 //!
-//! Calibration (roadmap §1, M10): the `LlmConfig` builder defaults
-//! (`timeout_ms` 2000) and the `extra_body_params` merge rule (`model` /
-//! `messages` / `stream` set explicitly, everything else merged) are
-//! task-value transport wiring, not producer confidence — a fast timeout is
-//! never "the model is sure". They move unchanged; retuning them is M10.
+//! The `LlmConfig` builder defaults (`timeout_ms` 2000) and the
+//! `extra_body_params` merge rule (`model` / `messages` / `stream` set
+//! explicitly, everything else merged) are task-value transport wiring,
+//! not producer confidence — a fast timeout is never "the model is sure".
+//! Never silently retune them.
 //!
 //! # Architecture
 //!
@@ -68,6 +66,13 @@ use fluent_concurrency::pool::{PoolError, ResultPool, ResultPoolError};
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 /// ─── LLM protocol types ─────────────────────────────────────────────────────
 /// Errors returned by LLM chat completions and the request queue.
+///
+/// Two timeout axes bound a request at different layers (never unify their
+/// values): `LlmConfig::timeout_ms` (per-attempt transport, default 2000)
+/// caps one HTTP round-trip, while `DEFAULT_TOTAL_TIMEOUT_MS` (whole-dispatch
+/// wall clock, 300000) caps the entire dispatch including retries and
+/// fallback. A fast per-attempt timeout is transport wiring, never a
+/// confidence signal.
 pub enum LlmError {
     #[error("API error: {0}")]
     Api(String),
@@ -77,12 +82,16 @@ pub enum LlmError {
     NoResponse,
     #[error("rate limited")]
     RateLimited,
+    #[error("queue full")]
+    QueueFull,
 }
 
 impl LlmError {
     /// Returns `true` for error variants that indicate a transient condition the
     /// caller *may* wish to retry (transport failures, rate limiting). API
-    /// rejections and empty responses are treated as permanent.
+    /// rejections, empty responses, and local queue saturation are permanent:
+    /// `QueueFull` is producer-side transport/capacity (not task-value, not
+    /// confidence), so retrying would amplify the overload instead of fixing it.
     pub fn is_retryable(&self) -> bool {
         matches!(self, Self::Http(_) | Self::RateLimited)
     }
@@ -125,12 +134,13 @@ impl ChatMessage {
 /// clones it into every `LlmTask` it submits.
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 #[builder(start_fn = new)]
-/// Per-request LLM configuration. The `LlmClient` carries one of these and
-/// clones it into every `LlmTask` it submits.
 pub struct LlmConfig {
     pub api_url: String,
     pub model: String,
     pub think: Option<bool>,
+    /// Per-attempt transport budget for one HTTP round-trip (default 2000).
+    /// Different layer from `DEFAULT_TOTAL_TIMEOUT_MS` (whole-dispatch wall
+    /// clock); the values are never unified.
     #[builder(default = 2000)]
     pub timeout_ms: u64,
     /// Arbitrary JSON body parameters merged into every chat completion
@@ -254,7 +264,7 @@ impl LlmRequestQueue {
 /// Maps a `ResultPoolError` to the appropriate `LlmError` variant.
 fn map_pool_error(e: ResultPoolError<LlmError>) -> LlmError {
     match e {
-        ResultPoolError::Pool(PoolError::Full) => LlmError::Http("queue full".into()),
+        ResultPoolError::Pool(PoolError::Full) => LlmError::QueueFull,
         ResultPoolError::Pool(PoolError::Closed) => LlmError::Http("queue closed".into()),
         ResultPoolError::Inner(e) => e,
         ResultPoolError::Canceled => LlmError::Http("queue response canceled".into()),

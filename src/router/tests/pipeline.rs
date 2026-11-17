@@ -373,7 +373,7 @@ fn cache_probe_stage(
                     ctx.get::<crate::stages::common::TypedRequest>(
                         crate::stages::common::TYPED_REQUEST_KEY,
                     )
-                    .map_or(u64::MAX, |(gen, _)| *gen),
+                    .map_or(u64::MAX, |entry| entry.0),
                     text,
                 ));
                 Ok(WorkOutput::typed_lossy(

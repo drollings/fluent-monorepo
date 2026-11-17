@@ -5,17 +5,15 @@
 //! three request-budget defaults (`DEFAULT_TOTAL_TIMEOUT_MS`,
 //! `DEFAULT_IDLE_TIMEOUT_MS`, `DEFAULT_RETRY_INTERVAL_S`) that every
 //! router serde default and dispatch call site reads. Generic caps
-//! (`MAX_VALUE_LEN`, `MAX_FILE_SIZE`, `MAX_JSON_DEPTH`, `MAX_LOG_MESSAGE_LEN`,
+//! (`MAX_VALUE_LEN`, `MAX_FILE_SIZE`, `MAX_JSON_DEPTH`,
 //! `MAX_KNN_CANDIDATES`, `MAX_MCP_REQUEST_SIZE`, `DEFAULT_HNSW_THRESHOLD`,
-//! `DEFAULT_ONNX_*`, `default_true`, `HnswParams`) stay in `common-core`.
+//! `default_true`, `HnswParams`) stay in `common-core`; ONNX tuning
+//! (`DEFAULT_ONNX_LIMITER_CAP`, `DEFAULT_ONNX_THREADS`) lives in the router.
 //!
-//! M11 deleted the `common-core::constants` duplicate shim definitions
-//! (kept through M10 under `#[deprecated]`); the locked values in
-//! `tests/constants.rs` are the lasting contract.
+//! The locked values in `tests/constants.rs` are the lasting contract.
 //!
-//! Calibration (roadmap §1, M10): these are task-value budgets (context
-//! width, wall-clock budgets, retry cadence), not producer confidence.
-//! The values move unchanged; retuning them is M10.
+//! These are task-value budgets (context width, wall-clock budgets, retry
+//! cadence), not producer confidence. Never silently retune the values.
 
 /// Maximum embedding dimensions every provider and HNSW store agrees on.
 pub const MAX_EMBEDDING_DIMENSIONS: usize = 4_096;

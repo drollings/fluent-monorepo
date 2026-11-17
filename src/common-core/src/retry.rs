@@ -7,6 +7,9 @@
 //! transport-retry helper; corrective re-prompting (e.g. `RetryClassifier`)
 //! is a distinct concern and does not use this module.
 //!
+//! `run_with_budget` is the multi-consumer whole-call timeout (orator-cli,
+//! orator-voice, the internal watchdog): kept, contract documented on the fn.
+//!
 //! ## Abort-aware verdict loops: composition recipe (not a driver)
 //!
 //! The supervised reconnect loop and the repair loop share one shape —
@@ -154,7 +157,7 @@ pub fn capped_backoff_ms(base_ms: u64, failures: u32, cap: u32) -> u64 {
 
 /// Compute a capped exponential backoff: `base_ms * 2^min(failures, max_shift)`.
 ///
-/// M3: the no-jitter capped-exponential shape. With `base_ms=1000,
+/// The no-jitter capped-exponential shape. With `base_ms=1000,
 /// max_shift=6` the schedule is 1, 2, 4, …, 64s — the supervisor restart
 /// cadence, where jitter would change restart timing. `failures` is the
 /// count of consecutive failures so far (0 = first failure → `base_ms`).
@@ -244,9 +247,6 @@ impl PollWithBackoff {
 /// caller waited. Data only — the caller formats its own refusal line
 /// (domain prefixes like `orator: ` stay at the call site, never here).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Marker for a [`run_with_budget`] timeout: which op and how long the
-/// caller waited. Data only — the caller formats its own refusal line
-/// (domain prefixes like `orator: ` stay at the call site, never here).
 pub struct BudgetExceeded {
     label: String,
     budget_secs: u64,

@@ -1,4 +1,4 @@
-//! The YaGO taxonomy loader (ROADMAP §13.3, M11).
+//! The YaGO taxonomy loader.
 //!
 //! Parses the class registry (`ontology/data/yago_classes.json`, embedded at
 //! build time or loaded from a downloaded file) into [`ConceptMetadata`]

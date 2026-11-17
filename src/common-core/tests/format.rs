@@ -22,12 +22,14 @@ fn format_json_nested_and_indent() {
     let s = format_json(&v, 2);
     assert!(s.contains("\"a\""));
     assert!(s.contains("\"b\""));
+    assert_eq!(s, serde_json::to_string_pretty(&v).unwrap());
     let s4 = format_json(&v, 4);
     let indent_line = s4
         .lines()
         .find(|l| l.trim_start().starts_with('"'))
         .unwrap();
-    assert!(indent_line.starts_with("  "));
+    assert!(indent_line.starts_with("    "));
+    assert!(!indent_line.starts_with("     "));
 }
 
 #[test]

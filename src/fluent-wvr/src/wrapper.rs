@@ -78,29 +78,6 @@ where
 /// // unit.execute(ctx) will log timing and record to hist
 /// ```
 #[derive(Clone)]
-/// A `WorkUnit` wrapper that logs execution timing and optionally records
-/// durations into a shared `LatencyHistogram`.
-///
-/// # Examples
-///
-/// ```no_run
-/// use std::sync::Arc;
-/// use fluent_wvr::wrapper::Instrumented;
-/// use common_core::metrics::LatencyHistogram;
-/// # use fluent_wvr::{WorkUnit, WorkContext, WorkOutput, WorkError};
-/// # use internment::ArcIntern;
-/// # struct MyUnit;
-/// # impl WorkUnit for MyUnit {
-/// #     fn name(&self) -> &str { "my_unit" }
-/// #     fn depends(&self) -> &[ArcIntern<str>] { &[] }
-/// #     fn provides(&self) -> &[ArcIntern<str>] { &[] }
-/// #     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> { Ok(WorkOutput::ok("ok")) }
-/// # }
-///
-/// let hist = Arc::new(LatencyHistogram::new());
-/// let unit = Instrumented::with_metrics(MyUnit, "my.unit", hist.clone());
-/// // unit.execute(ctx) will log timing and record to hist
-/// ```
 pub struct Instrumented<U> {
     inner: U,
     label: String,
@@ -222,6 +199,9 @@ impl<U: crate::Component> crate::Describable for Instrumented<U> {
 
 impl_component!(generic (U: crate::Component + 'static) for Instrumented<U>);
 
+/// Override for one `Component` facet: runs in place of the inner `execute`.
+pub type ExecuteFn = Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>;
+
 /// A wrapper that adapts any `Arc<dyn Component>` at runtime.
 ///
 /// `ComponentAdapter` lets callers override one or more of the four
@@ -245,24 +225,12 @@ impl_component!(generic (U: crate::Component + 'static) for Instrumented<U>);
 /// - If you own the inner type, configure it directly — `Arc::get_mut`
 ///   + `set_field` is the canonical path.
 /// - If the override is permanent, add it to the inner type's impl.
-pub type ExecuteFn = Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>;
-
+#[derive(Clone)]
 pub struct ComponentAdapter {
     inner: Arc<dyn Component>,
     name_override: Option<String>,
     execute_override: Option<ExecuteFn>,
     field_overrides: HashMap<String, String>,
-}
-
-impl Clone for ComponentAdapter {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Arc::clone(&self.inner),
-            name_override: self.name_override.clone(),
-            execute_override: self.execute_override.clone(),
-            field_overrides: self.field_overrides.clone(),
-        }
-    }
 }
 
 impl ComponentAdapter {
@@ -446,12 +414,6 @@ impl ComponentCascade {
         self.units.push(unit);
     }
 
-    /// Append a unit to the end of the cascade (backward-compatible alias
-    /// for [`push`](Self::push)). Prefer `push` in new code.
-    pub fn register(&mut self, unit: Arc<dyn Component>) {
-        self.units.push(unit);
-    }
-
     /// Number of units in the cascade.
     pub fn len(&self) -> usize {
         self.units.len()
@@ -493,9 +455,10 @@ impl ComponentCascade {
             Ok(Some(output)) => Ok(output),
             Ok(None) => match last_fail {
                 Some(fail) => Ok(fail),
-                None => Err(WorkError::Execution(
-                    "component cascade has no units".into(),
-                )),
+                // Unreachable: a non-empty cascade always visits at least one
+                // unit, which either succeeds (returning above), records
+                // `last_fail`, or propagates its error.
+                None => unreachable!("non-empty cascade visited no units"),
             },
             Err(e) => Err(e),
         }

@@ -68,7 +68,7 @@ fn stage_sees_request_and_caller_context_untouched() {
     let before = caller.structured.get("request").cloned();
 
     let out = orch.execute(&caller).expect("pipeline runs");
-    let result: PipelineResult = out.data_as().expect("typed result");
+    let result: PipelineResult = out.data_ref().expect("typed result");
     assert_eq!(result.decisions.len(), 1);
 
     let observations = seen.lock().expect("observation lock");
@@ -107,7 +107,7 @@ fn rerouted_request_reaches_later_stages() {
     let mut caller = WorkContext::default();
     caller.set_structured("request", &serde_json::json!({"q": "one"}));
     let out = orch.execute(&caller).expect("pipeline runs");
-    let result: PipelineResult = out.data_as().expect("typed result");
+    let result: PipelineResult = out.data_ref().expect("typed result");
     assert_eq!(result.decisions.len(), 2);
 
     let observations = seen.lock().expect("observation lock");

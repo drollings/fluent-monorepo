@@ -204,18 +204,6 @@ impl From<crate::protocol::LlmError> for DecisionError {
 /// assert!(ThresholdSet { act: 0.5, review: 0.8 }.validate().is_err());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-/// Per-decision-point thresholds mapping confidence to a verdict.
-///
-/// `act`/`review` are producer-confidence gates; they earn task-value trust
-/// only through calibration on labeled cases plus a must-not-fire control
-/// group — never by assertion.
-///
-/// ```rust
-/// use fluent_llm::decision::ThresholdSet;
-///
-/// assert!(ThresholdSet { act: 0.9, review: 0.7 }.validate().is_ok());
-/// assert!(ThresholdSet { act: 0.5, review: 0.8 }.validate().is_err());
-/// ```
 pub struct ThresholdSet {
     pub act: f64,
     pub review: f64,
@@ -397,9 +385,6 @@ pub struct ScoreMoment {
 /// or non-positive distribution. Adjacent-rung errors move the mean
 /// slightly; distant ones move it far — the ordinal weighting.
 #[must_use]
-/// Expected value and spread over distribution order. `None` on an empty
-/// or non-positive distribution. Adjacent-rung errors move the mean
-/// slightly; distant ones move it far — the ordinal weighting.
 pub fn score_moment(decision: &Decision) -> Option<ScoreMoment> {
     if decision.distribution.is_empty() {
         return None;

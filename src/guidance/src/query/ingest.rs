@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use search_vector::db::GuidanceDb;
+use crate::query::search_db::GuidanceSearchDb;
 
 use crate::ast_parser::{AstParser, CommentBlock};
 use crate::query::db_storage::{file_record, fragment_lemma, fragment_record};
@@ -175,7 +175,7 @@ pub enum IngestError {
 /// would rewrite every stored row the live path serves, for no
 /// retrieval gain. Keep the split; see the pointer at `commit_file`.
 pub fn ingest_text_file(
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     file: &FileInfo,
     text: &str,
     embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
@@ -204,7 +204,7 @@ pub fn ingest_text_file(
         },
         None => stats.skipped_embedding = 1,
     }
-    let lemmas: Vec<search_vector::db::FragmentLemma> = lemmas_for_file(file, text, nlp)
+    let lemmas: Vec<crate::query::search_db::FragmentLemma> = lemmas_for_file(file, text, nlp)
         .into_iter()
         .map(|lemma| fragment_lemma(&file.id, &lemma, 1.0))
         .collect();

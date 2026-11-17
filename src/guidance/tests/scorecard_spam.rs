@@ -49,8 +49,7 @@ fn read_answers_carry_spam_counts() {
     assert!(answer.max_span <= crate::eval::SPAM_MAX_SPAN_LINES);
     assert_eq!(answer.fixture_count, 0);
     assert!(
-        crate::eval::rendered_citation_count(&answer.rendered)
-            <= crate::eval::SPAM_MAX_CITATIONS,
+        crate::eval::rendered_citation_count(&answer.rendered) <= crate::eval::SPAM_MAX_CITATIONS,
         "rendered list respects the payload ceiling"
     );
     let _ = staged;

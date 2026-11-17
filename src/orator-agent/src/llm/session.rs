@@ -267,6 +267,7 @@ fn map_fluent_error(error: FluentError) -> LlmError {
     match error {
         FluentError::Http(message) if message == QUEUE_CANCELED => LlmError::Aborted,
         FluentError::Http(message) | FluentError::Api(message) => LlmError::Backend(message),
+        FluentError::QueueFull => LlmError::Backend("queue full".to_string()),
         FluentError::RateLimited => LlmError::Backend("rate limited".to_string()),
         FluentError::NoResponse => LlmError::Backend("no response from model".to_string()),
     }

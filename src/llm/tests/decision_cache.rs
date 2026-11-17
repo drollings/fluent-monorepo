@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use fluent_llm::decision::{decision_cache_key, Decision, DecisionCache, DecisionError};
+use fluent_llm::decision::{CacheKeyInput, Decision, DecisionCache, DecisionError};
 
 fn canned(label: &str) -> Decision {
     Decision::from_distribution(
@@ -18,16 +18,18 @@ fn canned(label: &str) -> Decision {
 }
 
 fn key(state: &str, version: u64, model: &str) -> String {
-    decision_cache_key(
-        state,
-        "q?",
-        "q",
+    CacheKeyInput {
+        state: state.to_string(),
+        question: "q?".to_string(),
+        question_id: "q".to_string(),
         version,
-        model,
-        "http://localhost:8080",
-        &serde_json::json!({"max_tokens": 1}),
-        None,
-    )
+        model: model.to_string(),
+        endpoint: "http://localhost:8080".to_string(),
+        extras: serde_json::json!({"max_tokens": 1}),
+        think: None,
+        fingerprint: None,
+    }
+    .key()
 }
 
 #[test]
@@ -69,19 +71,24 @@ fn version_bump_model_change_miss() {
 #[test]
 fn extras_and_think_flag_change_miss() {
     let extra_v1 = serde_json::json!({"a": 1});
-    let base = decision_cache_key("s", "q?", "q", 1, "m", "http://a", &extra_v1, None);
-    let other_extras = decision_cache_key(
-        "s",
-        "q?",
-        "q",
-        1,
-        "m",
-        "http://a",
-        &serde_json::json!({"a": 2}),
-        None,
-    );
-    let think_on = decision_cache_key("s", "q?", "q", 1, "m", "http://a", &extra_v1, Some(true));
-    let same = decision_cache_key("s", "q?", "q", 1, "m", "http://a", &extra_v1, None);
+    let key_for = |extras: &serde_json::Value, think: Option<bool>| {
+        CacheKeyInput {
+            state: "s".to_string(),
+            question: "q?".to_string(),
+            question_id: "q".to_string(),
+            version: 1,
+            model: "m".to_string(),
+            endpoint: "http://a".to_string(),
+            extras: extras.clone(),
+            think,
+            fingerprint: None,
+        }
+        .key()
+    };
+    let base = key_for(&extra_v1, None);
+    let other_extras = key_for(&serde_json::json!({"a": 2}), None);
+    let think_on = key_for(&extra_v1, Some(true));
+    let same = key_for(&extra_v1, None);
     assert_ne!(base, other_extras);
     assert_ne!(base, think_on);
     assert_eq!(base, same);
@@ -90,16 +97,18 @@ fn extras_and_think_flag_change_miss() {
 #[test]
 fn key_separates_question_text_framing_and_endpoint() {
     let k = |state: &str, question: &str, endpoint: &str| {
-        decision_cache_key(
-            state,
-            question,
-            "qid",
-            1,
-            "m",
-            endpoint,
-            &serde_json::json!({}),
-            None,
-        )
+        CacheKeyInput {
+            state: state.to_string(),
+            question: question.to_string(),
+            question_id: "qid".to_string(),
+            version: 1,
+            model: "m".to_string(),
+            endpoint: endpoint.to_string(),
+            extras: serde_json::json!({}),
+            think: None,
+            fingerprint: None,
+        }
+        .key()
     };
     // Same state, different questions (the bulk shape) must not collide.
     assert_ne!(
@@ -208,10 +217,9 @@ fn eviction_bounded_under_concurrent_flood() {
 }
 
 #[test]
-fn key_struct_matches_legacy_bytes_and_scopes_fingerprint() {
+fn key_struct_scopes_fingerprint() {
     use fluent_llm::decision::CacheKeyInput;
     let extras = serde_json::json!({"a": 1});
-    let legacy = decision_cache_key("s", "q?", "qid", 1, "m", "http://a", &extras, None);
     let input = CacheKeyInput {
         state: "s".to_string(),
         question: "q?".to_string(),
@@ -223,7 +231,6 @@ fn key_struct_matches_legacy_bytes_and_scopes_fingerprint() {
         think: None,
         fingerprint: None,
     };
-    assert_eq!(legacy, input.key());
     let scoped = CacheKeyInput {
         fingerprint: Some("fp-weights-v2".to_string()),
         ..input.clone()

@@ -3,7 +3,7 @@
 //! Freshness authority (G0.7): size+mtime is the fast path, the sha256
 //! content hash is the tiebreak — hash wins on disagreement.
 
-use search_vector::db::FileRecord;
+use crate::query::search_db::FileRecord;
 
 /// A scanned file with its content hash (when computed).
 #[derive(Debug, Clone, PartialEq, Eq)]

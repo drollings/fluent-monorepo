@@ -3,6 +3,7 @@
 //! Home for pure digit/checksum validators shared across crates. Callers that
 //! need a confidence gate on a checksum match (e.g. a credit-card regex firing
 //! only when the digits validate) compose this; the regex/policy stays local.
+//! Kept as generic math: single-consumer today, reusable without duplication.
 
 /// Luhn checksum validation over the ASCII digits in `input`.
 ///

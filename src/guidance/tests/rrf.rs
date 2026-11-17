@@ -1,4 +1,4 @@
-//! M6.2 unit pins for `search_vector::fusion`: RRF goldens (K=60),
+//! RRF goldens (K=60) for `crate::query::rrf`:
 //! tie→id order, empty inputs, per-list dedupe, boost additivity, and the
 //! `RrfScore` ordinal contract. Pure — no guidance types.
 
@@ -26,7 +26,7 @@ fn rrf_sums_across_lists_and_orders_by_score() {
     assert_eq!(fused[0].rank, 1);
     assert_eq!(fused[1].rank, 2);
     assert_eq!(fused[2].rank, 3);
-    assert!((fused[0].score - (1.0 / 62.0 + 1.0 / 61.0)).abs() < 1e-12);
+    assert!((fused[0].score.value() - (1.0 / 62.0 + 1.0 / 61.0)).abs() < 1e-12);
 }
 
 #[test]
@@ -34,7 +34,10 @@ fn rrf_breaks_score_ties_by_lexicographic_id() {
     let fused = rrf_fuse(&[vec!["b".to_string()], vec!["a".to_string()]], 60.0);
     let ids: Vec<&str> = fused.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(ids, vec!["a", "b"]);
-    assert_eq!(fused[0].score.to_bits(), fused[1].score.to_bits());
+    assert_eq!(
+        fused[0].score.value().to_bits(),
+        fused[1].score.value().to_bits()
+    );
 }
 
 #[test]
@@ -48,7 +51,7 @@ fn rrf_generalizes_to_n_routes() {
         60.0,
     );
     assert_eq!(fused[0].id, "x");
-    assert!((fused[0].score - 3.0 / 61.0).abs() < 1e-12);
+    assert!((fused[0].score.value() - 3.0 / 61.0).abs() < 1e-12);
     assert_eq!(fused[1].id, "y");
 }
 
@@ -57,7 +60,7 @@ fn rrf_dedupes_within_a_list() {
     let fused = rrf_fuse(&[vec!["a".to_string(), "a".to_string()]], 60.0);
     assert_eq!(fused.len(), 1);
     assert_eq!(fused[0].id, "a");
-    assert!((fused[0].score - 1.0 / 61.0).abs() < 1e-12);
+    assert!((fused[0].score.value() - 1.0 / 61.0).abs() < 1e-12);
 }
 
 #[test]
@@ -164,8 +167,10 @@ fn rrf_fused_scores_are_shared_kernel_terms() {
         &[vec!["a".to_string(), "b".to_string(), "c".to_string()]],
         60.0,
     );
-    let by_id: std::collections::HashMap<&str, f64> =
-        fused.iter().map(|h| (h.id.as_str(), h.score)).collect();
+    let by_id: std::collections::HashMap<&str, f64> = fused
+        .iter()
+        .map(|h| (h.id.as_str(), h.score.value()))
+        .collect();
     for (id, rank) in [("a", 1usize), ("b", 2), ("c", 3)] {
         assert_eq!(
             by_id[id].to_bits(),

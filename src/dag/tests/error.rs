@@ -22,17 +22,3 @@ fn invalid_capability_display() {
     assert!(format!("{err}").contains("bogus:cap"));
     assert!(format!("{err}").contains("invalid capability"));
 }
-
-#[test]
-fn bit_index_out_of_range_display() {
-    let err = RegistryError::BitIndexOutOfRange(42);
-    assert!(format!("{err}").contains("42"));
-    assert!(format!("{err}").contains("out of range"));
-}
-
-#[test]
-fn database_from_sqlite_error() {
-    let sqlite = common_core::error::SqliteError::from(rusqlite::Error::InvalidQuery);
-    let err = RegistryError::Database(sqlite);
-    assert!(format!("{err}").contains("database error"));
-}

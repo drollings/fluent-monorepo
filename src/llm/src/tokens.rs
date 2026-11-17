@@ -7,16 +7,12 @@
 //! `split_into_sentences`, `build_overlap`). Zero cross-crate dependencies
 //! (pure `std` + atomics).
 //!
-//! M11 deleted the `common-core::tokens` byte-identical shim copies (kept
-//! through M10 under `#[deprecated]`); the owner goldens in
-//! `tests/tokens.rs` are the lasting contract.
+//! The owner goldens in `tests/tokens.rs` are the lasting contract.
 //!
-//! Calibration (roadmap §1, M10): the script weights below (0.25 ASCII /
-//! 0.67 CJK / 1.0 emoji / 0.1 whitespace / 0 control) are a task-value
-//! budget fit, not producer confidence — a low estimate is never "the model
-//! is sure", and an over-budget truncation is data loss even when the
-//! producer was confident. The weights move unchanged here; calibrating the
-//! weights themselves is M10 and must never be silently retuned in a move.
+//! The script weights below (0.25 ASCII / 0.67 CJK / 1.0 emoji /
+//! 0.1 whitespace / 0 control) are a task-value budget fit, not producer
+//! confidence — a low estimate is never "the model is sure", and an
+//! over-budget truncation is data loss. Never silently retune the weights.
 //!
 //! Token budget helpers: `estimate_tokens`, `TokenBudget`, `AtomicTokenBudget`,
 //! and sentence-boundary-aware document chunking.
@@ -59,7 +55,7 @@ pub fn estimate_tokens_with(text: &str, chars_per_token: usize) -> usize {
 
 /// Estimate the character budget for a token count at a fixed ratio.
 ///
-/// M4: the inverse of [`estimate_tokens_with`] for callers that budget in
+/// The inverse of [`estimate_tokens_with`] for callers that budget in
 /// characters (no tokenizer dependency — a straight character estimate).
 /// A `chars_per_token` of 0 is floored to 1 (every token costs at least one
 /// char); the multiply saturates. Note the zero-guard differs deliberately
@@ -314,18 +310,6 @@ impl TokenBudget {
 /// middle (the caller's budgets guarantee this never fires on a bound
 /// path — pinned by `truncate_middle_overlap_duplicates`).
 #[must_use]
-/// Middle-truncation splitter: the first `head_chars` chars, then
-/// `marker`, then the last `tail_chars` chars.
-///
-/// Pure char splitting — the caller owns every budget decision
-/// (whether to truncate, how big the halves are, what the marker
-/// says), so `bound_prompt`'s keep/head/tail math keeps its exact
-/// shape. There is deliberately no small-input shortcut: a hidden
-/// passthrough here would change outputs whose halves overlap their
-/// input (callers that pass small inputs through do so before
-/// calling). Zero halves are empty; overlapping halves duplicate the
-/// middle (the caller's budgets guarantee this never fires on a bound
-/// path — pinned by `truncate_middle_overlap_duplicates`).
 pub fn truncate_middle(text: &str, head_chars: usize, tail_chars: usize, marker: &str) -> String {
     let head: String = text.chars().take(head_chars).collect();
     let tail: String = text

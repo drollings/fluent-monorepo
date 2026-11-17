@@ -27,7 +27,7 @@ use protopyne_kernels::pine::projection::{PlotPrimitive, ProjectionRefusal};
 use protopyne_kernels::shared_registry;
 use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 
 use fluent_egui::{
     cache_key, needs_column_aggregation, paint_oscillator_styled, proportional_line_points,
@@ -1459,7 +1459,7 @@ impl WorkUnit for KernelIndicatorConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "kernel indicator config invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "kernel indicator ready ({})",
             self.kernel
         )))

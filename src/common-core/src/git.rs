@@ -2,6 +2,9 @@
 //!
 //! All functions take a workspace `&Path` and run `git` in that directory.
 //! Returns `Result` types instead of exiting on failure.
+//!
+//! Kept as generic shared surface: no production callers today, reusable for
+//! future tooling without growing a second git wrapper.
 
 use std::path::Path;
 use std::process::Command;

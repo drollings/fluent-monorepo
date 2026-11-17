@@ -35,11 +35,6 @@ pub trait Describable {
 ///
 /// `purity` is [`None`] for audit-only stages (`{name, depends, provides}`).
 #[must_use]
-/// Canonical [`Describable::describe`] document from `name`/`depends`/`provides`.
-/// Replaces hand-written literals; differs from pre-migration
-/// `{type, description}` by design.
-///
-/// `purity` is [`None`] for audit-only stages (`{name, depends, provides}`).
 pub fn describe_work_unit(
     name: &str,
     depends: &[ArcIntern<str>],
@@ -193,8 +188,6 @@ pub trait SchemaProvider {
 /// `cancelled` — and a scheduled retry may overlap the still-running
 /// zombie. See the timeout guarantee on the supervisor's per-attempt
 /// runner for the full accounting.
-///
-/// See: `AGENTS.md` "Refinement contract" §3.
 ///
 /// # Examples
 ///

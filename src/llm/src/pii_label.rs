@@ -13,8 +13,6 @@ use thiserror::Error;
 /// Closed vocabulary of PII detector labels (union of the request-path table
 /// and the anonymize-only statics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Closed vocabulary of PII detector labels (union of the request-path table
-/// and the anonymize-only statics).
 pub enum PiiLabel {
     #[serde(rename = "ssn")]
     Ssn,

@@ -4,7 +4,7 @@
 //! repo convention. Hermetic: temp workspaces, hand-written manifests.
 
 use super::*;
-use search_vector::db::ProjectCard;
+use crate::query::search_db::ProjectCard;
 
 fn map_fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -183,7 +183,7 @@ fn unknown_crate_falls_back_without_dropping() {
 #[test]
 fn import_stores_incrementally_and_skips_unchanged() {
     let dir = map_fixture();
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let first = import_project_cards(dir.path(), "fixture", &db, None).expect("import");
     assert!(first.cards > 0, "{first:?}");
     assert_eq!(first.skipped_unchanged, 0, "{first:?}");

@@ -6,7 +6,7 @@
 
 use super::docs::{ranked_briefs_for_legacy, retrieve_cards};
 
-fn workspace_with_card() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn workspace_with_card() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     std::fs::create_dir_all(root.join("doc/router")).expect("mkdir doc");
@@ -26,7 +26,7 @@ fn workspace_with_card() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
             "symbols": ["dispatch_routes"]}]}"#,
     )
     .expect("write corpus");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     crate::read::doc_cards::import_capability_corpus(
         root,
         &crate::config::ProjectConfig::default(),
@@ -146,7 +146,7 @@ fn branch_two_pulls_scope_code_by_card_paths() {
     let code = |rel: &str, text: &str| {
         let abs = dir.path().join(rel).to_string_lossy().into_owned();
         db.upsert_fragments(
-            &search_vector::db::FileRecord {
+            &crate::query::search_db::FileRecord {
                 id: abs.clone(),
                 absolute_path: abs.clone(),
                 relative_path: rel.to_string(),
@@ -160,7 +160,7 @@ fn branch_two_pulls_scope_code_by_card_paths() {
                 fail_count: 0,
                 last_error: None,
             },
-            &[search_vector::db::FragmentRecord {
+            &[crate::query::search_db::FragmentRecord {
                 id: format!("{abs}#fn"),
                 group: None,
                 file_id: abs,

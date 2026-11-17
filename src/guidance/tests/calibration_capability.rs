@@ -63,7 +63,7 @@ fn without_cases_calibration_refuses_and_cards_stay_considered() {
     );
     // Import still stores the card; the read plane renders it
     // `considered` and never lets it feed synthesis or traversal.
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     crate::read::doc_cards::import_capability_corpus(
         dir.path(),
         &crate::config::ProjectConfig::default(),

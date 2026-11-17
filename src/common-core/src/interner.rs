@@ -78,8 +78,10 @@ impl CapabilityRegistry {
     /// Test-only probe: take the `names` write lock and panic while holding
     /// it, deliberately poisoning the lock so the poison-safe
     /// [`crate::sync`] recovery can be exercised. Hidden from the public
-    /// API surface.
+    /// API surface; available to the crate's own tests and to downstream
+    /// test harnesses via the `test-util` feature.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-util"))]
     pub fn poison_names_for_test(&self) {
         let _guard = self.names.write().unwrap();
         panic!("intentional interner lock poison (test)");

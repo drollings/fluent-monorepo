@@ -195,12 +195,18 @@ fn default_cache_type() -> String {
     "q8_0".into()
 }
 
+/// Default ONNX CPU decode concurrency cap: the `Limiter` budget bounding
+/// concurrent ONNX decodes.
+pub(crate) const DEFAULT_ONNX_LIMITER_CAP: usize = 2;
+/// Default ONNX intra-op threads (1 = deterministic decode).
+pub(crate) const DEFAULT_ONNX_THREADS: usize = 1;
+
 pub(crate) fn default_onnx_limiter_cap() -> usize {
-    common_core::constants::DEFAULT_ONNX_LIMITER_CAP
+    DEFAULT_ONNX_LIMITER_CAP
 }
 
 pub(crate) fn default_onnx_threads() -> usize {
-    common_core::constants::DEFAULT_ONNX_THREADS
+    DEFAULT_ONNX_THREADS
 }
 
 const fn default_n_gpu_layers() -> i32 {

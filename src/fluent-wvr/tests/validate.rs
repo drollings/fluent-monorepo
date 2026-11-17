@@ -1,4 +1,4 @@
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{WorkError, WorkOutput};
 
 #[test]
@@ -25,7 +25,7 @@ fn stub_validates() {
         WorkError::Execution("ctx: empty symbol".to_owned()),
         "context prefix preserved"
     );
-    let out: WorkOutput = valid_output("ok");
+    let out: WorkOutput = WorkOutput::ok("ok");
     assert!(out.success);
     assert_eq!(out.message, "ok");
 }

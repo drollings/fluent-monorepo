@@ -160,9 +160,7 @@ pub fn item_hashes_for(
     let body = hash_text(&normalize_code_text(language, body));
     // Doc attributes are prose, not code: collapsing keeps reflows
     // stable without letting comment-stripping erase the text itself.
-    let doc = hash_text(&common_core::string::collapse_whitespace(
-        doc.unwrap_or(""),
-    ));
+    let doc = hash_text(&common_core::string::collapse_whitespace(doc.unwrap_or("")));
     let item = common_core::hash::blake3_hex(format!("{sig}\0{body}\0{doc}").as_bytes());
     ItemHashes {
         sig,

@@ -90,9 +90,6 @@ pub const DEFAULT_CONTEXT_GROUP: &str = "default";
 /// profile field-for-field without importing it, so callers describe a
 /// window once for any backend that serves named contexts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// Declarative shape of a named context window. Mirrors the onnx context
-/// profile field-for-field without importing it, so callers describe a
-/// window once for any backend that serves named contexts.
 pub struct ContextProfile {
     /// The context's group.
     pub group: String,
@@ -263,6 +260,19 @@ impl InferenceRegistry {
             "duplicate inference backend registration: '{id}'"
         );
         self.backends.insert(id, backend);
+    }
+
+    /// Fallible registration composing `KeyedRegistry::try_insert`
+    /// (first-wins): `Ok(())` on a fresh id, `Err(backend)` with the value
+    /// handed back — unstored — on a duplicate. Prefer this at dynamic
+    /// call sites; `register` stays the panicking contract for static boot
+    /// wiring where a duplicate is a programming error.
+    pub fn try_register(
+        &mut self,
+        backend: Arc<dyn InferenceBackend>,
+    ) -> Result<(), Arc<dyn InferenceBackend>> {
+        let id = backend.backend_id().to_string();
+        self.backends.try_insert(id, backend)
     }
 
     /// Remove the backend registered under `backend_id`.
@@ -487,8 +497,6 @@ impl PiiSpan {
 /// A PII detection failure. The review pre-filter treats every error as an
 /// empty span set (fail-open — never a job drop and never a rejection).
 #[derive(Debug, thiserror::Error)]
-/// A PII detection failure. The review pre-filter treats every error as an
-/// empty span set (fail-open — never a job drop and never a rejection).
 pub enum PiiError {
     #[error("PII classifier inference failed: {0}")]
     Inference(String),
@@ -508,11 +516,6 @@ pub trait PiiSpanDetector: Send + Sync {
 /// with confidence `1.0`. Always available — no model, no feature gate,
 /// fail-open by construction.
 #[derive(Debug, Clone, Default)]
-/// The deterministic PII baseline: wraps the canonical
-/// [`crate::pii_patterns`] table (never a duplicated pattern list) and
-/// reports every regex match as a `PiiSpan` at the pattern's byte offsets
-/// with confidence `1.0`. Always available — no model, no feature gate,
-/// fail-open by construction.
 pub struct RegexPiiDetector;
 
 impl PiiSpanDetector for RegexPiiDetector {
@@ -547,8 +550,6 @@ pub enum ResidualKind {
 /// A deterministic parse residual: the sentence/span the deterministic layer
 /// was unsure about, plus byte span and structured context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// A deterministic parse residual: the sentence/span the deterministic layer
-/// was unsure about, plus byte span and structured context.
 pub struct Residual {
     pub kind: ResidualKind,
     /// Optional byte span into the source request text.
@@ -588,8 +589,6 @@ pub struct OverlayContribution {
 /// An overlay failure. The overlay stage treats every error as skip-and-log
 /// (fail-open enrichment, never a gate).
 #[derive(Debug, thiserror::Error)]
-/// An overlay failure. The overlay stage treats every error as skip-and-log
-/// (fail-open enrichment, never a gate).
 pub enum OverlayError {
     #[error("overlay inference failed: {0}")]
     Inference(String),
@@ -610,8 +609,6 @@ pub trait ResidualOverlay: Send + Sync {
 /// A route the disambiguation overlay scores against: its config key and the
 /// description the prompt line is built from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// A route the disambiguation overlay scores against: its config key and the
-/// description the prompt line is built from.
 pub struct RouteLabel {
     pub route: String,
     pub description: String,

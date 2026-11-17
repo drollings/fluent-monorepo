@@ -508,7 +508,9 @@ impl SyncEngine {
     /// Embedding-schema gate (P2): the fragment index and embedding cache
     /// tables must exist before any wave commits. Version mismatches
     /// surface here (never as a mid-run commit failure).
-    pub fn check_store(db: &search_vector::GuidanceDb) -> Result<(), SyncEngineError> {
+    pub fn check_store(
+        db: &crate::query::search_db::GuidanceSearchDb,
+    ) -> Result<(), SyncEngineError> {
         for table in ["files", "fragments", "embedding_cache"] {
             if !db.has_table(table) {
                 return Err(SyncEngineError::Parse(format!(
@@ -766,7 +768,7 @@ mod tests {
 
     #[test]
     fn test_check_store_gates_schema() {
-        let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+        let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
         assert!(SyncEngine::check_store(&db).is_ok());
     }
 

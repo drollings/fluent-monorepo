@@ -25,11 +25,11 @@ pub trait Runtime: Send + Sync + 'static {
 
 /// A no-op runtime for contexts where `spawn` and `sleep` are never called.
 ///
-/// `spawn` logs a warning and returns a dummy `JoinHandle`. If called outside
-/// a tokio runtime, it panics with a clear message directing the caller to
-/// provide a real `Runtime`. `sleep` returns immediately. This runtime is
-/// intended for testing or initialization code that doesn't actually need
-/// async execution.
+/// `spawn` asserts a tokio context, drops the caller's future, and spawns an
+/// empty task instead. Outside a tokio runtime it panics with a message
+/// directing the caller to provide a real `Runtime`. `sleep` returns
+/// immediately. This runtime is intended for testing or initialization code
+/// that doesn't actually need async execution.
 pub struct NoopRuntime;
 
 impl Runtime for NoopRuntime {

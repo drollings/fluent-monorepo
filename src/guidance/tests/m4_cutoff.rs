@@ -3,7 +3,7 @@
 //! failures isolate without poisoning siblings.
 
 use super::*;
-use search_vector::db::GuidanceDb;
+use crate::query::search_db::GuidanceSearchDb;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
@@ -89,7 +89,7 @@ impl fluent_llm::embeddings::EmbeddingProvider for CountingEmbedding {
 }
 
 fn run(
-    db: &Arc<GuidanceDb>,
+    db: &Arc<GuidanceSearchDb>,
     provider: CountingEmbedding,
     root: &std::path::Path,
 ) -> Result<IndexStats, IndexError> {
@@ -119,7 +119,7 @@ fn converged_pass_does_zero_work() {
             &format!("pub fn f{i:02}() -> u64 {{ {i} }}\n"),
         );
     }
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     let first = run(&db, provider.clone(), root).expect("first");
     assert_eq!(first.files_indexed, 6, "{first:?}");
@@ -151,7 +151,7 @@ fn body_edit_skips_dependents_sig_edit_pulls_them() {
         "b.rs",
         "use crate::a::foo;\npub fn bar() -> u64 {\n    foo()\n}\n",
     );
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     run(&db, provider.clone(), root).expect("first");
     // Body-only edit: the dependent is not re-harvested.
@@ -175,7 +175,7 @@ fn macro_change_widens_to_the_package() {
         "n.rs",
         "use crate::m::m;\npub fn n() -> u64 {\n    1\n}\n",
     );
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     run(&db, provider.clone(), root).expect("first");
     // Body-only macro change: no interface moves, but the package
@@ -195,7 +195,7 @@ fn failure_degrades_without_failing_dependents() {
         "g.rs",
         "use crate::f::f;\npub fn g() -> u64 {\n    f()\n}\n",
     );
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     run(&db, provider.clone(), root).expect("baseline");
     // Break f with an embedding failure: the file commits unembedded
@@ -274,7 +274,7 @@ fn moved_symbol_pulls_dangling_dependent() {
         "d.rs",
         "use crate::a::foo;\npub fn deep() -> u64 {\n    foo()\n}\n",
     );
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let provider = CountingEmbedding::ok();
     run(&db, provider.clone(), root).expect("baseline");
     // Move foo into b.rs; b.rs drops its import, d.rs dangles.
@@ -319,7 +319,11 @@ fn moved_symbol_pulls_dangling_dependent() {
     );
     // d.rs rows stay retrievable under the new graph.
     assert!(!db
-        .search_fts("deep", 10, &search_vector::db::FragmentFilter::default())
+        .search_fts(
+            "deep",
+            10,
+            &crate::query::search_db::FragmentFilter::default()
+        )
         .expect("search")
         .is_empty());
 }

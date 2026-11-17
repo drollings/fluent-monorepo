@@ -36,12 +36,6 @@ use crate::error::DbError;
 /// (max_nb_connection, initial_capacity, max_layer, ef_construction,
 /// DistCosine) ordering is decided in exactly one place.
 #[must_use]
-/// Build a cosine-distance HNSW index from `HnswParams` with a pluggable
-/// `initial_capacity`.
-///
-/// Centralizes the positional-argument unpacking so the
-/// (max_nb_connection, initial_capacity, max_layer, ef_construction,
-/// DistCosine) ordering is decided in exactly one place.
 pub fn make_hnsw(p: &HnswParams, initial_capacity: usize) -> Hnsw<'static, f32, DistCosine> {
     Hnsw::<f32, DistCosine>::new(
         p.max_nb_connection,
@@ -52,7 +46,7 @@ pub fn make_hnsw(p: &HnswParams, initial_capacity: usize) -> Hnsw<'static, f32, 
     )
 }
 
-/// Single adaptive-dispatch policy for HNSW-vs-brute-force routing (M6).
+/// Single adaptive-dispatch policy for HNSW-vs-brute-force routing.
 ///
 /// This is a policy, not an index: it owns the threshold and answers whether
 /// a store of `len` vectors should consult a built HNSW graph. The one
@@ -61,28 +55,13 @@ pub fn make_hnsw(p: &HnswParams, initial_capacity: usize) -> Hnsw<'static, f32, 
 /// through this struct.
 ///
 /// Axis: **[B] cost/recall only.** This gate measures corpus scale (where the
-/// HNSW approximation pays off — recall≥0.95 at N≥512 per M5a). It is NOT a
+/// HNSW approximation pays off — recall≥0.95 at N≥512). It is NOT a
 /// confidence signal and must never gate verification, persistence, or
 /// frontier escalation (those are [A]/[B]-outcome decisions owned by the
-/// workflow/rubric gates calibrated in M5c–M5d).
+/// calibrated workflow/rubric gates).
 ///
 /// [`DEFAULT_HNSW_THRESHOLD`]: common_core::constants::DEFAULT_HNSW_THRESHOLD
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Single adaptive-dispatch policy for HNSW-vs-brute-force routing (M6).
-///
-/// This is a policy, not an index: it owns the threshold and answers whether
-/// a store of `len` vectors should consult a built HNSW graph. The one
-/// threshold source is [`DEFAULT_HNSW_THRESHOLD`]; there is no second
-/// threshold type — call sites reuse `HnswParams`/`DEFAULT_HNSW_THRESHOLD`
-/// through this struct.
-///
-/// Axis: **[B] cost/recall only.** This gate measures corpus scale (where the
-/// HNSW approximation pays off — recall≥0.95 at N≥512 per M5a). It is NOT a
-/// confidence signal and must never gate verification, persistence, or
-/// frontier escalation (those are [A]/[B]-outcome decisions owned by the
-/// workflow/rubric gates calibrated in M5c–M5d).
-///
-/// [`DEFAULT_HNSW_THRESHOLD`]: common_core::constants::DEFAULT_HNSW_THRESHOLD
 pub struct AdaptiveHnsw {
     /// Corpus size above which a built HNSW graph is consulted. Strict `>`:
     /// `len == threshold` stays brute-force.
@@ -103,7 +82,7 @@ impl AdaptiveHnsw {
 
     /// Query-time dispatch: probe HNSW iff the index is built *and* the corpus
     /// is above threshold. `false` means "take the call-site brute-force
-    /// fallback" — the fallback bodies stay call-site code (M2), this only
+    /// fallback" — the fallback bodies stay call-site code, this only
     /// answers which path to take.
     pub fn dispatch(&self, hnsw_built: bool, len: usize) -> bool {
         hnsw_built && self.should_use_built(len)
@@ -120,17 +99,11 @@ impl Default for AdaptiveHnsw {
 
 /// A single HNSW index handle — the named index path owned by a store (e.g.
 /// the router's `ChartStore` workflow_library index). Moved here from
-/// `fluent_router::hnsw` (D7, router shim deleted in M3): the `db` crate is
+/// `fluent_router::hnsw` (router shim deleted): the `db` crate is
 /// the canonical home for the HNSW surface (`HnswIndex`, `hnsw_lookup`), and
 /// this handle is plain data (no router dependency) so it belongs with that
 /// surface. Consume it as `fluent_db::hnsw::HnswIndexHandle` directly.
 #[derive(Debug, Clone)]
-/// A single HNSW index handle — the named index path owned by a store (e.g.
-/// the router's `ChartStore` workflow_library index). Moved here from
-/// `fluent_router::hnsw` (D7, router shim deleted in M3): the `db` crate is
-/// the canonical home for the HNSW surface (`HnswIndex`, `hnsw_lookup`), and
-/// this handle is plain data (no router dependency) so it belongs with that
-/// surface. Consume it as `fluent_db::hnsw::HnswIndexHandle` directly.
 pub struct HnswIndexHandle {
     pub name: String,
     pub path: String,
@@ -148,17 +121,6 @@ pub struct HnswIndexHandle {
 /// the caller's brute-force fallback (`None`) when the race persists. No
 /// lock is ever held across the index traversal.
 #[derive(Default)]
-/// A generic HNSW-backed vector index with external-id mapping.
-///
-/// The index is built lazily on first `insert` (mirroring the historical
-/// `get_or_insert_with` behavior) and wholesale-rebuilt by `rebuild_from`.
-///
-/// Concurrency: a `generation` seqlock (even = stable) guards torn reads.
-/// Writers bump it odd before mutating either structure and even after both
-/// are swapped; readers (`search_with_ids`) snapshot it around the
-/// traverse-then-resolve episode and retry once on a mismatch, degrading to
-/// the caller's brute-force fallback (`None`) when the race persists. No
-/// lock is ever held across the index traversal.
 pub struct HnswIndex {
     hnsw: RwLock<Option<Hnsw<'static, f32, DistCosine>>>,
     id_map: Mutex<Vec<i64>>,
@@ -342,7 +304,7 @@ impl HnswIndex {
 /// Probe a possibly-unbuilt [`HnswIndex`], resolving external ids to the
 /// caller keys the index was built with.
 ///
-/// M5: the one shared HNSW-then-brute-force stanza. Returns `Some((key,
+/// The one shared HNSW-then-brute-force stanza. Returns `Some((key,
 /// distance))` pairs in HNSW order (cosine distance, NOT similarity — each
 /// site applies its own `1 - dist` mapping), or `None` when the caller must
 /// use its exact brute-force fallback: the index is unbuilt, the probe is

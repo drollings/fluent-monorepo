@@ -2,7 +2,7 @@
 //! confidence): whether a member name resolves to a registered concept.
 //!
 //! Pure string-in/verdict-out over the shared primitives —
-//! `search_vector::tokens::split_tokens` (tokenization, no second splitter),
+//! `crate::query::tokens::split_tokens` (tokenization, no second splitter),
 //! `guidance_ontology::normalize::{token_variants, lemma_to_curies}` (plural
 //! handling + curie fallbacks, no second table), `ConceptStore::resolve_name`
 //! (lookup). Reads the store, never gates on it: readiness and unknown names
@@ -15,7 +15,7 @@
 /// confidence): whether a member name resolves to a registered concept.
 ///
 /// Pure string-in/verdict-out over the shared primitives —
-/// `search_vector::tokens::split_tokens` (tokenization, no second splitter),
+/// `crate::query::tokens::split_tokens` (tokenization, no second splitter),
 /// `guidance_ontology::normalize::{token_variants, lemma_to_curies}` (plural
 /// handling + curie fallbacks, no second table), `ConceptStore::resolve_name`
 /// (lookup). Reads the store, never gates on it: readiness and unknown names
@@ -39,7 +39,7 @@ pub fn member_groundedness(
     name: &str,
     store: &dyn fluent_concept::ConceptStore,
 ) -> MemberGroundedness {
-    for token in search_vector::tokens::split_tokens(name) {
+    for token in crate::query::tokens::split_tokens(name) {
         for variant in guidance_ontology::normalize::token_variants(&token) {
             for curie in guidance_ontology::normalize::lemma_to_curies(&variant) {
                 if store.resolve_name(&curie).is_ok() {

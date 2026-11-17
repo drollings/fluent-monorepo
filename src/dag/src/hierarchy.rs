@@ -42,22 +42,6 @@ use crate::dep_graph::DependencyGraph;
 /// and therefore always `true` (matching the stores' `ConceptStore`
 /// semantics).
 #[derive(Debug)]
-/// A precomputed, lazily-memoized transitive-closure index over a class
-/// hierarchy keyed by `K`.
-///
-/// Build one from `(child, parent)` edges ([`from_edges`](Self::from_edges)),
-/// a child → parents map ([`from_parent_map`](Self::from_parent_map)), or a
-/// `DependencyGraph` whose `deps` encode a node's children
-/// ([`from_dependency_graph`](Self::from_dependency_graph)). Query with
-/// [`ancestors`](Self::ancestors), [`descendants`](Self::descendants), and
-/// [`is_subclass_of`](Self::is_subclass_of).
-///
-/// Every node registered during construction (including a node that appears
-/// only as a parent, or an isolated node added with
-/// [`add_node`](Self::add_node)) is queryable. Queries on unregistered nodes
-/// return empty/`false` — except `is_subclass_of(x, x)`, which is identity
-/// and therefore always `true` (matching the stores' `ConceptStore`
-/// semantics).
 pub struct HierarchyIndex<K: Eq + Hash + Clone> {
     /// child → direct parents.
     parents: HashMap<K, Vec<K>>,
@@ -173,16 +157,26 @@ impl<K: Eq + Hash + Clone> HierarchyIndex<K> {
         }
     }
 
+    /// All transitive ancestors of `node` as a shared slice — the memoized
+    /// closure itself, with no per-call `Vec` clone. Prefer this in hot
+    /// paths; [`ancestors`](Self::ancestors) keeps its `Vec` return for
+    /// callers that need ownership.
+    #[must_use]
+    pub fn ancestors_arc(&self, node: &K) -> Arc<[K]> {
+        if let Some(cached) = lock_read(&self.ancestor_memo).get(node) {
+            return Arc::clone(cached);
+        }
+        let closure = walk(node, &self.parents);
+        let shared: Arc<[K]> = Arc::from(closure);
+        lock_write(&self.ancestor_memo).insert(node.clone(), Arc::clone(&shared));
+        shared
+    }
+
     /// All transitive ancestors of `node`, nearest first, excluding `node`
     /// itself. Empty for an unregistered node. Cycle-resilient.
     #[must_use]
     pub fn ancestors(&self, node: &K) -> Vec<K> {
-        if let Some(cached) = lock_read(&self.ancestor_memo).get(node) {
-            return cached.to_vec();
-        }
-        let closure = walk(node, &self.parents);
-        lock_write(&self.ancestor_memo).insert(node.clone(), Arc::from(closure.clone()));
-        closure
+        self.ancestors_arc(node).to_vec()
     }
 
     /// All transitive descendants of `node`, nearest first, excluding `node`
@@ -202,7 +196,7 @@ impl<K: Eq + Hash + Clone> HierarchyIndex<K> {
     /// or not.
     #[must_use]
     pub fn is_subclass_of(&self, child: &K, parent: &K) -> bool {
-        child == parent || self.ancestors(child).contains(parent)
+        child == parent || self.ancestors_arc(child).contains(parent)
     }
 
     /// Whether `node` was registered — as an edge endpoint or via

@@ -167,10 +167,6 @@ impl DecideBackend for SystemOneBackend {
 /// `Unsupported`, never a decode error. Transport failures are
 /// `Unreachable` so callers do not cache a transient outage as permanent.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Native endpoint support, reported by [`SystemOneBackend::probe`].
-/// A 501/405 means the model behind the endpoint cannot judge; that is
-/// `Unsupported`, never a decode error. Transport failures are
-/// `Unreachable` so callers do not cache a transient outage as permanent.
 pub enum SystemOneSupport {
     Supported,
     Unsupported { reason: String },

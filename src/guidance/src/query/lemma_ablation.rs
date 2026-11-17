@@ -177,8 +177,8 @@ pub fn measure_lemma_route(
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
     k: usize,
 ) -> Result<LemmaAblationReport, String> {
-    use search_vector::db::{FileRecord, FragmentLemma, FragmentRecord};
-    let db = search_vector::db::GuidanceDb::open_in_memory()
+    use crate::query::search_db::{FileRecord, FragmentLemma, FragmentRecord};
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory()
         .map_err(|error| format!("ablation index: {error}"))?;
     let file = FileRecord {
         id: "ablation".to_string(),
@@ -338,7 +338,7 @@ fn refuse_lemma_evidence(hits: &[crate::search_types::SearchHit], k: usize) -> V
                 .map(|(pos, id)| (id.clone(), pos + 1))
         })
         .collect();
-    let scores = search_vector::fusion::score_postings(postings, RRF_K);
+    let scores = crate::query::rrf::score_postings(postings, RRF_K);
     let mut fused: Vec<(String, f64)> = scores.into_iter().collect();
     fused.sort_by(|a, b| {
         b.1.partial_cmp(&a.1)

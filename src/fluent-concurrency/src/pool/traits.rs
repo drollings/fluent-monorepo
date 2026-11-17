@@ -25,10 +25,10 @@ pub enum PoolError {
 // monomorphized via generics so the submit path stays zero-cost/inlinable
 // per `fluent-wvr/SKILL.md:70` "dyn at request boundary, concrete in tight loop".
 // See `doc/skills/fluent-concurrency/SKILL.md:7.1`.
-// `async_fn_in_trait` is allowed here — Send bounds are explicit via the
-// `+ Send + Sync + 'static` bounds on associated types and the `Send` on the
-// future is implied by the `Send + Sync` receiver; desugaring to
-// `-> impl Future + Send` would be noisy for no gain in this internal crate.
+// `async_fn_in_trait` is allowed here — Send bounds are explicit on the
+// associated types (`Job`/`Output`/`Error: Send`); the future's `Send` is
+// inferred per concrete pool at each spawn site, not implied by the receiver;
+// desugaring to `-> impl Future + Send` would be noisy for no gain here.
 
 /// Fire-and-forget pool — `WorkerPool` and `CreditGatedPool`.
 ///
@@ -41,10 +41,9 @@ pub enum PoolError {
 /// monomorphized via generics so the submit path stays zero-cost/inlinable
 /// per `fluent-wvr/SKILL.md:70` "dyn at request boundary, concrete in tight loop".
 /// See `doc/skills/fluent-concurrency/SKILL.md:7.1`.
-/// `async_fn_in_trait` is allowed here — Send bounds are explicit via the
-/// `+ Send + Sync + 'static` bounds on associated types and the `Send` on the
-/// future is implied by the `Send + Sync` receiver; desugaring to
-/// `-> impl Future + Send` would be noisy for no gain in this internal crate.
+/// `async_fn_in_trait` is allowed here — Send bounds are explicit on the
+/// associated types (`Job`/`Output`/`Error: Send`); the future's `Send` is
+/// inferred per concrete pool at each spawn site, not implied by the receiver.
 /// Fire-and-forget pool — `WorkerPool` and `CreditGatedPool`.
 ///
 /// `submit` enqueues without a per-job response channel (no `oneshot` alloc).

@@ -1,6 +1,6 @@
 //! Pure LLM prompt builders shared across router stages.
 //!
-//! Moved verbatim from `fluent-router` (M6.3): `render_available_routes` +
+//! Moved verbatim from `fluent-router`: `render_available_routes` +
 //! `substitute_thresholds` (+ `RouteEntry`) from
 //! `stages/classifier/prompt.rs` (shared by the flat classifier prompt, the
 //! tree node prompt, and the config-compiled variants), and
@@ -8,7 +8,7 @@
 //! string-in/string-out builders with no backend, config, or ledger coupling —
 //! the stage that owns the route table supplies the entries.
 //!
-//! What stays router-local (M6.3): the rigor blue/red/judge protocol prompts
+//! What stays router-local: the rigor blue/red/judge protocol prompts
 //! (`routes/rigor/prompts.rs` — bound to `RedObjection`/`RigorContext`/ledger
 //! node ids), the escalation team-mode gap/draft/judge prompts
 //! (`dispatch/escalation/modes.rs` — inline in the ladder flow), and the

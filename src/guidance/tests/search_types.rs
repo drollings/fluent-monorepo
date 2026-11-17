@@ -39,7 +39,7 @@ fn fusion_sums_rrf_across_lists_and_orders_by_score() {
     assert_eq!(fused[0].rank, 1);
     assert_eq!(fused[1].rank, 2);
     assert_eq!(fused[2].rank, 3);
-    assert!((fused[0].score - (1.0 / 62.0 + 1.0 / 61.0)).abs() < 1e-12);
+    assert!((fused[0].score.value() - (1.0 / 62.0 + 1.0 / 61.0)).abs() < 1e-12);
 }
 
 #[test]
@@ -47,7 +47,10 @@ fn fusion_breaks_score_ties_by_lexicographic_id() {
     let fused = rrf_fuse(&[vec!["b".to_string()], vec!["a".to_string()]], RRF_K);
     let ids: Vec<&str> = fused.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(ids, vec!["a", "b"]);
-    assert_eq!(fused[0].score.to_bits(), fused[1].score.to_bits());
+    assert_eq!(
+        fused[0].score.value().to_bits(),
+        fused[1].score.value().to_bits()
+    );
 }
 
 #[test]
@@ -62,7 +65,7 @@ fn fusion_generalizes_to_n_routes() {
         RRF_K,
     );
     assert_eq!(fused[0].id, "x");
-    assert!((fused[0].score - 3.0 / 61.0).abs() < 1e-12);
+    assert!((fused[0].score.value() - 3.0 / 61.0).abs() < 1e-12);
     assert_eq!(fused[1].id, "y");
 }
 
@@ -99,38 +102,38 @@ fn matched_by_provenance_matches_default() {
 // --- extractSymbolNames + symbolNameFromToken ---
 
 // P0 contract surface: these tests pin the canonical homes directly
-// (`search_vector::tokens`) — the deprecated `search_types` wrappers are
+// (`crate::query::tokens`) — the deprecated `search_types` wrappers are
 // removed, so new and old code take the canonical paths.
 #[test]
 fn extract_symbol_names_skips_keyword_stoplist() {
     assert_eq!(
-        search_vector::tokens::symbol_names("find Namespace::AlphaSymbol"),
+        crate::query::tokens::symbol_names("find Namespace::AlphaSymbol"),
         vec!["Namespace::AlphaSymbol".to_string()]
     );
     assert_eq!(
-        search_vector::tokens::symbol_names("class Foo"),
+        crate::query::tokens::symbol_names("class Foo"),
         vec!["Foo".to_string()]
     );
-    assert!(search_vector::tokens::symbol_names("find where explain").is_empty());
+    assert!(crate::query::tokens::symbol_names("find where explain").is_empty());
 }
 
 #[test]
 fn symbol_name_from_token_keeps_uppercase_owner_only() {
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("AlphaSymbol"),
+        crate::query::tokens::symbol_name_from_token("AlphaSymbol"),
         Some("AlphaSymbol".to_string())
     );
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("Namespace::AlphaSymbol"),
+        crate::query::tokens::symbol_name_from_token("Namespace::AlphaSymbol"),
         Some("Namespace::AlphaSymbol".to_string())
     );
     // Lowercase owner is dropped (zvec: `foo::bar` → `bar`).
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("foo::bar"),
+        crate::query::tokens::symbol_name_from_token("foo::bar"),
         Some("bar".to_string())
     );
-    assert_eq!(search_vector::tokens::symbol_name_from_token("123"), None);
-    assert_eq!(search_vector::tokens::symbol_name_from_token("a-b"), None);
+    assert_eq!(crate::query::tokens::symbol_name_from_token("123"), None);
+    assert_eq!(crate::query::tokens::symbol_name_from_token("a-b"), None);
 }
 
 // --- char boundaries (surrogate-pair safety; zvec `code.test.mjs:327`) ---
@@ -320,27 +323,27 @@ fn search_plan_value_types_carry_wire_shape() {
 #[test]
 fn m13_extract_symbol_names_edge_cases() {
     // Empty input yields nothing.
-    assert!(search_vector::tokens::symbol_names("").is_empty());
+    assert!(crate::query::tokens::symbol_names("").is_empty());
     // First-seen order wins; repeats collapse.
     assert_eq!(
-        search_vector::tokens::symbol_names("foo bar foo"),
+        crate::query::tokens::symbol_names("foo bar foo"),
         vec!["foo".to_string(), "bar".to_string()]
     );
     // `~` starts a token and survives validation.
     assert_eq!(
-        search_vector::tokens::symbol_names("~temp"),
+        crate::query::tokens::symbol_names("~temp"),
         vec!["~temp".to_string()]
     );
     // Single colons fail token validation (only `::` splits).
-    assert!(search_vector::tokens::symbol_names("a:b:c").is_empty());
+    assert!(crate::query::tokens::symbol_names("a:b:c").is_empty());
     // Non-ASCII bytes terminate the ASCII token scan.
     assert_eq!(
-        search_vector::tokens::symbol_names("café"),
+        crate::query::tokens::symbol_names("café"),
         vec!["caf".to_string()]
     );
     // Mixed keywords + symbols keep symbols in order.
     assert_eq!(
-        search_vector::tokens::symbol_names("find Foo where Bar"),
+        crate::query::tokens::symbol_names("find Foo where Bar"),
         vec!["Foo".to_string(), "Bar".to_string()]
     );
 }
@@ -349,35 +352,35 @@ fn m13_extract_symbol_names_edge_cases() {
 fn m13_symbol_name_from_token_edges() {
     // Trailing / leading `::` empties collapse away.
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("foo::"),
+        crate::query::tokens::symbol_name_from_token("foo::"),
         Some("foo".to_string())
     );
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("::foo"),
+        crate::query::tokens::symbol_name_from_token("::foo"),
         Some("foo".to_string())
     );
     // Deep chains keep the last pair when the owner is uppercase.
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("Foo::Bar::baz"),
+        crate::query::tokens::symbol_name_from_token("Foo::Bar::baz"),
         Some("Bar::baz".to_string())
     );
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("foo::Bar::baz"),
+        crate::query::tokens::symbol_name_from_token("foo::Bar::baz"),
         Some("Bar::baz".to_string())
     );
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("foo::bar::baz"),
+        crate::query::tokens::symbol_name_from_token("foo::bar::baz"),
         Some("baz".to_string())
     );
     // Degenerate inputs.
-    assert_eq!(search_vector::tokens::symbol_name_from_token(""), None);
-    assert_eq!(search_vector::tokens::symbol_name_from_token("::"), None);
+    assert_eq!(crate::query::tokens::symbol_name_from_token(""), None);
+    assert_eq!(crate::query::tokens::symbol_name_from_token("::"), None);
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("a_b"),
+        crate::query::tokens::symbol_name_from_token("a_b"),
         Some("a_b".to_string())
     );
     assert_eq!(
-        search_vector::tokens::symbol_name_from_token("A::~x"),
+        crate::query::tokens::symbol_name_from_token("A::~x"),
         Some("A::~x".to_string())
     );
 }
@@ -398,10 +401,10 @@ fn m6_rrf_single_list_rank_math_is_exact() {
     assert_eq!(fused.len(), 2);
     assert_eq!(fused[0].id, "a");
     assert_eq!(fused[0].rank, 1);
-    assert!((fused[0].score - 1.0 / 61.0).abs() < 1e-12);
+    assert!((fused[0].score.value() - 1.0 / 61.0).abs() < 1e-12);
     assert_eq!(fused[1].id, "b");
     assert_eq!(fused[1].rank, 2);
-    assert!((fused[1].score - 1.0 / 62.0).abs() < 1e-12);
+    assert!((fused[1].score.value() - 1.0 / 62.0).abs() < 1e-12);
 }
 
 #[test]
@@ -418,5 +421,23 @@ fn m6_rrf_k_shifts_magnitude_not_order() {
     assert_eq!(ids_big, vec!["b", "a", "c"]);
     // Same order, strictly smaller magnitudes at larger K.
     assert!(big[0].score < small[0].score);
-    assert!((small[0].score - (1.0 / 3.0 + 1.0 / 2.0)).abs() < 1e-12);
+    assert!((small[0].score.value() - (1.0 / 3.0 + 1.0 / 2.0)).abs() < 1e-12);
+}
+
+#[test]
+fn fused_hit_score_is_ordinal_not_arithmetic() {
+    // `FusedHit.score` is the `RrfScore` ordinal: magnitude reads only
+    // through `.value()` for lossy display, and composites never combine.
+    // Serialization stays a bare JSON number (wire-identical to `f64`).
+    let fused = rrf_fuse(&[vec!["a".to_string()]], RRF_K);
+    let score = fused[0].score;
+    assert!((score.value() - 1.0 / 61.0).abs() < 1e-12);
+    let wire = serde_json::to_value(&fused[0]).expect("serializes");
+    assert_eq!(
+        wire,
+        serde_json::json!({"id": "a", "score": 1.0 / 61.0, "rank": 1}),
+        "transparent ordinal: wire-identical to a bare number"
+    );
+    let back: FusedHit = serde_json::from_value(wire).expect("round-trips");
+    assert_eq!(back, fused[0]);
 }

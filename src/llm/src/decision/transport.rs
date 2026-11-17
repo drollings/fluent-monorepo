@@ -31,13 +31,6 @@ pub type AuditSink = Arc<dyn Fn(DecisionAudit) + Send + Sync>;
 /// assert_eq!(anonymize_hook()("server 192.168.1.1"), "server [IP_ADDRESS]");
 /// ```
 #[must_use]
-/// The canonical redaction hook over the single `anonymize` entry.
-///
-/// ```rust
-/// use fluent_llm::decision::anonymize_hook;
-///
-/// assert_eq!(anonymize_hook()("server 192.168.1.1"), "server [IP_ADDRESS]");
-/// ```
 pub fn anonymize_hook() -> RedactHook {
     Arc::new(|text: &str| crate::anonymize::anonymize(text))
 }
@@ -47,10 +40,6 @@ pub fn anonymize_hook() -> RedactHook {
 /// text fallback? Call at startup or first use after a model swap; a
 /// degrading endpoint must surface here, never as quiet fallback traffic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Endpoint capability report: does this endpoint return logprobs and honor
-/// the no-think setting, or would every decision silently degrade to the
-/// text fallback? Call at startup or first use after a model swap; a
-/// degrading endpoint must surface here, never as quiet fallback traffic.
 pub struct DecisionProbe {
     /// `top_logprobs` entries present on the single token.
     pub logprobs: bool,
@@ -120,8 +109,6 @@ impl DecisionProbe {
 /// One audit record per remote decision call (`DecisionAudit`). Metadata only: the prompt
 /// bytes never appear here, so PII cannot leak through observability.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One audit record per remote decision call (`DecisionAudit`). Metadata only: the prompt
-/// bytes never appear here, so PII cannot leak through observability.
 pub struct DecisionAudit {
     pub call_id: String,
     pub model: String,

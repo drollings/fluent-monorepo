@@ -3,8 +3,8 @@
 //! never pass. Pins the shared predicate and the engine wiring that
 //! keeps fixture paths out of every rendered section.
 use super::*;
+use crate::query::search_db::GuidanceSearchDb;
 use crate::tests::common::{db_file_record, db_project_card, db_text_fragment};
-use search_vector::db::GuidanceDb;
 
 #[test]
 fn fixture_rows_need_the_opt_in_and_eval_rows_never_pass() {
@@ -63,7 +63,7 @@ fn exclude_fixtures_follows_the_shared_rule() {
 
 /// Workspace where one fixture-scope manifest card and one
 /// fixture-scope code row are the only sources naming the path.
-fn fixture_leak_workspace() -> (tempfile::TempDir, GuidanceDb) {
+fn fixture_leak_workspace() -> (tempfile::TempDir, GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("write");
     std::fs::create_dir_all(dir.path().join("src/guidance/fixture_read/src")).expect("mkdir");
@@ -74,7 +74,7 @@ fn fixture_leak_workspace() -> (tempfile::TempDir, GuidanceDb) {
     )
     .expect("write");
     std::fs::write(dir.path().join("lib.rs"), "pub fn beta() {}\n").expect("write");
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
         &db_file_record(dir.path(), fixture_path),
         &[db_text_fragment(

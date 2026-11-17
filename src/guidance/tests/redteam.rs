@@ -6,7 +6,7 @@ use crate::read::render::render_answer;
 
 fn explain_in(
     dir: &std::path::Path,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     query: &str,
 ) -> ReadAnswer {
     let engine = ReadEngine::new();
@@ -31,7 +31,10 @@ fn explain_in(
 }
 
 fn has_answer(answer: &ReadAnswer) -> bool {
-    answer.sections.iter().any(|section| section.title == "Answer")
+    answer
+        .sections
+        .iter()
+        .any(|section| section.title == "Answer")
 }
 
 #[test]
@@ -100,7 +103,9 @@ fn fixture_named_queries_do_not_resurrect_fixture_citations() {
         "fixture paths never render: {texts:?}"
     );
     assert!(
-        texts.iter().all(|citation| !crate::eval::is_eval_path(citation)),
+        texts
+            .iter()
+            .all(|citation| !crate::eval::is_eval_path(citation)),
         "eval paths never render: {texts:?}"
     );
 }
@@ -120,10 +125,7 @@ fn mid_run_source_mutation_labels_stale_never_silent() {
         "drift is labelled, never silent: {rendered}"
     );
     assert!(
-        answer
-            .gaps
-            .iter()
-            .any(|gap| gap.contains("freshness.rs")),
+        answer.gaps.iter().any(|gap| gap.contains("freshness.rs")),
         "gaps name the file: {:?}",
         answer.gaps
     );
@@ -155,8 +157,7 @@ fn output_bomb_queries_hold_payload_ceilings() {
         "zero fixture paths"
     );
     assert!(
-        crate::eval::max_citation_span(&citations)
-            <= crate::eval::SPAM_MAX_SPAN_LINES + 1,
+        crate::eval::max_citation_span(&citations) <= crate::eval::SPAM_MAX_SPAN_LINES + 1,
         "span ceiling (fixture long span is 131 lines): {citations:?}"
     );
     assert!(

@@ -1043,7 +1043,7 @@ fn percentile(sorted: &[f64], pct: f64) -> f64 {
 }
 
 /// Read tier over the shipping path: `ReadEngine` over a real
-/// `GuidanceDb` and the eval corpus (`doc/guidance/eval`). The staged
+/// `GuidanceSearchDb` and the eval corpus (`doc/guidance/eval`). The staged
 /// mirror under `fixture_read/` preserves repo-relative paths so
 /// golden files match by identity; golden facts match as substrings
 /// of the rendered answer. Evidence-only (no synthesis): with no
@@ -1059,11 +1059,12 @@ fn fixture_read_root() -> PathBuf {
 /// pipeline (selection, extractor, FTS, project and capability
 /// cards). The checked-in tree stays pristine; the tempdir copy is
 /// the indexed workspace.
-fn index_read_fixture() -> (PathBuf, Arc<search_vector::db::GuidanceDb>) {
+fn index_read_fixture() -> (PathBuf, Arc<crate::query::search_db::GuidanceSearchDb>) {
     use crate::selection::FileSelection;
     let staged = scratch_dir("read");
     copy_tree(&fixture_read_root(), &staged);
-    let db = Arc::new(search_vector::db::GuidanceDb::open_in_memory().expect("read db"));
+    let db =
+        Arc::new(crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("read db"));
     let selection = FileSelection {
         workspace_root: staged.clone(),
         include_fixtures: true,
@@ -1126,7 +1127,7 @@ struct ReadAnswer {
 fn answer_read_question(
     engine: &crate::read::engine::ReadEngine,
     workspace: &Path,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     query: &str,
 ) -> ReadAnswer {
     use crate::read::engine::{ExplainContext, ExplainRequest};
@@ -1584,10 +1585,10 @@ fn measure_answer_cache() -> Vec<Measured> {
     let dir = scratch_dir("cache");
     let text = "pub fn alpha_probe() -> u64 {\n    1\n}\n";
     std::fs::write(dir.join("lib.rs"), text).expect("seed");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let absolute = dir.join("lib.rs").to_string_lossy().into_owned();
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: "lib.rs".to_string(),
             absolute_path: absolute.clone(),
             relative_path: "lib.rs".to_string(),
@@ -1601,7 +1602,7 @@ fn measure_answer_cache() -> Vec<Measured> {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "lib.rs:alpha_probe".to_string(),
             group: None,
             file_id: "lib.rs".to_string(),
@@ -1895,7 +1896,9 @@ fn measure_loop_clean() -> Vec<Measured> {
         ] {
             std::fs::write(dir.join(name), body).expect("fixture write");
         }
-        let db = Arc::new(search_vector::db::GuidanceDb::open_in_memory().expect("memory db"));
+        let db = Arc::new(
+            crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db"),
+        );
         let selection = FileSelection {
             workspace_root: dir.clone(),
             include_fixtures: true,

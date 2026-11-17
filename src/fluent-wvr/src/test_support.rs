@@ -1,4 +1,5 @@
-//! Crate-local test support for fluent-wvr.
+//! Crate-local test support for fluent-wvr (also the doctest harness:
+//! wrapper/ladder doc examples build their doubles from here).
 //!
 //! **Why this cannot live in `fluent-wvr-testutil`:** testutil depends on
 //! `fluent-wvr`; moving these stubs there would create a dependency cycle.

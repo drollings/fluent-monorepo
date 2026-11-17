@@ -4,8 +4,8 @@
 //! Hermetic: in-memory index, deterministic stub embedder, no endpoint.
 
 use super::*;
+use crate::query::search_db::{FileRecord, FragmentRecord, FragmentRow, GuidanceSearchDb};
 use fluent_llm::embeddings::{BatchEmbedding, EmbeddingError, EmbeddingProvider};
-use search_vector::db::{FileRecord, FragmentRecord, FragmentRow, GuidanceDb};
 
 struct StubEmbedder {
     dims: u32,
@@ -123,7 +123,7 @@ fn row(id: &str) -> FragmentRecord {
     }
 }
 
-fn seed(db: &GuidanceDb, fragments: &[FragmentRecord]) {
+fn seed(db: &GuidanceSearchDb, fragments: &[FragmentRecord]) {
     db.upsert_fragments(&file_a(), fragments, &[])
         .expect("seed");
     // upsert clears vectors by convention; backfill candidates must
@@ -234,7 +234,7 @@ fn unit_input_carries_symbol_and_doc_shape() {
 
 #[test]
 fn backfill_embeds_units_and_records_skips_with_reasons() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let mut whole = row("whole");
     whole.symbol_type = None;
     whole.symbol_name = None;
@@ -267,7 +267,7 @@ fn backfill_embeds_units_and_records_skips_with_reasons() {
 
 #[test]
 fn unchanged_inputs_skip_without_new_calls() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed(&db, &[row("fn")]);
     let provider = StubEmbedder::new();
     let options = IndexOptions::default();
@@ -283,7 +283,7 @@ fn unchanged_inputs_skip_without_new_calls() {
 
 #[test]
 fn changed_inputs_reembed_and_terminal_failures_wait() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed(&db, &[row("fn")]);
     let provider = StubEmbedder::new();
     let options = IndexOptions::default();
@@ -324,7 +324,7 @@ fn changed_inputs_reembed_and_terminal_failures_wait() {
 
 #[test]
 fn transport_failures_retry_next_run() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed(&db, &[row("fn")]);
     let provider = StubEmbedder::new();
     common_core::sync::lock(&provider.unavailable_on).push("alpha".to_string());
@@ -341,7 +341,7 @@ fn transport_failures_retry_next_run() {
 
 #[test]
 fn no_embedder_records_nothing() {
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     seed(&db, &[row("fn")]);
     let report =
         backfill_fragment_embeddings(&db, None, &IndexOptions::default()).expect("no backend");
@@ -364,7 +364,10 @@ fn embed_input_collapses_multiline_signature_and_doc() {
     fragment.signature = Some("pub fn alpha(\n    x: u32,\n) -> u64".to_string());
     fragment.doc = Some("Adds\none.".to_string());
     let input = super::embed_input_for_row(&fragment).expect("embed input");
-    assert!(input.contains("signature: pub fn alpha( x: u32, ) -> u64"), "{input:?}");
+    assert!(
+        input.contains("signature: pub fn alpha( x: u32, ) -> u64"),
+        "{input:?}"
+    );
     assert!(input.contains("doc: Adds one."), "{input:?}");
 }
 

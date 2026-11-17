@@ -27,8 +27,8 @@ fn write_manifest(dir: &tempfile::TempDir, body: &str) -> std::path::PathBuf {
     path
 }
 
-fn open_db(dir: &tempfile::TempDir) -> search_vector::db::GuidanceDb {
-    search_vector::db::GuidanceDb::open(&dir.path().join("import.db")).expect("open db")
+fn open_db(dir: &tempfile::TempDir) -> crate::query::search_db::GuidanceSearchDb {
+    crate::query::search_db::GuidanceSearchDb::open(&dir.path().join("import.db")).expect("open db")
 }
 
 const GUIDE: &str = "# Guide\n\nRoutes requests onward.\n\n## Detail\n\nExtra depth.\n";
@@ -74,7 +74,7 @@ fn valid_manifest_imports_ready_cards_incrementally() {
         assert!(!row.corpus_hash.is_empty(), "{row:?}");
         assert_eq!(
             row.prompt_version,
-            search_vector::db::CAPABILITY_SCHEMA_VERSION
+            crate::query::search_db::CAPABILITY_SCHEMA_VERSION
         );
     }
     let guide = stored

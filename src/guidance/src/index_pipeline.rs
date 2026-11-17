@@ -7,9 +7,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
+use crate::query::search_db::{EmbeddingStatusRecord, FragmentRow, GuidanceSearchDb};
 use common_core::metrics::LatencyHistogram;
 use common_core::retry::backoff_ms;
 use fluent_concurrency::batch::SupervisedBatch;
@@ -19,11 +20,10 @@ use fluent_llm::embeddings::{
     BatchEmbedding, CachedEmbeddingProvider, EmbeddingError, EmbeddingProvider,
 };
 use fluent_wvr::{
-    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
-    WorkUnit,
+    impl_component, Describable, FieldAccess, FieldError, OutputStore, WorkContext, WorkError,
+    WorkOutput, WorkUnit,
 };
 use internment::ArcIntern;
-use search_vector::db::{EmbeddingStatusRecord, FragmentRow, GuidanceDb};
 
 use crate::ast_parser::{AstParser, CommentBlock};
 use crate::diff::{compute_diff, hash_file, make_file_id, ScannedFile};
@@ -174,7 +174,7 @@ pub fn wave_name(index: usize) -> String {
 /// embedder at all (diff fast path). Synchronous data plane; async
 /// callers drive it from `spawn_blocking`.
 pub fn index_workspace<P>(
-    db: Arc<GuidanceDb>,
+    db: Arc<GuidanceSearchDb>,
     provider: P,
     selection: &FileSelection,
     options: &IndexOptions,
@@ -202,7 +202,7 @@ where
 /// comparison. Default callers pass an empty vector, which decides
 /// exactly like the pure signature gate.
 pub fn index_workspace_with_components<P>(
-    db: Arc<GuidanceDb>,
+    db: Arc<GuidanceSearchDb>,
     provider: P,
     selection: &FileSelection,
     options: &IndexOptions,
@@ -236,7 +236,7 @@ where
 
     // Scoped runs only delete stored files under the selection scope:
     // out-of-scope files are untouched, never reaped (P3 reconcile).
-    let by_id: HashMap<&str, &search_vector::db::FileRecord> = existing
+    let by_id: HashMap<&str, &crate::query::search_db::FileRecord> = existing
         .iter()
         .map(|file| (file.id.as_str(), file))
         .collect();
@@ -638,7 +638,7 @@ where
         files_failed: failed_count,
         detail: format!("{name} ({} files)", files.len()),
     });
-    let outcomes = Arc::new(Mutex::new(Vec::new()));
+    let outputs = OutputStore::default();
     let wave_histogram = Arc::clone(&shared.histogram_wave);
     let unit = IndexWaveUnit {
         name: name.to_string(),
@@ -646,7 +646,6 @@ where
         provides: vec![ArcIntern::from(name)],
         files,
         shared,
-        outcomes: Arc::clone(&outcomes),
     };
     // N.wvr: observability wraps the concrete unit before type erasure.
     let instrumented = fluent_wvr::wrapper::Instrumented::with_metrics(unit, name, wave_histogram);
@@ -658,24 +657,30 @@ where
         .build()
         .map_err(|e| IndexError::Db(e.to_string()))?;
     let summary = runtime.block_on(async {
-        let mut batch =
-            SupervisedBatch::new(Arc::new(TokioRuntime), fluent_wvr::CapabilitySet::new());
+        let rt: Arc<dyn fluent_wvr::Runtime> = Arc::new(TokioRuntime);
+        let caps = fluent_wvr::CapabilitySet::new();
+        let ctx = WorkContext::for_unit_in_batch(&rt, &caps, |ctx| {
+            ctx.outputs = outputs.clone();
+        });
+        let mut batch = SupervisedBatch::new(rt, caps);
         batch
-            .register(Arc::new(instrumented))
+            .register_with_context(Arc::new(instrumented), ctx)
             .expect("wave unit registers");
         batch.await
     });
-    // Fail-fast aborts surface from the outcomes (the unit records the
-    // abort before failing); infrastructure failures surface from the
+    // Fail-fast aborts surface from the typed outcomes (the unit records
+    // the abort before failing); infrastructure failures surface from the
     // batch summary.
-    let guard = common_core::sync::lock(&outcomes);
-    if let Some(reason) = guard.iter().find_map(|outcome| match outcome {
+    let drained: Vec<FileOutcome> = outputs
+        .get::<Vec<FileOutcome>>(WAVE_OUTCOMES_KEY)
+        .map(|shared| shared.to_vec())
+        .unwrap_or_default();
+    if let Some(reason) = drained.iter().find_map(|outcome| match outcome {
         FileOutcome::Abort { reason } => Some(reason.clone()),
         _ => None,
     }) {
         return Err(IndexError::FailFast(reason));
     }
-    drop(guard);
     if !summary.failed.is_empty() || !summary.panicked.is_empty() {
         return Err(IndexError::Db(format!(
             "wave {name} failed: {} failed, {} panicked",
@@ -683,10 +688,7 @@ where
             summary.panicked.len()
         )));
     }
-    let mut outcomes_guard = common_core::sync::lock(&outcomes);
-    let mut drained: Vec<FileOutcome> = outcomes_guard.drain(..).collect();
-    drop(outcomes_guard);
-    for outcome in drained.drain(..) {
+    for outcome in drained {
         match outcome {
             FileOutcome::Indexed { fragments } => {
                 stats.files_indexed += 1;
@@ -713,7 +715,8 @@ where
     Ok(())
 }
 
-/// Per-file wave outcome (collected under a mutex; siblings continue).
+/// Per-file wave outcome (carried by the typed outputs channel).
+#[derive(Clone)]
 enum FileOutcome {
     Indexed {
         fragments: usize,
@@ -730,7 +733,7 @@ enum FileOutcome {
 }
 
 struct SharedPipeline<P: EmbeddingProvider> {
-    db: Arc<GuidanceDb>,
+    db: Arc<GuidanceSearchDb>,
     provider: Arc<CachedEmbeddingProvider<P>>,
     nlp: Option<Arc<spacy_rs::pipeline::NlpPipeline>>,
     options: IndexOptions,
@@ -738,6 +741,10 @@ struct SharedPipeline<P: EmbeddingProvider> {
     histogram_commit: Arc<LatencyHistogram>,
     histogram_wave: Arc<LatencyHistogram>,
 }
+
+/// Typed channel key carrying the wave's per-file outcomes from
+/// `execute` back to the wave driver (no side mutex).
+pub(crate) const WAVE_OUTCOMES_KEY: &str = "file-outcomes";
 
 /// One bounded wave as a `Component` (N.wvr: concrete unit over the
 /// provider type; hot loops monomorphized).
@@ -747,7 +754,6 @@ struct IndexWaveUnit<P: EmbeddingProvider> {
     provides: Vec<ArcIntern<str>>,
     files: Vec<ScannedFile>,
     shared: Arc<SharedPipeline<P>>,
-    outcomes: Arc<Mutex<Vec<FileOutcome>>>,
 }
 
 impl<P: EmbeddingProvider> WorkUnit for IndexWaveUnit<P>
@@ -763,16 +769,34 @@ where
     fn provides(&self) -> &[ArcIntern<str>] {
         &self.provides
     }
-    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        // Blocking parse/embed/commit work rides the shared offload seam
+        // (never the supervisor's worker): per-attempt timeouts keep
+        // working because the body always suspends at an await point
+        // between attempts instead of holding a worker past its budget.
+        fluent_wvr::run_gated_blocking(ctx.caps.clone(), || self.execute_blocking(ctx))
+            .map_err(|join| WorkError::Execution(format!("wave worker failed: {}", join.detail)))?
+    }
+}
+
+impl<P: EmbeddingProvider> IndexWaveUnit<P>
+where
+    P: Sync + 'static,
+{
+    /// The blocking wave body (parse → embed → commit). Runs off the
+    /// executor via [`execute`](WorkUnit::execute); per-file outcomes travel
+    /// back through the typed [`OutputStore`](fluent_wvr::store::OutputStore)
+    /// channel, never a side mutex.
+    fn execute_blocking(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let mut parser = AstParser::new();
         // Prepare phase: every file to fragments + embedding texts.
-        let outcomes = Arc::clone(&self.outcomes);
+        let mut outcomes = Vec::new();
         let mut ready = Vec::new();
         for (index, file) in self.files.iter().enumerate() {
             match prepare_one_file(&mut parser, &self.shared, index, file) {
                 PrepareOutcome::Ready(prepared) => ready.push(prepared),
                 PrepareOutcome::Done(outcome) => {
-                    common_core::sync::lock(&outcomes).push(outcome);
+                    outcomes.push(outcome);
                 }
             }
         }
@@ -784,20 +808,18 @@ where
         let (mut by_index, failures) = match embed_ready_files(&self.shared, &ready) {
             Ok((ok, failed)) => (ok.into_iter().collect::<HashMap<_, _>>(), failed),
             Err(reason) => {
-                common_core::sync::lock(&outcomes).push(FileOutcome::Abort { reason });
+                outcomes.push(FileOutcome::Abort { reason });
+                ctx.outputs.set(WAVE_OUTCOMES_KEY, outcomes);
                 return Err(WorkError::Execution(format!("{} aborted", self.name)));
             }
         };
         let failures: HashMap<usize, EmbedFileFailure> = failures.into_iter().collect();
         // Commit phase: per-file replace + vector-count validation.
         for prepared in &ready {
-            if common_core::sync::lock(&outcomes)
-                .iter()
-                .any(|outcome| match outcome {
-                    FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
-                    _ => false,
-                })
-            {
+            if outcomes.iter().any(|outcome| match outcome {
+                FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
+                _ => false,
+            }) {
                 continue;
             }
             let outcome = match by_index.remove(&prepared.index) {
@@ -810,8 +832,9 @@ where
                     },
                 },
             };
-            common_core::sync::lock(&outcomes).push(outcome);
+            outcomes.push(outcome);
         }
+        ctx.outputs.set(WAVE_OUTCOMES_KEY, outcomes);
         Ok(WorkOutput::ok(format!("{} done", self.name)))
     }
 }
@@ -1094,7 +1117,7 @@ pub fn build_embedding_input(
 /// apply only when their recorded hash still matches the current block:
 /// a stale row degrades to the comment input, never silently.
 fn embedding_input_for_fragment(
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     fragment: &PreparedFragment,
     blocks: &[CommentBlock],
 ) -> Option<String> {
@@ -1396,7 +1419,7 @@ fn is_fail_fast(error: &EmbeddingError) -> bool {
 /// file on mismatch, degraded commits persist unembedded rows with a
 /// recorded failure instead.
 fn commit_file(
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
     file: &ScannedFile,
     fragments: &[PreparedFragment],
@@ -1427,14 +1450,14 @@ fn commit_file(
 /// identity per fragment, ready or not. Unchanged files skip on content
 /// alone afterwards; the status decides only rotation backfills.
 fn record_embedding_status(
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     fragments: &[PreparedFragment],
     texts: &[String],
     embedder: &str,
     embedded: bool,
     unavailable: bool,
 ) -> Result<(), String> {
-    use search_vector::db::EmbeddingStatusRecord;
+    use crate::query::search_db::EmbeddingStatusRecord;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as i64);
@@ -1469,7 +1492,7 @@ fn record_embedding_status(
 /// Persist one file's graph inputs from the extract pass's harvest (the
 /// same inputs `assemble` consumes — never a second parse). Unnamed
 /// scopes persist under "" (calls only, never a definition).
-fn commit_graph(db: &GuidanceDb, path: &str, harvest: &HarvestedFile) -> Result<(), String> {
+fn commit_graph(db: &GuidanceSearchDb, path: &str, harvest: &HarvestedFile) -> Result<(), String> {
     let symbols: Vec<(String, Vec<String>)> = harvest
         .symbols
         .iter()
@@ -1701,7 +1724,7 @@ fn embed_batch_with_retry(
 /// singles fallback, and store vectors plus status rows. Terminal
 /// failures record and continue; fail-fast config errors abort loudly.
 pub fn backfill_fragment_embeddings(
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     provider: Option<&dyn EmbeddingProvider>,
     options: &IndexOptions,
 ) -> Result<EmbedBackfillStats, String> {

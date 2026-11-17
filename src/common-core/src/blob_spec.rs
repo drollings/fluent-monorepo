@@ -1,16 +1,9 @@
-//! Taxonomy blob spec — decoupled Lemma (`SLM2`) + YaGO (`YSM1`) artifacts.
-//!
-//! Sole spec crate per roadmap §1/§2: `src/common-core/src/blob_spec.rs`.
-//! All slices `&'static [u8]` zero-copy, little-endian, 8-byte aligned, validated via `rd_u32`/`slice` helpers.
+//! Generic versioned blob framing: zero-copy, little-endian, 8-byte aligned
+//! primitives validated via `rd_u32`/`slice` helpers. Callers own their magic
+//! values and pass the allowlist to [`parse_header`]; no domain vocabulary
+//! lives here.
 
 #![forbid(unsafe_code)]
-
-/// Magic `SLM2` = 0x534C_4D32.
-pub const LEMMA_MAGIC: u32 = 0x534C_4D32;
-/// Magic `YSM1` = 0x5953_4D31.
-pub const YAGO_MAGIC: u32 = 0x5953_4D31;
-/// Legacy `SLM1` reader kept one release for rollback (`SLM1` = 0x534C_4D31).
-pub const LEGACY_LEMMA_MAGIC: u32 = 0x534C_4D31;
 
 /// Header version (format of the header itself).
 pub const HEADER_VERSION: u16 = 1;
@@ -31,19 +24,6 @@ pub struct BlobHeader {
 
 impl BlobHeader {
     pub const LEN: usize = 44;
-    pub fn is_lemma(&self) -> bool {
-        self.magic == LEMMA_MAGIC
-    }
-    pub fn is_yago(&self) -> bool {
-        self.magic == YAGO_MAGIC
-    }
-}
-
-/// Legacy SLM1 magic check.
-#[must_use]
-/// Legacy SLM1 magic check.
-pub fn is_legacy_sml1(magic: u32) -> bool {
-    magic == LEGACY_LEMMA_MAGIC
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -81,12 +61,12 @@ pub fn slice(b: &[u8], off: usize, len: usize) -> Option<&[u8]> {
     b.get(off..off.checked_add(len)?)
 }
 
-pub fn parse_header(data: &[u8]) -> Result<BlobHeader, BlobError> {
+pub fn parse_header(data: &[u8], allowed_magics: &[u32]) -> Result<BlobHeader, BlobError> {
     if data.len() < BlobHeader::LEN {
         return Err(BlobError::Truncated);
     }
     let magic = rd_u32(data, 0).ok_or(BlobError::Truncated)?;
-    if magic != LEMMA_MAGIC && magic != YAGO_MAGIC && magic != LEGACY_LEMMA_MAGIC {
+    if !allowed_magics.contains(&magic) {
         return Err(BlobError::BadMagic(magic));
     }
     let header_version = rd_u16(data, 4).ok_or(BlobError::Truncated)?;
@@ -134,8 +114,7 @@ pub fn validate_sha(payload: &[u8], expected: &[u8; 16]) -> Result<(), BlobError
     Ok(())
 }
 
-/// A zero-copy little-endian cursor over a versioned blob (primitives
-/// roadmap M2): the single shared spelling of the `rd_u16` / `rd_u32` /
+/// A zero-copy little-endian cursor over a versioned blob: the single shared spelling of the `rd_u16` / `rd_u32` /
 /// `rd_usize` / `rd_str` / `slice` readers previously hand-rolled per blob
 /// (`spacy-rs` lemma + ortho loaders).
 ///
@@ -146,17 +125,6 @@ pub fn validate_sha(payload: &[u8], expected: &[u8; 16]) -> Result<(), BlobError
 /// map `None` to their own error type (loud failure, never silent misparse).
 /// No unsafe, no allocation, no I/O.
 #[derive(Debug, Clone, Copy)]
-/// A zero-copy little-endian cursor over a versioned blob (primitives
-/// roadmap M2): the single shared spelling of the `rd_u16` / `rd_u32` /
-/// `rd_usize` / `rd_str` / `slice` readers previously hand-rolled per blob
-/// (`spacy-rs` lemma + ortho loaders).
-///
-/// Advancing reads (`u16_le`, `u32_le`, `usize_le`, `sized_str`, `take`) move
-/// the cursor; absolute reads (`peek_u16`, `peek_u32`, `slice`) do not — the
-/// two call shapes (directory loops vs. header/section fixups) coexist on one
-/// type. Every read is bounds-checked and returns `None` past the end: callers
-/// map `None` to their own error type (loud failure, never silent misparse).
-/// No unsafe, no allocation, no I/O.
 pub struct BlobCursor<'a> {
     data: &'a [u8],
     offset: usize,
@@ -265,12 +233,4 @@ impl<'a> BlobCursor<'a> {
         self.offset += len;
         Some(s)
     }
-}
-
-/// The ISP trait behind which `fst`/`phf` are hidden.
-pub trait LemmaView: Send + Sync {
-    fn index_contains(&self, key: &str, word: &str) -> bool;
-    fn exc_for(&self, key: &str, surface: &str) -> Option<&[u8]>;
-    fn rules_for(&self, key: &str) -> &[(String, String)];
-    fn pos_keys(&self) -> Vec<String>;
 }

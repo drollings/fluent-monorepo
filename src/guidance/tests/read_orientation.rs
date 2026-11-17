@@ -5,7 +5,7 @@
 
 use super::orientation::OrientationPlane;
 
-fn fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn fixture() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     std::fs::write(
@@ -36,7 +36,7 @@ fn fixture() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
         .expect("write manifest");
         std::fs::write(dir_path.join("README.md"), readme).expect("write readme");
     }
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     crate::read::project_map::import_project_cards(root, "fixture", &db, None).expect("import");
     (dir, db)
 }
@@ -82,7 +82,7 @@ fn ownership_scopes_to_package_and_domain() {
 
 #[test]
 fn absent_corpus_is_an_empty_plane_not_an_error() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let plane = OrientationPlane::load(&db).expect("load");
     assert!(plane.is_empty());
     assert!(plane.orientation_cards().is_empty());
@@ -99,8 +99,13 @@ fn orientation_order_is_kind_then_id() {
     let mut kinds: Vec<&str> = cards.iter().map(|c| c.kind.as_str()).collect();
     kinds.dedup();
     assert_eq!(kinds[0], "workspace");
-    assert!(cards.iter().position(|c| c.kind == "crate").expect("crate")
-        < cards.iter().position(|c| c.kind == "domain").unwrap_or(usize::MAX));
+    assert!(
+        cards.iter().position(|c| c.kind == "crate").expect("crate")
+            < cards
+                .iter()
+                .position(|c| c.kind == "domain")
+                .unwrap_or(usize::MAX)
+    );
     let ids: Vec<&str> = cards
         .iter()
         .filter(|c| c.kind == "crate")

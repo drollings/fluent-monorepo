@@ -7,7 +7,7 @@ use crate::query::strategy::QueryIntent;
 fn exact_intent_rg_findings_normalize_and_judge() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("lib.rs"), "fn exact_needle_fn() {}\n").expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let engine = ReadEngine::new();
     let plan = engine.plan(&super::ReadRequest {
         query: "exact_needle_fn".to_string(),
@@ -47,7 +47,7 @@ fn broad_query_does_not_scan() {
     assert!(!plan.ripgrep);
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("lib.rs"), "fn broad_needle_fn() {}\n").expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let ctx = ExplainContext {
         workspace: dir.path(),
         db: &db,

@@ -38,6 +38,17 @@ pub enum SupervisedBatchEvent {
     },
 }
 
+/// Best-effort message from a panic payload: `String`/`&str` payloads render
+/// directly, anything else keeps a static marker so the event still records
+/// that a panic (not a cancellation) ended the task.
+fn panic_payload_message(payload: Box<dyn std::any::Any + Send + 'static>) -> String {
+    payload
+        .downcast::<String>()
+        .map(|s| *s)
+        .or_else(|payload| payload.downcast::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_else(|_| "task panicked (non-string payload)".to_string())
+}
+
 /// Reasons why a supervised-batch task was cancelled.
 #[derive(Debug, Clone)]
 /// Reasons why a supervised-batch task was cancelled.
@@ -64,10 +75,11 @@ pub struct SupervisedBatchConfig {
     /// attempts, forwarded to `crate::retry::retry_async` as `base_ms`.
     /// Default `100` — the schedule before this was configurable.
     pub backoff_base_ms: u64,
-    /// Jitter of the backoff, forwarded to
-    /// `crate::retry::retry_async` as `jitter_pct`: a percentage (0–100)
-    /// of the current backoff delay added on top of it. Default `50`.
-    pub backoff_jitter_ms: u64,
+    /// Jitter of the backoff as a percentage (0–100) of the **base** delay
+    /// (`base_ms * jitter_pct / 100` added on top of each attempt's sleep),
+    /// forwarded to `crate::retry::retry_async` as `jitter_pct`.
+    /// Default `50`.
+    pub backoff_jitter_pct: u64,
 }
 
 impl PartialEq for SupervisedBatchConfig {
@@ -77,7 +89,7 @@ impl PartialEq for SupervisedBatchConfig {
         // numeric tuning only.
         self.poll_budget == other.poll_budget
             && self.backoff_base_ms == other.backoff_base_ms
-            && self.backoff_jitter_ms == other.backoff_jitter_ms
+            && self.backoff_jitter_pct == other.backoff_jitter_pct
     }
 }
 
@@ -89,7 +101,7 @@ impl Default for SupervisedBatchConfig {
             poll_budget: 64,
             is_retryable: WorkError::is_retryable,
             backoff_base_ms: 100,
-            backoff_jitter_ms: 50,
+            backoff_jitter_pct: 50,
         }
     }
 }
@@ -131,26 +143,6 @@ pub struct SupervisedBatchSummary {
 /// # }
 /// ```
 #[must_use = "SupervisedBatch must be awaited to completion to get a SupervisedBatchSummary"]
-/// A SupervisedBatch that manages a group of `WorkUnit` tasks with retry, timeout,
-/// and dependency-based cancellation. Implements `Future` to drive task completion.
-///
-/// # Examples
-///
-/// ```no_run
-/// use std::sync::Arc;
-/// use fluent_concurrency::batch::SupervisedBatch;
-/// use fluent_wvr::{CapabilitySet, WorkContext};
-/// use fluent_wvr::wrapper::ComponentAdapter;
-///
-/// # async fn example() {
-/// let rt: Arc<dyn fluent_wvr::Runtime> = Arc::new(fluent_concurrency::runtime::tokio::TokioRuntime);
-/// let mut batch = SupervisedBatch::new(rt, CapabilitySet::new());
-/// // batch.register(component_a);
-/// // batch.register(component_b);
-/// let summary = batch.await;
-/// assert!(summary.panicked.is_empty() && summary.failed.is_empty());
-/// # }
-/// ```
 pub struct SupervisedBatch {
     runtime: Arc<dyn Runtime>,
     caps: CapabilitySet,
@@ -236,7 +228,7 @@ impl SupervisedBatch {
         let timeout_ms = ctx.timeout_ms;
         let is_retryable = self.config.is_retryable;
         let backoff_base_ms = self.config.backoff_base_ms;
-        let backoff_jitter_ms = self.config.backoff_jitter_ms;
+        let backoff_jitter_pct = self.config.backoff_jitter_pct;
         // Q2: install the batch's capability set into the task-local for the
         // lifetime of the task, mirroring `Scope::spawn`. Without this, any
         // `check_capability` call inside `unit.execute` would see an empty
@@ -256,7 +248,7 @@ impl SupervisedBatch {
                         timeout_ms,
                         is_retryable,
                         backoff_base_ms,
-                        backoff_jitter_ms,
+                        backoff_jitter_pct,
                     )
                     .await
                 }),
@@ -364,7 +356,7 @@ impl Future for SupervisedBatch {
                         this.cancel_dependents_of(&name);
                         this.summary.panicked.push(SupervisedBatchEvent::Panicked {
                             name,
-                            info: "task panicked".into(),
+                            info: panic_payload_message(e.into_panic()),
                         });
                     } else {
                         this.cancel_dependents_of(&name);
@@ -410,7 +402,7 @@ impl Drop for SupervisedBatch {
     }
 }
 
-/// Run one unit with per-attempt timeout and retry-with-backoff.
+/// Run one unit with a whole-unit timeout budget and retry-with-backoff.
 ///
 /// # Timeout guarantee (hard)
 ///
@@ -441,7 +433,7 @@ async fn execute_with_timeout_and_retry(
     timeout_ms: u64,
     is_retryable: fn(&WorkError) -> bool,
     backoff_base_ms: u64,
-    backoff_jitter_ms: u64,
+    backoff_jitter_pct: u64,
 ) -> Result<WorkOutput, WorkError> {
     // Yield to allow pending abort signals to be processed before
     // executing the synchronous work unit body.
@@ -450,7 +442,7 @@ async fn execute_with_timeout_and_retry(
         common_core::retry::retry_async(
             max_retries.saturating_add(1).max(1),
             backoff_base_ms,
-            backoff_jitter_ms as u32,
+            backoff_jitter_pct as u32,
             is_retryable,
             || async {
                 // Allow abort signals to be processed before each attempt.

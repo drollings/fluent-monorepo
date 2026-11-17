@@ -33,7 +33,7 @@ pub use bulk::{
     aggregate_rotations, bulk_filter, bulk_rerank, bulk_route, decide_aggregated, decide_all,
     filter_noul, rank_score, rotation_agreement, route_choice, route_hierarchical,
 };
-pub use cache::{decision_cache_key, CacheKeyInput, DecisionCache};
+pub use cache::{CacheKeyInput, DecisionCache};
 pub use canary::{canary_signature, canary_suite, verify_canary, CanaryCase, CanaryDrift};
 pub use eval::{
     control_fires, emit_point_artifact, evaluate_point, gate_for_point, render_point_table,

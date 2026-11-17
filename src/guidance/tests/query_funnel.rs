@@ -8,8 +8,8 @@ use super::*;
 use fluent_concept::InMemoryConceptStore;
 use fluent_types::{ConceptMetadata, InterlinguaId, InterlinguaNamespace};
 
-fn alias_table() -> search_vector::aliases::SemanticAliases {
-    search_vector::aliases::SemanticAliases::from_json(
+fn alias_table() -> crate::query::aliases::SemanticAliases {
+    crate::query::aliases::SemanticAliases::from_json(
         r#"{"components": ["modules", "parts"], "runs": ["executes"]}"#,
     )
     .expect("alias fixture parses")
@@ -96,7 +96,7 @@ fn scaffolding_never_reaches_symbols() {
     assert_eq!(funneled.significant, vec!["components".to_string()]);
     assert_eq!(
         funneled.symbols,
-        search_vector::tokens::symbol_names("components")
+        crate::query::tokens::symbol_names("components")
     );
     assert!(
         !funneled.symbols.iter().any(|s| s == "what" || s == "are"),

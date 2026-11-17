@@ -2,8 +2,8 @@
 //! index as ordinary module symbols, so a how-does-it-work question can
 //! retrieve the header that names the mechanism.
 use super::*;
+use crate::query::search_db::GuidanceSearchDb;
 use crate::read::engine::{AnswerMode, ExplainContext, ExplainRequest, ReadEngine};
-use search_vector::db::GuidanceDb;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -30,7 +30,7 @@ fn options() -> IndexOptions {
     }
 }
 
-fn module_workspace() -> (TempDir, Arc<GuidanceDb>) {
+fn module_workspace() -> (TempDir, Arc<GuidanceSearchDb>) {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join("freshness.rs"),
@@ -44,7 +44,7 @@ fn module_workspace() -> (TempDir, Arc<GuidanceDb>) {
          pub fn status() -> usize {\n    0\n}\n",
     )
     .expect("write");
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     index_workspace(
         Arc::clone(&db),
         fluent_llm::embeddings::NoopEmbedding::new(4),

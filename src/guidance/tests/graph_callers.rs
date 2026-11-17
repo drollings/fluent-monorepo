@@ -2,7 +2,7 @@
 //! the calling scope — the definition file never presents as a caller.
 use crate::read::engine::{ExplainContext, ExplainRequest, ReadEngine};
 
-fn workspace_with_caller() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn workspace_with_caller() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir(dir.path().join("src")).expect("mkdir");
     std::fs::write(
@@ -15,11 +15,11 @@ fn workspace_with_caller() -> (tempfile::TempDir, search_vector::db::GuidanceDb)
         "use crate::callee::target_sym;\npub fn caller_fn() -> u64 {\n    target_sym()\n}\n",
     )
     .expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let record = |name: &str| {
         let absolute = dir.path().join("src").join(name);
         let meta = std::fs::metadata(&absolute).expect("seeded file reads");
-        search_vector::db::FileRecord {
+        crate::query::search_db::FileRecord {
             id: name.to_string(),
             absolute_path: absolute.to_string_lossy().into_owned(),
             relative_path: format!("src/{name}"),
@@ -40,7 +40,7 @@ fn workspace_with_caller() -> (tempfile::TempDir, search_vector::db::GuidanceDb)
         }
     };
     let frag = |id: &str, file_id: &str, symbol: &str, text: &str| {
-        search_vector::db::FragmentRecord {
+        crate::query::search_db::FragmentRecord {
         id: id.to_string(),
         group: None,
         file_id: file_id.to_string(),

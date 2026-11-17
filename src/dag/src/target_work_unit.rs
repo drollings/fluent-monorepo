@@ -1,5 +1,9 @@
 //! `Target → WorkUnit` bridge.
 //!
+//! **Status: compatibility surface (scaffold).** Exercised by tests today;
+//! kept as the single `Target`-to-`Component` home so resolver execution
+//! never grows a second adapter.
+//!
 //! A [`Target`] (from the target registry / resolver world, with bitset
 //! capabilities) adapted to the fluent-wvr [`Component`] world so the
 //! resolver's `ExecutionPlan` can run under `SupervisedBatch` / `WorkUnit` semantics.
@@ -11,7 +15,7 @@
 //! `Target::id`.
 
 use crate::target::{CapabilityRegistry, Target};
-use crate::work_unit::run_shell_command;
+use crate::work_unit::{impl_name_command_fields, run_shell_command};
 use fluent_wvr::prelude::*;
 use internment::ArcIntern;
 
@@ -21,11 +25,6 @@ use internment::ArcIntern;
 /// names via a [`CapabilityRegistry`] (bit indices are per-registry; indices
 /// that map to no name are skipped with a `tracing::warn!`).
 #[derive(Debug, Clone)]
-/// A [`Target`] adapted to the `WorkUnit`/`Component` interface.
-///
-/// `depends` / `provides` are the `Target`'s bitsets resolved to capability
-/// names via a [`CapabilityRegistry`] (bit indices are per-registry; indices
-/// that map to no name are skipped with a `tracing::warn!`).
 pub struct TargetWorkUnit {
     pub name: ArcIntern<str>,
     pub depends: Vec<ArcIntern<str>>,
@@ -89,44 +88,12 @@ impl WorkUnit for TargetWorkUnit {
     }
 }
 
-impl FieldAccess for TargetWorkUnit {
-    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        match name {
-            "name" => {
-                self.name = ArcIntern::from(value);
-                Ok(())
-            }
-            "command" => {
-                self.command = value.to_string();
-                Ok(())
-            }
-            _ => Err(FieldError::NotFound(name.into())),
-        }
-    }
-    fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        match name {
-            "name" => Ok(self.name.to_string()),
-            "command" => Ok(self.command.clone()),
-            _ => Err(FieldError::NotFound(name.into())),
-        }
-    }
-    fn field_names(&self) -> &'static [&'static str] {
-        &["name", "command"]
-    }
-}
-
-impl fluent_wvr::Describable for TargetWorkUnit {
-    fn describe(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string", "description": "Target name" },
-                "command": { "type": "string", "description": "Shell command to execute" }
-            },
-            "required": ["name", "command"]
-        })
-    }
-}
+impl_name_command_fields!(
+    TargetWorkUnit,
+    |unit: &mut TargetWorkUnit, value: &str| unit.name = ArcIntern::from(value),
+    |unit: &TargetWorkUnit| unit.name.to_string(),
+    "Target name"
+);
 
 impl_component!(TargetWorkUnit);
 

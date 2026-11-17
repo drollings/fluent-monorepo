@@ -1,4 +1,4 @@
-//! Low-boilerplate logical flow over decision models (M7.2).
+//! Low-boilerplate logical flow over decision models.
 //!
 //! The `bulk`/`ladder`/`question` modules own the mechanisms (fan-out,
 //! tournaments, specs); this module owns the call shapes an
@@ -18,9 +18,6 @@ use crate::LlmClient;
 /// act gate, and per-call timeout. Thresholds stay explicit —
 /// there is no silent default gate.
 #[derive(Debug, Clone)]
-/// Shared ask parameters for the flow helpers: question identity,
-/// act gate, and per-call timeout. Thresholds stay explicit —
-/// there is no silent default gate.
 pub struct FlowAsk {
     /// Question id base (`:if`, `:match`, … suffixed per helper).
     pub id: String,
@@ -51,7 +48,13 @@ impl Default for FlowAsk {
     }
 }
 
-fn choice_spec(id: &str, version: u64, template: &str, options: &str, ask: &FlowAsk) -> QuestionSpec {
+fn choice_spec(
+    id: &str,
+    version: u64,
+    template: &str,
+    options: &str,
+    ask: &FlowAsk,
+) -> QuestionSpec {
     QuestionSpec::new()
         .id(id.to_string())
         .version(version)

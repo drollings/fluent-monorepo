@@ -18,16 +18,13 @@ pub const BARGE_IN_MS: u16 = 150;
 pub const CONFIRM_MS: u16 = 250;
 /// Utterances below this with only lexicon words are backchannels.
 pub const BACKCHANNEL_MS: u64 = 600;
-/// Playout fade on cut.
-/// Canonical home: `common_core::envelope` (same calibrated value, shared).
-pub use common_core::envelope::CUT_FADE_MS;
-/// Playout duck depth on detect.
-/// Canonical home: `common_core::envelope::DUCK_DEPTH_DB` — aliased
-/// because the driver historically names it `DUCK_DB`.
-pub use common_core::envelope::DUCK_DEPTH_DB as DUCK_DB;
-/// Duck ramp length.
-/// Canonical home: `common_core::envelope` (same calibrated value, shared).
-pub use common_core::envelope::DUCK_RAMP_MS;
+/// Playout fade on cut (calibrated playout target, home: `orator-audio`).
+pub use orator_audio::envelope::CUT_FADE_MS;
+/// Playout duck depth on detect (home: `orator-audio` — aliased because
+/// the driver historically names it `DUCK_DB`).
+pub use orator_audio::envelope::DUCK_DEPTH_DB as DUCK_DB;
+/// Duck ramp length (calibrated playout target, home: `orator-audio`).
+pub use orator_audio::envelope::DUCK_RAMP_MS;
 
 /// Pipeline hops that check the epoch. Every hop drops items from a
 /// fired or superseded epoch; drops count per hop for metrics.

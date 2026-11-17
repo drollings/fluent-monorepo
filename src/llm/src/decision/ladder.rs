@@ -76,21 +76,31 @@ where
     MF: FnOnce() -> Fut + Send,
     Fut: Future<Output = Result<Decision, DecisionError>> + Send,
 {
+    // Owned rung payloads move into the walk (no per-rung clone): the rule
+    // fires once on its rung, the fallback once on its rung, the factory
+    // once on the model rung. The closure is `FnMut`, so each `take`
+    // runs at most once.
+    let mut rule = rule;
+    let mut fallback = Some(fallback);
     let mut model = Some(model);
     let outcome = fluent_wvr::ladder::first_accept_in_order(
         [Rung::Rule, Rung::Cache, Rung::Model, Rung::Fallback],
         |rung| {
-            let rule = rule.clone();
-            let fallback = fallback.clone();
-            // Take the factory synchronously on the Model rung (the async
-            // block below owns it; the closure stays FnMut).
+            let rule = if rung == Rung::Rule {
+                rule.take()
+            } else {
+                None
+            };
+            let fallback = if rung == Rung::Fallback {
+                fallback.take()
+            } else {
+                None
+            };
             let factory = if rung == Rung::Model {
                 model.take()
             } else {
                 None
             };
-            // Rebind the key per call so the async block owns only a
-            // `Copy` borrow, never the outer variable.
             let cache_key = key.as_str();
             async move {
                 match rung {
@@ -135,7 +145,7 @@ where
                             }
                         }
                     }
-                    Rung::Fallback => Ok(Some(fallback)),
+                    Rung::Fallback => Ok(Some(fallback.expect("fallback rung runs once"))),
                 }
             }
         },
@@ -144,7 +154,9 @@ where
     .await;
     match outcome {
         Ok(Some(decision)) => Ok(decision),
-        Ok(None) => Ok(fallback),
+        // The fallback rung always yields `Some`, so exhaustion here is a
+        // walker bug, not a verdict.
+        Ok(None) => unreachable!("fallback rung always yields a decision"),
         Err(error) => Err(error),
     }
 }
@@ -185,6 +197,10 @@ fluent_wvr::impl_component!(FixedDecisionUnit);
 
 /// Pure `rule → cache` prefix as a `ComponentCascade` for sync callers.
 ///
+/// Composition exemplar: no production callers today. Kept as the canonical
+/// sync-prefix shape so future sync call sites compose it instead of
+/// re-walking the rungs.
+///
 /// ```rust
 /// use fluent_llm::decision::{prefix_cascade, Decision};
 /// use fluent_wvr::{WorkContext, WorkOutput};
@@ -201,11 +217,15 @@ fluent_wvr::impl_component!(FixedDecisionUnit);
 /// let out = prefix_cascade(Some(rule), None)
 ///     .execute_first_ok(&WorkContext::default())
 ///     .expect("prefix");
-/// let back: Decision = out.data_as().expect("typed");
+/// let back: Decision = out.data_ref().expect("typed");
 /// assert_eq!(back.label, "RULE");
 /// ```
 #[must_use]
 /// Pure `rule → cache` prefix as a `ComponentCascade` for sync callers.
+///
+/// Composition exemplar: no production callers today. Kept as the canonical
+/// sync-prefix shape so future sync call sites compose it instead of
+/// re-walking the rungs.
 ///
 /// ```rust
 /// use fluent_llm::decision::{prefix_cascade, Decision};
@@ -223,7 +243,7 @@ fluent_wvr::impl_component!(FixedDecisionUnit);
 /// let out = prefix_cascade(Some(rule), None)
 /// .execute_first_ok(&WorkContext::default())
 /// .expect("prefix");
-/// let back: Decision = out.data_as().expect("typed");
+/// let back: Decision = out.data_ref().expect("typed");
 /// assert_eq!(back.label, "RULE");
 /// ```
 pub fn prefix_cascade(rule: Option<Decision>, cached: Option<Decision>) -> ComponentCascade {

@@ -59,8 +59,6 @@ impl QwenImageFormat {
 /// One embeddable unit for the VL model. Image formats validate at embed
 /// time (like the base input contract), not at construction.
 #[derive(Debug, Clone)]
-/// One embeddable unit for the VL model. Image formats validate at embed
-/// time (like the base input contract), not at construction.
 pub enum EmbedContent {
     Text(String),
     Image { data: Vec<u8>, format: String },

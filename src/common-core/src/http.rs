@@ -64,11 +64,8 @@ pub fn test_http_client() -> &'static reqwest::Client {
     })
 }
 
-// NOTE (ROADMAP_20260903_LLM M11): the CORS contract (`CORS_*`,
-// `add_cors_headers`, now owned by `fluent_router::server::cors`) and the
-// error envelope (`error_value`, now `fluent_llm::openai::error_response`)
-// lived here through M10 as deprecated byte-identical shims; M11 deleted
-// them. The generic client + body helpers below stay.
+// The CORS contract and error envelope moved to their owners; what stays
+// here is the generic client + body helpers below.
 
 /// JSON body string for `value`.
 pub fn json_body(value: &serde_json::Value) -> String {

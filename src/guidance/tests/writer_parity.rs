@@ -28,8 +28,8 @@ fn schema_version_is_three() {
     assert_eq!(WRITER_SCHEMA_VERSION, 3);
 }
 
-fn item_file(id: &str) -> search_vector::db::FileRecord {
-    search_vector::db::FileRecord {
+fn item_file(id: &str) -> crate::query::search_db::FileRecord {
+    crate::query::search_db::FileRecord {
         id: id.to_string(),
         absolute_path: format!("/repo/{id}.rs"),
         relative_path: format!("{id}.rs"),
@@ -99,7 +99,7 @@ fn scope_block(
 
 #[test]
 fn write_items_required_rejects_count_mismatch() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let fragments = [
         code_fragment("fa", "alpha", None, "Adds one", "fn alpha() {}", 1),
         code_fragment("fb", "beta", None, "Removes two", "fn beta() {}", 4),
@@ -140,7 +140,7 @@ fn write_items_required_rejects_count_mismatch() {
 
 #[test]
 fn write_items_optional_commits_without_vectors() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let fragments = [code_fragment(
         "fa",
         "alpha",
@@ -173,7 +173,7 @@ fn write_items_optional_commits_without_vectors() {
 
 #[test]
 fn write_items_attaches_block_lemmas_to_owning_fragment() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let fragments = [
         code_fragment("fa", "alpha", None, "Adds one", "fn alpha() {}", 1),
         code_fragment("fb", "beta", None, "Removes two", "fn beta() {}", 4),
@@ -238,7 +238,7 @@ fn write_items_attaches_block_lemmas_to_owning_fragment() {
 
 #[test]
 fn offline_live_write_serves_file_recall() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let file = live_file("live-a");
     let stats = FragmentWriter::write_live(&db, &file, "hello world", None, None).expect("live");
     assert_eq!(stats.fragments, 1);
@@ -252,7 +252,7 @@ fn offline_live_write_serves_file_recall() {
 
 #[test]
 fn batch_shape_serves_chunked_recall() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let file = live_file("batch-a");
     let mk = |index: u32, name: &str| EntityFragment {
         id: format!("batch-a-{index}"),
@@ -273,7 +273,7 @@ fn batch_shape_serves_chunked_recall() {
         }),
     };
     let fragments = [mk(0, "aaa"), mk(1, "bbb")];
-    let records: Vec<search_vector::db::FragmentRecord> =
+    let records: Vec<crate::query::search_db::FragmentRecord> =
         fragments.iter().map(fragment_record).collect();
     db.replace_file(&file_record(&file), &records, &[])
         .expect("batch commit");
@@ -286,7 +286,7 @@ fn batch_shape_serves_chunked_recall() {
 
 #[test]
 fn backfill_clears_rebuild_flag() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let file = live_file("live-b");
     FragmentWriter::write_live(&db, &file, "fn solo() {}", None, None).expect("live");
     assert!(FragmentWriter::needs_rebuild(&db, "live-b", "live-b"));

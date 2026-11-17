@@ -74,10 +74,7 @@ fn citation_spans_parse_trailing_ranges() {
 #[test]
 fn max_span_and_fixture_counts_pin_spam_contracts() {
     assert_eq!(
-        super::max_citation_span(&[
-            "src/a.rs:1-10".to_string(),
-            "src/b.rs:3".to_string()
-        ]),
+        super::max_citation_span(&["src/a.rs:1-10".to_string(), "src/b.rs:3".to_string()]),
         9
     );
     assert_eq!(super::max_citation_span(&[]), 0);

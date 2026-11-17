@@ -8,10 +8,29 @@ pub enum RegistryError {
     TargetNotFound(String),
     #[error("invalid capability reference: {0}")]
     InvalidCapability(String),
-    #[error("bit index {0} out of range")]
-    BitIndexOutOfRange(usize),
-    #[error("database error: {0}")]
-    Database(#[from] common_core::error::SqliteError),
+    #[error("target id must be non-negative, got {0}")]
+    NegativeTargetId(i64),
+    #[error("target bit index {index} already registered by '{name}'")]
+    DuplicateBitIndex { index: usize, name: String },
+}
+
+/// Dependency-resolution failures: cycles, unknown targets, unmet version
+/// requirements, ambiguous providers. Returned by the resolver, narrowing,
+/// and version-selection passes; callers match on the variant to decide
+/// whether to fail closed or suggest alternatives.
+#[derive(Error, Debug)]
+pub enum ResolverError {
+    #[error("circular dependency detected")]
+    CircularDependency,
+    #[error("target not found: {0}")]
+    TargetNotFound(String),
+    #[error("missing dependency: {0}")]
+    MissingDependency(String),
+    #[error("ambiguous dependency: '{name}' could be provided by {}", candidates.join(", "))]
+    AmbiguousDependency {
+        name: String,
+        candidates: Vec<String>,
+    },
 }
 
 #[cfg(test)]

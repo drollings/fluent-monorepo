@@ -31,6 +31,14 @@ async fn test_e2e_batch_mixed_outcomes() {
     assert_eq!(summary.completed.len(), 0);
     assert_eq!(summary.failed.len(), 1, "root fails with execution error");
     assert_eq!(summary.panicked.len(), 1, "independent panics");
+    let info = match &summary.panicked[0] {
+        SupervisedBatchEvent::Panicked { info, .. } => info.clone(),
+        other => panic!("expected Panicked, got {other:?}"),
+    };
+    assert!(
+        info.contains("independent"),
+        "panic payload preserved: {info}"
+    );
     assert_eq!(summary.cancelled.len(), 1);
 }
 

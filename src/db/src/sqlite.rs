@@ -97,8 +97,10 @@ pub fn is_unique_violation(e: &rusqlite::Error) -> bool {
 
 /// Build the `?,?,?,…` placeholder list for a parameterized `WHERE x IN (...)`.
 ///
-/// Returns an empty string for `n == 0` (an `IN ()` clause matches nothing and
-/// callers typically guard against it, but the empty string is a valid no-op).
+/// Returns a comma-separated `?` placeholder list for an `IN (...)` clause.
+///
+/// For `n == 0` this returns an empty string — callers must guard, since
+/// `IN ()` is invalid SQL. Both in-tree callers early-return on empty input.
 pub fn in_clause(n: usize) -> String {
     "?,".repeat(n).trim_end_matches(',').to_string()
 }

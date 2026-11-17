@@ -97,3 +97,24 @@ fn test_target_work_unit_sequential_execution() {
 // Note: parallel-wave batch coverage lives in the integration-tier
 // `target_work_unit_wave` target: a shell-rendezvous stress that does
 // not belong in the fast gate.
+
+#[test]
+fn target_work_unit_name_command_field_glue() {
+    use fluent_wvr::FieldAccess as _;
+
+    let caps = CapabilityRegistry::new();
+    let reg = make_chain_registry(&caps);
+    let target = reg.get("process").unwrap();
+    let mut unit = TargetWorkUnit::from_target(target, &caps);
+    assert_eq!(unit.get_field("name").unwrap(), "process");
+    assert_eq!(unit.get_field("command").unwrap(), target.command);
+    unit.set_field("name", "renamed").unwrap();
+    assert_eq!(unit.get_field("name").unwrap(), "renamed");
+    unit.set_field("command", "echo hi").unwrap();
+    assert_eq!(unit.get_field("command").unwrap(), "echo hi");
+    assert!(unit.set_field("nonexistent", "x").is_err());
+    assert_eq!(unit.field_names(), &["name", "command"]);
+    let schema = fluent_wvr::Describable::describe(&unit);
+    assert_eq!(schema["type"], "object");
+    assert_eq!(schema["properties"]["name"]["type"], "string");
+}

@@ -6,14 +6,14 @@ use crate::tests::common::{db_file_record, db_project_card, db_text_fragment};
 
 /// Workspace with a manifest, one code file, and one doc file, all
 /// indexed plus project cards (workspace card + verified doc card).
-fn evidence_workspace() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn evidence_workspace() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("write");
     std::fs::write(dir.path().join("lib.rs"), "pub fn alpha_sync() {}\n").expect("write");
     std::fs::create_dir(dir.path().join("doc")).expect("mkdir");
     let doc_text = "# Alpha\n\nAlpha sync engine overview.\n";
     std::fs::write(dir.path().join("doc").join("alpha.md"), doc_text).expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
         &db_file_record(dir.path(), "lib.rs"),
         &[db_text_fragment(
@@ -36,7 +36,7 @@ fn evidence_workspace() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
             "Cargo.toml",
             "",
         ),
-        search_vector::db::ProjectCard {
+        crate::query::search_db::ProjectCard {
             content_hash: chunk.content_hash.clone(),
             ..db_project_card(
                 "doc:doc/alpha.md#alpha",
@@ -163,7 +163,7 @@ fn orientation_answer_comes_from_project_map() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("write");
     std::fs::write(dir.path().join("lib.rs"), "pub fn unrelated_quux() {}\n").expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_project_cards(&[db_project_card(
         "workspace:ws",
         "workspace",
@@ -278,7 +278,7 @@ fn refusal_needs_no_supporting_evidence() {
     // With nothing shown, synthesis is never attempted: the answer
     // refuses with the coverage gap, and the model is not consulted.
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let engine = ReadEngine::new();
     let ctx = ExplainContext {
         workspace: dir.path(),
@@ -506,7 +506,7 @@ impl crate::read::engine::Synthesizer for CountingSynth {
     }
 }
 
-fn cached_workspace() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
+fn cached_workspace() -> (tempfile::TempDir, crate::query::search_db::GuidanceSearchDb) {
     // Two verified docs plus one code finding: the synthesis arm has
     // something to key on, and an edit soils exactly one row.
     let dir = tempfile::tempdir().expect("tempdir");
@@ -522,7 +522,7 @@ fn cached_workspace() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
         "# Two\n\nAlpha syncs twice.\n",
     )
     .expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
         &db_file_record(dir.path(), "lib.rs"),
         &[db_text_fragment(
@@ -540,7 +540,7 @@ fn cached_workspace() -> (tempfile::TempDir, search_vector::db::GuidanceDb) {
     ] {
         let (chunks, _) = crate::read::doc_cards::chunk_markdown_sections(name, text);
         let chunk = chunks.first().expect("doc chunks");
-        db.replace_project_cards(&[search_vector::db::ProjectCard {
+        db.replace_project_cards(&[crate::query::search_db::ProjectCard {
             content_hash: chunk.content_hash.clone(),
             ..db_project_card(
                 &format!("doc:{name}#{}", chunk.anchor),
@@ -682,8 +682,8 @@ fn manifest_hash_keys_evidence_model_and_prompt_version() {
 fn answer_cache_table_roundtrips_on_open() {
     // Old databases gain the table on open (IF NOT EXISTS); the
     // generation guard still refuses a mismatched pair.
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
-    let row = search_vector::db::AnswerCacheRecord {
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
+    let row = crate::query::search_db::AnswerCacheRecord {
         manifest_hash: "abc".to_string(),
         answer: "Alpha syncs here (lib.rs:1-1) [unverified]".to_string(),
         claims_json: "[]".to_string(),

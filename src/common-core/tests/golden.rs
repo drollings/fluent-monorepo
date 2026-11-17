@@ -1,5 +1,4 @@
-use common_core::golden::{compare_series, measure, MismatchKind, StageTimer};
-use common_core::metrics::LatencyHistogram;
+use common_core::golden::{compare_series, MismatchKind};
 
 fn some(v: &[f64]) -> Vec<Option<f64>> {
     v.iter().copied().map(Some).collect()
@@ -60,17 +59,4 @@ fn non_finite_actual_never_matches() {
         let report = compare_series(&[Some(bad)], &[Some(1.0)], 1e-9);
         assert!(!report.matches, "{bad} must not match 1.0");
     }
-}
-
-#[test]
-fn stage_timer_records_exactly_one_observation() {
-    let hist = LatencyHistogram::new();
-    {
-        let _timer = StageTimer::start(&hist);
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-    assert_eq!(hist.count(), 1);
-    let value = measure(&hist, || 40 + 2);
-    assert_eq!(value, 42);
-    assert_eq!(hist.count(), 2);
 }

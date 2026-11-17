@@ -136,3 +136,27 @@ fn test_capability_inference_traverses_chain() {
     assert!(caps.contains("has_name"));
     assert!(!caps.contains("has_altitude"));
 }
+
+#[test]
+fn test_unsupported_rules_fail_closed() {
+    // Non-subclass rules are refused loudly — never a silent `Ok` that
+    // derives nothing. (Control: SubclassTransitivity still derives above.)
+    for rule_type in [
+        RuleType::SubpropertyTransitivity,
+        RuleType::DomainRange,
+        RuleType::InverseOf,
+    ] {
+        let mut engine = InferenceEngine::new();
+        engine.add_rule(InferenceRule {
+            rule_type,
+            trigger_predicate: RDFS_SUBCLASS_OF.to_string(),
+        });
+        let err = engine
+            .infer(&[build_triple("A", RDFS_SUBCLASS_OF, "B")])
+            .expect_err("unsupported rule must fail");
+        assert!(
+            matches!(err, InferenceError::UnsupportedRule(t) if t == rule_type),
+            "wrong error for {rule_type:?}: {err:?}"
+        );
+    }
+}

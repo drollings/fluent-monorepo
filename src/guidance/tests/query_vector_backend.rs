@@ -62,7 +62,7 @@ fn file_info(id: &str, relative: &str) -> FileInfo {
 
 #[test]
 fn vector_backend_ranks_by_embedding_similarity() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let embedder = TestEmbedder;
     ingest_text_file(
         &db,
@@ -103,7 +103,7 @@ fn vector_backend_ranks_by_embedding_similarity() {
 
 #[test]
 fn vector_backend_declines_without_an_embedder() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let storage = GuidanceDbStorage::new(&db);
     let filter = LlmFilter::new(Some(Box::new(NoopLlmFilter)));
     let ctx = SearchContext {
@@ -134,9 +134,9 @@ fn vector_route_is_empty_without_stored_vectors() {
     use crate::query::db_storage::GuidanceDbStorage;
     use crate::query::recall::run_recall;
     use crate::search_types::{SearchPlan, SearchPlanRoute, SearchPlanRouteMode};
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: "file-a".to_string(),
             absolute_path: "/repo/src/a.rs".to_string(),
             relative_path: "src/a.rs".to_string(),
@@ -150,7 +150,7 @@ fn vector_route_is_empty_without_stored_vectors() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "fn".to_string(),
             group: None,
             file_id: "file-a".to_string(),
@@ -197,9 +197,9 @@ fn vector_route_marks_hits_with_a_vector_trace_when_ready() {
     use crate::query::db_storage::GuidanceDbStorage;
     use crate::query::recall::run_recall;
     use crate::search_types::{SearchMatchedBy, SearchPlan, SearchPlanRoute, SearchPlanRouteMode};
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: "file-a".to_string(),
             absolute_path: "/repo/src/a.rs".to_string(),
             relative_path: "src/a.rs".to_string(),
@@ -213,7 +213,7 @@ fn vector_route_marks_hits_with_a_vector_trace_when_ready() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "fn".to_string(),
             group: None,
             file_id: "file-a".to_string(),

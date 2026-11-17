@@ -33,7 +33,7 @@ fn test_context(filter: &LlmFilter) -> SearchContext<'_> {
 
 #[test]
 fn lemma_backend_matches_inflections_without_a_pipeline() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     ingest_text_file(
         &db,
         &file_info("file-a", "src/a.ts"),
@@ -64,7 +64,7 @@ fn lemma_backend_collapses_inflections_with_spacy() {
     // Rule lemmatizer in sentence context: "runs" shares the lemma "run".
     let lemmas = crate::query::ingest::query_lemmas(Some(&nlp), "the service runs every morning");
     assert!(lemmas.contains(&"run".to_string()), "lemmas: {lemmas:?}");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     ingest_text_file(
         &db,
         &file_info("file-a", "src/a.ts"),
@@ -95,7 +95,7 @@ fn lemma_backend_collapses_inflections_with_spacy() {
 
 #[test]
 fn lemma_backend_declines_on_empty_normalization() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let storage = GuidanceDbStorage::new(&db);
     let filter = LlmFilter::new(Some(Box::new(NoopLlmFilter)));
     let backend = LemmaBackend {
@@ -116,7 +116,7 @@ fn lemma_backend_attributes_node_comments_to_item_fragments() {
     use crate::query::writer::{FragmentWriter, VectorPolicy};
     // Two item chunks with distinct comment words: recall must surface the
     // owning item fragment for each word, never the sibling.
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let fragment = |id: &str, name: &str, doc: &str, start_line: usize| PreparedFragment {
         id: id.to_string(),
         content_text: format!("fn {name}() {{}}"),
@@ -151,7 +151,7 @@ fn lemma_backend_attributes_node_comments_to_item_fragments() {
         text: text.to_string(),
         comment_hash: common_core::hash::blake3_hex(text.as_bytes()),
     };
-    let file = search_vector::db::FileRecord {
+    let file = crate::query::search_db::FileRecord {
         id: "file-a".to_string(),
         absolute_path: "/repo/src/a.rs".to_string(),
         relative_path: "src/a.rs".to_string(),

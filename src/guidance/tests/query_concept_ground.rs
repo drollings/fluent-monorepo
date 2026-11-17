@@ -229,6 +229,6 @@ fn groundedness_calibration_passes_gate() {
         "groundedness 0.5 must pass gate: precision {} FPR {}\n{}",
         report_at_05.precision,
         report_at_05.fpr,
-        common_core::calibration::render_markdown_table(&reports)
+        common_core::calibration::render_calibration_table(&reports)
     );
 }

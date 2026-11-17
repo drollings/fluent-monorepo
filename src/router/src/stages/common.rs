@@ -118,7 +118,7 @@ pub fn parse_typed_request(value: &serde_json::Value, generation: u64) -> TypedR
 /// `structured["request"]` for composition paths that never entered through
 /// the orchestrator (handlers, direct `execute` calls in tests).
 pub fn typed_request(ctx: &WorkContext) -> Option<std::sync::Arc<RouterRequest>> {
-    match ctx.get::<TypedRequest>(TYPED_REQUEST_KEY) {
+    match ctx.get::<TypedRequest>(TYPED_REQUEST_KEY).as_deref() {
         Some((_, Some(req))) => Some(std::sync::Arc::clone(req)),
         // Unparseable this generation — don't re-attempt; the fallback parse
         // below would fail identically.

@@ -433,10 +433,10 @@ fn adapter_clear_field_overrides_reverts_to_inner() {
 #[test]
 fn cascade_returns_first_ok_and_short_circuits() {
     let mut cascade = ComponentCascade::new();
-    cascade.register(failing_unit("fail-1"));
-    cascade.register(ok_unit("ok-1"));
+    cascade.push(failing_unit("fail-1"));
+    cascade.push(ok_unit("ok-1"));
     let ok: Arc<dyn Component> = ok_unit("ok-2");
-    cascade.register(Arc::clone(&ok));
+    cascade.push(Arc::clone(&ok));
 
     let result = cascade
         .execute_first_ok(&WorkContext::default())
@@ -456,8 +456,8 @@ fn cascade_returns_first_ok_and_short_circuits() {
 #[test]
 fn cascade_all_fail_returns_last_error() {
     let mut cascade = ComponentCascade::new();
-    cascade.register(failing_unit("fail-1"));
-    cascade.register(failing_unit("fail-2"));
+    cascade.push(failing_unit("fail-1"));
+    cascade.push(failing_unit("fail-2"));
     let err = cascade
         .execute_first_ok(&WorkContext::default())
         .expect_err("all units fail");
@@ -485,7 +485,7 @@ fn cascade_len_and_is_empty() {
 #[test]
 fn cascade_is_itself_a_component() {
     let mut cascade = ComponentCascade::new();
-    cascade.register(ok_unit("a"));
+    cascade.push(ok_unit("a"));
     let boxed: Box<dyn Component> = Box::new(cascade);
     assert_eq!(boxed.name(), "component_cascade");
     let result = boxed.execute(&WorkContext::default()).expect("delegates");
@@ -498,4 +498,15 @@ fn cascade_is_itself_a_component() {
 fn cascade_executes_empty_units() {
     let cascade = ComponentCascade::with_units(vec![failing_unit("only-fail")]);
     assert!(cascade.execute(&WorkContext::default()).is_err());
+}
+
+#[test]
+fn push_registers_unit_for_first_ok() {
+    let mut cascade = ComponentCascade::new();
+    cascade.push(ok_unit("a"));
+    assert_eq!(cascade.len(), 1);
+    let result = cascade
+        .execute_first_ok(&WorkContext::default())
+        .expect("first-ok");
+    assert_eq!(result.message, "done");
 }

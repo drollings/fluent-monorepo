@@ -304,7 +304,7 @@ pub fn inspect(
         IndexState::Missing
     };
     if db_path.is_file() {
-        if let Ok(db) = search_vector::GuidanceDb::open(db_path) {
+        if let Ok(db) = crate::query::search_db::GuidanceSearchDb::open(db_path) {
             coverage.embeddings = EmbeddingCoverage {
                 ready: db.embedded_fragment_count().unwrap_or(0),
                 total: db.fragment_count().unwrap_or(0),

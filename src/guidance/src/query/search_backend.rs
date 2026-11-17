@@ -64,6 +64,12 @@ pub trait SearchBackend: Send + Sync {
     }
 
     /// Execute the search and return synthesized stages.
+    ///
+    /// Rung defense contract (enforced by the query ladder, not here):
+    /// decline with [`NoResults`](crate::query_engine::QueryEngineError::NoResults)
+    /// when this rung cannot serve (missing index, unresolvable query) and
+    /// the next rung is tried; return a hard error only to abort the whole
+    /// query. A rung never fabricates stages to avoid declining.
     fn search(
         &self,
         query: &str,
@@ -867,7 +873,7 @@ mod tests {
             "ConceptBackend 0.5 must pass gate: precision {} FPR {} \n{}",
             report_at_05.precision,
             report_at_05.fpr,
-            common_core::calibration::render_markdown_table(&reports)
+            common_core::calibration::render_calibration_table(&reports)
         );
     }
 

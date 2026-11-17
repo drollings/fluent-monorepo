@@ -1,16 +1,16 @@
 #![forbid(unsafe_code)]
 
 pub mod affinity;
-// The `capability` module provides the concrete Fs/Net/Db capability tokens
-// and the `io` module the gated engines behind them. Both are behind the `db`
-// feature so a non-DB consumer pays nothing for the database layer.
-#[cfg(feature = "db")]
+// The `capability` module provides the concrete Fs/Net capability tokens and
+// the `io` module the gated fs/net engines behind them; both are available
+// without the `db` feature so non-DB consumers pay nothing for the database
+// layer. Only `io::db` and `capability::capability_set_with_db` sit behind
+// `db` (they compose `fluent-db`).
 pub mod capability;
 pub mod close;
 pub mod credit_pool;
 pub mod feed_worker;
 pub mod flow;
-#[cfg(feature = "db")]
 pub mod io;
 pub mod ladder;
 // The LLM protocol types (`ChatMessage`, `LlmConfig`, `LlmError`, `LlmTask`,
@@ -33,7 +33,8 @@ pub mod thread_resource;
 use std::sync::Arc;
 
 /// Returns a new `Arc<dyn Runtime>` wrapping the production Tokio runtime.
-/// Use this instead of `crate::tokio_runtime()`.
+///
+/// Prefer this seam over `tokio::spawn` so tests can substitute a fake.
 pub fn tokio_runtime() -> Arc<dyn fluent_wvr::Runtime> {
     Arc::new(runtime::tokio::TokioRuntime)
 }

@@ -9,7 +9,7 @@
 //! lookup.
 
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_kernels::smoothing::{SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
@@ -305,7 +305,7 @@ impl WorkUnit for KindDefaults {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "kind defaults invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "kind defaults ready (length {})",
             self.period
         )))

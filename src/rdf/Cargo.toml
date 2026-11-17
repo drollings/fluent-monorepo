@@ -1,9 +1,12 @@
 [package]
 autotests = false
 autobenches = false
-name = "guidance-rdf"
+name = "fluent-rdf"
 version.workspace = true
 edition.workspace = true
+
+[lib]
+name = "guidance_rdf"
 
 [dependencies]
 common-core = { path = "../common-core" }

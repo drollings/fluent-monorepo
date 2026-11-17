@@ -5,15 +5,12 @@
 //! follow the duplex targets (about −12 dB over 100 ms on detect, a
 //! 20 ms fade on cut).
 
-/// Cut fade length in ms.
-/// Canonical home: `common_core::envelope` (re-exported for API compat).
-pub use common_core::envelope::CUT_FADE_MS;
-/// Duck depth in dB on barge-in detect.
-/// Canonical home: `common_core::envelope` (re-exported for API compat).
-pub use common_core::envelope::DUCK_DEPTH_DB;
-/// Duck ramp length in ms.
-/// Canonical home: `common_core::envelope` (re-exported for API compat).
-pub use common_core::envelope::DUCK_RAMP_MS;
+/// Duck depth in dB on barge-in detect (calibrated playout target).
+pub const DUCK_DEPTH_DB: f32 = -12.0;
+/// Duck ramp length in ms (calibrated playout target).
+pub const DUCK_RAMP_MS: u64 = 100;
+/// Cut fade length in ms (calibrated playout target).
+pub const CUT_FADE_MS: u64 = 20;
 
 /// dB gain to linear amplitude.
 /// Shared math home: `common_core::envelope`.

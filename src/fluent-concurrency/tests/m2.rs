@@ -118,8 +118,8 @@ async fn test_batch_panic_propagates_as_join_error() {
     match &summary.panicked[0] {
         SupervisedBatchEvent::Panicked { info, .. } => {
             assert!(
-                info.contains("panicked"),
-                "info must contain 'panicked', got: {info}"
+                info.contains("panicker"),
+                "info carries the panic payload, got: {info}"
             );
         }
         _ => panic!("expected Panicked event"),
@@ -258,7 +258,10 @@ async fn test_batch_real_panic() {
     assert_eq!(summary.cancelled.len(), 0);
     match &summary.panicked[0] {
         crate::batch::SupervisedBatchEvent::Panicked { info, .. } => {
-            assert!(info.contains("panicked"));
+            assert!(
+                info.contains("panic"),
+                "info carries the panic payload, got: {info}"
+            );
         }
         _ => panic!("expected Panicked event"),
     }
@@ -592,7 +595,7 @@ async fn test_batch_custom_retry_predicate_retries_execution() {
     );
 }
 
-/// A configured `backoff_base_ms`/`backoff_jitter_ms` drives the retry cadence.
+/// A configured `backoff_base_ms`/`backoff_jitter_pct` drives the retry cadence.
 /// Two identical failing units with `max_retries=1` (one backoff sleep each)
 /// race: the configured fast config (base 10ms, jitter 0) must finish
 /// meaningfully sooner than the default config (base 100ms). This discriminates
@@ -610,7 +613,7 @@ async fn test_batch_config_backoff_honored() {
     async fn run_once(base_ms: u64, jitter_ms: u64) -> Duration {
         let config = SupervisedBatchConfig {
             backoff_base_ms: base_ms,
-            backoff_jitter_ms: jitter_ms,
+            backoff_jitter_pct: jitter_ms,
             ..SupervisedBatchConfig::default()
         };
         let mut batch = make_batch_with_config(config);

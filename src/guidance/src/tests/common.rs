@@ -88,10 +88,13 @@ pub fn make_test_doc_hello() -> GuidanceDoc {
 }
 
 /// A seeded-index `FileRecord` for a real file under `workspace`.
-pub fn db_file_record(workspace: &std::path::Path, name: &str) -> search_vector::db::FileRecord {
+pub fn db_file_record(
+    workspace: &std::path::Path,
+    name: &str,
+) -> crate::query::search_db::FileRecord {
     let absolute = workspace.join(name);
     let meta = std::fs::metadata(&absolute).expect("seeded file reads");
-    search_vector::db::FileRecord {
+    crate::query::search_db::FileRecord {
         id: name.to_string(),
         absolute_path: absolute.to_string_lossy().into_owned(),
         relative_path: name.to_string(),
@@ -118,8 +121,8 @@ pub fn db_text_fragment(
     symbol: &str,
     text: &str,
     end_line: u32,
-) -> search_vector::db::FragmentRecord {
-    search_vector::db::FragmentRecord {
+) -> crate::query::search_db::FragmentRecord {
+    crate::query::search_db::FragmentRecord {
         id: format!("{file_id}:{symbol}"),
         group: None,
         file_id: file_id.to_string(),
@@ -150,8 +153,8 @@ pub fn db_project_card(
     body: &str,
     source_path: &str,
     anchor: &str,
-) -> search_vector::db::ProjectCard {
-    search_vector::db::ProjectCard {
+) -> crate::query::search_db::ProjectCard {
+    crate::query::search_db::ProjectCard {
         key: key.to_string(),
         kind: kind.to_string(),
         title: title.to_string(),

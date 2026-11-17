@@ -37,10 +37,6 @@ pub fn label_eq(stored: u64, label: &str, hash_fn: fn(&str) -> u64) -> bool {
 /// load-bearing edge for role tables that may legitimately be empty.
 #[must_use]
 #[inline]
-/// Whether `stored` is the hash of any entry of `labels` under `hash_fn`.
-///
-/// Empty `labels` matches nothing (vacuous false, never true) — the
-/// load-bearing edge for role tables that may legitimately be empty.
 pub fn label_in(stored: u64, labels: &[&str], hash_fn: fn(&str) -> u64) -> bool {
     labels.iter().any(|l| hash_fn(l) == stored)
 }

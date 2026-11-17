@@ -18,7 +18,8 @@ use super::traits::PriorityRequestPool;
 /// [`crate::queue::BoundedPriorityQueue`] — the same close-wakes-waiters
 /// discipline as `Queue`, with `PriorityQueue` ordering. `submit`/`submit_with_abort`
 /// apply backpressure: they block while the queue is at capacity instead of
-/// growing without bound.
+/// growing without bound. Contrast [`ResultPool`](super::result::ResultPool),
+/// whose `submit` fails fast with `Pool(Full)`.
 pub struct PriorityResultPool<T, R, E>
 where
     T: Send + 'static,
@@ -125,8 +126,8 @@ where
     }
 
     /// Shuts down the pool: closes the queue (waking any blocked
-    /// `submit`/`submit_with_abort` with `Pool(Closed)` and letting parked
-    /// workers drain-and-exit), signals every worker through the sticky watch,
+    /// `submit`/`submit_with_abort` with `Pool(Closed)` and abandoning
+    /// parked jobs), signals every worker through the sticky watch,
     /// then awaits their completion. The watch sender keeps the receivers
     /// alive; workers that outlive an explicit `shutdown` also exit when the
     /// pool (and thus the sender) is dropped.

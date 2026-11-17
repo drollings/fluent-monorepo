@@ -1,7 +1,7 @@
 //! P6 recall-depth sweep: fused recall latency and final depth across
 //! corpus sizes (50 / 500 / 2000 fragments), limit 7.
 //!
-//! Method: in-memory `GuidanceDb` seeded with synthetic fragments sharing
+//! Method: in-memory `GuidanceSearchDb` seeded with synthetic fragments sharing
 //! one needle term (FTS + lemma routes saturate, exercising iterative
 //! deepening); no embedder (vector route declines — the L1+L2 degradation).
 //! Reports wall time; the depth reached is printed once per size. The
@@ -12,9 +12,9 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::recall::run_recall;
+use guidance_core::query::search_db::GuidanceSearchDb;
+use guidance_core::query::search_db::{FileRecord, FragmentRecord};
 use guidance_core::query::strategy::QueryIntent;
-use search_vector::db::{FileRecord, FragmentRecord};
-use search_vector::GuidanceDb;
 use std::hint::black_box;
 
 fn file_record() -> FileRecord {
@@ -57,8 +57,8 @@ fn fragment_record(index: usize) -> FragmentRecord {
     }
 }
 
-fn seed(size: usize) -> GuidanceDb {
-    let db = GuidanceDb::open_in_memory().expect("db");
+fn seed(size: usize) -> GuidanceSearchDb {
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     let fragments: Vec<FragmentRecord> = (0..size).map(fragment_record).collect();
     db.upsert_fragments(&file_record(), &fragments, &[])
         .expect("upsert");

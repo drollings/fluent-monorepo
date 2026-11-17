@@ -91,20 +91,23 @@ impl Scope {
         })
     }
 
+    /// Aborts all tasks, then drains their handles: every spawned task is
+    /// accounted for before this returns.
     pub async fn close(&mut self) {
         self.closed = true;
         self.tasks.abort_all();
         while self.tasks.join_next().await.is_some() {}
     }
 
-    /// Synchronous variant of `close()`. Aborts all tasks immediately.
-    /// Aborted tasks resolve their `JoinHandle` on the next yield, so the
-    /// aborted futures are guaranteed not to outlive this call.
+    /// Synchronous variant of `close()`: aborts all tasks, then drops the
+    /// set so no task makes progress past its next yield point.
     ///
-    /// Use this when `Drop` must guarantee that all spawned tasks have
-    /// been cancelled, e.g. in `ScopeGuard::drop` where the async
-    /// `close().await` would require a separate spawned task that itself
-    /// could be aborted if the runtime drops.
+    /// No waiting: a task mid-poll on another thread may still be running
+    /// when this returns; dropping the set only prevents further polls.
+    /// Use this when `Drop` must cancel spawned tasks without blocking,
+    /// e.g. in `ScopeGuard::drop` where the async `close().await` would
+    /// require a separate spawned task that itself could be aborted if
+    /// the runtime drops.
     ///
     /// We do not block on the active runtime to wait for the aborts to
     /// settle — `block_on` from within a runtime is undefined behavior,

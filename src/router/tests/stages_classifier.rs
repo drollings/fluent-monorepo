@@ -338,7 +338,7 @@ fn classifier_sends_response_format_through_extras_seam() {
     let decision: StageDecision = stage
         .execute(&ctx)
         .expect("execute")
-        .data_as()
+        .data_ref()
         .expect("typed decision");
     assert_eq!(decision.verdict, StageVerdict::Passed);
 

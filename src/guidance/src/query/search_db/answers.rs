@@ -49,7 +49,7 @@ impl AnswerCacheRecord {
     }
 }
 
-impl super::GuidanceDb {
+impl super::GuidanceSearchDb {
     /// Look up one cached answer by manifest hash. `None` reads
     /// through to generation; a hit never invents correctness.
     pub fn answer_cache_get(
@@ -58,7 +58,8 @@ impl super::GuidanceDb {
         generation: &str,
     ) -> Result<Option<AnswerCacheRecord>, VectorDbError> {
         let row = self
-            .store
+            .docs
+            .sqlite_store()
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(
                     conn,
@@ -85,7 +86,8 @@ impl super::GuidanceDb {
     /// Store one generated answer. Only fully bound answers with a
     /// support status reach here; the caller enforces that.
     pub fn answer_cache_put(&self, row: &AnswerCacheRecord) -> Result<(), VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .transaction(|tx| {
                 fluent_db::query::execute(
                     tx,
@@ -112,7 +114,8 @@ impl super::GuidanceDb {
 
     /// Drop one cached answer by manifest hash. Returns rows removed.
     pub fn answer_cache_invalidate(&self, manifest_hash: &str) -> Result<usize, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .transaction(|tx| {
                 let removed = fluent_db::query::execute(
                     tx,

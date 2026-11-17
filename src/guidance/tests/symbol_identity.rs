@@ -79,7 +79,7 @@ fn chunks_without_metadata_yield_no_row() {
 
 #[test]
 fn symbols_round_trip_through_replace_symbols() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("memory db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("memory db");
     let entity = code_entity("frag-1", "fn render(x: u8)", "fn render(x: u8) { body }");
     let row = symbol_record(&entity).expect("row");
     db.replace_symbols(std::slice::from_ref(&row))

@@ -111,7 +111,7 @@ fn test_parse_numeric_literal() {
     match &trips[0].object {
         Term::Literal(lit) => {
             assert_eq!(lit.value, "42");
-            assert_eq!(lit.datatype, Some(format!("{}integer", crate::XSD_NS)));
+            assert_eq!(lit.datatype, Some(format!("{}integer", crate::NS_XSD)));
         }
         _ => panic!("expected literal"),
     }
@@ -134,7 +134,7 @@ fn test_parse_true_false_literals() {
     match &trips[0].object {
         Term::Literal(lit) => {
             assert_eq!(lit.value, "true");
-            assert_eq!(lit.datatype, Some(format!("{}boolean", crate::XSD_NS)));
+            assert_eq!(lit.datatype, Some(format!("{}boolean", crate::NS_XSD)));
         }
         _ => panic!("expected literal"),
     }

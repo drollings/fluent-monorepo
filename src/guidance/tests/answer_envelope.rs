@@ -143,9 +143,9 @@ fn synthesis_prompt_shows_only_shown_ids_and_drops_invented_paths() {
     // must not render, and the prompt carries ids for the shown rows.
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("lib.rs"), "pub fn shown_fn() {}\n").expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: "f".to_string(),
             absolute_path: dir.path().join("lib.rs").to_string_lossy().into_owned(),
             relative_path: "lib.rs".to_string(),
@@ -159,7 +159,7 @@ fn synthesis_prompt_shows_only_shown_ids_and_drops_invented_paths() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "s".to_string(),
             group: None,
             file_id: "f".to_string(),
@@ -216,7 +216,7 @@ fn envelope_intent_equals_routed_intent_and_coverage_mirrors() {
     use crate::read::engine::{ExplainContext, ExplainRequest, ReadEngine};
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("lib.rs"), "pub fn env_fn() {}\n").expect("write");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let engine = ReadEngine::new();
     let ctx = ExplainContext {
         workspace: dir.path(),

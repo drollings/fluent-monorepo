@@ -4,8 +4,8 @@ use super::*;
 // round-trip through `replace_file_graph`, stale rows clear on rewrite,
 // and `delete_file` / `drop_index` remove graph rows with the file.
 
-fn graph_db() -> GuidanceDb {
-    GuidanceDb::open_in_memory().expect("db")
+fn graph_db() -> GuidanceSearchDb {
+    GuidanceSearchDb::open_in_memory().expect("db")
 }
 
 #[test]

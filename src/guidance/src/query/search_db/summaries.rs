@@ -55,9 +55,6 @@ impl SummaryRecord {
 /// column. Returns `None` when nothing is indexable — callers return
 /// empty (never match-all).
 #[must_use]
-/// Build the summary FTS `MATCH` expression: ASCII tokens hit the summary
-/// column. Returns `None` when nothing is indexable — callers return
-/// empty (never match-all).
 pub fn build_summary_fts_match(query: &str) -> Option<String> {
     use common_core::string::{fts_match_tokens, fts_quote};
     let ascii = fts_match_tokens(query);
@@ -68,10 +65,11 @@ pub fn build_summary_fts_match(query: &str) -> Option<String> {
     Some(format!("{{summary}} : ({})", or.join(" OR ")))
 }
 
-impl super::GuidanceDb {
+impl super::GuidanceSearchDb {
     /// Insert or replace summary rows without touching fragments.
     pub fn replace_summaries(&self, rows: &[SummaryRecord]) -> Result<usize, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .transaction(|tx| {
                 for row in rows {
                     fluent_db::query::execute(
@@ -104,7 +102,8 @@ impl super::GuidanceDb {
         &self,
         fragment_id: &str,
     ) -> Result<Vec<SummaryRecord>, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .query_rows(
                 "SELECT fragment_id, comment_hash, model, prompt_version, temperature,
                         seed, summary, status, generated_at, authorized
@@ -136,7 +135,8 @@ impl super::GuidanceDb {
              WHERE fragment_summaries_fts MATCH ?1 AND s.status = 'ready'
              ORDER BY r ASC LIMIT ?2",
         );
-        self.store
+        self.docs
+            .sqlite_store()
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(
                     conn,
@@ -158,7 +158,3 @@ impl super::GuidanceDb {
             .map_err(VectorDbError::from)
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/summaries.rs"]
-mod tests;

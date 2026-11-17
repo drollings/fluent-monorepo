@@ -75,10 +75,12 @@ fn filter_axis(id: &'static str) -> Result<GateAxis, SlotError> {
     }
 }
 
-fn snapshot_of<'a>(ctx: &'a WorkContext, name: &str) -> Result<Tape<'a>, WorkError> {
-    let snapshot = ctx
-        .get::<TapeSnapshot>(TAPE_KEY)
-        .ok_or_else(|| missing_tape(name))?;
+fn snapshot_of(ctx: &WorkContext, name: &str) -> Result<Arc<TapeSnapshot>, WorkError> {
+    ctx.get::<TapeSnapshot>(TAPE_KEY)
+        .ok_or_else(|| missing_tape(name))
+}
+
+fn view_of<'a>(snapshot: &'a TapeSnapshot, name: &str) -> Result<Tape<'a>, WorkError> {
     snapshot.view().ok_or_else(|| {
         WorkError::Execution(format!("{name}: tape snapshot cursor is out of bounds"))
     })
@@ -146,7 +148,8 @@ impl WorkUnit for TriggerUnit {
     }
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let tape = snapshot_of(ctx, self.id)?;
+        let snapshot = snapshot_of(ctx, self.id)?;
+        let tape = view_of(&snapshot, self.id)?;
         let verdict = self.trigger.eval(&tape);
         WorkOutput::typed("trigger verdict", &verdict)
     }
@@ -232,7 +235,8 @@ impl WorkUnit for FilterUnit {
     }
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let tape = snapshot_of(ctx, self.id)?;
+        let snapshot = snapshot_of(ctx, self.id)?;
+        let tape = view_of(&snapshot, self.id)?;
         let admission = self.filter.admit(&tape, self.direction);
         WorkOutput::typed("filter admission", &admission)
     }

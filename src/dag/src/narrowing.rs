@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use common_core::error::ResolverError;
+use crate::error::ResolverError;
 use common_core::interner::CapabilityRegistry;
 
 use crate::target::Target;

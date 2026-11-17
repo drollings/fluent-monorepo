@@ -15,8 +15,8 @@ fluent-db = { path = "../db" }
 common-core = { path = "../common-core" }
 fluent-types = { path = "../types" }
 fluent-llm = { path = "../llm" }
-guidance-ontology = { path = "../ontology" }
-guidance-rdf = { path = "../rdf" }
+fluent-ontology = { path = "../ontology" }
+fluent-rdf = { path = "../rdf" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 internment = { workspace = true }

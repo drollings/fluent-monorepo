@@ -3,8 +3,8 @@
 //! the receiver periodically sends bumps when its counter reaches `more_after`.
 //!
 //! Note on locking: `CreditSender` guards its bump receiver with a
-//! `tokio::sync::Mutex` (not `std::sync::Mutex` like `Queue`/`PriorityJobQueue`
-//! in `pool.rs`) because the guard is held across `rx.recv().await` in
+//! `tokio::sync::Mutex` (not `std::sync::Mutex` like `Queue` in
+//! `pool::queue`) because the guard is held across `rx.recv().await` in
 //! `send`. Do not "fix" it to `std::sync::Mutex` — the guard crossing an await
 //! would make the future non-`Send` and the waker bookkeeping is justified
 //! here.

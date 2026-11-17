@@ -132,3 +132,44 @@ fn providers_multi_provider_lookup() {
     let found = reg.find_providers(&caps.to_bitvec(&["artifact"]));
     assert_eq!(found.len(), 2);
 }
+
+#[test]
+fn negative_target_id_rejected() {
+    let mut reg = TargetRegistry::new();
+    let t = Target::new()
+        .id(-1)
+        .name("neg".into())
+        .target_type(TargetType::File)
+        .executor(ExecutorKind::Native)
+        .depends(BitVec::new())
+        .provides(BitVec::new())
+        .build();
+    assert!(matches!(
+        reg.register(t),
+        Err(RegistryError::NegativeTargetId(-1))
+    ));
+}
+
+#[test]
+fn duplicate_bit_index_rejected_without_overwrite() {
+    let mut reg = TargetRegistry::new();
+    let mk = |id: i64, name: &str| {
+        Target::new()
+            .id(id)
+            .name(name.into())
+            .target_type(TargetType::File)
+            .executor(ExecutorKind::Native)
+            .depends(BitVec::new())
+            .provides(BitVec::new())
+            .build()
+    };
+    reg.register(mk(7, "first")).unwrap();
+    let err = reg.register(mk(7, "second")).unwrap_err();
+    assert!(
+        matches!(err, RegistryError::DuplicateBitIndex { index: 7, .. }),
+        "duplicate bit index must fail closed: {err:?}"
+    );
+    // The first owner is untouched.
+    assert_eq!(&*reg.get_by_bit_index(7).unwrap().name, "first");
+    assert!(reg.get("second").is_none());
+}

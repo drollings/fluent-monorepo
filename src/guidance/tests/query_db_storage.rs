@@ -6,17 +6,17 @@
 //!
 //! M14.1: pins the `FileInfo -> FileRecord` and
 //! `EntityFragment -> FragmentRecord -> FragmentRow -> EntityFragment`
-//! translations through a real in-memory `GuidanceDb`, including the lossy
+//! translations through a real in-memory `GuidanceSearchDb`, including the lossy
 //! edges (ephemeral `content_hash`/`index_status` dropped on read-back;
 //! image bytes dropped, format reset to PNG). Any M14.2 move must preserve
 //! these outputs exactly.
 
 use super::*;
+use crate::query::search_db::GuidanceSearchDb;
 use crate::search_types::{
     CodeEntityModifier, CodeSymbolType, EntityFragment, EntityMetadata, FileInfo, FileKind,
     FragmentContent, FragmentSpan, ImageFormat, StorageFilter,
 };
-use search_vector::db::GuidanceDb;
 
 fn file_fixture() -> FileInfo {
     FileInfo {
@@ -62,7 +62,7 @@ fn code_fragment() -> EntityFragment {
 /// Write one file + fragment through the real DB seam and read the
 /// fragment back through `entity_fragment`, the same path recall uses.
 fn write_read(file: &FileInfo, fragment: &EntityFragment) -> EntityFragment {
-    let db = GuidanceDb::open_in_memory().expect("mem db");
+    let db = GuidanceSearchDb::open_in_memory().expect("mem db");
     let committed = db
         .upsert_fragments(&file_record(file), &[fragment_record(fragment)], &[])
         .expect("upsert");

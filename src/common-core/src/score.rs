@@ -14,13 +14,6 @@ pub fn normalize_score(raw: f64) -> f64 {
     }
 }
 
-pub fn is_below_threshold(value: f64, threshold: f64) -> bool {
-    value < threshold
-}
-pub fn is_above_threshold(value: f64, threshold: f64) -> bool {
-    value > threshold
-}
-
 /// Dot product over the shared prefix (`min(signals, weights)`); empty or
 /// disjoint inputs yield `0.0`. Non-finite lanes propagate per IEEE-754
 /// (callers that need sanitizing compose `normalize_score` first).
@@ -64,41 +57,6 @@ pub fn top_k_by_score<T>(
     items.truncate(k);
     items
 }
-pub fn default_coherence_threshold() -> f64 {
-    0.5
-}
-pub fn default_safety_threshold() -> f64 {
-    0.5
-}
-
-#[derive(Debug, Clone)]
-pub struct ThresholdGate {
-    pub coherence: f64,
-    pub safety: f64,
-}
-impl ThresholdGate {
-    pub fn new(coherence: f64, safety: f64) -> Self {
-        Self { coherence, safety }
-    }
-    pub fn is_coherent(&self, coherence: f64) -> bool {
-        coherence >= self.coherence
-    }
-    pub fn is_safe(&self, safety: f64) -> bool {
-        safety >= self.safety
-    }
-    pub fn complexity_exceeds(&self, complexity: u8, intelligence: u8) -> bool {
-        complexity > intelligence
-    }
-}
-impl Default for ThresholdGate {
-    fn default() -> Self {
-        Self {
-            coherence: default_coherence_threshold(),
-            safety: default_safety_threshold(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteBands<D>
 where
@@ -139,16 +97,6 @@ where
 /// and assigns no meaning to them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Closed set of score dimensions used by ranked-candidate scoring.
-///
-/// The wire format stays the lowercase strings (`"coherence"`,
-/// `"complexity"`, `"completeness"`, `"risk"`), so existing configs and
-/// serialized matrices deserialize byte-identically; new code matches on
-/// this enum instead of repeating the raw literals. The confidence /
-/// task-value axis separation is a consumer-side contract (documented where
-/// the matrix is configured): this type carries the category names only,
-///
-/// and assigns no meaning to them.
 pub enum ScoreDimension {
     /// Producer confidence/self-doubt axis at consumers that use it so.
     Coherence,

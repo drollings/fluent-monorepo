@@ -202,9 +202,9 @@ fn shadow_only_serves_ranked_unfiltered_without_filtering() {
     )
     .expect("write");
     std::fs::write(root.join("Cargo.toml"), "[workspace]\n").expect("manifest");
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     db.upsert_fragments(
-        &search_vector::db::FileRecord {
+        &crate::query::search_db::FileRecord {
             id: "/repo/src/a.rs".to_string(),
             absolute_path: "/repo/src/a.rs".to_string(),
             relative_path: "src/a.rs".to_string(),
@@ -218,7 +218,7 @@ fn shadow_only_serves_ranked_unfiltered_without_filtering() {
             fail_count: 0,
             last_error: None,
         },
-        &[search_vector::db::FragmentRecord {
+        &[crate::query::search_db::FragmentRecord {
             id: "fn".to_string(),
             group: None,
             file_id: "/repo/src/a.rs".to_string(),

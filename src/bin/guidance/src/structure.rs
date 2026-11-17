@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use fluent_types::{FileType, GuidanceDoc};
+use fluent_types::GuidanceDoc;
 use guidance_core::sync::json_store::load_guidance;
 use ptree::{PrintConfig, TreeBuilder};
 
@@ -91,13 +91,24 @@ fn build_ptree(node: &Node, builder: &mut TreeBuilder, json_dir: &Path, skills: 
     }
 }
 
+/// Rendering policy: which extensions earn skill annotations in the
+/// structure tree. Explicit lists, not derived from `FileKind`: the ingest
+/// taxonomy cannot express the zig/markdown buckets this dispatch relies
+/// on, and a kind-based rewrite would change which extensions
+/// annotatable-ize. Case-insensitive, mirroring the historical lookup.
+const ANNOTATABLE_SOURCE: &[&str] = &[
+    "zig", "zon", "py", "rs", "go", "ts", "tsx", "js", "jsx", "c", "cpp", "h", "hpp", "lua", "rb",
+    "java", "swift", "kt",
+];
+const ANNOTATABLE_MARKDOWN: &[&str] = &["md", "markdown", "mdx"];
+
 fn is_annotatable(path: &Path) -> bool {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let dotted = format!(".{ext}");
-    matches!(
-        FileType::from_extension(&dotted),
-        FileType::Source | FileType::Markdown
-    )
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    ANNOTATABLE_SOURCE.contains(&ext.as_str()) || ANNOTATABLE_MARKDOWN.contains(&ext.as_str())
 }
 
 fn annotate_file(rel_path: &str, name: &str, json_dir: &Path, skills: &[String]) -> String {
@@ -282,6 +293,36 @@ mod tests {
     // so the shell-out test below temporarily changes it. The lock serializes
     // that mutation against any other test that might depend on the cwd.
     static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn annotatable_covers_source_and_markdown_buckets() {
+        // Rendering-policy pin: exactly the historical Source/Markdown
+        // buckets annotatable-ize (ingest-kind extras like php/sh/rst/txt
+        // and data names like json/sql stay out), case-insensitively.
+        for ext in [
+            "zig", "zon", "py", "rs", "go", "ts", "tsx", "js", "jsx", "c", "cpp", "h", "hpp",
+            "lua", "rb", "java", "swift", "kt", "md", "markdown", "mdx",
+        ] {
+            assert!(
+                is_annotatable(Path::new(&format!("main.{ext}"))),
+                "{ext} annotatable"
+            );
+            assert!(
+                is_annotatable(Path::new(&format!("MAIN.{}", ext.to_ascii_uppercase()))),
+                "{ext} matches case-insensitively"
+            );
+        }
+        for ext in [
+            "json", "toml", "yaml", "csv", "tsv", "sqlite", "db", "sql", "parquet", "pdf", "mp3",
+            "wav", "php", "sh", "css", "rst", "txt", "html", "png", "mjs", "xyz", "",
+        ] {
+            assert!(
+                !is_annotatable(Path::new(&format!("main.{ext}"))),
+                "{ext} not annotatable"
+            );
+        }
+        assert!(!is_annotatable(Path::new("Makefile")));
+    }
 
     #[test]
     fn truncate_short_string_unchanged() {

@@ -220,3 +220,66 @@ async fn control_group_cap1_matches_sequential_loop() {
         .collect::<Vec<_>>();
     assert_eq!(batched, sequential);
 }
+
+#[tokio::test]
+async fn submit_fails_fast_when_full_while_backpressure_waits() {
+    use fluent_concurrency::pool::PoolError;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let started = Arc::new(AtomicBool::new(false));
+    let p = ResultPool::new(fluent_concurrency::tokio_runtime(), 1, 1, {
+        let gate = Arc::clone(&gate);
+        let started = Arc::clone(&started);
+        move |job: u64| {
+            let gate = Arc::clone(&gate);
+            let started = Arc::clone(&started);
+            async move {
+                started.store(true, Ordering::SeqCst);
+                gate.notified().await;
+                Ok::<u64, String>(job)
+            }
+        }
+    });
+    // Drive the first submit until the worker is parked in the handler: the
+    // initial poll performs the queue push, later polls just observe.
+    let mut first = Box::pin(p.submit(1));
+    while !started.load(Ordering::SeqCst) {
+        assert!(futures_util::poll!(&mut first).is_pending());
+        tokio::task::yield_now().await;
+    }
+    // The worker is busy, so this push lands in the single queue slot.
+    let mut second = Box::pin(p.submit(2));
+    assert!(futures_util::poll!(&mut second).is_pending());
+    // Fail-fast: the queue is full, so `submit` errors immediately.
+    assert!(
+        matches!(
+            p.submit(3).await,
+            Err(ResultPoolError::Pool(PoolError::Full))
+        ),
+        "submit must fail fast when full"
+    );
+    // Backpressure: waits for space instead of failing.
+    let mut pressured = Box::pin(p.submit_with_backpressure(4));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut pressured)
+            .await
+            .is_err(),
+        "backpressure submit must still be pending while full"
+    );
+    // Drain: each notify releases one handler past the gate.
+    gate.notify_one();
+    assert_eq!(first.await.expect("first completes"), 1);
+    gate.notify_one();
+    assert_eq!(second.await.expect("second completes"), 2);
+    gate.notify_one();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), pressured)
+            .await
+            .expect("pressured resolves")
+            .expect("pressured succeeds"),
+        4
+    );
+    p.shutdown().await;
+}

@@ -83,9 +83,6 @@ pub fn find_hierarchical(candidates: &[PathBuf]) -> Option<PathBuf> {
 /// construction failure. The single spelling for home-anchored defaults
 /// (memory DB, state files).
 #[must_use]
-/// Home directory, falling back to `.` when it is unreadable — never a
-/// construction failure. The single spelling for home-anchored defaults
-/// (memory DB, state files).
 pub fn home_or_dot() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }

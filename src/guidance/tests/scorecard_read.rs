@@ -1,5 +1,5 @@
 //! Read-tier scorecard: the fast tier measures the shipping path —
-//! `ReadEngine` over a real `GuidanceDb` and the eval corpus — not
+//! `ReadEngine` over a real `GuidanceSearchDb` and the eval corpus — not
 //! fixture docs. Included via `#[path]` forwarder from
 //! `scorecard.rs`, per repo convention. Hermetic: staged fixture,
 //! in-memory index, no model.
@@ -20,13 +20,13 @@ fn read_metric_names(measured: &[Measured]) -> Vec<String> {
 fn read_tier_uses_the_shipping_engine_over_a_real_db() {
     // Same engine, same database kind as production: the staged
     // fixture indexes through the real pipeline into a real
-    // `GuidanceDb` (FTS answers), and `ReadEngine` answers over it.
+    // `GuidanceSearchDb` (FTS answers), and `ReadEngine` answers over it.
     let (staged, db) = index_read_fixture();
     let hits = db
         .search_fts(
             "converge_mirror",
             10,
-            &search_vector::db::FragmentFilter::default(),
+            &crate::query::search_db::FragmentFilter::default(),
         )
         .expect("real FTS over the staged index");
     assert!(!hits.is_empty(), "staged content is retrievable");

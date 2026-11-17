@@ -101,7 +101,7 @@ mod tests {
         let filter = DeterministicPreFilter::new();
         let ctx = make_ctx("/help");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.stage, PipelineStage::DeterministicPreFilter);
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("help"));
@@ -112,7 +112,7 @@ mod tests {
         let filter = DeterministicPreFilter::new();
         let ctx = make_ctx("/stats");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("stats"));
     }
@@ -122,7 +122,7 @@ mod tests {
         let filter = DeterministicPreFilter::new();
         let ctx = make_ctx("/checkpoint my-snapshot");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("checkpoint"));
         assert!(decision
@@ -137,7 +137,7 @@ mod tests {
         let filter = DeterministicPreFilter::new();
         let ctx = make_ctx("/checkpoint");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("usage"));
     }
@@ -147,7 +147,7 @@ mod tests {
         let filter = DeterministicPreFilter::new();
         let ctx = make_ctx("/nonexistent arg1 arg2");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("unknown command"));
     }
@@ -157,7 +157,7 @@ mod tests {
         let filter = DeterministicPreFilter::new();
         let ctx = make_ctx(".help");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("help"));
     }
@@ -167,7 +167,7 @@ mod tests {
         let filter = DeterministicPreFilter::new();
         let ctx = make_ctx("What is the capital of France?");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         assert!(decision.reason.contains("no command, no PII flags"));
     }
@@ -177,7 +177,7 @@ mod tests {
         let filter = make_pii_filter();
         let ctx = make_ctx("My email is user@example.com");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         assert_eq!(output.message, "output_filter_flagged");
         let pii_filter = decision
@@ -192,7 +192,7 @@ mod tests {
         let filter = make_pii_filter();
         let ctx = make_ctx("My SSN is 123-45-6789");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let pii_filter = decision
             .metadata
@@ -206,7 +206,7 @@ mod tests {
         let filter = make_pii_filter();
         let ctx = make_ctx("card: 4111-1111-1111-1111");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let pii_filter = decision
             .metadata
@@ -220,7 +220,7 @@ mod tests {
         let filter = make_pii_filter();
         let ctx = make_ctx("Call me at (555) 123-4567");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let pii_filter = decision
             .metadata
@@ -234,7 +234,7 @@ mod tests {
         let filter = make_pii_filter();
         let ctx = make_ctx("My email is user@example.com and my SSN is 123-45-6789");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let pii_filter = decision
             .metadata
@@ -252,7 +252,7 @@ mod tests {
         let filter = make_pii_filter();
         let ctx = make_ctx("My token=sk-abc123def456ghi789");
         let output = filter.execute(&ctx).expect("execute");
-        let decision: StageDecision = output.data_as().expect("data_as");
+        let decision: StageDecision = output.data_ref().expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("api_key"));
     }
@@ -264,7 +264,7 @@ mod tests {
         let orchestrator = PipelineOrchestrator::new(vec![]);
         let ctx = WorkContext::default();
         let output = orchestrator.execute(&ctx).expect("execute");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("data_as");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("data_as");
         assert!(!result.rejected);
         assert_eq!(result.decisions.len(), 0);
     }
@@ -275,7 +275,7 @@ mod tests {
         let orchestrator = PipelineOrchestrator::new(vec![stage]);
         let ctx = make_ctx("What is Rust?");
         let output = orchestrator.execute(&ctx).expect("execute");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("data_as");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("data_as");
         assert!(!result.rejected);
         assert_eq!(result.decisions.len(), 1);
         assert_eq!(result.decisions[0].verdict, StageVerdict::Passed);
@@ -287,7 +287,7 @@ mod tests {
         let orchestrator = PipelineOrchestrator::new(vec![stage]);
         let ctx = make_ctx("/help");
         let output = orchestrator.execute(&ctx).expect("execute");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("data_as");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("data_as");
         assert!(result.rejected);
         assert_eq!(result.decisions.len(), 1);
         assert_eq!(result.decisions[0].verdict, StageVerdict::Rejected);
@@ -402,7 +402,7 @@ mod tests {
                         }),
                     );
                     let output = stage.execute(&ctx).expect("execute");
-                    let _decision: StageDecision = output.data_as().expect("data_as");
+                    let _decision: StageDecision = output.data_ref().expect("data_as");
                 });
             }
         });
@@ -494,7 +494,7 @@ mod tests {
         let decision: StageDecision = stage
             .execute(&classifier_ctx())
             .expect("execute")
-            .data_as()
+            .data_ref()
             .expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("LLM error"));
@@ -517,7 +517,7 @@ mod tests {
         let decision: StageDecision = stage
             .execute(&classifier_ctx())
             .expect("execute")
-            .data_as()
+            .data_ref()
             .expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Rejected);
         assert!(decision.reason.contains("classifier failure"));
@@ -541,7 +541,7 @@ mod tests {
         let decision: StageDecision = stage
             .execute(&classifier_ctx())
             .expect("execute")
-            .data_as()
+            .data_ref()
             .expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let meta = decision.metadata.as_object().expect("metadata object");
@@ -600,7 +600,7 @@ mod tests {
         let decision: StageDecision = stage
             .execute(&classifier_ctx())
             .expect("execute")
-            .data_as()
+            .data_ref()
             .expect("data_as");
         assert_eq!(
             decision.verdict,
@@ -619,7 +619,7 @@ mod tests {
         let decision: StageDecision = stage
             .execute(&classifier_ctx())
             .expect("execute")
-            .data_as()
+            .data_ref()
             .expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let meta = decision.metadata.as_object().expect("metadata object");
@@ -737,7 +737,7 @@ mod tests {
         );
 
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("pipeline result");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
         assert!(!result.rejected);
         let rt: RoutingTarget = result
             .routing_target
@@ -802,7 +802,7 @@ mod tests {
         );
 
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("pipeline result");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
         assert!(result.rejected);
         assert!(
             result
@@ -966,7 +966,7 @@ mod tests {
             }),
         );
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        output.data_as().expect("pipeline result")
+        output.data_ref().expect("pipeline result")
     }
 
     #[test]
@@ -1295,7 +1295,7 @@ mod tests {
             );
             let output = pipeline.execute(&ctx).expect("pipeline executes");
             output
-                .data_as::<crate::pipeline::PipelineResult>()
+                .data_ref::<crate::pipeline::PipelineResult>()
                 .expect("pipeline result")
         });
 
@@ -1368,7 +1368,7 @@ mod tests {
             }),
         );
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("pipeline result");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
 
         assert!(result.rejected, "default policy must fail closed");
         assert!(result.routing_target.is_none(), "no dispatch on reject");
@@ -1475,7 +1475,7 @@ mod tests {
             }),
         );
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("pipeline result");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
         assert!(!result.rejected);
         let rt = result
             .routing_target
@@ -1531,7 +1531,7 @@ mod tests {
             }),
         );
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        output.data_as().expect("pipeline result")
+        output.data_ref().expect("pipeline result")
     }
 
     /// A backend that replays `responses` in order (the classifier verdict
@@ -1574,7 +1574,7 @@ mod tests {
             }),
         );
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        output.data_as().expect("pipeline result")
+        output.data_ref().expect("pipeline result")
     }
     fn classifier_verdict(complexity: u8, target: &str) -> String {
         serde_json::json!({
@@ -1866,7 +1866,7 @@ mod tests {
         );
 
         let output = pipeline.execute(&ctx).expect("pipeline executes");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("pipeline result");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
         assert!(!result.rejected);
         let nlp = result
             .decisions
@@ -1990,7 +1990,7 @@ mod tests {
         let output = pipeline
             .execute(&make_ctx("please write me a story"))
             .expect("pipeline executes");
-        let result: crate::pipeline::PipelineResult = output.data_as().expect("pipeline result");
+        let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
         assert!(!result.rejected);
         assert_eq!(result.decisions.len(), 1, "classifier must not run");
         let rt = result.routing_target.expect("routing target published");

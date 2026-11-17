@@ -439,20 +439,6 @@ fn is_path_token_min_length() {
 }
 
 #[test]
-fn is_noisy_comment_checks() {
-    assert!(is_noisy_comment("x"));
-    assert!(!is_noisy_comment("Cosine similarity for vector search"));
-}
-
-#[test]
-fn is_test_path_detection() {
-    assert!(is_test_path("src/test.rs"));
-    assert!(is_test_path("tests/foo.rs"));
-    assert!(is_test_path("foo_test.zig"));
-    assert!(!is_test_path("src/main.rs"));
-}
-
-#[test]
 fn strip_boilerplate_various() {
     assert_eq!(strip_boilerplate("fn foo()", "fn "), "foo()");
     assert_eq!(strip_boilerplate("hello world", "fn "), "hello world");
@@ -493,19 +479,6 @@ fn first_sentence_whitespace_only() {
 #[test]
 fn first_sentence_trims_leading_whitespace() {
     assert_eq!(first_sentence("  Hello. World"), "Hello.");
-}
-
-#[test]
-fn skill_name_from_ref_skil_md() {
-    assert_eq!(
-        skill_name_from_ref("doc/skills/zig-current/SKILL.md"),
-        "zig-current"
-    );
-}
-
-#[test]
-fn skill_name_from_ref_fallback() {
-    assert_eq!(skill_name_from_ref("doc/skills/foo.md"), "foo.md");
 }
 
 #[test]
@@ -588,19 +561,6 @@ fn filter_unsafe_chars_various() {
     assert_eq!(filter_unsafe_chars("hello\u{202E}world"), "helloworld");
     assert_eq!(filter_unsafe_chars("a\u{2028}b"), "ab");
     assert_eq!(filter_unsafe_chars("text\u{E0001}more"), "textmore");
-}
-
-// ── trim_doc_prefix ───────────────────────────────────────────────
-
-#[test]
-fn trim_doc_prefix_various() {
-    assert_eq!(
-        trim_doc_prefix("/// Hello world\n/// more"),
-        "Hello world\nmore"
-    );
-    assert_eq!(trim_doc_prefix("//! Module\n# hidden"), "Module\nhidden");
-    assert_eq!(trim_doc_prefix("///     indented"), "    indented");
-    assert_eq!(trim_doc_prefix("plain line\nsecond"), "plain line\nsecond");
 }
 
 // ── detect_identifier_kind ────────────────────────────────────────
@@ -735,7 +695,11 @@ fn ascii_alnum_tokens_splits_preserves_case() {
 #[test]
 fn contains_token_matches_whole_words_only() {
     let cue = |c: char| !c.is_alphanumeric() && c != '_';
-    assert!(contains_token("how does the pipeline work", "pipeline", cue));
+    assert!(contains_token(
+        "how does the pipeline work",
+        "pipeline",
+        cue
+    ));
     assert!(!contains_token("pipelines carry data", "pipeline", cue));
     assert!(contains_token("pipeline!", "pipeline", cue));
     assert!(!contains_token("my_pipeline", "pipeline", cue));

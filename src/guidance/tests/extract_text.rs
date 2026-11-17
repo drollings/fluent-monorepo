@@ -152,9 +152,8 @@ fn compute_next_start_line_table() {
 #[test]
 fn split_long_line_table() {
     let offsets = [0usize];
-    let texts = |chunks: Vec<super::TextChunk>| {
-        chunks.into_iter().map(|c| c.text).collect::<Vec<_>>()
-    };
+    let texts =
+        |chunks: Vec<super::TextChunk>| chunks.into_iter().map(|c| c.text).collect::<Vec<_>>();
     let lines = ["hello world foo"];
     assert_eq!(
         texts(super::split_long_line(&lines, &offsets, 0, 5)),
@@ -182,10 +181,7 @@ fn split_long_line_table() {
     );
     let lines = ["h\u{e9}llo w\u{f6}rld"];
     let chunks = super::split_long_line(&lines, &offsets, 0, 5);
-    assert_eq!(
-        texts(chunks.clone()),
-        vec!["h\u{e9}llo", " w\u{f6}rl", "d"]
-    );
+    assert_eq!(texts(chunks.clone()), vec!["h\u{e9}llo", " w\u{f6}rl", "d"]);
     assert_eq!(
         chunks
             .iter()

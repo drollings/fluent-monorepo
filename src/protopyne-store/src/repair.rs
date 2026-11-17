@@ -239,7 +239,7 @@ impl WorkUnit for RepairConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         fluent_wvr::validate::check_for_execute(self, "repair config invalid")?;
-        Ok(fluent_wvr::validate::valid_output("repair config valid"))
+        Ok(fluent_wvr::WorkOutput::ok("repair config valid"))
     }
 }
 

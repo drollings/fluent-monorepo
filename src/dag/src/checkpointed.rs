@@ -80,6 +80,12 @@ where
     }
 
     /// Record `key` as satisfied (its dependents become ready).
+    ///
+    /// Unregistered keys are ignored for readiness (only registered nodes
+    /// gate dependents), but still recorded: the durable queue deliberately
+    /// records outcomes for ids the graph never tracked, so completion must
+    /// stay total. No debug assertion here — over-reporting is a legitimate
+    /// caller pattern, not a bug.
     pub fn complete(&mut self, key: &K) {
         self.completed.insert(key.clone());
     }

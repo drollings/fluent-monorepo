@@ -31,6 +31,22 @@ pub const OUTBOX_DDL: &str = "CREATE TABLE IF NOT EXISTS outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_outbox_claim ON outbox(claimed_at_ms, id);";
 
+/// Shared claim-retry policy for the sync (`SqliteStore::outbox_claim`)
+/// and async (`SqlitePool::outbox_claim`) claim loops: at most this many
+/// attempts, [`OUTBOX_CLAIM_RETRY_DELAY_MS`] fixed delay between them,
+/// retrying only [`DbError::Busy`] (see [`is_claim_retryable`]). The loop
+/// skeletons stay sync/async per call site — only the policy is factored,
+/// so the schedule cannot drift between the two.
+pub const OUTBOX_CLAIM_MAX_ATTEMPTS: u32 = 20;
+/// Fixed delay between claim retries (both loops).
+pub const OUTBOX_CLAIM_RETRY_DELAY_MS: u64 = 5;
+
+/// Whether a claim failure is worth another attempt under the shared policy:
+/// only lock contention (`Busy`); every other error fails fast.
+pub fn is_claim_retryable(error: &DbError) -> bool {
+    matches!(error, DbError::Busy(_))
+}
+
 /// One claimed outbox row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One claimed outbox row.

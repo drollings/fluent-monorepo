@@ -400,7 +400,6 @@ impl PipelineOrchestrator {
                     // redirect is terminal for this request.
                     if let Some(rt) = running
                         .get::<RoutingTarget>(crate::stages::common::ROUTING_TARGET_TYPED_KEY)
-                        .cloned()
                     {
                         tracing::info!(target: "router.pipeline",
                             target_route = ?rt.target_name,
@@ -415,11 +414,11 @@ impl PipelineOrchestrator {
                             Some("soft_redirect"),
                         )
                         .emit();
-                        *routing_target = Some(rt);
+                        *routing_target = Some((*rt).clone());
                         return Some(WorkOutput::typed(
                             "soft_redirect",
                             &PipelineResult {
-                                decisions: vec![decision.clone()],
+                                decisions: vec![(*decision).clone()],
                                 final_response: None,
                                 rejected: false,
                                 reject_reason: None,
@@ -449,7 +448,6 @@ impl PipelineOrchestrator {
                     // The typed channel is the only routing-target handoff.
                     if let Some(rt) = running
                         .get::<RoutingTarget>(crate::stages::common::ROUTING_TARGET_TYPED_KEY)
-                        .cloned()
                     {
                         tracing::info!(target: "router.pipeline",
                             target_route = %rt.target_name.as_deref().unwrap_or("?"),
@@ -465,7 +463,7 @@ impl PipelineOrchestrator {
                             Some("passed"),
                         )
                         .emit();
-                        *routing_target = Some(rt);
+                        *routing_target = Some((*rt).clone());
                     }
                 }
                 None
@@ -520,7 +518,7 @@ impl PipelineOrchestrator {
                 Some(WorkOutput::typed(
                     "rejected",
                     &PipelineResult {
-                        decisions: vec![decision.clone()],
+                        decisions: vec![(*decision).clone()],
                         final_response: None,
                         rejected: true,
                         reject_reason: Some(decision.reason.clone()),
@@ -538,7 +536,7 @@ impl PipelineOrchestrator {
                 Some(WorkOutput::typed(
                     "pipeline_error",
                     &PipelineResult {
-                        decisions: vec![decision.clone()],
+                        decisions: vec![(*decision).clone()],
                         final_response: None,
                         rejected: true,
                         reject_reason: Some(format!("stage error: {}", decision.reason)),

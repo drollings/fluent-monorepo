@@ -613,7 +613,7 @@ pub struct SummaryPass<'a> {
     backend: &'a dyn ChatBackend,
     model: String,
     gate: &'a crate::model_lanes::LaneGate,
-    db: &'a search_vector::db::GuidanceDb,
+    db: &'a crate::query::search_db::GuidanceSearchDb,
     parser: crate::ast_parser::AstParser,
 }
 
@@ -624,7 +624,7 @@ impl<'a> SummaryPass<'a> {
         backend: &'a dyn ChatBackend,
         model: String,
         gate: &'a crate::model_lanes::LaneGate,
-        db: &'a search_vector::db::GuidanceDb,
+        db: &'a crate::query::search_db::GuidanceSearchDb,
     ) -> Self {
         Self {
             backend,
@@ -758,11 +758,11 @@ impl<'a> SummaryPass<'a> {
 /// a fragment lookup by (file, name, scope): symbol ids are no longer
 /// fragment ids. Unmapped nodes become labelled gaps, never silent drops.
 fn project_summaries(
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     file_id: &str,
     fresh: &std::collections::BTreeMap<String, CommentSummary>,
 ) -> Vec<SummaryGap> {
-    use search_vector::db::SummaryRecord;
+    use crate::query::search_db::SummaryRecord;
     let symbols = db.symbols_for_file(file_id).unwrap_or_default();
     let mut gaps = Vec::new();
     let mut rows = Vec::new();

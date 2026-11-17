@@ -25,7 +25,7 @@ use crate::decision::{Question, QuestionSpec, ThresholdSet};
 /// ctx.set("state".to_string(), "ST".to_string());
 /// ctx.set("question".to_string(), "Q?".to_string());
 /// let out = RenderQuestionUnit::new(spec).execute(&ctx).expect("render");
-/// let text: String = out.data_as().expect("prompt");
+/// let text: String = out.data_ref().expect("prompt");
 /// assert!(text.ends_with("Q?"));
 /// ```
 pub struct RenderQuestionUnit {
@@ -50,10 +50,12 @@ impl WorkUnit for RenderQuestionUnit {
         &[]
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let state = ctx.get::<String>("state").ok_or_else(|| {
+        let state = ctx.get::<String>("state");
+        let state = state.as_deref().ok_or_else(|| {
             WorkError::Execution("decision.render: missing typed `state`".to_string())
         })?;
-        let question = ctx.get::<String>("question").ok_or_else(|| {
+        let question = ctx.get::<String>("question");
+        let question = question.as_deref().ok_or_else(|| {
             WorkError::Execution("decision.render: missing typed `question`".to_string())
         })?;
         let q = Question {
@@ -88,7 +90,7 @@ fluent_wvr::impl_component!(RenderQuestionUnit);
 ///     serde_json::json!({"choices": [{"message": {"role": "assistant", "content": "B"}}]}),
 /// );
 /// let out = unit.execute(&ctx).expect("decode");
-/// let d: fluent_llm::decision::Decision = out.data_as().expect("decision");
+/// let d: fluent_llm::decision::Decision = out.data_ref().expect("decision");
 /// assert_eq!(d.label, "B");
 /// ```
 pub struct DecodeDecisionUnit {
@@ -119,11 +121,10 @@ impl WorkUnit for DecodeDecisionUnit {
         &[]
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let raw = ctx
-            .get::<serde_json::Value>("raw_response")
-            .ok_or_else(|| {
-                WorkError::Execution("decision.decode: missing typed `raw_response`".to_string())
-            })?;
+        let raw = ctx.get::<serde_json::Value>("raw_response");
+        let raw = raw.as_deref().ok_or_else(|| {
+            WorkError::Execution("decision.decode: missing typed `raw_response`".to_string())
+        })?;
         let refs: Vec<&str> = self.candidates.iter().map(String::as_str).collect();
         match crate::decision::decode_choice(raw, &refs, &self.model, self.version) {
             Ok(d) => WorkOutput::typed("decoded", &d),
@@ -161,7 +162,7 @@ fluent_wvr::impl_component!(DecodeDecisionUnit);
 /// let mut ctx = WorkContext::default();
 /// ctx.set("decision".to_string(), decision);
 /// let out = unit.execute(&ctx).expect("policy");
-/// assert_eq!(out.data_as::<Verdict>().expect("verdict"), Verdict::Act);
+/// assert_eq!(out.data_ref::<Verdict>().expect("verdict"), Verdict::Act);
 /// ```
 pub struct PolicyVerdictUnit {
     thresholds: ThresholdSet,
@@ -185,11 +186,10 @@ impl WorkUnit for PolicyVerdictUnit {
         &[]
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let decision = ctx
-            .get::<crate::decision::Decision>("decision")
-            .ok_or_else(|| {
-                WorkError::Execution("decision.policy: missing typed `decision`".to_string())
-            })?;
+        let decision = ctx.get::<crate::decision::Decision>("decision");
+        let decision = decision.as_deref().ok_or_else(|| {
+            WorkError::Execution("decision.policy: missing typed `decision`".to_string())
+        })?;
         let verdict = crate::decision::decide_verdict(decision, &self.thresholds);
         WorkOutput::typed("verdict", &verdict)
     }

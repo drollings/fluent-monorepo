@@ -1,3 +1,4 @@
+pub mod aliases;
 pub mod calibration;
 pub mod capability_match;
 pub mod concept_ground;
@@ -20,10 +21,13 @@ pub mod plan;
 pub mod recall;
 pub mod rerank;
 pub mod rg_backend;
+pub mod rrf;
 pub mod search_backend;
+pub mod search_db;
 pub mod shadow;
 pub mod snapshot;
 pub mod strategy;
 pub mod synthesize;
+pub mod tokens;
 pub mod vector_backend;
 pub mod writer;

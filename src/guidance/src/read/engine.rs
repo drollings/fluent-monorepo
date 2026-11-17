@@ -139,7 +139,7 @@ pub struct ExplainContext<'a> {
     /// Workspace root (live reads resolve under it).
     pub workspace: &'a std::path::Path,
     /// Committed index.
-    pub db: &'a search_vector::db::GuidanceDb,
+    pub db: &'a crate::query::search_db::GuidanceSearchDb,
     /// Lemma pipeline, when built.
     pub nlp: Option<&'a spacy_rs::pipeline::NlpPipeline>,
     /// Coverage snapshot for the Coverage section and envelope.
@@ -455,7 +455,7 @@ impl ReadEngine {
         synthesize: Option<&dyn Synthesizer>,
         judge: Option<&JudgeCtx<'_>>,
     ) -> ReadAnswer {
-        let _read = common_core::profile::Phase::new("read.explain");
+        let _read = crate::profile::Phase::new("read.explain");
         use crate::read::budget::tokens_for;
         let plan_request = ReadRequest {
             query: request.query.clone(),
@@ -828,7 +828,7 @@ impl ReadEngine {
         // falls back to funnel terms, labelled.
         let funnel = crate::query::funnel::funnel_terms(
             &request.query,
-            &search_vector::SemanticAliases::new(),
+            &crate::query::aliases::SemanticAliases::new(),
             None,
         );
         let mut scope_crates: Vec<String> = code_findings
@@ -1612,7 +1612,7 @@ impl ReadEngine {
             if let Some(body) = answer_body.as_ref() {
                 let _ = ctx
                     .db
-                    .answer_cache_put(&search_vector::db::AnswerCacheRecord {
+                    .answer_cache_put(&crate::query::search_db::AnswerCacheRecord {
                         manifest_hash: manifest_hash.clone(),
                         answer: body.clone(),
                         claims_json: cached_claims_json(&claims),
@@ -1912,7 +1912,7 @@ fn scoped_project_cards(
 fn orientation_cards(
     plan: &ReadPlan,
     query: &str,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     anchor: Option<&crate::read::vocabulary::SubjectAnchor>,
 ) -> (
     Vec<crate::read::planes::orientation::CardFinding>,
@@ -2210,7 +2210,7 @@ fn admission_authorized(
 /// discriminative topic term is the subject.
 fn subject_anchor_for(
     query: &str,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     intent: crate::query::strategy::QueryIntent,
 ) -> Option<crate::read::vocabulary::SubjectAnchor> {
     use crate::query::strategy::QueryIntent;
@@ -2616,7 +2616,7 @@ fn structure_findings(
     query: &str,
     intent: QueryIntent,
     workspace: &std::path::Path,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     scope_prefixes: &[String],
 ) -> (Vec<crate::read::engine::Finding>, bool) {
     use crate::read::engine::{Finding, FindingKind, FindingProducer};
@@ -2797,7 +2797,7 @@ fn structure_findings(
 /// stored range over live bytes. Falls back to the symbol identity
 /// when the fragment or range is gone.
 fn symbol_excerpt(
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     site: &crate::read::planes::symbol::SymbolSite,
 ) -> (String, Option<u32>, Option<u32>) {
     let fragment = db.symbol_fragment(&site.file, &site.name, site.scope.as_deref());

@@ -56,3 +56,7 @@ impl Drop for Phase {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/profile.rs"]
+mod profile_tests;

@@ -215,3 +215,24 @@ fn overlay_error_and_detector_shape() {
     let provider = EmbedStub;
     assert_eq!(provider.dimensions(), 3);
 }
+
+#[test]
+fn try_register_is_fallible_while_register_stays_panicking() {
+    use fluent_llm::backend::InferenceRegistry;
+    use fluent_llm::testutil::StubBackend;
+    let mut registry = InferenceRegistry::new();
+    registry.register(Arc::new(StubBackend::new("stub", vec!["m"], "hi")));
+    // Duplicate registration via the additive fallible seam returns Err
+    // with the value handed back, never overwriting the winner.
+    let dup = Arc::new(StubBackend::new("stub", vec!["m"], "other"));
+    assert!(registry.try_register(Arc::clone(&dup) as _).is_err());
+    assert_eq!(registry.len(), 1);
+    let backend = registry.route_chat("m", None).expect("winner kept");
+    let out = backend
+        .chat_complete(&[ChatMessage {
+            role: "user".into(),
+            content: "hi".into(),
+        }])
+        .unwrap();
+    assert_eq!(out, "hi", "first-wins: duplicate never overwrote");
+}

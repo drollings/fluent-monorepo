@@ -357,3 +357,37 @@ fn unicode_payload_round_trips_byte_identical() {
     let got = store.read(hash, "frame:unicode").unwrap().expect("present");
     assert_eq!(got.payload, c.payload);
 }
+
+#[test]
+fn current_row_reads_no_row_as_none_and_ranks_confirmed_first() {
+    let s = store();
+    // Empty table: no row, not an error.
+    let none: Option<Row> = s
+        .store
+        .transaction(|tx| current_row(tx, ContentHash::from(7u64), "frame:x"))
+        .unwrap();
+    assert!(none.is_none());
+    // LocalModel then Frontier: the higher tier supersedes, and the
+    // superseded row is excluded from the authoritative read.
+    s.write(
+        ContentHash::from(7u64),
+        &claim(
+            "frame:x",
+            ProvenanceTier::LocalModel,
+            ClaimStatus::Confirmed,
+        ),
+    )
+    .unwrap();
+    s.write(
+        ContentHash::from(7u64),
+        &claim("frame:x", ProvenanceTier::Frontier, ClaimStatus::Confirmed),
+    )
+    .unwrap();
+    let cur: Row = s
+        .store
+        .transaction(|tx| current_row(tx, ContentHash::from(7u64), "frame:x"))
+        .unwrap()
+        .expect("authoritative row");
+    assert_eq!(cur.tier, ProvenanceTier::Frontier);
+    assert_eq!(cur.status, ClaimStatus::Confirmed);
+}

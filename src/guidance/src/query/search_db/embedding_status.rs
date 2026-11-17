@@ -42,13 +42,14 @@ impl EmbeddingStatusRecord {
     }
 }
 
-impl super::GuidanceDb {
+impl super::GuidanceSearchDb {
     /// Insert or replace embedding status rows.
     pub fn replace_embedding_status(
         &self,
         rows: &[EmbeddingStatusRecord],
     ) -> Result<usize, super::VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .transaction(|tx| {
                 for row in rows {
                     fluent_db::query::execute(
@@ -76,7 +77,8 @@ impl super::GuidanceDb {
         &self,
         file_id: &str,
     ) -> Result<Vec<EmbeddingStatusRecord>, super::VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .query_rows(
                 "SELECT s.fragment_id, s.input_hash, s.embedder, s.status, s.reason, s.updated_at
                  FROM fragment_embedding_status s
@@ -107,7 +109,8 @@ impl super::GuidanceDb {
             .iter()
             .map(|id| rusqlite::types::Value::Text(id.clone()))
             .collect();
-        self.store
+        self.docs
+            .sqlite_store()
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(
                     conn,
@@ -126,7 +129,8 @@ impl super::GuidanceDb {
         &self,
         embedder: &str,
     ) -> Result<Vec<String>, super::VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .query_rows(
                 "SELECT DISTINCT f.file_id
                  FROM fragment_embedding_status s

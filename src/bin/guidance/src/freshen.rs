@@ -33,7 +33,7 @@ pub fn stale_citation_files(
 pub fn freshen_files(
     workspace: &Path,
     guidance_dir: &Path,
-    db: &search_vector::GuidanceDb,
+    db: &guidance_core::query::search_db::GuidanceSearchDb,
     db_path: &Path,
     src_dirs: &[PathBuf],
     files: &[PathBuf],
@@ -63,7 +63,7 @@ pub fn freshen_files(
 /// files in. Returns true when anything moved (caller re-runs once).
 pub fn freshen_search_hits(
     workspace: &Path,
-    db: &search_vector::GuidanceDb,
+    db: &guidance_core::query::search_db::GuidanceSearchDb,
     db_path: &Path,
     files: &[PathBuf],
 ) -> Result<bool, String> {

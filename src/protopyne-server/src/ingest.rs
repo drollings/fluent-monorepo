@@ -173,7 +173,7 @@ impl WorkUnit for IngestConfig {
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         fluent_wvr::validate::check_for_execute(self, "ingest config invalid")?;
-        Ok(fluent_wvr::validate::valid_output("ingest config valid"))
+        Ok(fluent_wvr::WorkOutput::ok("ingest config valid"))
     }
 }
 

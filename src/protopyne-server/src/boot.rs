@@ -180,7 +180,7 @@ impl WorkUnit for ServerConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         fluent_wvr::validate::check_for_execute(self, "server config invalid")?;
-        Ok(fluent_wvr::validate::valid_output("server config valid"))
+        Ok(fluent_wvr::WorkOutput::ok("server config valid"))
     }
 }
 

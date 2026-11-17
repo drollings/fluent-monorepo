@@ -145,8 +145,8 @@ impl fluent_llm::embeddings::EmbeddingProvider for CountingEmbedding {
 #[test]
 fn bench_counters_on_converged_trees() {
     use crate::index_pipeline::{index_workspace, IndexOptions};
+    use crate::query::search_db::GuidanceSearchDb;
     use crate::selection::FileSelection;
-    use search_vector::db::GuidanceDb;
     use std::sync::atomic::AtomicBool;
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
@@ -157,7 +157,7 @@ fn bench_counters_on_converged_trees() {
         )
         .expect("write");
     }
-    let db = Arc::new(GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(GuidanceSearchDb::open_in_memory().expect("db"));
     let selection = FileSelection {
         workspace_root: root.to_path_buf(),
         include_fixtures: false,

@@ -1,16 +1,8 @@
 //! `common_core::envelope` unit tests: ramp shape, dB anchors, fade
-//! edges — independent of any audio call site.
+//! edges — independent of any audio call site. Calibrated playout
+//! targets live with their owner in `orator-audio` and are pinned there.
 
-use common_core::envelope::{
-    apply_fade_out, db_to_linear, linear_ramp_gain, CUT_FADE_MS, DUCK_DEPTH_DB, DUCK_RAMP_MS,
-};
-
-#[test]
-fn constants_pin_the_calibrated_targets() {
-    assert!((DUCK_DEPTH_DB - -12.0).abs() < f32::EPSILON);
-    assert_eq!(DUCK_RAMP_MS, 100);
-    assert_eq!(CUT_FADE_MS, 20);
-}
+use common_core::envelope::{apply_fade_out, db_to_linear, linear_ramp_gain};
 
 #[test]
 fn db_anchors_hold() {
@@ -21,16 +13,16 @@ fn db_anchors_hold() {
 
 #[test]
 fn ramp_opens_linearly_then_holds() {
-    let floor = db_to_linear(DUCK_DEPTH_DB);
-    assert!((linear_ramp_gain(0, DUCK_RAMP_MS, floor) - 1.0).abs() < f32::EPSILON);
-    assert!((linear_ramp_gain(50, DUCK_RAMP_MS, floor) - (1.0 + 0.5 * (floor - 1.0))).abs() < 1e-6);
-    assert!((linear_ramp_gain(100, DUCK_RAMP_MS, floor) - floor).abs() < f32::EPSILON);
-    assert!((linear_ramp_gain(u64::MAX, DUCK_RAMP_MS, floor) - floor).abs() < f32::EPSILON);
+    let floor = db_to_linear(-12.0);
+    assert!((linear_ramp_gain(0, 100, floor) - 1.0).abs() < f32::EPSILON);
+    assert!((linear_ramp_gain(50, 100, floor) - (1.0 + 0.5 * (floor - 1.0))).abs() < 1e-6);
+    assert!((linear_ramp_gain(100, 100, floor) - floor).abs() < f32::EPSILON);
+    assert!((linear_ramp_gain(u64::MAX, 100, floor) - floor).abs() < f32::EPSILON);
     // Monotonic across the ramp.
     let (a, b, c) = (
-        linear_ramp_gain(25, DUCK_RAMP_MS, floor),
-        linear_ramp_gain(50, DUCK_RAMP_MS, floor),
-        linear_ramp_gain(75, DUCK_RAMP_MS, floor),
+        linear_ramp_gain(25, 100, floor),
+        linear_ramp_gain(50, 100, floor),
+        linear_ramp_gain(75, 100, floor),
     );
     assert!(a > b && b > c);
 }

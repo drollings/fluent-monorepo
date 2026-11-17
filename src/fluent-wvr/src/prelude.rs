@@ -4,6 +4,7 @@
 //! use fluent_wvr::prelude::*;
 //! ```
 
+pub use crate::check_for_execute;
 pub use crate::wrapper::{
     retry_call, ComponentAdapter, ComponentCascade, ExecuteFn, Instrumented, Middleware,
     MiddlewareChain, Pipeline, SuffixedComponent,
@@ -19,6 +20,5 @@ pub use crate::{
     FieldAccess, FieldError, MetadataValue, OutputStore, WorkContext, WorkError, WorkOutput,
     WorkUnit,
 };
-pub use crate::{check_for_execute, valid_output};
 pub use crate::{delegate_component_fields, impl_component, impl_fieldless};
 pub use internment::ArcIntern;

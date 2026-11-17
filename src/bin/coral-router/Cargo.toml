@@ -16,8 +16,8 @@ fluent-concurrency = { path = "../../fluent-concurrency" }
 common-core = { path = "../../common-core" }
 fluent-llm = { path = "../../llm" }
 coral-context = { path = "../../coral" }
-guidance-ontology = { path = "../../ontology" }
-guidance-rdf = { path = "../../rdf" }
+fluent-ontology = { path = "../../ontology" }
+fluent-rdf = { path = "../../rdf" }
 spacy-rs = { path = "../../spacy-rs" }
 clap = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true }

@@ -7,9 +7,9 @@ use super::code::{code_plan, rg_hits_to_findings, search_hits_to_findings};
 use crate::query::rg_backend::RgHit;
 use crate::search_types::SearchPlanRouteMode;
 
-fn seed_db() -> search_vector::db::GuidanceDb {
-    use search_vector::db::{FileRecord, FragmentRecord};
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+fn seed_db() -> crate::query::search_db::GuidanceSearchDb {
+    use crate::query::search_db::{FileRecord, FragmentRecord};
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let file = |id: &str, rel: &str| FileRecord {
         id: id.to_string(),
         absolute_path: format!("/repo/{rel}"),

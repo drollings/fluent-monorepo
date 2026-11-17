@@ -1,5 +1,5 @@
 //! Read-plane retrieval planes: symbols, graph, orientation, docs,
-//! and code. Planes read through the `GuidanceDb` row methods — never
+//! and code. Planes read through the `GuidanceSearchDb` row methods — never
 //! a second index.
 
 pub mod code;

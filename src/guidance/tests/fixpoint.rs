@@ -234,3 +234,40 @@ fn blocked_without_owner_says_why() {
     );
     assert_eq!(report.stopped.as_deref(), Some("blocked without owner"));
 }
+
+#[test]
+fn panicking_act_is_contained_and_escalates_without_hanging() {
+    let _serial = serial_loop_tests();
+    let guard = LoopGuard::acquire().expect("guard");
+    let mut queue = MaintenanceQueue::new();
+    queue
+        .enqueue("a", "src", "rustfmt", &[])
+        .expect("enqueue a");
+    // A panic inside the act must not escape the supervised step: the
+    // supervisor contains it as a panic event, the step yields no verdict,
+    // and the item escalates through the normal retry ladder.
+    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| {
+        panic!("simulated tool crash")
+    }));
+    let abort = StreamAbort::new();
+    let report = run_to_fixpoint(&guard, &mut queue, &unlimited(), 50, &abort, &act);
+    assert!(
+        report.stopped.is_none(),
+        "contained failure converges: {:?}",
+        report.stopped
+    );
+    assert_eq!(report.escalated.len(), 1);
+}
+
+#[test]
+fn panicking_step_yields_no_verdict_instead_of_propagating() {
+    use super::execute_step;
+    let _serial = serial_loop_tests();
+    // Direct pin: a panicking act is contained by the supervisor and
+    // surfaces as `None` (no verdict), never as a propagated panic.
+    let act: Act = Arc::new(Mutex::new(|_id: &str, _tier: Tier| {
+        panic!("simulated tool crash")
+    }));
+    let outcome = execute_step("a", Tier::Draft, &act);
+    assert!(outcome.is_none(), "panic contains to no-verdict");
+}

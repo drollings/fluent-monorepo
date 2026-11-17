@@ -696,6 +696,9 @@ impl Describable for OnnxBackend {
     }
 }
 
+/// Inventory-only adapter: routing goes through [`InferenceBackend`]
+/// (`weights`/`chat_backend`/`single_shot`), never through supervised
+/// execution.
 impl WorkUnit for OnnxBackend {
     fn name(&self) -> &str {
         "onnx"
@@ -707,7 +710,11 @@ impl WorkUnit for OnnxBackend {
         &[]
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        Ok(WorkOutput::ok("onnx backend adapter"))
+        // Fail closed: a supervisor that schedules the inventory must hear
+        // a refusal, never a fake completion.
+        Err(WorkError::Execution(
+            "onnx backend is inventory-only; route through weights/chat_backend".to_string(),
+        ))
     }
 }
 

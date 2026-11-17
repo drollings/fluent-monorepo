@@ -376,7 +376,7 @@ pub struct WorkContext {
 
 | Channel | Purpose | Example |
 |---|---|---|
-| `outputs` (`OutputStore`, typed `HashMap<String, Arc<dyn Any + Send + Sync>>`) | **Primary** in-process handoff between units and stages. `set::<T>(key, value)` / `get::<T>(key) -> Option<&T>`; clone shares arcs. No serialize/deserialize. | `StageDecision`, retry-attempt counter (`i64`) |
+| `outputs` (`OutputStore`, shared map of `Arc<dyn Any + Send + Sync>`) | **Primary** in-process handoff between units and stages. `set::<T>(key, value)` (shared `&self`) / `get::<T>(key) -> Option<Arc<T>>`; clones share the map, so a unit's write is visible to the registrant's clone. No serialize/deserialize. | `StageDecision`, retry-attempt counter (`i64`) |
 | `structured: HashMap<String, serde_json::Value>` | Structured handoff of **arbitrary JSON payloads whose type is not known at compile time**. `set_structured(key, &T)` serializes, `structured::<T>(key)` deserializes — the *only* place that does `to_value`/`from_value` for the channel. Crosses crate boundaries as `Value` only (never a domain type). | `RouterRequest` under `"request"`, bound chart entities (`"entities"`), per-stage outputs (`"stage.{id}"`) |
 | `WorkOutput.data: serde_json::Value` | **Only** for serialization boundaries (process/RPC/JSON handoff) and the final unit return value. `typed::<T>()` / `data_take::<T>()` | PipelineResult returned to the HTTP handler |
 | `metadata: HashMap<String, MetadataValue>` | Only for genuinely stringly-typed / dynamic annotations that must survive serialization. | `classifier_system_prompt` (external config key), tags |
@@ -406,8 +406,8 @@ impl WorkContext {
     /// Store a typed value under `key` for in-process handoff
     pub fn set<T: Send + Sync + 'static>(&mut self, key: impl Into<String>, value: T);
 
-    /// Borrow a typed value by `key`; `None` if absent or of a different type.
-    pub fn get<T: Send + Sync + 'static>(&self, key: &str) -> Option<&T>;
+    /// Borrow a shared typed value by `key`; `None` if absent or of a different type.
+    pub fn get<T: Send + Sync + 'static>(&self, key: &str) -> Option<std::sync::Arc<T>>;
 }
 ```
 
@@ -1914,8 +1914,8 @@ let p99 = histogram.estimate_percentile(99.0);
 println!("p50={p50}ms p99={p99}ms total={}ms", histogram.sum_ms());
 ```
 
-**Production consumer:** The `with_metrics` wrapper is wired into
-three sites in the workspace:
+**Production consumers:** The `with_metrics` wrapper is wired into
+two production sites in the workspace (plus one test-only example):
 
 1. `coral/src/cache/reactor.rs:22-28` — Coral's `QueueReactor` (the module
    moved from `cache_reactor.rs` to `cache/reactor.rs`) wraps each cache tier
@@ -1925,13 +1925,14 @@ three sites in the workspace:
    are exposed via the `coral_stats` MCP method, returning aggregated
    p50/p99/count/sum per tier.
 
-2. `dag/src/middleware.rs:34` — `TimingMiddleware` wraps an
-   `Arc<dyn Component>` in `Instrumented::with_metrics` when a histogram
-   is provided, falling back to `Instrumented::new` otherwise.
-
-3. `router/src/charts/execute.rs:231` — the chart-DAG executor wraps every
+2. `router/src/charts/execute.rs:231` — the chart-DAG executor wraps every
    compiled workflow target in `Instrumented::with_metrics` before erasure,
    so workflow-execution latency lands in a shared `LatencyHistogram`.
+
+(Test-only example: `dag/src/middleware.rs` — `TimingMiddleware` wraps an
+`Arc<dyn Component>` in `Instrumented::with_metrics` when a histogram is
+provided, falling back to `Instrumented::new` otherwise. It demonstrates
+the post-erasure pattern; it is not a production wiring.)
 
 A consumer test that exercises the histogram path end-to-end lives in
 `wrapper.rs:783-800` (`instrumented_with_metrics_records_duration`).

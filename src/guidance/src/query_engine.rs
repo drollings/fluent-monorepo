@@ -8,6 +8,7 @@ use crate::ast_parser::AstParser;
 use fluent_concurrency::thread_resource::with_tlr;
 
 fluent_concurrency::thread_local_resource!(static FORMAT_PARSER: AstParser);
+use crate::query::aliases::SemanticAliases;
 use crate::query::decision_points::{
     authorize_point_advisory_with, authorize_point_pinned_with, authorize_point_with,
     SUMMARY_INDEX_POINT, SUMMARY_INDEX_VERSION,
@@ -20,10 +21,9 @@ use crate::query::search_backend::{
     ConceptBackend, FilePathBackend, GeneralBackend, IdentifierBackend, KeywordBackend,
     RegisteredBackend, SearchBackend, SearchContext,
 };
+use crate::query::search_db::GuidanceSearchDb;
 use crate::query::strategy::{self, QueryIntent};
 use crate::query::synthesize::{Stage, Synthesizer};
-use search_vector::GuidanceDb;
-use search_vector::SemanticAliases;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OutputFormat {
@@ -488,13 +488,13 @@ impl QueryEngine {
 
     /// Vector explain using RRF (Reciprocal Rank Fusion) hybrid search.
     ///
-    /// G3: Replaces the naive dedup union with `GuidanceDb::hybrid_search`,
+    /// G3: Replaces the naive dedup union with `GuidanceSearchDb::hybrid_search`,
     /// which fuses keyword + vector results using RRF (k=60).
     pub fn vector_explain(
         &self,
         query: &str,
         query_vec: &[f32],
-        db: &GuidanceDb,
+        db: &GuidanceSearchDb,
         doc: &GuidanceDoc,
         k: usize,
     ) -> Result<Vec<Stage>, QueryEngineError> {
@@ -842,7 +842,7 @@ mod tests {
     fn test_dispatch_vector_explain_unchanged() {
         let doc = make_test_doc();
         let engine = QueryEngine::new();
-        let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+        let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
         // Insert a member embedding so hybrid search has something
         db.insert_node(
             "helloWorld",
@@ -859,7 +859,7 @@ mod tests {
             .expect("vector_explain");
         assert!(!stages.is_empty());
         // Empty result case
-        let empty_db = search_vector::GuidanceDb::open_in_memory().expect("db2");
+        let empty_db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db2");
         let res = engine.vector_explain("zzzz", &[0.9, 0.9, 0.9], &empty_db, &doc, 5);
         assert!(matches!(res, Err(QueryEngineError::NoResults)));
     }

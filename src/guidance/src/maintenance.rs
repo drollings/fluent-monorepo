@@ -23,7 +23,8 @@ use fluent_concurrency::runtime::tokio::TokioRuntime;
 use fluent_concurrency::stream::StreamAbort;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
 use fluent_wvr::{
-    impl_component, impl_fieldless, Describable, WorkContext, WorkError, WorkOutput, WorkUnit,
+    impl_component, impl_fieldless, Describable, OutputStore, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 
 use crate::offload::{ApplyReport, EscalationPacket, ReviewSummary};
@@ -110,6 +111,7 @@ pub fn tier_for(attempts: u32) -> Tier {
 }
 
 /// One act execution outcome: the caller's gate verdict.
+#[derive(Debug, Clone)]
 pub enum ActOutcome {
     /// Gate green with its reviewable report.
     Verified(ApplyReport),
@@ -698,14 +700,17 @@ impl LoopReport {
     }
 }
 
+/// Typed channel key carrying the step's domain verdict from `execute`
+/// back to the step driver (no side slot).
+pub(crate) const STEP_VERDICT_KEY: &str = "step-verdict";
+
 /// One pass's unit behind the uniform control-plane handle. The domain
-/// verdict travels through the shared outcome slot; `execute` itself
+/// verdict travels through the typed outputs channel; `execute` itself
 /// only reports that the act ran.
 struct StepUnit {
     name: String,
     tier: Tier,
     act: Arc<Mutex<dyn FnMut(Tier) -> ActOutcome + Send>>,
-    outcome: Arc<Mutex<Option<ActOutcome>>>,
 }
 
 impl WorkUnit for StepUnit {
@@ -721,16 +726,15 @@ impl WorkUnit for StepUnit {
         &[]
     }
 
-    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        // The lock helper is `Sized`-bound; this mutex holds a trait
+        // object, so explicit poison recovery stays here.
         let verdict = self
             .act
             .lock()
             .map(|mut act| act(self.tier))
             .map_err(|_| WorkError::Execution("step act poisoned".to_string()))?;
-        self.outcome
-            .lock()
-            .map(|mut slot| *slot = Some(verdict))
-            .map_err(|_| WorkError::Execution("step outcome poisoned".to_string()))?;
+        ctx.outputs.set(STEP_VERDICT_KEY, verdict);
         Ok(WorkOutput::ok(format!("{} done", self.name)))
     }
 }
@@ -929,9 +933,10 @@ pub fn run_to_fixpoint_with_breaker(
 
 /// Execute one unit through the supervised batch: panic containment and
 /// per-attempt timeout ride the shared supervisor, never inline code.
-/// Returns `None` when the step produced no verdict (panic, drop).
+/// The verdict travels back through the typed outputs channel (no side
+/// slot); the batch summary is reported, never discarded. Returns `None`
+/// when the step produced no verdict (panic, drop).
 fn execute_step(id: &str, tier: Tier, act: &ActFn) -> Option<ActOutcome> {
-    let outcome: Arc<Mutex<Option<ActOutcome>>> = Arc::new(Mutex::new(None));
     let id_owned = id.to_string();
     let shared = Arc::clone(act);
     // Shared lock helper is `Sized`-bound; this mutex holds a
@@ -945,19 +950,31 @@ fn execute_step(id: &str, tier: Tier, act: &ActFn) -> Option<ActOutcome> {
         name: format!("step-{id}"),
         tier,
         act: Arc::new(Mutex::new(runner)),
-        outcome: Arc::clone(&outcome),
     };
+    let outputs = OutputStore::default();
     let summary = common_core::runtime::block_on_shared(async {
-        let mut batch =
-            SupervisedBatch::new(Arc::new(TokioRuntime), fluent_wvr::CapabilitySet::new());
-        if batch.register(Arc::new(unit)).is_err() {
+        let rt: Arc<dyn fluent_wvr::Runtime> = Arc::new(TokioRuntime);
+        let caps = fluent_wvr::CapabilitySet::new();
+        let ctx = WorkContext::for_unit_in_batch(&rt, &caps, |ctx| {
+            ctx.outputs = outputs.clone();
+        });
+        let mut batch = SupervisedBatch::new(rt, caps);
+        if batch.register_with_context(Arc::new(unit), ctx).is_err() {
             return None;
         }
         Some(batch.await)
     })?;
-    let _ = summary;
-    let mut slot = common_core::sync::lock(&outcome);
-    slot.take()
+    // The summary is the supervision record: panics and failures are
+    // reported with the step name instead of vanishing into a counter.
+    for event in summary.panicked.iter().chain(summary.failed.iter()) {
+        tracing::warn!(
+            event = ?event,
+            "maintenance step recorded a supervision event"
+        );
+    }
+    outputs
+        .get::<ActOutcome>(STEP_VERDICT_KEY)
+        .map(|v| (*v).clone())
 }
 
 /// Record a retryable outcome: attempts climb the tier ladder, and the

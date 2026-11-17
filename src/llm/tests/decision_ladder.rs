@@ -229,12 +229,12 @@ fn sync_prefix_cascade_rule_then_cache() {
     let cascade =
         fluent_llm::decision::prefix_cascade(Some(canned("RULE")), Some(canned("CACHED")));
     let out = cascade.execute_first_ok(&ctx).expect("rule wins");
-    let d: Decision = out.data_as().expect("typed");
+    let d: Decision = out.data_ref().expect("typed");
     assert_eq!(d.label, "RULE");
 
     let cascade = fluent_llm::decision::prefix_cascade(None, Some(canned("CACHED")));
     let out = cascade.execute_first_ok(&ctx).expect("cache wins");
-    let d: Decision = out.data_as().expect("typed");
+    let d: Decision = out.data_ref().expect("typed");
     assert_eq!(d.label, "CACHED");
 }
 

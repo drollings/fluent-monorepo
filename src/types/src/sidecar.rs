@@ -9,16 +9,11 @@ use std::collections::BTreeMap;
 
 /// Magic prefix of every header line, including the trailing space.
 pub const HEADER_MAGIC: &str = "GHDR1 ";
-/// Schema version of the header layout itself.
-pub const HEADER_VERSION: u32 = 1;
 
 /// Per-file derived facts: which source bytes were read and which named
 /// input components the receipt consumed. Absent components were not
 /// consumed, so their later change never invalidates this sidecar.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Per-file derived facts: which source bytes were read and which named
-/// input components the receipt consumed. Absent components were not
-/// consumed, so their later change never invalidates this sidecar.
 pub struct SidecarHeader {
     /// Source path the sidecar was derived from, as stored.
     pub src: String,
@@ -77,7 +72,15 @@ impl SidecarHeader {
                 "src" => src = Some(value.to_string()),
                 "body" => body = Some(value.to_string()),
                 "srchash" => src_hash = Some(value.to_string()),
-                "stuck" => stuck = value == "1",
+                "stuck" => {
+                    // Only `stuck=1` (or an absent field) is valid: a stuck
+                    // receipt must never read as fresh, and no writer emits
+                    // any other value. Anything else refuses the line.
+                    if value != "1" {
+                        return None;
+                    }
+                    stuck = true;
+                }
                 "comp" => {
                     if !value.is_empty() {
                         for entry in value.split(',') {
@@ -103,9 +106,6 @@ impl SidecarHeader {
 /// and the remaining JSON body. Old files return `None` with the full
 /// content untouched.
 #[must_use]
-/// Split file content into its header (when the first line carries one)
-/// and the remaining JSON body. Old files return `None` with the full
-/// content untouched.
 pub fn strip_header(content: &str) -> (Option<SidecarHeader>, &str) {
     let (first, rest) = content.split_once('\n').unwrap_or((content, ""));
     match SidecarHeader::parse_line(first) {
@@ -115,37 +115,5 @@ pub fn strip_header(content: &str) -> (Option<SidecarHeader>, &str) {
 }
 
 #[cfg(test)]
-mod sidecar_codec_tests {
-    use super::SidecarHeader;
-    use std::collections::BTreeMap;
-
-    fn header() -> SidecarHeader {
-        SidecarHeader {
-            src: "a.rs".to_string(),
-            body: "b".to_string(),
-            src_hash: Some("s".to_string()),
-            stuck: false,
-            components: BTreeMap::from([("toolchain".to_string(), "t".to_string())]),
-        }
-    }
-
-    #[test]
-    fn clean_receipts_keep_legacy_shape() {
-        let line = header().render();
-        assert!(!line.contains("stuck"), "{line}");
-        let back = SidecarHeader::parse_line(&line).expect("parses");
-        assert!(!back.stuck);
-        assert_eq!(back.components.len(), 1);
-    }
-
-    #[test]
-    fn stuck_round_trips_and_reads_stale() {
-        let mut stuck = header();
-        stuck.stuck = true;
-        let line = stuck.render();
-        assert!(line.contains("\tstuck=1"), "{line}");
-        let back = SidecarHeader::parse_line(&line).expect("parses");
-        assert!(back.stuck);
-        assert_eq!(back.src_hash.as_deref(), Some("s"));
-    }
-}
+#[path = "../tests/sidecar.rs"]
+mod sidecar_codec_tests;

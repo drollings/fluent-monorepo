@@ -694,7 +694,7 @@ fn m6_equal_boost_equal_overlap_falls_back_to_id() {
 }
 
 fn persist_harvest(
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     parser: &mut AstParser,
     path: &str,
     format: &str,
@@ -791,7 +791,7 @@ fn hydrated_graph_equals_harvested_graph() {
     assert!(!harvested.import_edges().is_empty());
     assert!(!harvested.call_edges().is_empty());
 
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let mut parser = AstParser::new();
     for (path, format, text) in &corpus {
         persist_harvest(&db, &mut parser, path, format, text);
@@ -852,7 +852,7 @@ fn hydrated_build_costs_less_than_reparse_per_file() {
     let harvested = GraphIndex::build(&inputs, &roots).expect("harvested build");
     let reparse_ns = start.elapsed().as_nanos();
 
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     let mut parser = AstParser::new();
     for (path, format, text) in &corpus {
         persist_harvest(&db, &mut parser, path, format, text);

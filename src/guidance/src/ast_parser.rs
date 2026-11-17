@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use fluent_types::{FileType, GuidanceDoc, Member, MemberType, Meta, Param, Span};
+use fluent_types::{GuidanceDoc, Member, MemberType, Meta, Param, Span};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -1494,14 +1494,6 @@ fn build_signature(
     sig
 }
 
-pub fn file_type_from_extension(ext: &str) -> FileType {
-    if ext.starts_with('.') {
-        FileType::from_extension(ext)
-    } else {
-        FileType::from_extension(&format!(".{ext}"))
-    }
-}
-
 pub fn resolve_span(path: &Path, member_name: &str, member_type: MemberType) -> Option<Span> {
     let source = common_core::io::read_to_string_err(path).ok()?;
     let ext = path.extension().and_then(|e| e.to_str())?;
@@ -1851,16 +1843,6 @@ pub fn main() void {
         if let Some(t) = test_decl {
             assert_eq!(t.type_name, MemberType::TestDecl, "should be TestDecl type");
         }
-    }
-
-    #[test]
-    fn test_file_type_from_extension() {
-        assert_eq!(file_type_from_extension("zig"), FileType::Source);
-        assert_eq!(file_type_from_extension("py"), FileType::Source);
-        assert_eq!(file_type_from_extension(".zig"), FileType::Source);
-        assert_eq!(file_type_from_extension("md"), FileType::Markdown);
-        assert_eq!(file_type_from_extension("json"), FileType::Config);
-        assert_eq!(file_type_from_extension("xyz"), FileType::Unknown);
     }
 }
 

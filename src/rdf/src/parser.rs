@@ -250,7 +250,7 @@ impl Parser<'_> {
                     Ok(Some(Term::Literal(Literal {
                         value: kw.to_string(),
                         lang: None,
-                        datatype: Some(format!("{}boolean", crate::XSD_NS)),
+                        datatype: Some(format!("{}boolean", crate::NS_XSD)),
                     })))
                 } else {
                     Ok(None)
@@ -268,9 +268,9 @@ impl Parser<'_> {
             let has_dot = raw.contains('.');
             let has_exp = raw.contains('e') || raw.contains('E');
             let dt = if has_dot || has_exp {
-                format!("{}double", crate::XSD_NS)
+                format!("{}double", crate::NS_XSD)
             } else {
-                format!("{}integer", crate::XSD_NS)
+                format!("{}integer", crate::NS_XSD)
             };
             return Ok(Some(Term::Literal(Literal {
                 value,

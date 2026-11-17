@@ -11,8 +11,6 @@ use super::VectorDbError;
 /// One stored capability brief: a normalized doc chunk plus the
 /// model-written purpose and its SVO normalization.
 #[derive(Debug, Clone, PartialEq)]
-/// One stored capability brief: a normalized doc chunk plus the
-/// model-written purpose and its SVO normalization.
 pub struct CapabilityRecord {
     /// Stable chunk id (`source_path#anchor`).
     pub id: String,
@@ -115,9 +113,6 @@ pub struct CapabilityLemma {
 /// title, purpose, predicate, and keyword columns. Returns `None`
 /// when nothing is indexable — callers return empty (never match-all).
 #[must_use]
-/// Build the capability FTS `MATCH` expression: ASCII tokens hit the
-/// title, purpose, predicate, and keyword columns. Returns `None`
-/// when nothing is indexable — callers return empty (never match-all).
 pub fn build_capability_fts_match(query: &str) -> Option<String> {
     use common_core::string::{fts_match_tokens, fts_quote};
     let ascii = fts_match_tokens(query);
@@ -136,10 +131,11 @@ const CAPABILITY_COLUMNS: &str = "id, project, crate_name, domain, title, purpos
         source_path, anchor, content_hash, model, prompt_version,
         origin, corpus_hash, status, gap_reason, generated_at";
 
-impl super::GuidanceDb {
+impl super::GuidanceSearchDb {
     /// Insert or replace capability rows without touching fragments.
     pub fn replace_capabilities(&self, rows: &[CapabilityRecord]) -> Result<usize, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .transaction(|tx| {
                 for row in rows {
                     fluent_db::query::execute(
@@ -187,7 +183,8 @@ impl super::GuidanceDb {
         &self,
         source_path: &str,
     ) -> Result<Vec<CapabilityRecord>, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .query_rows(
                 &format!("SELECT {CAPABILITY_COLUMNS} FROM capabilities WHERE source_path = ?1"),
                 &[&source_path],
@@ -215,7 +212,8 @@ impl super::GuidanceDb {
             .iter()
             .map(|id| rusqlite::types::Value::Text(id.clone()))
             .collect();
-        self.store
+        self.docs
+            .sqlite_store()
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(
                     conn,
@@ -234,7 +232,8 @@ impl super::GuidanceDb {
     /// recalls, so the count and the recall can never disagree.
     pub fn capability_ready_count(&self) -> Result<i64, VectorDbError> {
         let count = self
-            .store
+            .docs
+            .sqlite_store()
             .query_row(
                 "SELECT COUNT(*) FROM capabilities WHERE status = 'ready'",
                 &[],
@@ -246,7 +245,8 @@ impl super::GuidanceDb {
 
     /// Stored capability ids for one import origin (the removal sweep).
     pub fn capability_ids_with_origin(&self, origin: &str) -> Result<Vec<String>, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .query_rows(
                 "SELECT id FROM capabilities WHERE origin = ?1 ORDER BY id ASC",
                 &[&origin],
@@ -266,7 +266,8 @@ impl super::GuidanceDb {
             .iter()
             .map(|id| rusqlite::types::Value::Text(id.clone()))
             .collect();
-        self.store
+        self.docs
+            .sqlite_store()
             .with_conn(|conn| {
                 conn.execute(&sql, rusqlite::params_from_iter(values))
                     .map_err(fluent_db::error::DbError::from)
@@ -294,7 +295,8 @@ impl super::GuidanceDb {
              WHERE capabilities_fts MATCH ?1 AND c.status = 'ready'
              ORDER BY r ASC LIMIT ?2",
         );
-        self.store
+        self.docs
+            .sqlite_store()
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(
                     conn,
@@ -320,7 +322,7 @@ impl super::GuidanceDb {
         &self,
         lemmas: &[CapabilityLemma],
     ) -> Result<usize, VectorDbError> {
-        self.store
+        self.docs.sqlite_store()
             .transaction(|tx| {
                 let mut term_of: std::collections::HashMap<String, i64> =
                     std::collections::HashMap::new();
@@ -374,7 +376,8 @@ impl super::GuidanceDb {
             .map(|lemma| rusqlite::types::Value::Text(lemma.clone()))
             .collect();
         values.push(rusqlite::types::Value::Integer(limit as i64));
-        self.store
+        self.docs
+            .sqlite_store()
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| row.get(0))
             })
@@ -386,9 +389,6 @@ impl super::GuidanceDb {
 /// derived from README, Cargo, component gates, and jumps — never
 /// model-written. Cards link doc anchors to code paths.
 #[derive(Debug, Clone, PartialEq)]
-/// One deterministic project card: workspace, crate, or domain facts
-/// derived from README, Cargo, component gates, and jumps — never
-/// model-written. Cards link doc anchors to code paths.
 pub struct ProjectCard {
     /// Stable key (`kind:key`, e.g. `crate:guidance-core`).
     pub key: String,
@@ -435,10 +435,11 @@ impl ProjectCard {
 const PROJECT_CARD_COLUMNS: &str = "key, kind, title, body, source_path, anchor,
         aliases_json, code_paths_json, symbols_json, content_hash, generated_at";
 
-impl super::GuidanceDb {
+impl super::GuidanceSearchDb {
     /// Insert or replace project cards without touching fragments.
     pub fn replace_project_cards(&self, rows: &[ProjectCard]) -> Result<usize, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .transaction(|tx| {
                 for row in rows {
                     fluent_db::query::execute(
@@ -470,7 +471,8 @@ impl super::GuidanceDb {
 
     /// Every stored project card, ordered by key (deterministic render).
     pub fn project_cards_all(&self) -> Result<Vec<ProjectCard>, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .query_rows(
                 &format!("SELECT {PROJECT_CARD_COLUMNS} FROM project_cards ORDER BY key ASC"),
                 &[],
@@ -495,7 +497,8 @@ impl super::GuidanceDb {
 
     /// Every stored project card of one kind, ordered by key.
     pub fn project_cards_by_kind(&self, kind: &str) -> Result<Vec<ProjectCard>, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .query_rows(
                 &format!(
                 "SELECT {PROJECT_CARD_COLUMNS} FROM project_cards WHERE kind = ?1 ORDER BY key ASC"
@@ -521,7 +524,8 @@ impl super::GuidanceDb {
              WHERE project_cards_fts MATCH ?1 AND c.kind = ?2
              ORDER BY bm25(project_cards_fts) ASC LIMIT ?3"
             .to_string();
-        self.store
+        self.docs
+            .sqlite_store()
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(
                     conn,
@@ -543,7 +547,8 @@ impl super::GuidanceDb {
         kind: &str,
         keep: &[String],
     ) -> Result<usize, VectorDbError> {
-        self.store
+        self.docs
+            .sqlite_store()
             .transaction(|tx| {
                 let existing: Vec<String> = fluent_db::query::query_rows_from_iter(
                     tx,
@@ -571,15 +576,11 @@ impl super::GuidanceDb {
 
     /// Stored project-card count (orientation-plane coverage signal).
     pub fn project_card_count(&self) -> Result<i64, VectorDbError> {
-        let count = self
-            .store
-            .query_row("SELECT COUNT(*) FROM project_cards", &[], |row| {
-                row.get::<_, i64>(0)
-            })?;
+        let count = self.docs.sqlite_store().query_row(
+            "SELECT COUNT(*) FROM project_cards",
+            &[],
+            |row| row.get::<_, i64>(0),
+        )?;
         Ok(count.unwrap_or(0))
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/capabilities.rs"]
-mod tests;

@@ -61,9 +61,6 @@ use crate::{Describable, FieldAccess};
 /// [`FieldAccess`] type. This is what `field_names()` returns, and it is the
 /// single source of truth that the walker matches bare/quoted keys against.
 #[derive(Debug, Clone, Copy)]
-/// A minimal schema for member recognition: the declared field names of a
-/// [`FieldAccess`] type. This is what `field_names()` returns, and it is the
-/// single source of truth that the walker matches bare/quoted keys against.
 pub struct BoundarySchema<'a> {
     pub field_names: &'a [&'a str],
 }
@@ -73,9 +70,6 @@ pub struct BoundarySchema<'a> {
 /// keeping the same single walker.
 #[derive(Debug, Clone, Copy)]
 #[allow(clippy::struct_excessive_bools)]
-/// Tunable leniency for the boundary walker. The default (`lenient()`) mirrors
-/// the historical repair behavior; a caller can tighten individual knobs while
-/// keeping the same single walker.
 pub struct BoundaryOptions<'a> {
     /// When `Some`, member recognition is restricted to these field names and
     /// `repair_boundary` emits `members`. `None` is pure structural repair
@@ -128,8 +122,6 @@ impl Default for BoundaryOptions<'static> {
 /// The outcome of a boundary walk: the repaired document text plus, when a
 /// schema was given, the recognised `(field_name, value_string)` members.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// The outcome of a boundary walk: the repaired document text plus, when a
-/// schema was given, the recognised `(field_name, value_string)` members.
 pub struct BoundaryRepair {
     pub text: String,
     pub members: Vec<(String, String)>,
@@ -251,10 +243,6 @@ fn push_member(chars: &[char], members: &mut Vec<(String, String)>, key: &str, v
 /// first index to scan (the caller has already skipped leading prose when
 /// schema-blind).
 #[allow(clippy::many_single_char_names)]
-/// The single boundary walker: faithful port of the historical lexical repair
-/// (schema-blind), extended with schema member recognition. `start` must be the
-/// first index to scan (the caller has already skipped leading prose when
-/// schema-blind).
 fn walk(raw: &str, opts: &BoundaryOptions) -> (String, Vec<(String, String)>) {
     let chars: Vec<char> = raw.chars().collect();
     let n = chars.len();

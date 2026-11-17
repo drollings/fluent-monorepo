@@ -33,12 +33,11 @@ affinity  capability  credit_pool  feed_worker  flow  io  ladder  pool  queue  r
 
 Each is described below. The spec primitives are in §3.1–§3.7 plus §3.9; the bonus primitives (`AffinityScheduler`, `ResultPool`, `PriorityResultPool`, `StreamAbort`, `thread_local_resource!`) are in §3.10; the canonical first-Ok fallback combinator (`first_accept_in_order`) is in §3.11. (§3.8 is retired — see below.)
 
-> ROADMAP_20260903_LLM M11 removed the `llm_queue` module. The LLM
-> protocol types (`ChatMessage`, `LlmConfig`, `LlmError`, `LlmTask`,
+> The LLM protocol types (`ChatMessage`, `LlmConfig`, `LlmError`, `LlmTask`,
 > `LlmQueueConfig`) and `LlmRequestQueue` are owned by
 > `fluent_llm::protocol` (a thin wrapper over this crate's generic
-> `ResultPool`, composed — not re-implemented). Import LLM queue types
-> from `fluent_llm`, never from here.
+> `ResultPool`, composed — not re-implemented).  Import LLM queue types from
+> `fluent_llm`, never from here.
 
 ### 3.1 `Capability` — Bounded Resource Access
 
@@ -309,15 +308,14 @@ There is **no** fire-and-forget variant: because the worker protocol requires a 
 
 **`PriorityResultPool<T, R, E>`** (`pool/priority.rs:22-172`) — priority-ordered variant of `ResultPool`. Jobs are submitted with `submit(job, priority)`; higher priority values are dispatched first, FIFO within the same priority. Internally it uses the `BoundedPriorityQueue` from `queue.rs` — a `PriorityQueue` (ordering) behind a `std::sync::Mutex` (never held across an await, so the async mutex's waker bookkeeping would be pure overhead; poison recovered via `common_core::sync::lock`) with `Queue`-style close-wakes-waiters semantics. **`submit`/`submit_with_abort` apply backpressure**: they block while the queue is at capacity (`PoolError::Full` is the synchronous `BoundedPriorityQueue::push` fast path's error; `Pool(Closed)` surfaces from a submit after shutdown) instead of growing without bound. Workers follow the **drain-then-wait** pattern. `new(runtime, cap, handler)` sizes the queue to `cap * 4`; `with_queue_capacity(runtime, cap, queue_capacity, handler)` overrides it.
 
-**`LlmRequestQueue`** — MOVED (ROADMAP_20260903_LLM M9/M11). The typed
-`ResultPool` wrapper for LLM chat completions (`LlmRequestQueue`,
-`LlmTask`, `LlmConfig`, `ChatMessage`, `LlmQueueConfig`, `LlmError`) is
-owned by `fluent_llm::protocol`; the `Fn(LlmTask) ->
-Result<String, LlmError>` handler is supplied at construction time and the
-default OpenAI-compatible HTTP handler lives in
-`fluent_llm::llm_queue`. This crate stays transport-agnostic: compose the
-generic `ResultPool` / `PriorityResultPool` / `StreamAbort` primitives
-below for non-LLM work, and import LLM queue types from `fluent_llm`.
+**`LlmRequestQueue`** — The typed `ResultPool` wrapper for LLM chat
+completions (`LlmRequestQueue`, `LlmTask`, `LlmConfig`, `ChatMessage`,
+`LlmQueueConfig`, `LlmError`) is owned by `fluent_llm::protocol`; the
+`Fn(LlmTask) -> Result<String, LlmError>` handler is supplied at
+construction time and the default OpenAI-compatible HTTP handler lives in
+`fluent_llm::llm_queue`.  This crate stays transport-agnostic: compose the
+generic `ResultPool` / `PriorityResultPool` / `StreamAbort` primitives below
+for non-LLM work, and import LLM queue types from `fluent_llm`.
 
 ```rust
 // Canonical paths (M11 deleted fluent_concurrency::llm_queue):

@@ -142,8 +142,6 @@ pub enum SkipReason {
 /// Selection predicate for [`walk_files_filtered`] (P2 `FileSelection`
 /// building block; domain-agnostic — no file-kind knowledge here).
 #[derive(Debug, Clone, Default)]
-/// Selection predicate for [`walk_files_filtered`] (P2 `FileSelection`
-/// building block; domain-agnostic — no file-kind knowledge here).
 pub struct WalkFilter {
     /// Extensions to visit (without the dot); empty visits every file.
     pub extensions: HashSet<String>,
@@ -162,10 +160,6 @@ pub struct WalkFilter {
 /// Control characters are bytes below `0x20` except `\t`, `\n`, `\r`,
 /// plus `0x7f`.
 #[must_use]
-/// Returns `true` when `window` looks binary: the control-character ratio
-/// over the sniffed prefix exceeds [`BINARY_CONTROL_CHAR_RATIO`].
-/// Control characters are bytes below `0x20` except `\t`, `\n`, `\r`,
-/// plus `0x7f`.
 pub fn sniff_is_binary(window: &[u8]) -> bool {
     let end = window.len().min(BINARY_SNIFF_BYTES);
     let window = &window[..end];

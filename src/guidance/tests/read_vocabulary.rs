@@ -4,7 +4,7 @@
 //! repo convention. Pure: no I/O, no model.
 
 use super::*;
-use search_vector::aliases::SemanticAliases;
+use crate::query::aliases::SemanticAliases;
 
 #[test]
 fn query_terms_match_the_shared_funnel_rule() {

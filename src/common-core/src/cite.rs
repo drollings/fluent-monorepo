@@ -155,9 +155,6 @@ fn extract_range_at_colon(
 /// cited line range. `start == end` for a bare `file:line` input,
 /// where the span agrees byte-for-byte with [`extract_citations`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A `file:start-end` citation range: the file token plus the
-/// cited line range. `start == end` for a bare `file:line` input,
-/// where the span agrees byte-for-byte with [`extract_citations`].
 pub struct CitationRange {
     pub file: String,
     pub start: u32,

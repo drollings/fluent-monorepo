@@ -98,12 +98,6 @@ impl From<CapabilityError> for std::io::Error {
 /// caller keeps its own error taxonomy instead of funnelling it through this
 /// type. Nothing here substitutes a value for a failed join.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Why a capability-scoped blocking operation failed to produce a value.
-///
-/// A panic on the dedicated worker thread is the only failure: the closure's
-/// own result (including any error it carries) travels inside `R`, so each
-/// caller keeps its own error taxonomy instead of funnelling it through this
-/// type. Nothing here substitutes a value for a failed join.
 pub struct BlockingJoinError {
     /// The panic message, when the worker carried one, or a generic
     /// description if it did not.
@@ -225,16 +219,9 @@ pub trait Capability: Send + Sync + 'static {
 /// let caps = CapabilitySet::new().with(FsCapability);
 /// assert!(caps.get::<FsCapability>().is_some());
 /// ```
+#[derive(Clone)]
 pub struct CapabilitySet {
     caps: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
-}
-
-impl Clone for CapabilitySet {
-    fn clone(&self) -> Self {
-        Self {
-            caps: self.caps.clone(),
-        }
-    }
 }
 
 impl CapabilitySet {

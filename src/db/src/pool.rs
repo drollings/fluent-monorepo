@@ -28,10 +28,6 @@ use crate::error::DbError;
 /// Defaults preserve the historical pool shape: 5 connections and a 5s busy
 /// timeout (matching `crate::sqlite::open_wal`'s `busy_timeout=5000`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Pool sizing and busy-timeout configuration.
-///
-/// Defaults preserve the historical pool shape: 5 connections and a 5s busy
-/// timeout (matching `crate::sqlite::open_wal`'s `busy_timeout=5000`).
 pub struct PoolConfig {
     /// Number of `Connection`s to open up front. Defaults to `5`.
     pub size: usize,
@@ -458,9 +454,15 @@ impl SqlitePool {
                 .transaction(move |tx| crate::outbox::claim_batch(tx, limit, lease_ms, now_ms))
                 .await
             {
-                Err(DbError::Busy(_)) if attempts < 20 => {
+                Err(e)
+                    if crate::outbox::is_claim_retryable(&e)
+                        && attempts < crate::outbox::OUTBOX_CLAIM_MAX_ATTEMPTS =>
+                {
                     attempts += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        crate::outbox::OUTBOX_CLAIM_RETRY_DELAY_MS,
+                    ))
+                    .await;
                 }
                 done => return done,
             }

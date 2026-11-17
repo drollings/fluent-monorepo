@@ -76,7 +76,7 @@ fn retry_builds_context_with_correct_metadata() {
     let base = WorkContext::default();
     let ctx = retry.build_retry_context(&base, 1, "test error");
 
-    assert_eq!(ctx.get::<i64>(METADATA_RETRY_ATTEMPT), Some(&1));
+    assert_eq!(ctx.get::<i64>(METADATA_RETRY_ATTEMPT).as_deref(), Some(&1));
     assert_eq!(
         ctx.metadata.get(METADATA_PARSE_ERROR),
         Some(&MetadataValue::String("test error".into()))

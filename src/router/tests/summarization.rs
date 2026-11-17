@@ -49,7 +49,7 @@ fn test_result_scorer_accepts_pristine_json() {
         MetadataValue::String("the full response text".into()),
     );
     let out = scorer.execute(&ctx).expect("pristine JSON must score");
-    let scored: ScoredResult = out.data_as().expect("typed ScoredResult");
+    let scored: ScoredResult = out.data_ref().expect("typed ScoredResult");
     assert_eq!(scored.score, 0.5);
     assert!(!scored.accepted, "0.5 < 0.7 threshold");
     assert_eq!(scored.content, "the full response text");
@@ -79,7 +79,7 @@ fn test_result_scorer_recovers_fenced_json() {
         MetadataValue::String("the full response text".into()),
     );
     let out = scorer.execute(&ctx).expect("fenced JSON must recover");
-    let scored: ScoredResult = out.data_as().expect("typed ScoredResult");
+    let scored: ScoredResult = out.data_ref().expect("typed ScoredResult");
     assert_eq!(scored.score, 0.9);
     assert!(scored.accepted, "0.9 >= 0.7 threshold");
 }

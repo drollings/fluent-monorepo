@@ -40,7 +40,7 @@ fn node_sync_skips_when_docs_unchanged() {
     std::fs::create_dir(&json_dir).expect("mkdir");
     write_doc(&json_dir, "a.json", "src/a.rs", "fn_a");
     write_doc(&json_dir, "b.json", "src/b.rs", "fn_b");
-    let db = GuidanceDb::open(&dir.path().join("n.db")).expect("open");
+    let db = GuidanceSearchDb::open(&dir.path().join("n.db")).expect("open");
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 2);
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 0);
     assert_eq!(db.get_node_count().expect("count"), 2);
@@ -54,7 +54,7 @@ fn node_sync_resyncs_modified_doc() {
     let json_dir = dir.path().join("json");
     std::fs::create_dir(&json_dir).expect("mkdir");
     write_doc(&json_dir, "a.json", "src/a.rs", "fn_a");
-    let db = GuidanceDb::open(&dir.path().join("n.db")).expect("open");
+    let db = GuidanceSearchDb::open(&dir.path().join("n.db")).expect("open");
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 1);
     touch_future(&json_dir.join("a.json"));
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 1);
@@ -70,7 +70,7 @@ fn node_sync_converges_deleted_doc() {
     std::fs::create_dir(&json_dir).expect("mkdir");
     write_doc(&json_dir, "a.json", "src/a.rs", "fn_a");
     write_doc(&json_dir, "b.json", "src/b.rs", "fn_b");
-    let db = GuidanceDb::open(&dir.path().join("n.db")).expect("open");
+    let db = GuidanceSearchDb::open(&dir.path().join("n.db")).expect("open");
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 2);
     std::fs::remove_file(json_dir.join("b.json")).expect("remove");
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 1);
@@ -86,7 +86,7 @@ fn node_sync_dedupes_duplicate_members_within_one_rebuild() {
     std::fs::create_dir(&json_dir).expect("mkdir");
     write_doc(&json_dir, "a.json", "src/a.rs", "same_member");
     write_doc(&json_dir, "b.json", "src/b.rs", "same_member");
-    let db = GuidanceDb::open(&dir.path().join("n.db")).expect("open");
+    let db = GuidanceSearchDb::open(&dir.path().join("n.db")).expect("open");
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 1);
     assert_eq!(db.get_node_count().expect("count"), 1);
 }
@@ -100,7 +100,7 @@ fn node_sync_empty_dir_clears_stale_nodes() {
     let json_dir = dir.path().join("json");
     std::fs::create_dir(&json_dir).expect("mkdir");
     write_doc(&json_dir, "a.json", "src/a.rs", "fn_a");
-    let db = GuidanceDb::open(&dir.path().join("n.db")).expect("open");
+    let db = GuidanceSearchDb::open(&dir.path().join("n.db")).expect("open");
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 1);
     std::fs::remove_file(json_dir.join("a.json")).expect("remove");
     assert_eq!(db.sync_from_dir(&json_dir).expect("sync"), 0);
@@ -119,7 +119,7 @@ fn legacy_guidance_nodes_table_migrates_to_nodes() {
     )
     .expect("seed legacy");
     drop(conn);
-    let db = GuidanceDb::open(&db_path).expect("open migrates");
+    let db = GuidanceSearchDb::open(&db_path).expect("open migrates");
     assert_eq!(db.get_node_count().expect("count"), 1);
     assert_eq!(db.sync_from_dir(dir.path()).expect("sync empty dir"), 0);
 }

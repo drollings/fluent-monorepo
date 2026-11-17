@@ -230,7 +230,7 @@ impl Ladder {
         wctx.metadata
             .insert("response".into(), MetadataValue::from(assembled.clone()));
         let (accepted, assembler_confidence) = match scorer.execute(&wctx) {
-            Ok(output) => match output.data_as::<ScoredResult>() {
+            Ok(output) => match output.data_ref::<ScoredResult>() {
                 Ok(scored) => (scored.accepted, scored.score),
                 Err(e) => {
                     tracing::warn!(

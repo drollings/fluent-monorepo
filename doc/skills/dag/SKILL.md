@@ -89,7 +89,7 @@ completed.
 ```rust
 impl<K: Eq + Hash + Clone + Display, S: Send + Sync + 'static> CheckpointedStepGraph<K, S> {
     pub fn new() -> Self;
-    pub fn add_step(&mut self, key: K, deps: &[K], state: S) -> Result<(), GraphError>;  // GraphError::DuplicateStep
+    pub fn add_step(&mut self, key: K, deps: &[K], state: S) -> Result<(), GraphError>;  // GraphError::DuplicateNode
     pub fn checkpoint(&mut self, name: K) -> Result<(), GraphError>;   // names a rewind point
     pub fn complete(&mut self, key: &K);                               // marks a step finished
     pub fn is_ready(&self, key: &K) -> bool;
@@ -108,8 +108,9 @@ impl<K: Eq + Hash + Clone + Display, S: Send + Sync + 'static> CheckpointedStepG
 }
 ```
 
-`rewind_to(name)` returns the steps after the named checkpoint (the suffix to
-re-run) and un-completes them; the consumer owns any status resets (e.g.
+`rewind_to(name)` returns the named checkpoint itself plus the steps after
+it (checkpoint-inclusive suffix to re-run), clears the checkpoint, and
+un-completes them; the consumer owns any status resets (e.g.
 resetting per-step result state). The router's `DependencySession` composes it
 — see `dag_session.rs` — keeping the public session API unchanged.
 

@@ -2,9 +2,9 @@
 //! unscoped queries and `--full-map` keep the whole member dump. The
 //! map frame (workspace card) survives every trim.
 use super::*;
+use crate::query::search_db::GuidanceSearchDb;
 use crate::read::planes::orientation::CardFinding;
 use crate::tests::common::db_project_card;
-use search_vector::db::GuidanceDb;
 
 fn card(kind: &str, title: &str, code_paths: &[&str]) -> CardFinding {
     CardFinding {
@@ -33,7 +33,7 @@ fn scoped_cards_keep_the_frame_and_members_in_scope() {
     assert_eq!(frame_only[0].kind, "workspace");
 }
 
-fn map_workspace() -> (tempfile::TempDir, GuidanceDb) {
+fn map_workspace() -> (tempfile::TempDir, GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").expect("write");
     std::fs::create_dir_all(dir.path().join("src/guidance/src")).expect("mkdir");
@@ -48,7 +48,7 @@ fn map_workspace() -> (tempfile::TempDir, GuidanceDb) {
         "//! Coral router routes requests.\npub fn route() {}\n",
     )
     .expect("write");
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     db.replace_project_cards(&[
         db_project_card(
             "workspace:ws",

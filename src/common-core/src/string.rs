@@ -134,18 +134,12 @@ pub fn contains_ignore_case(text: &str, pattern: &str) -> bool {
 }
 
 /// Whole-token match with a caller-supplied separator predicate
-/// (M3.2 shared core for cue-style matching): `token` is trimmed,
+/// (shared core for cue-style matching): `token` is trimmed,
 /// empty never matches, and `text` splits on `is_separator` with
 /// exact word equality. Case handling belongs to the caller (pass
 /// pre-lowered text for case-insensitive matching, as intent
 /// routing does).
 #[must_use]
-/// Whole-token match with a caller-supplied separator predicate
-/// (M3.2 shared core for cue-style matching): `token` is trimmed,
-/// empty never matches, and `text` splits on `is_separator` with
-/// exact word equality. Case handling belongs to the caller (pass
-/// pre-lowered text for case-insensitive matching, as intent
-/// routing does).
 pub fn contains_token(text: &str, token: &str, is_separator: impl Fn(char) -> bool) -> bool {
     let token = token.trim();
     if token.is_empty() {
@@ -400,12 +394,8 @@ fn decode_entity(s: &str) -> Option<(&'static str, usize)> {
 }
 
 // ── ANSI / control-character sanitizers ───────────────────────────────
-// NOTE (ROADMAP_20260903_LLM M11): think-block stripping
-// (`strip_thinking_blocks`, `strip_think_block`, `StreamingThinkFilter`)
-// and the SSE drainer (`drain_sse_lines`) lived here through M10 as
-// deprecated byte-identical shims of `fluent_llm::{thinking, sse}`; M11
-// deleted them. The generic `find_subseq` stays (composed by
-// `fluent_llm::thinking`).
+// Think-block stripping and the SSE drainer moved to
+// `fluent_llm::{thinking, sse}`; the generic `find_subseq` stays.
 
 /// Remove unsafe control / formatting characters: C0/C1 controls, bidi
 /// overrides (U+202A–U+202E), line/paragraph separators (U+2028/U+2029),
@@ -499,24 +489,6 @@ fn skip_csi_final(chars: &mut Chars<'_>) {
 }
 
 // ── Doc/identifier helpers ─────────────────────────────────────────────
-
-/// Strip Rust `///`, `//!`, and `#` doc-comment prefixes from every line,
-/// preserving inner indentation. The `#` arm also strips the Markdown-hidden
-/// `# ` prefix on doc examples.
-pub fn trim_doc_prefix(text: &str) -> String {
-    let mut lines: Vec<&str> = text.lines().collect();
-    for line in &mut lines {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("///") {
-            *line = rest.strip_prefix(' ').unwrap_or(rest);
-        } else if let Some(rest) = trimmed.strip_prefix("//!") {
-            *line = rest.strip_prefix(' ').unwrap_or(rest);
-        } else if let Some(rest) = trimmed.strip_prefix('#') {
-            *line = rest.strip_prefix(' ').unwrap_or(rest);
-        }
-    }
-    lines.join("\n")
-}
 
 /// Identifier case-style classification for a query string.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -761,14 +733,6 @@ pub fn is_path_token(s: &str) -> bool {
     s.len() >= 3 && (s.contains('/') || s.contains('\\'))
 }
 
-pub fn is_test_path(path: &str) -> bool {
-    let lower = path.to_lowercase();
-    lower.contains("test")
-        || lower.contains("spec")
-        || lower.ends_with("_test.zig")
-        || lower.ends_with("_tests.zig")
-}
-
 pub fn strip_boilerplate(text: &str, prefix: &str) -> String {
     if let Some(stripped) = text.strip_prefix(prefix) {
         stripped.trim_start().to_string()
@@ -816,31 +780,6 @@ pub fn strip_nl_prefix(text: &str) -> String {
         }
     }
     text.to_string()
-}
-
-pub fn is_noisy_comment(comment: &str) -> bool {
-    if comment.len() < 10 {
-        return true;
-    }
-    let non_alpha: usize = comment
-        .chars()
-        .filter(|c| !c.is_alphanumeric() && !c.is_whitespace())
-        .count();
-    non_alpha as f64 / comment.len() as f64 > 0.5
-}
-
-pub fn skill_name_from_ref(ref_path: &str) -> String {
-    let normalized = ref_path.replace('\\', "/");
-    let basename = normalized.rsplit('/').next().unwrap_or(ref_path);
-    if basename.eq_ignore_ascii_case("SKILL.md") {
-        normalized
-            .rsplit('/')
-            .nth(1)
-            .unwrap_or(basename)
-            .to_string()
-    } else {
-        basename.to_string()
-    }
 }
 
 /// Find the first occurrence of a byte subsequence in a slice starting from `start`.
@@ -899,10 +838,6 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
 /// bigram indexes carry no junk pairs. Shared by the FTS5 application-level
 /// CJK bigram expansion (guidance index + query sides).
 #[must_use]
-/// Whether a char is CJK (Han, Hiragana, Katakana, Hangul syllables +
-/// Jamo). Letter/syllable blocks only — CJK punctuation is excluded so
-/// bigram indexes carry no junk pairs. Shared by the FTS5 application-level
-/// CJK bigram expansion (guidance index + query sides).
 pub fn is_cjk_char(c: char) -> bool {
     matches!(c,
         '\u{1100}'..='\u{11FF}' // Hangul Jamo
@@ -922,11 +857,6 @@ pub fn is_cjk_char(c: char) -> bool {
 /// both expand CJK runs to space-joined bigrams; non-CJK text breaks runs
 /// and runs shorter than two chars emit nothing.
 #[must_use]
-/// Overlapping character bigrams over CJK runs — the application-level half
-/// of the FTS CJK contract (`FTS_CJK_STRATEGY = "cjk-bigram-expansion"`).
-/// SQLite FTS5 has no CJK dictionary tokenizer, so index and query sides
-/// both expand CJK runs to space-joined bigrams; non-CJK text breaks runs
-/// and runs shorter than two chars emit nothing.
 pub fn cjk_bigrams(text: &str) -> Vec<String> {
     fn flush(run: &mut Vec<char>, out: &mut Vec<String>) {
         for pair in run.windows(2) {
@@ -961,19 +891,6 @@ pub fn cjk_bigrams(text: &str) -> Vec<String> {
 /// assert_eq!(extract_tag("<comment></comment>", "comment"), None);
 /// ```
 #[must_use]
-/// Extract the first `<tag>...</tag>` body, trimmed (`None` when either
-/// delimiter is missing or the body trims to empty). Callers fall back to
-/// the raw response on `None` — the tag is advisory, never load-bearing.
-///
-/// # Examples
-///
-/// ```
-/// use common_core::string::extract_tag;
-///
-/// assert_eq!(extract_tag("<comment> hi </comment>", "comment"), Some("hi"));
-/// assert_eq!(extract_tag("no tags", "comment"), None);
-/// assert_eq!(extract_tag("<comment></comment>", "comment"), None);
-/// ```
 pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
@@ -993,7 +910,7 @@ pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
 /// Case-preserving (unlike [`split_tokens`]-style lowercasing tokenizers in
 /// `search-vector::tokens`): `bug_triage` → `["bug", "triage"]`, so a query
 /// naming only a fragment still matches. Moved verbatim from the router's
-/// chart store (M7.2); the indexed-doc-text join stays with the chart type.
+/// chart store; the indexed-doc-text join stays with the chart type.
 ///
 /// # Examples
 ///
@@ -1004,21 +921,6 @@ pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
 /// assert_eq!(ascii_alnum_tokens(""), Vec::<String>::new());
 /// ```
 #[must_use]
-/// Split a name on non-ASCII-alphanumeric separators, dropping empties.
-///
-/// Case-preserving (unlike [`split_tokens`]-style lowercasing tokenizers in
-/// `search-vector::tokens`): `bug_triage` → `["bug", "triage"]`, so a query
-/// naming only a fragment still matches. Moved verbatim from the router's
-/// chart store (M7.2); the indexed-doc-text join stays with the chart type.
-///
-/// # Examples
-///
-/// ```
-/// use common_core::string::ascii_alnum_tokens;
-///
-/// assert_eq!(ascii_alnum_tokens("bug_triage"), vec!["bug", "triage"]);
-/// assert_eq!(ascii_alnum_tokens(""), Vec::<String>::new());
-/// ```
 pub fn ascii_alnum_tokens(name: &str) -> Vec<String> {
     AsciiAlnumTokens::new(name).map(str::to_string).collect()
 }
@@ -1038,20 +940,6 @@ pub fn ascii_alnum_tokens(name: &str) -> Vec<String> {
 /// assert_eq!(tokens, vec!["Foo", "Bar", "baz"]);
 /// ```
 #[derive(Debug, Clone)]
-/// Streaming ASCII-alphanumeric tokenizer: the zero-allocation walk behind
-/// [`ascii_alnum_tokens`], borrowing the input and yielding one case-
-/// preserved token per separator-delimited run (same contract, no `String`
-/// per token). Skips leading/trailing/repeated separators; empty input
-/// yields nothing.
-///
-/// # Examples
-///
-/// ```
-/// use common_core::string::AsciiAlnumTokens;
-///
-/// let tokens: Vec<&str> = AsciiAlnumTokens::new("Foo.Bar-baz").collect();
-/// assert_eq!(tokens, vec!["Foo", "Bar", "baz"]);
-/// ```
 pub struct AsciiAlnumTokens<'a> {
     rest: &'a str,
 }
@@ -1196,23 +1084,6 @@ pub fn apply_spans_rightmost(text: &str, spans: Vec<(usize, usize, &str)>) -> St
 /// assert_eq!(fts_match_tokens("!!!"), Vec::<String>::new());
 /// ```
 #[must_use]
-/// FTS5 match-expression tokenizer shared by every lexical recall arm:
-/// Unicode-alphanumeric runs, lowercased, deduped in first-seen order.
-/// Differs from [`ascii_alnum_tokens`] on purpose (Unicode-aware,
-/// case-folding, deduped): FTS5's `unicode61` tokenizer matches folded, and
-/// short match expressions keep the query planner cheap. Extracted from
-/// `search-vector`'s match builder so coral's node index composes the same
-/// token stream instead of growing a second one.
-///
-/// # Examples
-///
-/// ```
-/// use common_core::string::fts_match_tokens;
-///
-/// assert_eq!(fts_match_tokens("find AlphaSymbol"), vec!["find", "alphasymbol"]);
-/// assert_eq!(fts_match_tokens("hello hello"), vec!["hello"]);
-/// assert_eq!(fts_match_tokens("!!!"), Vec::<String>::new());
-/// ```
 pub fn fts_match_tokens(query: &str) -> Vec<String> {
     let mut tokens: Vec<String> = Vec::new();
     for token in query.split(|c: char| !c.is_alphanumeric()) {
@@ -1239,17 +1110,6 @@ pub fn fts_match_tokens(query: &str) -> Vec<String> {
 /// assert_eq!(fts_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
 /// ```
 #[must_use]
-/// Quote one FTS5 match token: wrap in double quotes, doubling embedded
-/// quotes so user input can never act as an operator or break the expression.
-///
-/// # Examples
-///
-/// ```
-/// use common_core::string::fts_quote;
-///
-/// assert_eq!(fts_quote("hi"), "\"hi\"");
-/// assert_eq!(fts_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
-/// ```
 pub fn fts_quote(token: &str) -> String {
     format!("\"{}\"", token.replace('"', "\"\""))
 }

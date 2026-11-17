@@ -324,7 +324,7 @@ async fn fuse_search_output_is_byte_stable() {
     let dir = tempfile::tempdir().expect("tempdir");
     let workspace = dir.path().to_str().unwrap().to_string();
     let db_path = dir.path().join("parity.db");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open db");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open db");
     for (id, rel, text) in [
         ("file-a", "a.rs", "the alpha needle sleeps here\n"),
         ("file-b", "b.rs", "the beta stone rests here\n"),
@@ -575,7 +575,7 @@ fn context_lines_carry_provenance_and_cap() {
 fn context_helper_degrades_to_empty_without_anchors() {
     // No hits means no anchors: empty lines, never an error — the
     // caller renders hits only.
-    let db = GuidanceDb::open_in_memory().expect("memory db");
+    let db = GuidanceSearchDb::open_in_memory().expect("memory db");
     let lines = context_lines_for_hits(&[], &db, "/repo").expect("empty");
     assert!(lines.is_empty());
 }
@@ -658,8 +658,8 @@ async fn item_chunk_citations_verify_item_ranges() {
     let abs = dir.path().join("a.rs").to_string_lossy().into_owned();
     std::fs::write(&abs, text).expect("write");
     let db_path = dir.path().join("cite.db");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open db");
-    let file = search_vector::db::FileRecord {
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open db");
+    let file = guidance_core::query::search_db::FileRecord {
         id: abs.clone(),
         absolute_path: abs.clone(),
         relative_path: "a.rs".to_string(),
@@ -844,11 +844,11 @@ fn dual_merge_keeps_both_provenance_traces() {
 
 #[test]
 fn dual_indexed_db_rows_fuse_to_single_hit() {
-    use search_vector::db::{FileRecord, FragmentRecord};
+    use guidance_core::query::search_db::{FileRecord, FragmentRecord};
     let dir = tempfile::tempdir().expect("tempdir");
     let ws = dir.path().to_str().unwrap().to_string();
     let db_path = dir.path().join("dual.db");
-    let db = search_vector::GuidanceDb::open(&db_path).expect("open db");
+    let db = guidance_core::query::search_db::GuidanceSearchDb::open(&db_path).expect("open db");
     let file = |id: &str, abs: &str| FileRecord {
         id: id.to_string(),
         absolute_path: abs.to_string(),
@@ -1024,7 +1024,9 @@ fn span_repo_sweep_classifies_unresolved() {
         eprintln!("SKIP: set GUIDANCE_MEASURE_DB to a .guidance.db path");
         return;
     }
-    let db = search_vector::GuidanceDb::open(std::path::Path::new(&db_path)).expect("open db");
+    let db =
+        guidance_core::query::search_db::GuidanceSearchDb::open(std::path::Path::new(&db_path))
+            .expect("open db");
     let files = db.list_files().expect("list files");
     let mut checked = 0usize;
     let mut resolved = 0usize;

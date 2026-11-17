@@ -115,14 +115,14 @@ pub fn apply_scope_prior(
 /// Score, order, and rank candidates: `score = Σ 1/(K + rank)` over found
 /// recalls, lexicographic id tie-break. Source: `fuseCandidates`.
 /// Scoring composes the shared seam
-/// (`search_vector::fusion::score_postings` — the one kernel-call site);
+/// (`crate::query::rrf::score_postings` — the one kernel-call site);
 /// the trace filtering, composite wrap, and rank assignment stay here
 /// (domain logic, not math).
 #[must_use]
 /// Score, order, and rank candidates: `score = Σ 1/(K + rank)` over found
 /// recalls, lexicographic id tie-break. Source: `fuseCandidates`.
 /// Scoring composes the shared seam
-/// (`search_vector::fusion::score_postings` — the one kernel-call site);
+/// (`crate::query::rrf::score_postings` — the one kernel-call site);
 /// the trace filtering, composite wrap, and rank assignment stay here
 /// (domain logic, not math).
 pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandidate> {
@@ -136,7 +136,7 @@ pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandid
                 .map(|trace| (candidate.id.clone(), trace.rank.unwrap_or(usize::MAX)))
         })
         .collect();
-    let scores: HashMap<String, f64> = search_vector::fusion::score_postings(postings, RRF_K);
+    let scores: HashMap<String, f64> = crate::query::rrf::score_postings(postings, RRF_K);
     for candidate in &mut candidates {
         // The single sanctioned composite wrap: kernel output in,
         // ordinal out. Nothing else in the tree constructs this type

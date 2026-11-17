@@ -66,7 +66,7 @@ fn stubs_name_only_documented_public_items() {
         "rotation_agreement",
         "route_choice",
         "route_hierarchical",
-        "decision_cache_key",
+        "CacheKeyInput::key",
         "CacheKeyInput",
         "DecisionCache",
         "canary_signature",

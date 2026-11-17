@@ -1,12 +1,18 @@
 //! Human-readable output: `format_json`, `format_csv`, `format_size`/`parse_size`, `Column`/`Table`.
 
+use serde::Serialize;
 use std::fmt::Write as _;
 
-/// Formats a JSON value as a pretty-printed string with 2-space indent.
-/// The `_indent` parameter is accepted for API compatibility but only 2-space
-/// indent is supported (matching `serde_json::to_string_pretty`).
-pub fn format_json(value: &serde_json::Value, _indent: usize) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_default()
+/// Formats a JSON value as a pretty-printed string with `indent` spaces per
+/// level (`indent = 2` matches `serde_json::to_string_pretty` byte-for-byte;
+/// larger indents are capped at 32 spaces to bound the indent buffer).
+pub fn format_json(value: &serde_json::Value, indent: usize) -> String {
+    let indent_bytes = vec![b' '; indent.min(32)];
+    let formatter = serde_json::ser::PrettyFormatter::with_indent(&indent_bytes);
+    let mut out = Vec::new();
+    let mut ser = serde_json::Serializer::with_formatter(&mut out, formatter);
+    value.serialize(&mut ser).ok();
+    String::from_utf8(out).unwrap_or_default()
 }
 
 fn csv_escape(field: &str) -> String {

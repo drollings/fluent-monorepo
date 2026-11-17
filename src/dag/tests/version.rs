@@ -99,7 +99,7 @@ fn duplicate_version_is_ambiguous_with_candidates() {
         )
         .expect_err("duplicate versions must be ambiguous");
     match err {
-        common_core::error::ResolverError::AmbiguousDependency { name, candidates } => {
+        crate::error::ResolverError::AmbiguousDependency { name, candidates } => {
             assert_eq!(name, "bars");
             assert_eq!(candidates.len(), 2);
         }

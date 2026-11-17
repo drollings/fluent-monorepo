@@ -101,7 +101,9 @@ where
     /// Create a bounded cache holding up to `capacity` entries.
     ///
     /// `load` produces a value for a missing key (and may fail with `E`).
-    /// Returns an error when `capacity` is zero.
+    /// Returns `Err("<what> capacity must be non-zero, got 0")` when
+    /// `capacity` is zero — a `String`, not a typed error, because capacity
+    /// is a call-site constant and the message is only ever logged.
     pub fn new(
         capacity: usize,
         load: impl Fn(&K) -> Result<V, E> + Send + Sync + 'static,
@@ -331,12 +333,8 @@ where
     }
 }
 
-// NOTE (ROADMAP_20260903_LLM M11): the LLM response cache
-// (`CachedResponse`/`ResponseCache` with TTL lazy-eviction and the
-// `"{model}:{sha256(request_json)}"` keying) lived here through M10 as
-// deprecated byte-identical shims of `fluent_llm::cache`; M11 deleted them.
-// The generic cache mechanism in this file (`LoadCache`, `ArcLoadCache`,
-// the weighted-LRU eviction engine) stays — it is not LLM policy.
+// The LLM response cache moved to `fluent_llm::cache`; what stays is the
+// generic cache mechanism (`LoadCache`, `ArcLoadCache`, weighted-LRU).
 
 // ─── Weighted-LRU eviction engine ─────────────────────────────────────────
 //

@@ -4,8 +4,8 @@
 //! recall. Cards render with source anchors and code paths, so every
 //! answer jumps deterministically from card to doc to code.
 
+use crate::query::search_db::{GuidanceSearchDb, ProjectCard};
 use common_core::sort::sorted_by_vec;
-use search_vector::db::{GuidanceDb, ProjectCard};
 
 /// One card finding for the read engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub struct OrientationPlane {
 
 impl OrientationPlane {
     /// Load every stored card, key-ordered (the store already sorts).
-    pub fn load(db: &GuidanceDb) -> Result<Self, String> {
+    pub fn load(db: &GuidanceSearchDb) -> Result<Self, String> {
         let cards = db
             .project_cards_all()
             .map_err(|error| format!("project cards: {error}"))?;

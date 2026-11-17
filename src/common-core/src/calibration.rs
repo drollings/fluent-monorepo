@@ -1,6 +1,7 @@
 //! Calibration harness for confidence vs task-value thresholds.
 //!
-//! Pure, zero-domain: no I/O, no domain types. Composed everywhere thresholds
+//! Zero-domain: no domain types. Sweep math is pure; `emit_markdown_artifact`
+//! is the one best-effort I/O edge. Composed everywhere thresholds
 //! are trusted for caching/persisting decisions. The shipping gate is
 //! precision ≥0.90 and FPR ≤0.05 on control groups (see [`GateBars::SHIPPING`]).
 //!
@@ -13,19 +14,6 @@
 
 /// Precision/recall/FPR at a single operating point.
 #[derive(Debug, Clone, PartialEq)]
-/// Calibration harness for confidence vs task-value thresholds.
-///
-/// Pure, zero-domain: no I/O, no domain types. Composed everywhere thresholds
-/// are trusted for caching/persisting decisions. The gate is precision ≥0.90
-/// and FPR ≤0.05 on control groups (see [`GateBars::SHIPPING`]).
-///
-/// Scope: threshold sweeps over scored cases only. Must-fire/must-not-fire
-/// control gates (binary accept at a frozen expectation, no scores, no
-/// thresholds — e.g. the kernels control/treatment gate in
-/// `protopyne-kernels/src/calibration.rs`) do not report through this
-/// harness: mapping their rows onto scores and a fictitious threshold would
-/// change what a row means while adding a parameter no gate reads.
-/// Precision/recall/FPR at a single operating point.
 pub struct CalibrationReport {
     /// TP / (TP+FP) — 1.0 when no positive predictions (no false positives).
     pub precision: f64,
@@ -77,17 +65,9 @@ impl CalibrationReport {
 /// and maximum FPR. The shipping default (0.90 / 0.05) preserves the
 /// historical operating point; call sites with their own bars use
 /// `passes_gate_at` instead of forking the predicate. (Deliberately
-/// not `score::ThresholdGate`: that gate is coherence/safety with
-/// `>=` on both axes, and FPR needs `<=` — routing through it would
-/// invert the comparison under a borrowed name.)
+/// not a shared coherence/safety gate: FPR needs `<=` while coherence
+/// needs `>=` — routing through one borrowed name would invert a comparison.)
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Bars for [`CalibrationReport::passes_gate`]: minimum precision
-/// and maximum FPR. The shipping default (0.90 / 0.05) preserves the
-/// historical operating point; call sites with their own bars use
-/// `passes_gate_at` instead of forking the predicate. (Deliberately
-/// not `score::ThresholdGate`: that gate is coherence/safety with
-/// `>=` on both axes, and FPR needs `<=` — routing through it would
-/// invert the comparison under a borrowed name.)
 pub struct GateBars {
     /// Minimum precision to pass.
     pub precision_min: f64,
@@ -184,17 +164,12 @@ pub fn default_thresholds() -> Vec<f64> {
     (0..=20).map(|i| f64::from(i) * 0.05).collect()
 }
 
-/// Per-label hit counts for multi-class precision/recall (M2.2 shared
+/// Per-label hit counts for multi-class precision/recall (shared
 /// core). The empty-denominator convention is a caller-supplied
 /// fallback, never a hidden constant: triage passes 0.0 (an
 /// unpredicted class scores 0), intent measurement passes 1.0 (an
 /// unused class cannot fail its bar).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Per-label hit counts for multi-class precision/recall (M2.2 shared
-/// core). The empty-denominator convention is a caller-supplied
-/// fallback, never a hidden constant: triage passes 0.0 (an
-/// unpredicted class scores 0), intent measurement passes 1.0 (an
-/// unused class cannot fail its bar).
 pub struct ClassCounts {
     /// Class label.
     pub label: String,
@@ -223,8 +198,6 @@ impl ClassCounts {
 /// Precision with an explicit empty-denominator fallback: hits /
 /// predicted, `empty` when predicted == 0.
 #[must_use]
-/// Precision with an explicit empty-denominator fallback: hits /
-/// predicted, `empty` when predicted == 0.
 pub fn precision_or(hits: usize, predicted: usize, empty: f64) -> f64 {
     if predicted == 0 {
         empty
@@ -236,8 +209,6 @@ pub fn precision_or(hits: usize, predicted: usize, empty: f64) -> f64 {
 /// Recall with an explicit empty-denominator fallback: hits / actual,
 /// `empty` when actual == 0.
 #[must_use]
-/// Recall with an explicit empty-denominator fallback: hits / actual,
-/// `empty` when actual == 0.
 pub fn recall_or(hits: usize, actual: usize, empty: f64) -> f64 {
     if actual == 0 {
         empty
@@ -249,8 +220,6 @@ pub fn recall_or(hits: usize, actual: usize, empty: f64) -> f64 {
 /// Macro-averaged precision over classes (0.0 when there are none,
 /// matching the triage rollup).
 #[must_use]
-/// Macro-averaged precision over classes (0.0 when there are none,
-/// matching the triage rollup).
 pub fn macro_precision_or(classes: &[ClassCounts], empty: f64) -> f64 {
     if classes.is_empty() {
         0.0
@@ -262,8 +231,6 @@ pub fn macro_precision_or(classes: &[ClassCounts], empty: f64) -> f64 {
 /// Macro-averaged recall over classes (0.0 when there are none,
 /// matching the triage rollup).
 #[must_use]
-/// Macro-averaged recall over classes (0.0 when there are none,
-/// matching the triage rollup).
 pub fn macro_recall_or(classes: &[ClassCounts], empty: f64) -> f64 {
     if classes.is_empty() {
         0.0
@@ -282,15 +249,6 @@ pub fn macro_recall_or(classes: &[ClassCounts], empty: f64) -> f64 {
 /// rows with the fixed `threshold | precision | recall | FPR | support | gate`
 /// schema; the generic one renders arbitrary string grids.
 pub fn render_calibration_table(reports: &[(f64, CalibrationReport)]) -> String {
-    render_markdown_table(reports)
-}
-
-/// Render a markdown table for `reports` (from `sweep_thresholds`).
-///
-/// Legacy name for [`render_calibration_table`]: same schema, same output.
-/// New code prefers `render_calibration_table`, which does not collide with
-/// the generic `format::render_markdown_table`.
-pub fn render_markdown_table(reports: &[(f64, CalibrationReport)]) -> String {
     let mut out = String::new();
     out.push_str("| threshold | precision | recall | FPR | support | gate |\n");
     out.push_str("|-----------|-----------|--------|-----|---------|------|\n");
@@ -301,11 +259,21 @@ pub fn render_markdown_table(reports: &[(f64, CalibrationReport)]) -> String {
     out
 }
 
-/// Write `reports` as markdown to `target/calibration/<name>.md` (best-effort).
-/// Creates `target/calibration` if missing. Never panics — logs on error.
+/// Render a markdown table for `reports` (from `sweep_thresholds`).
+///
+/// Legacy name for [`render_calibration_table`]: same schema, same output.
+/// New code prefers `render_calibration_table`, which does not collide with
+/// the generic `format::render_markdown_table`.
+#[deprecated(note = "use `render_calibration_table` instead (same output)")]
+pub fn render_markdown_table(reports: &[(f64, CalibrationReport)]) -> String {
+    render_calibration_table(reports)
+}
+
+/// Write `reports` as markdown to the first writable `target/calibration/<name>.md`.
+/// Creates the directory if missing. Never panics — logs on error.
 /// Tries workspace root and current dir to be robust under `cargo test -p`.
 pub fn emit_markdown_artifact(name: &str, reports: &[(f64, CalibrationReport)]) {
-    let md = render_markdown_table(reports);
+    let md = render_calibration_table(reports);
     let candidates = [
         std::path::PathBuf::from("target/calibration"),
         std::path::PathBuf::from("../target/calibration"),
@@ -343,23 +311,29 @@ pub fn emit_markdown_artifact(name: &str, reports: &[(f64, CalibrationReport)]) 
     }
     let mut dirs = candidates.to_vec();
     dirs.extend(extra);
-    // Deduplicate
+    // Deduplicate, then write to the first writable directory only.
     dirs.sort();
     dirs.dedup();
-    let mut wrote = false;
-    for dir in dirs {
-        if std::fs::create_dir_all(&dir).is_ok() {
-            let path = dir.join(format!("{name}.md"));
-            if std::fs::write(&path, &md).is_ok() {
-                eprintln!("calibration artifact: {}", path.display());
-                wrote = true;
-            }
+    if let Some(dir) = first_writable_dir(&dirs) {
+        let path = dir.join(format!("{name}.md"));
+        if std::fs::write(&path, &md).is_ok() {
+            eprintln!("calibration artifact: {}", path.display());
+            return;
         }
     }
-    if !wrote {
-        // Fallback: original path
-        let dir = std::path::Path::new("target/calibration");
-        let _ = std::fs::create_dir_all(dir);
-        let _ = std::fs::write(dir.join(format!("{name}.md")), &md);
-    }
+    // Fallback: original path
+    let dir = std::path::Path::new("target/calibration");
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(dir.join(format!("{name}.md")), &md);
 }
+
+/// First directory in `dirs` that can be created (in order). Extracted so
+/// the first-writable selection is unit-testable without mutating the
+/// process working directory.
+fn first_writable_dir(dirs: &[std::path::PathBuf]) -> Option<&std::path::PathBuf> {
+    dirs.iter().find(|dir| std::fs::create_dir_all(dir).is_ok())
+}
+
+#[cfg(test)]
+#[path = "tests/calibration_emit.rs"]
+mod calibration_emit_tests;

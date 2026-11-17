@@ -407,7 +407,7 @@ mod tests {
             "L4 0.7 must pass gate: precision {} FPR {} \n{}",
             report.precision,
             report.fpr,
-            common_core::calibration::render_markdown_table(&reports)
+            common_core::calibration::render_calibration_table(&reports)
         );
     }
 }

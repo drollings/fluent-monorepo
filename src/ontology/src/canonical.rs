@@ -12,7 +12,7 @@
 //! Lookup is first-wins against the baked map; an absent surface lemma is its
 //! own canonical form (identity — never a guess, never a model call).
 //!
-//! Moved verbatim from `fluent-router`'s `overlay/canonical.rs` (M9.2): pure
+//! Moved verbatim from `fluent-router`'s `overlay/canonical.rs`: pure
 //! data + serde, zero router coupling. The router re-exports it
 //! (`fluent_router::overlay::canonical`) during migration.
 
@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The YaGO `Entity` reference class IRI — the entity-link overlay's
-/// `is_subclass_of` parent (M6.2): a candidate must be a subclass of this to
+/// `is_subclass_of` parent: a candidate must be a subclass of this to
 /// count as a genuine entity.
 pub const ENTITY_ROOT_IRI: &str = "http://yago-knowledge.org/resource/Entity";
 

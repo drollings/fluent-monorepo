@@ -2,8 +2,8 @@
 //! grounded evidence path to its package, and multi-owner results are
 //! the truth, never ambiguity to hide.
 use super::*;
+use crate::query::search_db::GuidanceSearchDb;
 use crate::tests::common::{db_file_record, db_project_card, db_text_fragment};
-use search_vector::db::GuidanceDb;
 
 fn finding(id: &str, path: &str) -> Finding {
     Finding {
@@ -42,7 +42,7 @@ fn one_symbol_in_two_crates_names_both_owners() {
     assert_eq!(rows.len(), 2, "one row per owner package");
 }
 
-fn ownership_workspace() -> (tempfile::TempDir, GuidanceDb) {
+fn ownership_workspace() -> (tempfile::TempDir, GuidanceSearchDb) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\n").expect("write");
@@ -64,7 +64,7 @@ fn ownership_workspace() -> (tempfile::TempDir, GuidanceDb) {
         "calibration_promotion",
         "/// Calibration decision point promotion.\npub fn calibration_promotion() {\n    // calibration decision point promotion\n}\n",
     );
-    let db = GuidanceDb::open_in_memory().expect("db");
+    let db = GuidanceSearchDb::open_in_memory().expect("db");
     for (path, symbol, text) in [common, guidance] {
         db.upsert_fragments(
             &db_file_record(root, &path),
@@ -76,7 +76,7 @@ fn ownership_workspace() -> (tempfile::TempDir, GuidanceDb) {
     let (chunks, _) =
         crate::read::doc_cards::chunk_markdown_sections("doc/guidance/calibration.md", doc_text);
     let chunk = chunks.first().expect("doc chunks");
-    db.replace_project_cards(&[search_vector::db::ProjectCard {
+    db.replace_project_cards(&[crate::query::search_db::ProjectCard {
         content_hash: chunk.content_hash.clone(),
         anchor: chunk.anchor.clone(),
         ..db_project_card(

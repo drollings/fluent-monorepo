@@ -1,19 +1,14 @@
 #![forbid(unsafe_code)]
 
-//! ## Fluent WVR — Framework Trait Crate
+//! ## Fluent WVR — control-plane traits + combinators
 //!
-//! This is a **framework trait** crate — the Rust equivalent of a header-only
-//! interface.  It defines the core `Component`, `WorkUnit`, `FieldAccess`, and
-//! `Describable` traits that the DAG executor and Coral crates implement and
-//! consume.
+//! The shared control plane: `Component`/`WorkUnit` traits plus the
+//! combinators built on them (ladder, cascade, validation, output store,
+//! runtime seam, capability gating). Domain logic lives in consumer crates,
+//! never here — but the combinators themselves are real implementation,
+//! composed by `fluent-dag`, `fluent-llm`, `guidance`, the router, and tests.
 //!
-//! **Design contract:**
-//! - No implementation logic beyond blanket impls and helper types
-//! - No domain-specific dependencies (no rusqlite, no LLM, no fluent-types)
-//! - The thinness is intentional — value is in the trait boundaries
-//! - If a derive macro (`#[derive(FieldAccess)]`) is added later, it goes here
-//!
-//! Consumers: `fluent-dag`, `coral-context`
+//! Stays free of domain dependencies (no rusqlite, no LLM, no domain crates).
 
 extern crate self as fluent_wvr;
 
@@ -55,7 +50,7 @@ pub use traits::{
     component_downcast_mut, component_downcast_ref, describe_work_unit, Component, ComponentArcExt,
     Describable, FieldAccess, FieldError, FieldSchema, SchemaProvider, WorkUnit,
 };
-pub use validate::{check_for_execute, valid_output, Validate};
+pub use validate::{check_for_execute, Validate};
 pub use work::{WorkContext, WorkError, WorkOutput};
 
 // Re-export string utilities from common-core for use in derive macros and consumers.

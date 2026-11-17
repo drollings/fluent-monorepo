@@ -274,10 +274,6 @@ spacy-benchmark: ## Re-run the spaCy vs spacy-rs parity benchmark (speed + memor
 spacy-parse-benchmark: ## Score the deterministic ArcEager ladder (UPOS/UAS/LAS per category) against pinned refs; fully hermetic, no LLM (refs: tests/data/parse_bench.refs.json; new refs via `make spacy-test-live`)
 	$(Q)cargo test -p spacy-rs --test parse_bench -- --nocapture
 
-.PHONY: doc-check
-doc-check: ## Doc consistency lint — types named in skill/router docs must exist in source
-	$(Q)bin/doc-check.sh --types
-
 .PHONY: test-router
 test-router: $(CORAL_ROUTER_BIN) ## Run fluent-router unit/golden/e2e tests + a --help dry-run of the built binary (ort-free unless ROUTER_FEATURES=onnx; stops a running router first)
 	$(stop-router)
@@ -432,7 +428,7 @@ protopyne-demo-check: ## Run the protopyne-rs trading-demo contract headless: te
 .PHONY: yago-load
 yago-load: ## Operator action: download the full YaGO 4.5 taxonomy and regenerate the embedded class registry (tools/download_yago_taxonomy.sh → src/ontology/data/yago_classes.json)
 	$(Q)tools/download_yago_taxonomy.sh
-	$(Q)if [ -f env/yago-taxonomy.ttl ]; then cargo run -q -p guidance-ontology --bin ysm1_encode -- env/yago-taxonomy.ttl env/yago-taxonomy.ysm1; fi
+	$(Q)if [ -f env/yago-taxonomy.ttl ]; then cargo run -q -p fluent-ontology --bin ysm1_encode -- env/yago-taxonomy.ttl env/yago-taxonomy.ysm1; fi
 
 .PHONY: review-test
 review-test: ## Run the async parse-review + interlingua suites: spacy-rs review types, the router review worker + /v1/sessions/{id}/review-parse endpoints, and the ontology loader/reconciliation
@@ -440,7 +436,7 @@ review-test: ## Run the async parse-review + interlingua suites: spacy-rs review
 	$(Q)cargo test -p spacy-rs review
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS) server::review
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS) review_parse
-	$(Q)cargo test -p guidance-ontology
+	$(Q)cargo test -p fluent-ontology
 	$(Q)cargo test -p coral-router boot::
 
 # ── ONNX GPU Provider Check ────────────────────────────────────────────────
@@ -539,7 +535,7 @@ fluent-concurrency_PKGS := fluent-concurrency
 dag_PKGS                := fluent-dag
 fluent-egui_PKGS        := fluent-egui
 coral-router_PKGS       := fluent-router coral-router
-guidance_PKGS           := guidance-core guidance guidance-ontology
+guidance_PKGS           := guidance-core guidance fluent-ontology
 coral_PKGS              := coral-context coral
 protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
 protopyne-egui_PKGS     := protopyne-egui

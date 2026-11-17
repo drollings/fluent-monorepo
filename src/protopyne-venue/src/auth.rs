@@ -321,7 +321,7 @@ impl WorkUnit for AuthConfig {
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         fluent_wvr::validate::check_for_execute(self, "auth config invalid")?;
-        Ok(fluent_wvr::validate::valid_output("auth config valid"))
+        Ok(fluent_wvr::WorkOutput::ok("auth config valid"))
     }
 }
 

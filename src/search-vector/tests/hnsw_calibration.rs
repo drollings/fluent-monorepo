@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use super::*;
 
-fn calib_db() -> GuidanceDb {
-    GuidanceDb::open_in_memory().expect("in-memory db")
+fn calib_db() -> VectorDocStore {
+    VectorDocStore::open_in_memory().expect("in-memory db")
 }
 
 fn calib_vec(i: usize, dim: usize) -> Vec<f32> {
@@ -21,7 +21,7 @@ fn calib_vec(i: usize, dim: usize) -> Vec<f32> {
         .collect()
 }
 
-fn fill(db: &GuidanceDb, n: usize, dim: usize) {
+fn fill(db: &VectorDocStore, n: usize, dim: usize) {
     for i in 0..n {
         let emb = calib_vec(i, dim);
         db.insert_node(&format!("c{i}"), "s", None, None, "m", "l", Some(&emb))
@@ -31,7 +31,7 @@ fn fill(db: &GuidanceDb, n: usize, dim: usize) {
 
 /// Recall of `vector_search` against brute-force ground truth.
 /// Returns `(recall, approx_ids, exact_ids)`.
-fn recall_at(db: &GuidanceDb, query: &[f32], k: usize) -> (f64, Vec<i64>, Vec<i64>) {
+fn recall_at(db: &VectorDocStore, query: &[f32], k: usize) -> (f64, Vec<i64>, Vec<i64>) {
     let approx: Vec<i64> = db
         .vector_search(query, k)
         .expect("approx")

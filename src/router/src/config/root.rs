@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use fluent_types::model_key::split_model_key;
 use fluent_wvr::{Describable, FieldAccess};
 
-use super::fleet::{default_onnx_limiter_cap, default_onnx_threads, RoleParams};
+use super::fleet::{
+    default_onnx_limiter_cap, default_onnx_threads, RoleParams, DEFAULT_ONNX_LIMITER_CAP,
+    DEFAULT_ONNX_THREADS,
+};
 use super::models::ModelEntry;
 use super::{
     default_classifier_failure_policy, materialize_effective_pool, ChartsConfig,
@@ -243,8 +246,8 @@ impl Default for RouterConfig {
             overlay: None,
             frame_resolution: None,
             session: None,
-            onnx_limiter_cap: common_core::constants::DEFAULT_ONNX_LIMITER_CAP,
-            onnx_threads: common_core::constants::DEFAULT_ONNX_THREADS,
+            onnx_limiter_cap: DEFAULT_ONNX_LIMITER_CAP,
+            onnx_threads: DEFAULT_ONNX_THREADS,
             gguf_dir: None,
             onnx_dir: None,
             onnx: None,

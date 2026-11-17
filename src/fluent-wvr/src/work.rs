@@ -120,20 +120,13 @@ impl WorkOutput {
 
     /// Deserialize the `data` field back to a typed value, borrowing it.
     ///
-    /// Identical errors to [`WorkOutput::data_as`], without the intermediate
-    /// `Value` clone: deserialization reads directly from the stored value.
+    /// Deserialize the `data` field back to a typed value (borrowed).
     pub fn data_ref<'a, T: serde::Deserialize<'a>>(&'a self) -> Result<T, WorkError> {
         T::deserialize(&self.data)
             .map_err(|e| WorkError::Execution(format!("deserialize data: {e}")))
     }
 
-    /// Deserialize the `data` field back to a typed value (borrowed).
-    pub fn data_as<T: for<'de> serde::Deserialize<'de>>(&self) -> Result<T, WorkError> {
-        self.data_ref()
-    }
-
     /// Deserialize the `data` field back to a typed value, consuming `self`.
-    /// Avoids the clone that `data_as` requires.
     pub fn data_take<T: for<'de> Deserialize<'de>>(self) -> Result<T, WorkError> {
         serde_json::from_value(self.data)
             .map_err(|e| WorkError::Execution(format!("deserialize data: {e}")))
@@ -192,7 +185,7 @@ impl std::fmt::Display for WorkOutput {
 ///     caps: CapabilitySet::new(),
 /// };
 /// ctx.set("attempt", 2_i32);
-/// assert_eq!(ctx.get::<i32>("attempt"), Some(&2));
+/// assert_eq!(ctx.get::<i32>("attempt").as_deref(), Some(&2));
 /// ```
 #[derive(Clone)]
 /// Execution context passed to `WorkUnit::execute`. Carries configuration
@@ -237,7 +230,7 @@ impl std::fmt::Display for WorkOutput {
 /// caps: CapabilitySet::new(),
 /// };
 /// ctx.set("attempt", 2_i32);
-/// assert_eq!(ctx.get::<i32>("attempt"), Some(&2));
+/// assert_eq!(ctx.get::<i32>("attempt").as_deref(), Some(&2));
 /// ```
 pub struct WorkContext {
     pub dry_run: bool,
@@ -320,10 +313,10 @@ impl WorkContext {
 
     /// Read a typed value previously written with [`WorkContext::set`].
     ///
-    /// Returns `None` if `key` is absent or holds a different type. This is
-    /// the canonical reader for the typed store; no deserialization is
-    /// performed.
-    pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
+    /// Returns a shared `Arc` (no clone), or `None` if `key` is absent or
+    /// holds a different type. This is the canonical reader for the typed
+    /// store; no deserialization is performed.
+    pub fn get<T: Send + Sync + 'static>(&self, key: &str) -> Option<Arc<T>> {
         self.outputs.get::<T>(key)
     }
 

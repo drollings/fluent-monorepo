@@ -19,17 +19,17 @@ fn work_context_typed_channel_handoff() {
     ctx.set("attempt", 1_i32);
 
     assert_eq!(
-        ctx.get::<String>("stage"),
-        Some(&"deterministic".to_string())
+        ctx.get::<String>("stage").unwrap().as_str(),
+        "deterministic"
     );
-    assert_eq!(ctx.get::<i32>("attempt"), Some(&1));
+    assert_eq!(ctx.get::<i32>("attempt").as_deref(), Some(&1));
     assert_eq!(ctx.get::<u32>("attempt"), None, "wrong type reads None");
     assert_eq!(ctx.get::<i32>("absent"), None);
 
     let clone = ctx.clone();
     assert_eq!(
-        clone.get::<String>("stage"),
-        Some(&"deterministic".to_string()),
+        clone.get::<String>("stage").unwrap().as_str(),
+        "deterministic",
         "clone shares the typed allocation"
     );
 }
@@ -39,7 +39,7 @@ fn work_context_typed_channel_overwrite() {
     let mut ctx = WorkContext::default();
     ctx.set("verdict", "passed".to_string());
     ctx.set("verdict", "rerouted".to_string());
-    assert_eq!(ctx.get::<String>("verdict"), Some(&"rerouted".to_string()));
+    assert_eq!(ctx.get::<String>("verdict").unwrap().as_str(), "rerouted");
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn test_work_output_helpers() {
 }
 
 #[test]
-fn work_output_typed_and_data_as_roundtrip() {
+fn work_output_typed_and_data_paths_roundtrip() {
     #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
     struct MyData {
         x: i32,
@@ -63,7 +63,7 @@ fn work_output_typed_and_data_as_roundtrip() {
     assert!(output.success);
     assert_eq!(output.message, "ok");
 
-    let recovered: MyData = output.data_as().unwrap();
+    let recovered: MyData = output.data_ref().unwrap();
     assert_eq!(recovered, data);
 }
 
@@ -96,7 +96,7 @@ fn work_output_data_take_consumes_self() {
 
     let recovered: MyData = output.data_take().unwrap();
     assert_eq!(recovered, data);
-    // output is consumed — cannot call data_as anymore
+    // output is consumed — cannot call data_ref anymore
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn work_output_typed_lossy_roundtrip() {
     let data = MyData { x: 42 };
     let output = WorkOutput::typed_lossy("ok", &data);
     assert!(output.success);
-    let recovered: MyData = output.data_as().unwrap();
+    let recovered: MyData = output.data_ref().unwrap();
     assert_eq!(recovered, data);
 }
 
@@ -121,7 +121,7 @@ fn typed_lossy_serializes_ok() {
     let data = MyData { x: 42 };
     let output = WorkOutput::typed_lossy("ok", &data);
     assert!(output.success);
-    let recovered: MyData = output.data_as().unwrap();
+    let recovered: MyData = output.data_ref().unwrap();
     assert_eq!(recovered, data);
 }
 
@@ -237,7 +237,6 @@ fn data_ref_agrees_with_owned_paths() {
         out.data_ref::<Payload>().expect("borrowed"),
         Payload { n: 7 }
     );
-    assert_eq!(out.data_as::<Payload>().expect("owned"), Payload { n: 7 });
     let borrowed_err = out.data_ref::<Vec<u8>>().unwrap_err().to_string();
     let owned_err = out.clone().data_take::<Vec<u8>>().unwrap_err().to_string();
     assert_eq!(borrowed_err, owned_err, "identical error text on all paths");

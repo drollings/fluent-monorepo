@@ -39,7 +39,6 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use bon::Builder;
-use common_core::score::{is_above_threshold, is_below_threshold};
 use fluent_concurrency::batch::{SupervisedBatch, SupervisedBatchEvent};
 use fluent_concurrency::ladder::{first_accept_in_order, first_accept_in_order_sync};
 use fluent_concurrency::pool::ResultPool;
@@ -180,15 +179,18 @@ impl WorkUnit for AnnotateStage {
     }
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let state = ctx
+        let stored = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
+        // The store wraps every value in an `Arc`: a stored `Arc` handle
+        // reads back double-wrapped, so unwrap one layer (one atomic bump).
+        let state = (*stored).clone();
         let json = ctx
             .structured::<String>(ANNOTATION_JSON_KEY)
             .map_err(|e| WorkError::Execution(e.to_string()))?;
         let set =
             AnnotationSet::parse_json(&json).map_err(|e| WorkError::Execution(e.to_string()))?;
-        let mut state = common_core::sync::lock(state);
+        let mut state = common_core::sync::lock(&state);
         state.annotations = Some(set);
         Ok(WorkOutput::ok("annotations parsed"))
     }
@@ -241,7 +243,10 @@ impl WorkUnit for ValidateStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(state);
+        // The store wraps every value in an `Arc`: a stored `Arc` handle
+        // reads back double-wrapped, so unwrap one layer (one atomic bump).
+        let state = (*state).clone();
+        let mut state = common_core::sync::lock(&state);
         let doc = state
             .doc
             .as_ref()
@@ -295,7 +300,10 @@ impl WorkUnit for AttachStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(state);
+        // The store wraps every value in an `Arc`: a stored `Arc` handle
+        // reads back double-wrapped, so unwrap one layer (one atomic bump).
+        let state = (*state).clone();
+        let mut state = common_core::sync::lock(&state);
         let set = state
             .annotations
             .clone()
@@ -372,7 +380,10 @@ impl WorkUnit for FrameStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(state);
+        // The store wraps every value in an `Arc`: a stored `Arc` handle
+        // reads back double-wrapped, so unwrap one layer (one atomic bump).
+        let state = (*state).clone();
+        let mut state = common_core::sync::lock(&state);
         let doc = state
             .doc
             .as_ref()
@@ -444,7 +455,10 @@ impl WorkUnit for ResolveStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(state);
+        // The store wraps every value in an `Arc`: a stored `Arc` handle
+        // reads back double-wrapped, so unwrap one layer (one atomic bump).
+        let state = (*state).clone();
+        let mut state = common_core::sync::lock(&state);
         // Clone the confidence out first so the doc borrow below is exclusive.
         let confidence = state
             .annotation
@@ -517,7 +531,10 @@ impl WorkUnit for SentencizeStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(state);
+        // The store wraps every value in an `Arc`: a stored `Arc` handle
+        // reads back double-wrapped, so unwrap one layer (one atomic bump).
+        let state = (*state).clone();
+        let mut state = common_core::sync::lock(&state);
         let doc = state
             .doc
             .as_mut()
@@ -1026,12 +1043,11 @@ fn unresolved_stats(signals: &[(RoutingSignal, InterlinguaSignal)]) -> (usize, u
     (total, unresolved)
 }
 
-/// Whether the aggregated unresolved fraction strictly exceeds `threshold`
-/// (the shared `is_above_threshold` comparator — never a local `>`).
+/// Whether the aggregated unresolved fraction strictly exceeds `threshold`.
 /// Empty `token_ids` never fire (`total == 0` → false).
 fn unresolved_above(signals: &[(RoutingSignal, InterlinguaSignal)], threshold: f64) -> bool {
     let (total, unresolved) = unresolved_stats(signals);
-    total > 0 && is_above_threshold(unresolved as f64 / total as f64, threshold)
+    total > 0 && unresolved as f64 / total as f64 > threshold
 }
 
 fn refine_reason_inner(
@@ -1044,10 +1060,10 @@ fn refine_reason_inner(
         RefineMode::Always => RefineReason::AlwaysPolicy,
         RefineMode::OnUncertain => {
             if let Some(ref pc) = base.parse_confidence {
-                if is_below_threshold(pc.overall, policy.min_overall) {
+                if pc.overall < policy.min_overall {
                     return RefineReason::Confidence(ConfidenceReason::Overall);
                 }
-                if is_below_threshold(pc.role_coverage, policy.min_role_coverage) {
+                if pc.role_coverage < policy.min_role_coverage {
                     return RefineReason::Confidence(ConfidenceReason::RoleCoverage);
                 }
                 if policy.refine_on_ties && pc.oracle_tie_count > 0 {
@@ -1166,7 +1182,7 @@ fn refine_focus_inner(
     let mut focus = Vec::new();
     if let Some(ref pc) = base.parse_confidence {
         for (i, &score) in pc.token_scores.iter().enumerate() {
-            if is_below_threshold(score, policy.min_token_score) {
+            if score < policy.min_token_score {
                 focus.push(i);
             }
         }

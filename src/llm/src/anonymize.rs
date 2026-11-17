@@ -1,4 +1,4 @@
-/// The ONE request-path anonymize entry (M6): twelve sequential regex
+/// The ONE request-path anonymize entry: twelve sequential regex
 /// replacements with stable `[TYPE]` placeholders.
 ///
 /// KNOWN CALLERS (the exhaustive list — every upstream pipeline routes
@@ -17,9 +17,9 @@
 ///   write-path policy driven by the filter engine)
 ///
 /// Idempotent (fixed-point) and placeholder/codeword pass-through — locked
-/// by `tests/anonymize.rs` (M6.1 taxonomy + M6.2 golden table).
+/// by `tests/anonymize.rs` (taxonomy + golden table).
 pub fn anonymize(text: &str) -> String {
-    // Table-driven (M12): the pattern → placeholder mapping lives in the
+    // Table-driven: the pattern → placeholder mapping lives in the
     // canonical `pii_patterns` home (`anonymize_actions`), not inline here —
     // the same single source `RegexPiiDetector` and the router's filter
     // engine read their patterns from. Order and placeholders are locked by
@@ -35,7 +35,7 @@ pub fn anonymize(text: &str) -> String {
 }
 
 /// Rebuild the placeholder → original-value reverse map by byte-diffing
-/// `original` against its `anonymized` form (M6: extracted verbatim from
+/// `original` against its `anonymized` form (extracted verbatim from
 /// `fluent-router` `transforms::pii_anonymize` — same walk, same keying).
 ///
 /// Placeholders are `[...]` spans (≤64 chars) in the anonymized text; the

@@ -20,7 +20,7 @@ use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::bars::estimate_delta_volume_estimated;
 
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 
 use fluent_egui::{
     needs_column_aggregation, opacity_from_transparency, paint_oscillator_styled,
@@ -686,7 +686,7 @@ impl WorkUnit for DeltaVolumeProfileConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "delta volume profile config invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "delta volume profile ready ({} bins)",
             self.bins
         )))

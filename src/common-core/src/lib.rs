@@ -53,7 +53,6 @@ pub mod metrics;
 pub mod path;
 pub mod pcm;
 pub mod prelude;
-pub mod profile;
 pub mod registry;
 pub mod retry;
 pub mod runtime;
@@ -70,9 +69,9 @@ pub mod watchdog;
 pub use config::{find_hierarchical, home_or_dot, load_json, load_json_or_default};
 pub use constants::{default_true, HnswParams, MAX_FILE_SIZE, MAX_JSON_DEPTH, MAX_VALUE_LEN};
 pub use drift::BitSetDrift;
+pub use error::IoError;
 #[cfg(feature = "sqlite")]
 pub use error::SqliteError;
-pub use error::{IoError, ResolverError};
 pub use error_context::{ErrorContext, HeapErrorContext};
 pub use format::{
     escape_markdown_cell, format_csv, format_json, format_size, parse_size, render_markdown_table,
@@ -107,10 +106,9 @@ pub use sort::{dedup_sorted, sorted_by_vec, sorted_vec};
 pub use string::{
     ascii_alnum_tokens, collapse_whitespace, contains_any, contains_any_word, contains_ident_word,
     contains_ignore_case, contains_word, detect_identifier_kind, extract_tag, filter_unsafe_chars,
-    find_subseq, first_comment_line, first_sentence, has_extension, is_noisy_comment,
-    is_path_token, is_test_path, looks_like_identifier, lower_into, skill_name_from_ref, slugify,
-    strip_boilerplate, strip_nl_prefix, trim_doc_prefix, trim_left, trim_right,
-    truncate_at_sentence, AnsiStripper, IdentifierKind, STOP_WORDS,
+    find_subseq, first_comment_line, first_sentence, has_extension, is_path_token,
+    looks_like_identifier, lower_into, slugify, strip_boilerplate, strip_nl_prefix, trim_left,
+    trim_right, truncate_at_sentence, AnsiStripper, IdentifierKind, STOP_WORDS,
 };
 pub use time::now_secs;
 pub use walk::{

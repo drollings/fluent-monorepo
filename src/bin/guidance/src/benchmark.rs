@@ -660,7 +660,7 @@ pub fn explain_arm_with_envelope(
 ) -> ExplainArmWithEnvelope {
     use guidance_core::read::engine::{ExplainContext, ReadEngine};
     let workspace_root = PathBuf::from(workspace);
-    let Ok(db) = search_vector::GuidanceDb::open(Path::new(db_path)) else {
+    let Ok(db) = guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(db_path)) else {
         return (
             String::new(),
             String::new(),

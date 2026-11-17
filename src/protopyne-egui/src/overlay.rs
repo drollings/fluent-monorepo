@@ -17,7 +17,7 @@ use fluent_egui::{
     EguiError, MarkerDot, ReadoutValue,
 };
 use fluent_wvr::prelude::*;
-use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, Validate};
 use fluent_wvr::{component_downcast_ref, Describable, FieldAccess};
 use protopyne_chart_model::{AnnotationStyle, ChartRow};
 
@@ -109,7 +109,7 @@ impl WorkUnit for BacktestOverlayConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "backtest overlay config invalid")?;
-        Ok(valid_output(format!(
+        Ok(WorkOutput::ok(format!(
             "backtest overlay ready ({})",
             self.run_id
         )))

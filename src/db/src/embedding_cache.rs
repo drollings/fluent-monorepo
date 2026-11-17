@@ -2,10 +2,10 @@
 //!
 //! Generic SQLite schema with no LLM logic (one table keyed by
 //! `UNIQUE(query_hash)`), so it lives with the other DDL in `fluent-db`
-//! rather than in a client crate. Previously homed in
-//! The former `fluent_llm::embeddings_cache` re-export shim is gone —
-//! consumers use this path directly (the fluent-llm no-domain-imports
-//! guard forbids `use fluent_db` in client crates).
+//! rather than in a client crate. Previously homed in `fluent-llm`; the
+//! former re-export shim is gone — consumers use this path directly (the
+//! fluent-llm no-domain-imports guard forbids `use fluent_db` in client
+//! crates).
 //!
 //! `UNIQUE(query_hash)` is identity, not quality — cached-embedding reuse
 //! is key-equality, never similarity.

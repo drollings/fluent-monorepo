@@ -54,6 +54,7 @@ pub mod orchestrator;
 pub mod pipeline;
 pub mod plans;
 pub mod policy;
+pub mod profile;
 pub mod query_engine;
 pub mod read;
 pub mod runtime;

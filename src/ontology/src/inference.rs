@@ -1,3 +1,14 @@
+//! Rule-based ontology inference: subclass-transitivity derivation plus a
+//! capability-inheritance index over the shared hierarchy.
+//!
+//! **Status: compatibility surface (scaffold).** Exercised by unit tests
+//! today; kept as the stable home for rule-based derivation (new rule types
+//! fail closed via [`InferenceError::UnsupportedRule`]) so inference never
+//! grows a second implementation.
+//!
+//! Live multi-consumer surface: [`yago`](crate::yago) (taxonomy loading),
+//! [`taxonomy`](crate::taxonomy) (classification), and
+//! [`plausibility`](crate::plausibility) (triple scoring).
 use std::collections::{HashMap, HashSet};
 
 use fluent_dag::hierarchy::HierarchyIndex;
@@ -24,6 +35,11 @@ pub struct InferenceRule {
 pub enum InferenceError {
     #[error("no triples provided")]
     EmptyInput,
+    /// A rule the engine cannot execute. Only subclass transitivity is
+    /// implemented; other rules fail closed instead of silently deriving
+    /// nothing.
+    #[error("unsupported rule: {0:?}")]
+    UnsupportedRule(RuleType),
 }
 
 pub struct InferenceEngine {
@@ -43,8 +59,11 @@ impl InferenceEngine {
         let mut derived: Vec<Triple> = Vec::new();
 
         for rule in &self.rules {
-            if rule.rule_type == RuleType::SubclassTransitivity {
-                infer_subclass_transitivity(triples, &mut derived, &rule.trigger_predicate);
+            match rule.rule_type {
+                RuleType::SubclassTransitivity => {
+                    infer_subclass_transitivity(triples, &mut derived, &rule.trigger_predicate);
+                }
+                other => return Err(InferenceError::UnsupportedRule(other)),
             }
         }
 
@@ -100,19 +119,35 @@ fn infer_subclass_transitivity(base: &[Triple], derived: &mut Vec<Triple>, predi
     }
     let class_ids: Vec<i64> = (0..iris.len() as i64).collect();
     let closure = TypeInference::build(&class_ids, &edges);
+    // Mutual reachability, precomputed once: a class is on a genuine
+    // directed cycle exactly when some *other* class is mutually reachable
+    // with it. The diagonal reflexive check below is then O(1) per class
+    // instead of an O(C) rescan inside the pair loop.
+    let ancestor_sets: HashMap<i64, HashSet<i64>> = class_ids
+        .iter()
+        .map(|&id| (id, closure.ancestors_arc(id).iter().copied().collect()))
+        .collect();
+    let on_cycle: HashSet<i64> = class_ids
+        .iter()
+        .copied()
+        .filter(|&sub| {
+            ancestor_sets.get(&sub).is_some_and(|ancestors| {
+                ancestors.iter().any(|&other| {
+                    other != sub
+                        && ancestor_sets
+                            .get(&other)
+                            .is_some_and(|other_ancestors| other_ancestors.contains(&sub))
+                })
+            })
+        })
+        .collect();
     let mut implied: Vec<(String, String)> = Vec::new();
     for &sub in &class_ids {
         for &obj in &class_ids {
             if base_pairs.contains(&(sub, obj)) || !closure.is_subclass_of(sub, obj) {
                 continue;
             }
-            if sub == obj
-                && !class_ids.iter().any(|&other| {
-                    other != sub
-                        && closure.is_subclass_of(sub, other)
-                        && closure.is_subclass_of(other, sub)
-                })
-            {
+            if sub == obj && !on_cycle.contains(&sub) {
                 continue;
             }
             implied.push((iris[sub as usize].clone(), iris[obj as usize].clone()));

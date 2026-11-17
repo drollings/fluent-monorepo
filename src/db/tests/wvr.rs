@@ -262,3 +262,43 @@ async fn pool_backed_db_work_unit_scopes_caps_on_multi_thread_path() {
         "expected wrapped PermissionDenied, got {err:?}"
     );
 }
+
+#[test]
+fn store_unit_composes_pool_backed_store() {
+    // `store_unit` is generic over `DbStore`: a pool-backed unit composes
+    // it directly instead of hand-building `DbWorkUnit::builder()`.
+    let pool = in_memory_pool();
+    let unit = store_unit(pool, "db.pool_select", |conn| {
+        let n: i64 = conn.query_row("SELECT 41 + 1", [], |row| row.get(0))?;
+        WorkOutput::typed("got", &n).map_err(|e| DbError::Other(e.to_string()))
+    });
+    let ctx = WorkContext {
+        caps: db_caps(),
+        ..WorkContext::default()
+    };
+    let out = unit.execute(&ctx).expect("pool-backed store_unit");
+    assert!(out.success);
+    assert_eq!(out.data, serde_json::json!(42));
+}
+
+#[test]
+fn db_work_unit_panic_carries_payload_detail() {
+    let unit = DbWorkUnit::builder()
+        .name("db.panic")
+        .op(
+            Box::new(|_ctx: &WorkContext| -> Result<WorkOutput, WorkError> {
+                panic!("boom-payload-12345")
+            }) as StoreUnitOp,
+        )
+        .build();
+    let err = unit
+        .execute(&WorkContext::default())
+        .expect_err("panic must surface as an error");
+    match err {
+        WorkError::Execution(msg) => assert!(
+            msg.contains("boom-payload-12345"),
+            "panic payload preserved: {msg}"
+        ),
+        other => panic!("expected Execution, got {other:?}"),
+    }
+}

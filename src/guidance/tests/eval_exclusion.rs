@@ -67,10 +67,12 @@ fn stage_workspace() -> tempfile::TempDir {
     dir
 }
 
-fn index_staged(root: &std::path::Path) -> std::sync::Arc<search_vector::db::GuidanceDb> {
+fn index_staged(
+    root: &std::path::Path,
+) -> std::sync::Arc<crate::query::search_db::GuidanceSearchDb> {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
-    let db = Arc::new(search_vector::db::GuidanceDb::open_in_memory().expect("db"));
+    let db = Arc::new(crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db"));
     let selection = FileSelection {
         workspace_root: root.to_path_buf(),
         include_fixtures: false,

@@ -144,7 +144,7 @@ fn render_markdown_table_has_header() {
         label: true,
     }];
     let reports = sweep_thresholds(&cases, |c| c.score, |c| c.label, &[0.5]);
-    let md = render_markdown_table(&reports);
+    let md = render_calibration_table(&reports);
     assert!(md.contains("| threshold |"));
     assert!(md.contains("| 0.50 |"));
 }
@@ -166,7 +166,7 @@ fn emit_calibration_artifact_smoke() {
     // Emit to target/calibration/common_core_demo.md (best-effort, never panics)
     emit_markdown_artifact("common_core_demo", &reports);
     // Verify the markdown was produced in-memory
-    let md = render_markdown_table(&reports);
+    let md = render_calibration_table(&reports);
     assert!(md.contains("0.50"));
     // If running with --nocapture, the eprintln from emit will be visible.
     if std::env::var("CALIBRATION_EMIT").is_ok() {

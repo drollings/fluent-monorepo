@@ -5,7 +5,7 @@
 //! regardless of which writer committed the file. Rebuild converts v1 rows
 //! by re-running the batch path from source, never by rewriting ids.
 
-use search_vector::db::{FileRecord, FragmentLemma, GuidanceDb};
+use crate::query::search_db::{FileRecord, FragmentLemma, GuidanceSearchDb};
 
 use crate::ast_parser::CommentBlock;
 use crate::diff::ScannedFile;
@@ -51,7 +51,7 @@ impl FragmentWriter {
     /// Live write: whole-file range, vectors optional, recall works with
     /// no embedding backend.
     pub fn write_live(
-        db: &GuidanceDb,
+        db: &GuidanceSearchDb,
         file: &FileInfo,
         text: &str,
         embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
@@ -66,7 +66,7 @@ impl FragmentWriter {
     /// mismatch fails the file before any row is written.
     #[allow(clippy::too_many_arguments)]
     pub fn write_items(
-        db: &GuidanceDb,
+        db: &GuidanceSearchDb,
         file: &FileRecord,
         kind: FileKind,
         fragments: &[PreparedFragment],
@@ -111,7 +111,7 @@ impl FragmentWriter {
     /// Shape of one stored entity: whole-file, chunked, or missing.
     /// Dual-read input for migration decisions.
     #[must_use]
-    pub fn row_shape(db: &GuidanceDb, entity_id: &str) -> RowShape {
+    pub fn row_shape(db: &GuidanceSearchDb, entity_id: &str) -> RowShape {
         let Ok(rows) = db.fragments_for_entity(entity_id) else {
             return RowShape::Missing;
         };
@@ -132,7 +132,7 @@ impl FragmentWriter {
     /// Whether a file committed by the live writer still needs the batch
     /// pass: fragments exist but no identity rows were stored.
     #[must_use]
-    pub fn needs_rebuild(db: &GuidanceDb, file_id: &str, entity_id: &str) -> bool {
+    pub fn needs_rebuild(db: &GuidanceSearchDb, file_id: &str, entity_id: &str) -> bool {
         if Self::row_shape(db, entity_id) != RowShape::WholeFile {
             return false;
         }
@@ -143,10 +143,10 @@ impl FragmentWriter {
     /// Record identity rows for fragments already committed from the same
     /// harvest pass. Reads still serve both shapes afterwards.
     pub fn backfill_symbols(
-        db: &GuidanceDb,
+        db: &GuidanceSearchDb,
         fragments: &[EntityFragment],
     ) -> Result<usize, String> {
-        let rows: Vec<search_vector::db::SymbolRecord> =
+        let rows: Vec<crate::query::search_db::SymbolRecord> =
             fragments.iter().filter_map(symbol_record).collect();
         db.replace_symbols(&rows)
             .map_err(|e| format!("symbols: {e}"))

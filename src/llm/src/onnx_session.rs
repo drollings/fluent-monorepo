@@ -22,9 +22,6 @@ use crate::onnx_error::OrtError;
 /// `onnx` feature; the registry stores this type-erased value so its logic
 /// compiles and is testable without `ort`.
 #[derive(Clone)]
-/// Opaque handle to a loaded ONNX session. The concrete type lives behind the
-/// `onnx` feature; the registry stores this type-erased value so its logic
-/// compiles and is testable without `ort`.
 pub struct SessionHandle {
     inner: Arc<dyn Any + Send + Sync>,
 }

@@ -71,14 +71,6 @@ impl ShadowOutcome {
 /// assert!(log.is_empty());
 /// ```
 #[derive(Default)]
-/// Shared append-only shadow log.
-///
-/// ```rust
-/// use fluent_llm::decision::{Decision, ShadowLog, ShadowOutcome, ThresholdSet};
-///
-/// let log = ShadowLog::new();
-/// assert!(log.is_empty());
-/// ```
 pub struct ShadowLog {
     outcomes: Mutex<Vec<ShadowOutcome>>,
 }

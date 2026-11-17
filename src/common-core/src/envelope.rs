@@ -1,21 +1,9 @@
 //! Playout envelope math: zero-domain gain ramps and fades.
 //!
-//! Pure sample arithmetic with no audio device or session state. The
-//! calibrated constants below are the shared playout targets (about
-//! −12 dB of duck over 100 ms on barge-in detect, a 20 ms fade on
-//! cut): `orator-audio` and `orator-voice::turn` previously declared the same
-//! numbers independently, which is the duplication this module ends.
-//! Values stay calibrated — retuning is a calibration decision, never
-//! a refactor side effect (see `orator_audio_envelope_vectors`).
+//! Pure sample arithmetic with no audio device or session state: dB/gain
+//! conversion, linear ramps, tail fades. Calibrated playout targets (duck
+//! depth/ramp, cut fade) live with their owner in `orator-audio`.
 
-/// Duck depth in dB on barge-in detect.
-pub const DUCK_DEPTH_DB: f32 = -12.0;
-/// Duck ramp length in ms.
-pub const DUCK_RAMP_MS: u64 = 100;
-/// Cut fade length in ms.
-pub const CUT_FADE_MS: u64 = 20;
-
-/// dB gain to linear amplitude.
 #[must_use]
 /// dB gain to linear amplitude.
 pub fn db_to_linear(db: f32) -> f32 {
@@ -25,8 +13,6 @@ pub fn db_to_linear(db: f32) -> f32 {
 /// Playout gain `elapsed_ms` after detect: `1.0` ramping linearly to
 /// `floor` over `ramp_ms`, then holding.
 #[must_use]
-/// Playout gain `elapsed_ms` after detect: `1.0` ramping linearly to
-/// `floor` over `ramp_ms`, then holding.
 pub fn linear_ramp_gain(elapsed_ms: u64, ramp_ms: u64, floor: f32) -> f32 {
     if elapsed_ms >= ramp_ms {
         return floor;

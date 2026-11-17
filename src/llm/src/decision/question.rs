@@ -327,14 +327,6 @@ pub fn rotated_options(options: &[String], mode: &str, seed: u64, salt: u64) -> 
 /// assert!(out.starts_with("ST") && out.ends_with("Q?"));
 /// ```
 #[must_use]
-/// Render state-first/question-last without a spec (shared layout core).
-///
-/// ```rust
-/// use fluent_llm::decision::render_prompt;
-///
-/// let out = render_prompt("ST", "Q?", &["A", "B"]);
-/// assert!(out.starts_with("ST") && out.ends_with("Q?"));
-/// ```
 pub fn render_prompt(state: &str, question: &str, options: &[&str]) -> String {
     render_prompt_full(state, "", &options.join(","), question)
 }

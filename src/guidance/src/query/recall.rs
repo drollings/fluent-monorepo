@@ -28,7 +28,7 @@ use crate::search_types::{
 pub use super::plan::{codes, validate_search_plan, RecallError};
 
 /// Index storage contract for the recall loop: lexical + vector + lemma
-/// recall, entity lookup, file listing. The P1 GuidanceDb adapter and the
+/// recall, entity lookup, file listing. The P1 GuidanceSearchDb adapter and the
 /// hermetic fake both implement it.
 pub trait RecallStorage: Send + Sync {
     /// All indexed files (filter resolution input).
@@ -120,10 +120,10 @@ pub fn resolve_filtered_file_ids(
 }
 
 /// Closed symbol-type name in zvec wire spelling (`"function"`, …).
-/// Used by the GuidanceDb adapter when pushing the filter into SQL.
+/// Used by the GuidanceSearchDb adapter when pushing the filter into SQL.
 #[must_use]
 /// Closed symbol-type name in zvec wire spelling (`"function"`, …).
-/// Used by the GuidanceDb adapter when pushing the filter into SQL.
+/// Used by the GuidanceSearchDb adapter when pushing the filter into SQL.
 pub fn symbol_type_name(symbol: &CodeSymbolType) -> String {
     match symbol {
         CodeSymbolType::Module => "module",
@@ -221,7 +221,7 @@ pub fn run_recall_with_policy(
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
     policy: RecallPolicy,
 ) -> Result<RecallOutput, RecallError> {
-    let _recall = common_core::profile::Phase::new("recall.query");
+    let _recall = crate::profile::Phase::new("recall.query");
     let mut timings = TimingCollector::new();
     let normalized = validate_search_plan(plan)?;
     timings.record("search_plan");
@@ -595,7 +595,7 @@ fn build_recall_routes(
     }
     let mut seen = HashSet::new();
     for route in &plan.routes {
-        let symbol_names = search_vector::tokens::symbol_names(&route.query);
+        let symbol_names = crate::query::tokens::symbol_names(&route.query);
         if symbol_names.is_empty() {
             continue;
         }

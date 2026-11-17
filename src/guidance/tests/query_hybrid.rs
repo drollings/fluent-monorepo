@@ -23,7 +23,7 @@ fn file_info(id: &str, relative: &str) -> FileInfo {
     }
 }
 
-fn seed_workflow_repo(db: &search_vector::db::GuidanceDb) {
+fn seed_workflow_repo(db: &crate::query::search_db::GuidanceSearchDb) {
     ingest_text_file(
         db,
         &file_info("example", "src/example.ts"),
@@ -44,7 +44,7 @@ fn seed_workflow_repo(db: &search_vector::db::GuidanceDb) {
 
 #[test]
 fn indexed_workspace_answers_symbol_search() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     seed_workflow_repo(&db);
     let storage = GuidanceDbStorage::new(&db);
     let engine = crate::query_engine::QueryEngine::new();
@@ -112,7 +112,7 @@ fn plan_from_query_marks_identifier_intent_for_symbols() {
 
 #[test]
 fn stages_carry_provenance_vocabulary() {
-    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let db = crate::query::search_db::GuidanceSearchDb::open_in_memory().expect("db");
     seed_workflow_repo(&db);
     let storage = GuidanceDbStorage::new(&db);
     let plan = plan_from_query("FirstWorkflowSymbol", QueryIntent::SingleIdentifier, 5);

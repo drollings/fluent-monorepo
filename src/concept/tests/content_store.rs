@@ -65,3 +65,25 @@ fn derive_label_edges() {
     assert_eq!(derive_label("", ""), "");
     assert_eq!(derive_label("user", "Hello world. Rest."), "Hello world.");
 }
+
+#[test]
+fn store_recovers_after_lock_poison_instead_of_panicking() {
+    use std::panic::AssertUnwindSafe;
+    let store = InMemoryContentNodeStore::new();
+    let before = store.insert(node("before poison", "s"));
+    assert!(store.snapshot(before).is_some());
+    // Poison the shard by panicking while holding its write guard.
+    let poisoned = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let _guard = store.nodes.write().unwrap();
+        panic!("intentional poison");
+    }));
+    assert!(poisoned.is_err(), "poison attempt must panic");
+    // The store recovers (poison-tolerant locking) instead of panicking.
+    let after = store.insert(node("after poison", "s"));
+    assert!(store.snapshot(after).is_some(), "writes work after poison");
+    assert!(
+        store.snapshot(before).is_some(),
+        "old reads work after poison"
+    );
+    assert_eq!(store.session_node_ids("s").len(), 2);
+}

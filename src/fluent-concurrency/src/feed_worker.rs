@@ -2,7 +2,7 @@
 //!
 //! The shape was extracted from the router's `LedgerTierWorker`
 //! (`src/router/src/ledger/tiering.rs`): a bounded `mpsc` feed of items, a
-//! [`CreditFlow`] pair gating the async producer path, a `Limiter` bounding
+//! [`CreditFlow`] pair gating the async producer path, a JoinSet window bounding
 //! concurrent handler invocations, and a drain loop that batches incoming
 //! items and runs the shared handler per item. The consumer supplies only the
 //! per-item `handler`; the primitive owns the feed, the credit gate, the
@@ -27,18 +27,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use common_core::sync::lock;
 use fluent_wvr::Runtime;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::flow::{self, CreditReceiver, CreditSender, CreditSpec};
-use crate::pool::Limiter;
 
 /// Configuration for a [`CreditedFeedWorker`]. Defaults mirror
 /// `LedgerTierWorker`'s `TierConfig` (load-bearing — do not drift).
 #[derive(Debug, Clone)]
-/// Configuration for a [`CreditedFeedWorker`]. Defaults mirror
-/// `LedgerTierWorker`'s `TierConfig` (load-bearing — do not drift).
 pub struct FeedConfig {
     /// Capacity of the pending-item feed (`mpsc` bound). Default 1024.
     pub queue_capacity: usize,
@@ -49,7 +47,7 @@ pub struct FeedConfig {
     /// How many processed items the consumer waits for before bumping credit
     /// back to the producer (`CreditSpec.more_after`). Default 8.
     pub credit_more_after: usize,
-    /// Max concurrent handler invocations (the `Limiter` cap). Default 8.
+    /// Max concurrent handler invocations (JoinSet window). Default 8.
     pub max_concurrent: usize,
     /// Max items drained per batch. Default 8.
     pub batch_size: usize,
@@ -87,7 +85,7 @@ type Handler<Item> = Arc<dyn Fn(Item) -> Pin<Box<dyn Future<Output = ()> + Send>
 ///
 /// A bounded `mpsc` feed accepts items from producers; the background loop
 /// spawned by [`Self::start`] drains it in batches and runs the shared handler
-/// under a concurrency [`Limiter`]. The async producer path
+/// with JoinSet-windowed concurrency (`max_concurrent`). The async producer path
 /// ([`Self::enqueue_with_credit`]) is gated by a credit flow so a burst of
 /// producers cannot grow the feed without bound; the sync path ([`Self::enqueue`])
 /// uses the bounded channel's non-blocking `try_send` and skips when the feed
@@ -101,14 +99,14 @@ pub struct CreditedFeedWorker<Item: Send + 'static> {
     receiver: Mutex<Option<mpsc::Receiver<Item>>>,
     credit: CreditSender,
     credit_receiver: CreditReceiver,
-    limiter: Arc<Limiter>,
     draining: AtomicBool,
 }
 
 impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     /// Construct a feed worker. The `handler` is invoked for every item
-    /// drained from the feed, under the concurrency `Limiter`; its completion
-    /// releases the producer's credit token (never before).
+    /// drained from the feed, with at most `max_concurrent` handlers in
+    /// flight (JoinSet window); its completion releases the producer's
+    /// credit token (never before).
     #[allow(clippy::needless_pass_by_value)]
     pub fn new<F, Fut>(runtime: Arc<dyn Runtime>, config: FeedConfig, handler: F) -> Self
     where
@@ -121,7 +119,6 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
             initial: config.credit_limit,
             more_after: config.credit_more_after,
         });
-        let limiter = Arc::new(Limiter::new(config.max_concurrent.max(1)));
         Self {
             runtime,
             config,
@@ -130,7 +127,6 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
             receiver: Mutex::new(Some(receiver)),
             credit,
             credit_receiver,
-            limiter,
             draining: AtomicBool::new(false),
         }
     }
@@ -139,9 +135,7 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     /// with the store's event-setter. Cloned, so the caller owns an
     /// independent send handle.
     pub fn sender(&self) -> mpsc::Sender<Item> {
-        self.sender
-            .lock()
-            .unwrap()
+        lock(&self.sender)
             .clone()
             .expect("CreditedFeedWorker::sender called after drain")
     }
@@ -150,7 +144,7 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     /// — the credit-gated `enqueue_with_credit` path and the next boot
     /// backfill cover the stragglers. No-op after [`Self::drain`].
     pub fn enqueue(&self, item: Item) {
-        let sender = self.sender.lock().unwrap();
+        let sender = lock(&self.sender);
         let Some(sender) = sender.as_ref() else {
             return;
         };
@@ -178,12 +172,7 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     ///
     /// `Err(FeedError::FeedClosed)` when the feed is closed (drained).
     pub async fn enqueue_with_credit(&self, item: Item) -> Result<(), FeedError> {
-        let sender = self
-            .sender
-            .lock()
-            .unwrap()
-            .clone()
-            .ok_or(FeedError::FeedClosed)?;
+        let sender = lock(&self.sender).clone().ok_or(FeedError::FeedClosed)?;
         self.credit
             .send(move || async move { sender.send(item).await.map_err(|_| FeedError::FeedClosed) })
             .await
@@ -211,16 +200,22 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     /// the injected `Runtime` — no ambient `tokio::spawn`. Must be called at
     /// most once.
     pub fn start(self: &Arc<Self>) -> JoinHandle<()> {
-        let receiver = self
-            .receiver
-            .lock()
-            .unwrap()
+        let receiver = lock(&self.receiver)
             .take()
             .expect("CreditedFeedWorker::start must be called at most once");
         let this = Arc::clone(self);
         let runtime = Arc::clone(&this.runtime);
+        // Ferry the ambient capability set into the background loop: spawn
+        // boundaries do not inherit task-locals, so without this the loop
+        // (and every handler) would always see an empty set. `process_batch`
+        // re-captures per batch so handlers observe the starter's caps.
+        let caps = fluent_wvr::capability::CURRENT_CAPS
+            .try_with(Clone::clone)
+            .unwrap_or_default();
         runtime.spawn(Box::pin(async move {
-            this.run(receiver).await;
+            fluent_wvr::capability::CURRENT_CAPS
+                .scope(caps, this.run(receiver))
+                .await;
         }))
     }
 
@@ -229,7 +224,7 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     /// the feed and exits; the caller awaits the `JoinHandle` from
     /// [`Self::start`] for completion.
     pub fn drain(&self) {
-        self.sender.lock().unwrap().take();
+        lock(&self.sender).take();
         self.draining.store(true, Ordering::SeqCst);
     }
 
@@ -270,14 +265,22 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     }
 
     async fn process_batch(&self, batch: Vec<Item>) {
-        // Concurrent bounded by Limiter (max_concurrent). Each completion releases
-        // exactly one credit token; panics also release via the join driver.
+        // JoinSet-windowed concurrency (max_concurrent): the window below
+        // already bounds in-flight handlers, so no second gate. Each
+        // completion releases exactly one credit token; panics also release
+        // via the join driver. Handlers run under the ambient capability set
+        // captured here, so gated I/O inside a handler sees the caller's caps.
+        let caps = fluent_wvr::capability::CURRENT_CAPS
+            .try_with(Clone::clone)
+            .unwrap_or_default();
         let mut set = tokio::task::JoinSet::new();
         for item in batch {
-            let limiter = Arc::clone(&self.limiter);
             let handler = Arc::clone(&self.handler);
+            let caps = caps.clone();
             set.spawn(async move {
-                limiter.run(|| handler(item)).await;
+                fluent_wvr::capability::CURRENT_CAPS
+                    .scope(caps, handler(item))
+                    .await;
             });
             while set.len() >= self.config.max_concurrent {
                 let _ = set.join_next().await;

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use search_vector::db::ProjectCard;
+use crate::query::search_db::ProjectCard;
 
 use crate::config::ProjectConfig;
 use crate::jumps::JumpIndex;
@@ -420,7 +420,7 @@ pub struct ProjectMapReport {
 pub fn import_project_cards(
     workspace: &Path,
     project: &str,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     jumps: Option<&JumpIndex>,
 ) -> Result<ProjectMapReport, String> {
     import_project_cards_with(workspace, project, db, jumps, &ProjectConfig::default())
@@ -430,7 +430,7 @@ pub fn import_project_cards(
 pub fn import_project_cards_with(
     workspace: &Path,
     project: &str,
-    db: &search_vector::db::GuidanceDb,
+    db: &crate::query::search_db::GuidanceSearchDb,
     jumps: Option<&JumpIndex>,
     cfg: &ProjectConfig,
 ) -> Result<ProjectMapReport, String> {

@@ -10,10 +10,10 @@ use std::time::Instant;
 
 use guidance_core::graph_index::GraphIndex;
 use guidance_core::query::ingest::{tree_sitter_format, LazyNlp};
+use guidance_core::query::search_db::GuidanceSearchDb;
 use guidance_core::search_types::FileKind;
 use guidance_core::selection::{select_files, FileSelection, ScanDiagnostics, SelectedFile};
 use guidance_core::sync_engine::SyncEngine;
-use search_vector::GuidanceDb;
 
 /// Run the `index` command over `path` (file or directory; defaults to the
 /// workspace). Prints counts and returns `(generated, failed)`.
@@ -152,7 +152,7 @@ pub fn ingest_workspace_fragments(
     workspace: &Path,
     src_dirs: &[PathBuf],
 ) -> Result<FragmentIngestStats, String> {
-    let db = GuidanceDb::open(db_path)
+    let db = GuidanceSearchDb::open(db_path)
         .map_err(|error| format!("cannot open index at {}: {error}", db_path.display()))?;
     // Rule-lemmatizer pipeline (no model): L2 inflections collapse at
     // index time at zero embedding cost. Built lazily on the first
@@ -261,7 +261,7 @@ pub fn ingest_workspace_fragments(
                 .to_string();
             let absolute_path = selected.path.to_string_lossy().into_owned();
             let defines_macros = guidance_core::invalidation::defines_macros(&text);
-            let record = search_vector::db::FileRecord {
+            let record = guidance_core::query::search_db::FileRecord {
                 id: file_id,
                 absolute_path: absolute_path.clone(),
                 relative_path: selected.relative.clone(),
@@ -487,7 +487,7 @@ pub fn ingest_workspace_fragments(
 /// staleness). Fail-open: when hydration fails, the seeds themselves
 /// still re-process — direct changes never silently skip.
 pub fn affected_for_sync(
-    db: &GuidanceDb,
+    db: &GuidanceSearchDb,
     changed: &[String],
     deleted: &[String],
     roots: &[String],
@@ -511,7 +511,7 @@ pub fn affected_for_sync(
 /// Row-read the persisted graph inputs into a `GraphIndex` (no file
 /// reads, no parsing — the M2 hydrated constructor). Shared by sync
 /// propagation and the explain port (one hydration helper, two callers).
-pub fn hydrated_graph(db: &GuidanceDb, roots: &[String]) -> Result<GraphIndex, String> {
+pub fn hydrated_graph(db: &GuidanceSearchDb, roots: &[String]) -> Result<GraphIndex, String> {
     GraphIndex::hydrate_from_db(db, roots).map_err(|error| format!("assemble: {error}"))
 }
 

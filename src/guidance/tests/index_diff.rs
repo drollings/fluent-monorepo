@@ -3,7 +3,7 @@
 //! Ports the `index-status` diff-count cases + `computeDiffFromFiles`.
 
 use super::*;
-use search_vector::db::FileRecord;
+use crate::query::search_db::FileRecord;
 
 fn scanned(id: &str, size: u64, mtime: i64, hash: Option<&str>) -> ScannedFile {
     ScannedFile {

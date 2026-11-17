@@ -262,3 +262,48 @@ async fn drained_feed_rejects_new_items() {
         Err(FeedError::FeedClosed)
     ));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn handler_sees_starter_caps_for_gated_io() {
+    use std::sync::atomic::AtomicBool;
+
+    use crate::capability::default_capability_set;
+    use fluent_wvr::capability::CURRENT_CAPS;
+
+    let gated_ok = Arc::new(AtomicBool::new(false));
+    let g = Arc::clone(&gated_ok);
+    let worker = Arc::new(CreditedFeedWorker::new(
+        runtime(),
+        config(),
+        move |_: usize| {
+            let g = Arc::clone(&g);
+            async move {
+                // Gated I/O: succeeds only when the handler task observes the
+                // starter's capability set (ferried through start → run loop
+                // → per-batch scope).
+                if crate::io::check_capability(&crate::io::net::NetCapability::new()).is_ok() {
+                    g.store(true, AtomicOrdering::SeqCst);
+                }
+            }
+        },
+    ));
+    CURRENT_CAPS
+        .scope(default_capability_set(), async {
+            worker.enqueue(7);
+            let handle = worker.start();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !gated_ok.load(AtomicOrdering::SeqCst) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "handler never observed the starter caps"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            handle.abort();
+        })
+        .await;
+    assert!(
+        gated_ok.load(AtomicOrdering::SeqCst),
+        "gated handler call must succeed under starter caps"
+    );
+}

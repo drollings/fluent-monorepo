@@ -323,3 +323,34 @@ async fn affinity_bonus_is_task_value_not_confidence() {
         "aged starved B should eventually outrank fresh affine A"
     );
 }
+
+#[tokio::test]
+async fn test_aging_saturates_instead_of_overflowing() {
+    let runtime = tokio_runtime();
+    let p = Arc::new(PriorityResultPool::new(
+        Arc::clone(&runtime),
+        1,
+        move |identity: String| async move { Ok::<String, String>(identity) },
+    ));
+
+    let scheduler = AffinityScheduler::new_with_runtime(Arc::clone(&p), Arc::clone(&runtime))
+        .with_aging(AgingConfig {
+            affinity_bonus: 0,
+            aging_interval: Duration::ZERO,
+            aging_rate: 100,
+            max_priority: i32::MAX,
+        });
+
+    let task = ScheduledTask {
+        identity: "hot".into(),
+        task: "task".into(),
+        enqueued_at: scheduler.runtime.now(),
+    };
+    scheduler.submit(task, i32::MAX - 10).await.unwrap();
+
+    scheduler.age_now();
+
+    // Saturating add pins at i32::MAX instead of overflowing (debug panic)
+    // or wrapping negative (release) before the max_priority cap applies.
+    assert_eq!(scheduler.recorded_base("hot"), Some(i32::MAX));
+}
