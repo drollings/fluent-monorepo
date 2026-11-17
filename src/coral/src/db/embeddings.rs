@@ -1,5 +1,5 @@
-use fluent_db::vector::{try_bytes_to_vec, vec_to_bytes};
 use rusqlite::params;
+use search_vector::math::{try_bytes_to_vec, vec_to_bytes};
 
 use super::LibraryError;
 

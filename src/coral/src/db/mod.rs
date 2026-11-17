@@ -14,10 +14,10 @@ use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use fluent_db::error::DbError;
-use fluent_db::hnsw::HnswIndex;
 use fluent_db::store::SqliteStore;
 use fluent_llm::EmbeddingProvider;
 use fluent_types::{ContentNode, NodeId};
+use search_vector::hnsw::HnswIndex;
 use thiserror::Error;
 
 // Promoted to `common-core::constants`
@@ -473,7 +473,7 @@ mod tests {
     #[cfg(feature = "hnsw-bench")]
     #[ignore = "100K-node KNN benchmark — run explicitly with --features hnsw-bench -- --ignored --nocapture"]
     fn knn_search_100k_benchmark() {
-        use fluent_db::vector::knn_brute_force;
+        use search_vector::math::knn_brute_force;
         use std::time::Instant;
 
         let lib = Library::open_in_memory().expect("db");
@@ -516,7 +516,7 @@ mod tests {
             let candidates: Vec<(usize, Vec<f32>)> = rows
                 .into_iter()
                 .filter_map(|(i, b)| {
-                    fluent_db::vector::try_bytes_to_vec(&b).map(|v| (i as usize, v))
+                    search_vector::math::try_bytes_to_vec(&b).map(|v| (i as usize, v))
                 })
                 .collect();
             let _legacy = knn_brute_force(

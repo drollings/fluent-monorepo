@@ -599,9 +599,15 @@ fn plan_ctx(user_message: &str, entities: &[Entity]) -> fluent_wvr::WorkContext 
         "messages": [{"role": "user", "content": user_message}]
     });
     let mut ctx = fluent_wvr::WorkContext::default();
-    ctx.set_structured("request", &request_json);
+    debug_assert!(
+        ctx.try_set_structured("request", &request_json),
+        "structured handoff must serialize"
+    );
     if !entities.is_empty() {
-        ctx.set_structured(ENTITIES_META_KEY, &entities);
+        debug_assert!(
+            ctx.try_set_structured(ENTITIES_META_KEY, &entities),
+            "structured handoff must serialize"
+        );
     }
     ctx
 }

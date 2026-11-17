@@ -4,6 +4,7 @@
 
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Component, FieldAccess, FieldError};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(fluent_wvr::FieldAccess, fluent_wvr::Describable)]
@@ -98,13 +99,14 @@ fn h1b_adapter_shared_valid_still_readonly_no_store() {
     assert_eq!(adapter.get_field("port").unwrap(), "8079");
 }
 
-/// Control: the explicit `with_field_override` builder remains the
+/// Control: the explicit `with_field_overrides` builder remains the
 /// deliberate unchecked path, even over a shared inner.
 #[test]
-fn h1b_with_field_override_builder_stays_unchecked_bypass() {
+fn h1b_with_field_overrides_builder_stays_unchecked_bypass() {
     let inner: Arc<dyn Component> = Arc::new(AuditPort { port: 8079 });
     let _clone = Arc::clone(&inner);
-    let adapter = ComponentAdapter::new(inner).with_field_override("port", "0");
+    let adapter = ComponentAdapter::new(inner)
+        .with_field_overrides(HashMap::from([("port".to_string(), "0".to_string())]));
     assert_eq!(adapter.get_field("port").unwrap(), "0");
     // The bypass is explicit: execution still sees the inner value.
     let out = adapter.execute(&WorkContext::default()).unwrap();

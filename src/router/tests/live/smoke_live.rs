@@ -50,7 +50,7 @@ fn make_live_config() -> RouterConfig {
 
 fn run_pipeline(pipeline: &PipelineOrchestrator, text: &str) -> Result<PipelineResult, WorkError> {
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &test_request(text));
+    assert!(ctx.try_set_structured("request", &test_request(text)));
     let output = pipeline.execute(&ctx)?;
     output
         .data_take()

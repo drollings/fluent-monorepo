@@ -229,7 +229,7 @@ impl HotSnapshotIndex {
     /// tiny (hundreds of bytes), so `max_mb` is primarily informational for
     /// the fork's actual slot memory budget.
     pub fn new(capacity: usize, max_mb: usize) -> Self {
-        let snapshots = LoadCache::new(
+        let snapshots = LoadCache::try_new(
             capacity.max(1),
             |_: &(String, Option<String>, String)| -> Result<Arc<KvSnapshot>, KvCacheError> {
                 Err(KvCacheError::NotFound(

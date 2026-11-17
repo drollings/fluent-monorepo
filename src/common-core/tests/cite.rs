@@ -46,7 +46,10 @@ fn ranges_cover_start_end_spans() {
     assert_eq!(ranges.len(), 2, "{ranges:?}");
     assert_eq!(ranges[0].file, "src/foo.rs");
     assert_eq!((ranges[0].start, ranges[0].end), (10, 20));
-    assert_eq!(&text[ranges[0].span.0..ranges[0].span.1], "src/foo.rs:10-20");
+    assert_eq!(
+        &text[ranges[0].span.0..ranges[0].span.1],
+        "src/foo.rs:10-20"
+    );
     assert_eq!(ranges[1].file, "src/bar.rs");
     assert_eq!((ranges[1].start, ranges[1].end), (7, 7));
     assert_eq!(&text[ranges[1].span.0..ranges[1].span.1], "src/bar.rs:7");

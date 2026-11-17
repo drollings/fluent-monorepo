@@ -43,7 +43,7 @@ async fn spawn_plan_server() -> TestServer {
     use crate::charts::store::{chart_from_str, ChartStore};
     use crate::routes::plan::PlanRoute;
     use crate::test_stubs::StubChatBackend;
-    use fluent_db::hnsw::HnswIndexHandle;
+    use search_vector::hnsw::HnswIndexHandle;
 
     let triage = r#"{
         "name": "bug_triage",

@@ -74,7 +74,7 @@ fn yago_to_json(
     full_iri: bool,
     flat: bool,
 ) -> anyhow::Result<()> {
-    use guidance_ontology::taxonomy::{taxonomy_from_ttl, to_flat, to_json_string};
+    use fluent_concept::taxonomy::{taxonomy_from_ttl, to_flat, to_json_string};
     let ttl = std::fs::read_to_string(input)?;
     let map = taxonomy_from_ttl(&ttl, !include_all, !full_iri);
     let text = if flat {
@@ -152,9 +152,9 @@ fn build_yago(input: &PathBuf, output: &PathBuf) -> anyhow::Result<()> {
 
 fn prune_yago(input: &PathBuf, output: &PathBuf, tiers: usize) -> anyhow::Result<()> {
     // Rust owner of `src/ontology/tools/prune_yago_taxonomy.py`: tier-BFS
-    // over the subClassOf edges via `guidance_ontology::taxonomy`.
+    // over the subClassOf edges via `fluent_concept::taxonomy`.
     let ttl = std::fs::read_to_string(input)?;
-    let pruned = guidance_ontology::taxonomy::prune_ttl(&ttl, tiers);
+    let pruned = fluent_concept::taxonomy::prune_ttl(&ttl, tiers);
     std::fs::write(output, &pruned)?;
     println!(
         "prune yago: {} tiers {} -> {}",

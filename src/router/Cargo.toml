@@ -24,8 +24,7 @@ spacy-rs = { path = "../spacy-rs" }
 fluent-concept = { path = "../concept" }
 # M10: LOD mechanics home (selectors/assembler/views over the content seam).
 fluent-knowledge = { path = "../knowledge" }
-# M9.2: canonical-form table home (`guidance_ontology::canonical`).
-fluent-ontology = { path = "../ontology" }
+# M9.2: canonical-form table home (`fluent_concept::canonical`).
 # Ort-free by default: `fluent-onnx` is optional and entirely absent from
 # default builds (its config / registry / trait surface now lives in
 # `fluent-llm`). The `ort`/`tokenizers` workers only build with the `onnx`

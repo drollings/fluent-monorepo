@@ -102,7 +102,7 @@ fn zero_snapshot_renders_without_traffic() {
 #[test]
 fn rule_win_records_rule_once() {
     let metrics = DecisionMetrics::new();
-    let cache = DecisionCache::new(4).expect("cache");
+    let cache = DecisionCache::try_new(4).expect("cache");
     let out = drive(
         &metrics,
         Some(canned("RULE")),
@@ -126,7 +126,7 @@ fn rule_win_records_rule_once() {
 #[test]
 fn cache_hit_records_cache_hit_once() {
     let metrics = DecisionMetrics::new();
-    let cache = DecisionCache::new(4).expect("cache");
+    let cache = DecisionCache::try_new(4).expect("cache");
     cache.insert("k".to_string(), canned("CACHED"));
     let out = drive(
         &metrics,
@@ -150,7 +150,7 @@ fn cache_hit_records_cache_hit_once() {
 #[test]
 fn model_answer_records_model_once() {
     let metrics = DecisionMetrics::new();
-    let cache = DecisionCache::new(4).expect("cache");
+    let cache = DecisionCache::try_new(4).expect("cache");
     let out = drive(
         &metrics,
         None,
@@ -173,7 +173,7 @@ fn model_answer_records_model_once() {
 #[test]
 fn unavailable_model_records_fallback_once() {
     let metrics = DecisionMetrics::new();
-    let cache = DecisionCache::new(4).expect("cache");
+    let cache = DecisionCache::try_new(4).expect("cache");
     let out = drive(
         &metrics,
         None,
@@ -196,7 +196,7 @@ fn unavailable_model_records_fallback_once() {
 #[test]
 fn degraded_model_records_dropped_once() {
     let metrics = DecisionMetrics::new();
-    let cache = DecisionCache::new(4).expect("cache");
+    let cache = DecisionCache::try_new(4).expect("cache");
     let mut degraded = canned("MODEL");
     degraded.degraded = true;
     let out = drive(
@@ -219,7 +219,7 @@ fn degraded_model_records_dropped_once() {
 #[test]
 fn rejected_model_records_dropped_and_propagates() {
     let metrics = DecisionMetrics::new();
-    let cache = DecisionCache::new(4).expect("cache");
+    let cache = DecisionCache::try_new(4).expect("cache");
     let err = drive(
         &metrics,
         None,
@@ -241,7 +241,7 @@ fn rejected_model_records_dropped_and_propagates() {
 fn shadow_agreement_flows_through_evaluation() {
     for (agreed, expected) in [(Some(false), 1), (Some(true), 0), (None, 0)] {
         let metrics = DecisionMetrics::new();
-        let cache = DecisionCache::new(4).expect("cache");
+        let cache = DecisionCache::try_new(4).expect("cache");
         drive(
             &metrics,
             Some(canned("RULE")),

@@ -226,7 +226,10 @@ impl Ladder {
         // numeric score doubles as the recorder's [A] self-doubt signal.
         let scorer = ResultScorer::new(assembler.clone(), SCORE_ACCEPTANCE_THRESHOLD);
         let mut wctx = WorkContext::default();
-        wctx.set_structured("request", ctx.request);
+        debug_assert!(
+            wctx.try_set_structured("request", ctx.request),
+            "structured handoff must serialize"
+        );
         wctx.metadata
             .insert("response".into(), MetadataValue::from(assembled.clone()));
         let (accepted, assembler_confidence) = match scorer.execute(&wctx) {

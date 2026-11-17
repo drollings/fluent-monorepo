@@ -710,7 +710,10 @@ impl StagePipeline {
                 let mut ctx = WorkContext::for_unit_in_batch(&rt, &caps, |_| {});
                 ctx.set(STATE_KEY, Arc::clone(state));
                 if stage.name() == "annotate" {
-                    ctx.set_structured(ANNOTATION_JSON_KEY, &annotation_json);
+                    debug_assert!(
+                        ctx.try_set_structured(ANNOTATION_JSON_KEY, &annotation_json),
+                        "structured handoff must serialize"
+                    );
                 }
                 batch
                     .register_with_context(stage.clone(), ctx)

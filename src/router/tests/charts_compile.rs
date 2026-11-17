@@ -246,10 +246,10 @@ async fn compiled_stages_feed_chart_execution_plan() {
     assert_eq!(plan.order(), &order);
 
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({"model": "test", "messages": [{"role": "user", "content": "run"}]}),
-    );
+    ));
     let opts = ChartExecOptions {
         runtime: fluent_concurrency::tokio_runtime(),
         ..ChartExecOptions::default()

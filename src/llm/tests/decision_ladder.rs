@@ -24,7 +24,7 @@ fn breaker() -> DecisionBreaker {
 }
 
 fn cache() -> DecisionCache {
-    DecisionCache::new(16).expect("capacity")
+    DecisionCache::try_new(16).expect("capacity")
 }
 
 #[test]

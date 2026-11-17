@@ -87,7 +87,7 @@ fn decision_key_is_fingerprint_scoped() {
 fn ladder_rule_wins_without_calling_model() {
     let out = fluent_llm::client::block_on(decide_with_ladder(
         Some(canned("RULE", 1.0)),
-        &DecisionCache::new(4).expect("cache"),
+        &DecisionCache::try_new(4).expect("cache"),
         "k".to_string(),
         true,
         &DecisionBreaker::new(3, 60_000).expect("breaker"),
@@ -102,7 +102,7 @@ fn ladder_rule_wins_without_calling_model() {
 fn ladder_unavailable_falls_through_to_fallback() {
     let out = fluent_llm::client::block_on(decide_with_ladder(
         None,
-        &DecisionCache::new(4).expect("cache"),
+        &DecisionCache::try_new(4).expect("cache"),
         "k".to_string(),
         true,
         &DecisionBreaker::new(3, 60_000).expect("breaker"),
@@ -117,7 +117,7 @@ fn ladder_unavailable_falls_through_to_fallback() {
 fn ladder_rejected_is_terminal() {
     let err = fluent_llm::client::block_on(decide_with_ladder(
         None,
-        &DecisionCache::new(4).expect("cache"),
+        &DecisionCache::try_new(4).expect("cache"),
         "k".to_string(),
         true,
         &DecisionBreaker::new(3, 60_000).expect("breaker"),
@@ -130,7 +130,7 @@ fn ladder_rejected_is_terminal() {
 
 #[test]
 fn degraded_success_answers_once_without_caching() {
-    let cache = DecisionCache::new(4).expect("cache");
+    let cache = DecisionCache::try_new(4).expect("cache");
     let mut degraded = canned("MODEL", 0.6);
     degraded.degraded = true;
     let out = fluent_llm::client::block_on(decide_with_ladder(

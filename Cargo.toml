@@ -17,7 +17,6 @@ members = [
     "src/vector-math",
     "src/search-vector",
     "src/rdf",
-    "src/ontology",
     "src/knowledge",
     "src/wasm_ipc",
     "src/memory-plugin",

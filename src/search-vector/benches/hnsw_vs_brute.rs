@@ -8,8 +8,8 @@
 //! supplies the timing evidence behind it.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use fluent_db::hnsw::HnswIndex;
-use fluent_db::vector::{knn_brute_force_q8, QuantizedEmbedding};
+use search_vector::hnsw::HnswIndex;
+use search_vector::math::{knn_brute_force_q8, QuantizedEmbedding};
 use std::hint::black_box;
 
 const DIMS: usize = 384;

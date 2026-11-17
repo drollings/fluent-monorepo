@@ -10,4 +10,4 @@ crc32fast = "1"
 anyhow = "1"
 serde_json = { workspace = true }
 common-core = { path = "../common-core" }
-fluent-ontology = { path = "../ontology" }
+fluent-concept = { path = "../concept" }

@@ -132,7 +132,7 @@ fn golden_loads_real_seed_dir() {
 
 fn indexed_store() -> (ChartStore, tempfile::TempDir) {
     let tmp = tempfile::TempDir::new().unwrap();
-    let handle = fluent_db::hnsw::HnswIndexHandle {
+    let handle = search_vector::hnsw::HnswIndexHandle {
         name: "workflow_library".into(),
         path: tmp
             .path()
@@ -301,7 +301,7 @@ fn lexical_candidates_order_by_overlap_then_name() {
     // spell_check vs {the} with the decoy. Gibberish abstains (empty).
     use std::sync::Arc;
     let tmp = tempfile::TempDir::new().unwrap();
-    let store = ChartStore::new(Some(fluent_db::hnsw::HnswIndexHandle {
+    let store = ChartStore::new(Some(search_vector::hnsw::HnswIndexHandle {
         name: "workflow_library".into(),
         path: tmp.path().join("w.sqlite").display().to_string(),
     }));

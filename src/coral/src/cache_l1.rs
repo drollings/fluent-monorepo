@@ -47,7 +47,7 @@ impl L1Cache {
         let load = |_: &String| -> Result<Arc<RoutingResult>, crate::error::CacheError> {
             Err(crate::error::CacheError::Miss)
         };
-        let inner = LoadCache::new(max_entries, load)
+        let inner = LoadCache::try_new(max_entries, load)
             .map_err(|_| crate::error::CacheError::InvalidCapacity(max_entries))?;
         Ok(Self { inner, max_entries })
     }

@@ -23,7 +23,6 @@ mod boot;
 
 use clap::{Args, Parser, Subcommand};
 use fluent_concept::ConceptStore;
-use fluent_db::hnsw::HnswIndexHandle;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::protocol::ChatMessage;
 use fluent_llm::{create_embedding_provider, EmbeddingProvider};
@@ -44,6 +43,7 @@ use fluent_router::server::RouterServer;
 use fluent_router::testing::{
     load_transcript_file, transcript_provider_from_entries, MockDispatchContext,
 };
+use search_vector::hnsw::HnswIndexHandle;
 
 #[derive(Parser)]
 #[command(

@@ -261,7 +261,7 @@ fn request_context_round_trip() {
         metadata: Default::default(),
     };
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &request);
+    assert!(ctx.try_set_structured("request", &request));
     let stage = stage_with(vec![hint_overlay()]);
     let decision = stage.evaluate(&ctx, &[]).expect("decision");
     assert_eq!(decision.verdict, StageVerdict::Skipped);

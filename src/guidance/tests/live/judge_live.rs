@@ -15,8 +15,8 @@ fn live_env() -> Option<(String, String)> {
 }
 
 fn seed_registry(point: &str) -> CalibrationRegistry {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("corpora/{point}_seed.json"));
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("corpora/{point}_seed.json"));
     let raw = std::fs::read_to_string(&path).expect("seed reads");
     let value: serde_json::Value = serde_json::from_str(&raw).expect("seed parses");
     let _ = value;

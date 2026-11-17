@@ -1760,7 +1760,7 @@ async fn rung_once(
 async fn measure_decision() -> Vec<Measured> {
     const DECISION_REPRO: &str = "cargo test -p guidance-core --lib decision_metrics";
     let metrics = DecisionMetrics::new();
-    let cache = fluent_llm::decision::DecisionCache::new(4).expect("cache");
+    let cache = fluent_llm::decision::DecisionCache::try_new(4).expect("cache");
     cache.insert("k".to_string(), scripted_decision("CACHED", 1.0, false));
     rung_once(
         &metrics,

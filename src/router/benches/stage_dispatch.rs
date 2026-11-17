@@ -40,7 +40,7 @@ fn request_ctx() -> WorkContext {
     let mut req = fluent_router::testing::test_request("What is the capital of France?");
     req.session_id = Some("bench-session".into());
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &req);
+    assert!(ctx.try_set_structured("request", &req));
     ctx
 }
 

@@ -127,7 +127,7 @@ fn rrf_score_serializes_as_a_bare_number() {
 // ── Cross-crate RRF calibration ──
 //
 // `rrf_fuse` composes the shared kernel (`score_postings` →
-// `fluent_db::vector::rrf_merge_n` → `rrf_term`): there is no second RRF
+// `search_vector::math::rrf_merge_n` → `rrf_term`): there is no second RRF
 // formula. These pin the composition so a future re-fork fails loudly.
 // Documented difference (not a fork): storage recall ranks are 1-based
 // (`pos + 1`, matching `fuseCandidates`), while `fluent_db::rrf_merge_n`
@@ -144,7 +144,7 @@ fn rrf_score_postings_delegates_to_shared_merge_n() {
         ("a".to_string(), 1),
     ];
     let via_seam = score_postings(postings.clone(), 60.0);
-    let via_shared: std::collections::HashMap<String, f64> = fluent_db::vector::rrf_merge_n(
+    let via_shared: std::collections::HashMap<String, f64> = search_vector::math::rrf_merge_n(
         postings
             .into_iter()
             .map(|(id, rank)| (id, rank, ()))
@@ -174,7 +174,7 @@ fn rrf_fused_scores_are_shared_kernel_terms() {
     for (id, rank) in [("a", 1usize), ("b", 2), ("c", 3)] {
         assert_eq!(
             by_id[id].to_bits(),
-            fluent_db::vector::rrf_term(60.0, rank).to_bits(),
+            search_vector::math::rrf_term(60.0, rank).to_bits(),
             "{id} must score exactly one shared kernel term"
         );
     }
@@ -214,7 +214,7 @@ fn rrf_fuse_order_agrees_with_shared_merge_on_corpus() {
                 }
             }
         }
-        let merge_order: Vec<String> = fluent_db::vector::rrf_merge_n(postings, k)
+        let merge_order: Vec<String> = search_vector::math::rrf_merge_n(postings, k)
             .into_iter()
             .map(|(_, id, ())| id)
             .collect();

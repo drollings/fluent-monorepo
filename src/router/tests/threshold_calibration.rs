@@ -17,8 +17,8 @@
 // no alias is needed — the unit copy declares `use crate as fluent_router;`).
 
 use common_core::calibration::calibrate_threshold;
-use fluent_db::hnsw::HnswIndex;
-use fluent_db::vector::knn_brute_force;
+use search_vector::hnsw::HnswIndex;
+use search_vector::math::knn_brute_force;
 
 /// Deterministic pseudo-random unit embedding (LCG + normalize) — the same
 /// generator as `tests/vector_index.rs::random_embedding`, duplicated here
@@ -148,7 +148,7 @@ fn m5a_hnsw_recall_at_scale_and_brute_force_control() {
                     .into_iter()
                     .map(|(id, _)| id)
                     .collect();
-            let approx: HashSet<i64> = fluent_db::hnsw::hnsw_lookup(&idx, &query, k)
+            let approx: HashSet<i64> = search_vector::hnsw::hnsw_lookup(&idx, &query, k)
                 .expect("built → Some")
                 .into_iter()
                 .map(|(id, _)| id)
@@ -241,7 +241,7 @@ fn m5b_ef_sweep_holds_recall_and_k0_probes_nothing() {
         })
         .collect();
     for ef in [k * 2, k * 4, k * 8] {
-        let h = fluent_db::hnsw::make_hnsw(&common_core::constants::HnswParams::default(), n);
+        let h = search_vector::hnsw::make_hnsw(&common_core::constants::HnswParams::default(), n);
         for (i, emb) in corpus.iter().enumerate() {
             h.insert((emb, i));
         }
@@ -267,7 +267,7 @@ fn m5b_ef_sweep_holds_recall_and_k0_probes_nothing() {
     let idx = HnswIndex::new();
     idx.insert(1, &corpus[0]);
     assert_eq!(
-        fluent_db::hnsw::hnsw_lookup(&idx, &corpus[0], 0),
+        search_vector::hnsw::hnsw_lookup(&idx, &corpus[0], 0),
         None,
         "M5b control: k == 0 → None"
     );
@@ -438,7 +438,7 @@ fn m5e_rrf_fusion_golden_and_stability() {
     let order_at = |k_constant: f64| -> Vec<(i64, String, f64)> {
         let kw = vec![(1i64, (1i64, "kw1")), (2, (2, "kw2"))];
         let vv = vec![(2i64, (2i64, "vec2")), (3, (3, "vec3"))];
-        fluent_db::vector::rrf_merge(kw, vv, k_constant)
+        search_vector::math::rrf_merge(kw, vv, k_constant)
             .into_iter()
             .map(|(score, (id, item))| (id, item.to_string(), score))
             .collect()
@@ -464,7 +464,8 @@ fn m5e_rrf_fusion_golden_and_stability() {
     }
     // Control: id present in neither list never appears.
     assert!(!fused.iter().any(|(id, _, _)| *id == 99));
-    let empty: Vec<(f64, (i64, &str))> = fluent_db::vector::rrf_merge(Vec::new(), Vec::new(), 60.0);
+    let empty: Vec<(f64, (i64, &str))> =
+        search_vector::math::rrf_merge(Vec::new(), Vec::new(), 60.0);
     assert!(empty.is_empty());
 }
 

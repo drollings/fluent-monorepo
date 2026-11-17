@@ -328,13 +328,13 @@ fn classifier_sends_response_format_through_extras_seam() {
     );
 
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "hello"}],
         }),
-    );
+    ));
     let decision: StageDecision = stage
         .execute(&ctx)
         .expect("execute")
@@ -473,13 +473,13 @@ fn classifier_merges_overlay_route_hints_into_the_prompt() {
     );
 
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "write a parser"}],
         }),
-    );
+    ));
 
     // An overlay decision published between nlp and classifier.
     let mut overlay_meta = StageMetadata::new(serde_json::json!({}));
@@ -551,13 +551,13 @@ fn nlp_overlay_hints_merge_into_classifier_context() {
     );
 
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "write a parser"}],
         }),
-    );
+    ));
 
     // The NLP decision carries the typed residual; the overlay decision
     // carries the scored hints. Both ride the same prior chain.
@@ -639,13 +639,13 @@ fn classifier_prompt_unchanged_without_overlay_hints() {
     );
 
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "hello"}],
         }),
-    );
+    ));
     let decision = stage.evaluate(&ctx, &[]).expect("evaluate");
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let system = seen.lock().expect("lock").first().expect("system").clone();
@@ -816,13 +816,13 @@ fn late_bound_stage(
 
 fn classifier_request_ctx() -> WorkContext {
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "hello"}],
         }),
-    );
+    ));
     ctx
 }
 

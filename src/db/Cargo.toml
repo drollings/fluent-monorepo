@@ -9,13 +9,12 @@ edition.workspace = true
 default = ["sqlite"]
 # `common-core/sqlite` is kept solely for the `SqliteError` leaf error type
 # (shared with `dag`); the raw helpers live in `fluent_db::sqlite`.
-sqlite = ["dep:rusqlite", "dep:hnsw_rs", "dep:anndists", "common-core/sqlite"]
+sqlite = ["dep:rusqlite", "common-core/sqlite"]
 
 [dependencies]
 fluent-types = { path = "../types" }
 fluent-wvr = { path = "../fluent-wvr" }
 common-core = { path = "../common-core" }
-vector-math = { path = "../vector-math" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,8 +23,6 @@ tracing = { workspace = true }
 internment = { workspace = true, features = ["arc", "serde"] }
 bon = { workspace = true }
 rusqlite = { workspace = true, optional = true, features = ["hooks"] }
-hnsw_rs = { workspace = true, optional = true }
-anndists = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -34,10 +31,6 @@ tokio = { workspace = true, features = ["test-util"] }
 [[test]]
 name = "doc_stubs"
 path = "tests/doc_stubs.rs"
-
-[[test]]
-name = "hnsw_concurrent"
-path = "tests/hnsw_concurrent.rs"
 
 [lints]
 workspace = true

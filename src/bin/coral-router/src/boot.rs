@@ -15,13 +15,13 @@
 use std::sync::Arc;
 
 use coral_context::db::Library;
+use fluent_concept::loader::YaGoLoader;
+use fluent_concept::yago::WHITELIST_IRIS;
 use fluent_concept::{ConceptStore, TaxonomyHierarchy};
 use fluent_router::concept_store_sqlite::SqliteConceptStore;
 use fluent_router::config::RouterConfig;
 use fluent_router::node_store::ContentNodeStore;
 use fluent_types::{ContentNode, NodeId};
-use guidance_ontology::yago::WHITELIST_IRIS;
-use guidance_ontology::yago_loader::YaGoLoader;
 
 /// Open the ledger the way the boot wants it: a
 /// configured `ledger` section opens its durable path (with a `warn!` for the
@@ -257,7 +257,7 @@ pub fn load_yago_and_reconcile(
             .get_node(node_id)
             .map_err(|e| format!("coral get {iri} failed: {e}"))?
             .is_some();
-        let id = guidance_ontology::yago_loader::yago_class_id(iri);
+        let id = fluent_concept::loader::yago_class_id(iri);
         let in_router = store.get(id).is_ok();
         if !in_coral || !in_router {
             return Err(format!(
@@ -290,7 +290,7 @@ pub fn sqlite_store_from_ledger(ledger: &ContentNodeStore) -> Option<SqliteConce
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_ontology::yago::ALL_CLASSES;
+    use fluent_concept::yago::ALL_CLASSES;
     use std::sync::Arc;
 
     #[test]
@@ -307,7 +307,7 @@ mod tests {
         // Every reference class resolves in the router store with its coral
         // node_id cross-ref (F5: full 64-bit).
         for iri in ALL_CLASSES {
-            let id = guidance_ontology::yago_loader::yago_class_id(iri.iri);
+            let id = fluent_concept::loader::yago_class_id(iri.iri);
             let meta = store.get(id).expect("resolves in router store");
             let node_id = meta.node_id.expect("node_id cross-ref");
             assert!(
@@ -328,9 +328,8 @@ mod tests {
         load_yago_and_reconcile(&coral, &store).expect("first reconcile");
 
         // Inject a row the loader never produced (simulating two writers).
-        let stray = guidance_ontology::yago_loader::yago_class_id(
-            "http://yago-knowledge.org/resource/StrayClass",
-        );
+        let stray =
+            fluent_concept::loader::yago_class_id("http://yago-knowledge.org/resource/StrayClass");
         store
             .insert(fluent_types::ConceptMetadata {
                 id: stray,

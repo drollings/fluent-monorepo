@@ -4,7 +4,7 @@
 use super::*;
 use crate::charts::store::{chart_from_str, ChartStore};
 use crate::test_stubs::{HashEmbedder, StubChatBackend};
-use fluent_db::hnsw::HnswIndexHandle;
+use search_vector::hnsw::HnswIndexHandle;
 use std::path::Path;
 use tempfile::TempDir;
 

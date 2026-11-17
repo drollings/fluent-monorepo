@@ -34,7 +34,7 @@ fn key(state: &str, version: u64, model: &str) -> String {
 
 #[test]
 fn same_key_hits_and_marks_cached() {
-    let cache = DecisionCache::new(16).expect("capacity");
+    let cache = DecisionCache::try_new(16).expect("capacity");
     let calls = Arc::new(AtomicUsize::new(0));
     let run = || {
         let calls = Arc::clone(&calls);
@@ -53,7 +53,7 @@ fn same_key_hits_and_marks_cached() {
 
 #[test]
 fn version_bump_model_change_miss() {
-    let cache = DecisionCache::new(16).expect("capacity");
+    let cache = DecisionCache::try_new(16).expect("capacity");
     let calls = Arc::new(AtomicUsize::new(0));
     let decide = |label: &'static str| {
         let calls = Arc::clone(&calls);
@@ -130,7 +130,7 @@ fn key_separates_question_text_framing_and_endpoint() {
 
 #[test]
 fn unavailable_never_cached_control() {
-    let cache = DecisionCache::new(16).expect("capacity");
+    let cache = DecisionCache::try_new(16).expect("capacity");
     let calls = Arc::new(AtomicUsize::new(0));
     for _ in 0..2 {
         let calls = Arc::clone(&calls);
@@ -147,7 +147,7 @@ fn unavailable_never_cached_control() {
 
 #[test]
 fn decode_errors_never_cached_control() {
-    let cache = DecisionCache::new(16).expect("capacity");
+    let cache = DecisionCache::try_new(16).expect("capacity");
     for _ in 0..2 {
         let err = fluent_llm::block_on(cache.get_or_decide(key("s", 1, "m"), async {
             Err::<Decision, _>(DecisionError::Decode("garbage".to_string()))
@@ -161,7 +161,7 @@ fn decode_errors_never_cached_control() {
 #[test]
 fn degraded_ok_never_cached() {
     use fluent_llm::decision::decode_choice;
-    let cache = DecisionCache::new(16).expect("capacity");
+    let cache = DecisionCache::try_new(16).expect("capacity");
     let calls = Arc::new(AtomicUsize::new(0));
     for _ in 0..2 {
         let calls = Arc::clone(&calls);
@@ -185,7 +185,7 @@ fn degraded_ok_never_cached() {
 
 #[test]
 fn eviction_bounded_under_flood() {
-    let cache = DecisionCache::new(2).expect("capacity");
+    let cache = DecisionCache::try_new(2).expect("capacity");
     for i in 0..10 {
         let k = key(&format!("state-{i}"), 1, "m");
         let _ = fluent_llm::block_on(
@@ -199,7 +199,7 @@ fn eviction_bounded_under_flood() {
 #[test]
 fn eviction_bounded_under_concurrent_flood() {
     use std::thread;
-    let cache = std::sync::Arc::new(DecisionCache::new(8).expect("capacity"));
+    let cache = std::sync::Arc::new(DecisionCache::try_new(8).expect("capacity"));
     thread::scope(|s| {
         for t in 0..8 {
             let cache = std::sync::Arc::clone(&cache);
@@ -246,7 +246,7 @@ fn key_struct_scopes_fingerprint() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn simultaneous_miss_coalesces_to_one_load() {
     use std::sync::Arc as StdArc;
-    let cache = StdArc::new(DecisionCache::new(16).expect("capacity"));
+    let cache = StdArc::new(DecisionCache::try_new(16).expect("capacity"));
     let calls = StdArc::new(AtomicUsize::new(0));
     let gate = StdArc::new(tokio::sync::Barrier::new(16));
     let mut handles = Vec::new();
@@ -279,7 +279,7 @@ async fn slow_load(calls: Arc<AtomicUsize>) -> Result<Decision, DecisionError> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn canceled_leader_does_not_strand_waiters() {
-    let cache = std::sync::Arc::new(DecisionCache::new(16).expect("capacity"));
+    let cache = std::sync::Arc::new(DecisionCache::try_new(16).expect("capacity"));
     let calls = std::sync::Arc::new(AtomicUsize::new(0));
     let leader = {
         let (cache, calls) = (Arc::clone(&cache), Arc::clone(&calls));
@@ -306,4 +306,10 @@ async fn canceled_leader_does_not_strand_waiters() {
         .expect("task");
     assert_eq!(outcome.expect("decision").label, "B");
     assert_eq!(calls.load(Ordering::SeqCst), 1, "only the waiter loaded");
+}
+
+#[test]
+fn try_new_rejects_zero_capacity() {
+    assert!(DecisionCache::try_new(0).is_err());
+    assert!(DecisionCache::try_new(4).is_ok());
 }

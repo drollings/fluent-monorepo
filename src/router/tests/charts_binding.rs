@@ -368,7 +368,7 @@ fn parse_entities_from_ctx_reads_metadata() {
     let mut ctx = WorkContext::default();
     assert!(parse_entities_from_ctx(&ctx).is_empty());
     let entities = vec![entity("e1", "report", serde_json::json!({"title": "T"}))];
-    ctx.set_structured(ENTITIES_META_KEY, &entities);
+    assert!(ctx.try_set_structured(ENTITIES_META_KEY, &entities));
     let parsed = parse_entities_from_ctx(&ctx);
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].id, "e1");

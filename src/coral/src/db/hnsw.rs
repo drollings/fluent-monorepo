@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use fluent_db::vector::try_bytes_to_vec;
 use fluent_types::{KnnHit, NodeId};
+use search_vector::math::try_bytes_to_vec;
 
 use super::LibraryError;
 
@@ -23,7 +23,7 @@ impl super::Library {
 
     pub(crate) fn hnsw_search(&self, query_vec: &[f32], k: usize) -> Option<Vec<KnnHit>> {
         // M2: the HNSW probe + id resolution is the shared
-        // `fluent_db::hnsw::hnsw_lookup` (caller keys + cosine distances).
+        // `search_vector::hnsw::hnsw_lookup` (caller keys + cosine distances).
         // Lock ordering is preserved: `hnsw_lookup` releases the
         // `hnsw`/`id_map` guards before returning, and only then do we touch
         // the connection (hnsw → id_map → conn, never inverted — R9).
@@ -34,7 +34,7 @@ impl super::Library {
         // brute-force path here, so empty — not absent — is the answer, and
         // callers treat `None` as a store error. Do NOT "fix" this to `None`.
         let neighbours: Vec<(i64, f32)> =
-            fluent_db::hnsw::hnsw_lookup(&self.hnsw, query_vec, k).unwrap_or_default();
+            search_vector::hnsw::hnsw_lookup(&self.hnsw, query_vec, k).unwrap_or_default();
         if neighbours.is_empty() {
             return Some(Vec::new());
         }

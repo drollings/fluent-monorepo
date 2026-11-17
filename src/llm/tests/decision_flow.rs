@@ -19,8 +19,15 @@ fn choice(label: &str, confidence: f64) -> Decision {
         ("other".to_string(), 1.0 - confidence, confidence)
     };
     let other = if top == label { "other" } else { label };
-    Decision::from_distribution(label, vec![(top, top_p), (other.to_string(), rest_p)], "m".into(), 1, 5, false)
-        .expect("canned")
+    Decision::from_distribution(
+        label,
+        vec![(top, top_p), (other.to_string(), rest_p)],
+        "m".into(),
+        1,
+        5,
+        false,
+    )
+    .expect("canned")
 }
 
 fn score(expected_top: &str, top_p: f64) -> Decision {
@@ -30,12 +37,7 @@ fn score(expected_top: &str, top_p: f64) -> Decision {
         expected_top,
         rungs
             .iter()
-            .map(|r| {
-                (
-                    r.to_string(),
-                    if *r == expected_top { top_p } else { rest },
-                )
-            })
+            .map(|r| (r.to_string(), if *r == expected_top { top_p } else { rest }))
             .collect(),
         "m".into(),
         1,
@@ -55,8 +57,20 @@ fn client(script: Vec<Result<Decision, DecisionError>>) -> LlmClient {
 #[test]
 fn semantic_if_acts_on_gated_yes() {
     let ask = FlowAsk::ask(0.5);
-    assert!(block_on(semantic_if(&client(vec![Ok(choice("yes", 0.9))]), "st", "q?", &ask, false)));
-    assert!(!block_on(semantic_if(&client(vec![Ok(choice("no", 0.9))]), "st", "q?", &ask, false)));
+    assert!(block_on(semantic_if(
+        &client(vec![Ok(choice("yes", 0.9))]),
+        "st",
+        "q?",
+        &ask,
+        false
+    )));
+    assert!(!block_on(semantic_if(
+        &client(vec![Ok(choice("no", 0.9))]),
+        "st",
+        "q?",
+        &ask,
+        false
+    )));
 }
 
 #[test]
@@ -91,17 +105,35 @@ fn semantic_if_below_gate_is_not_yes() {
 fn semantic_if_fails_closed_to_default() {
     let ask = FlowAsk::ask(0.5);
     let err = Err(DecisionError::Unavailable("down".to_string()));
-    assert!(block_on(semantic_if(&client(vec![err]), "st", "q?", &ask, true)));
+    assert!(block_on(semantic_if(
+        &client(vec![err]),
+        "st",
+        "q?",
+        &ask,
+        true
+    )));
     let err = Err(DecisionError::Unavailable("down".to_string()));
-    assert!(!block_on(semantic_if(&client(vec![err]), "st", "q?", &ask, false)));
+    assert!(!block_on(semantic_if(
+        &client(vec![err]),
+        "st",
+        "q?",
+        &ask,
+        false
+    )));
 }
 
 #[test]
 fn match_arm_returns_winner_index() {
     let ask = FlowAsk::ask(0.5);
     let arms = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-    let (index, decision) =
-        block_on(match_arm(&client(vec![Ok(choice("b", 0.8))]), "st", "q?", &arms, &ask, 0));
+    let (index, decision) = block_on(match_arm(
+        &client(vec![Ok(choice("b", 0.8))]),
+        "st",
+        "q?",
+        &arms,
+        &ask,
+        0,
+    ));
     assert_eq!(index, 1);
     assert!(decision.is_some());
 }
@@ -140,8 +172,14 @@ fn match_arm_fails_closed() {
 fn rerank_items_orders_by_score() {
     let ask = FlowAsk::ask(0.5);
     let items = vec![
-        RerankItem { id: "low".to_string(), text: "cold".to_string() },
-        RerankItem { id: "high".to_string(), text: "hot".to_string() },
+        RerankItem {
+            id: "low".to_string(),
+            text: "cold".to_string(),
+        },
+        RerankItem {
+            id: "high".to_string(),
+            text: "hot".to_string(),
+        },
     ];
     let order = block_on(rerank_items(
         &client(vec![Ok(score("2", 0.7)), Ok(score("5", 0.8))]),
@@ -179,7 +217,10 @@ fn descend_tree_settles_at_first_clearing_gate() {
         &levels,
     ));
     assert!(outcome.settled);
-    assert_eq!(outcome.path, vec![(0, "x".to_string()), (1, "q".to_string())]);
+    assert_eq!(
+        outcome.path,
+        vec![(0, "x".to_string()), (1, "q".to_string())]
+    );
     assert_eq!(outcome.decision.map(|d| d.label), Some("q".to_string()));
 }
 
@@ -200,5 +241,7 @@ fn descend_tree_unsettled_when_no_gate_clears() {
     assert!(!outcome.settled);
     assert!(outcome.decision.is_none());
     assert_eq!(outcome.path, vec![(0, "x".to_string())]);
-    assert!(block_on(descend_tree(&client(vec![]), &ask, &[])).path.is_empty());
+    assert!(block_on(descend_tree(&client(vec![]), &ask, &[]))
+        .path
+        .is_empty());
 }

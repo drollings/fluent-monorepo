@@ -1,12 +1,10 @@
 //! The `fluent_db::sqlite` connection/setup helpers: WAL mode, shared-cache
 //! lifetime, HNSW construction, violation classification, placeholder lists.
 
-use crate::hnsw::make_hnsw;
 use crate::sqlite::{
     in_clause, is_unique_violation, open_in_memory, open_shared_in_memory, open_wal, quote_ident,
     run_batch,
 };
-use common_core::constants::HnswParams;
 
 #[test]
 fn open_wal_enables_wal_and_roundtrips() {
@@ -84,19 +82,6 @@ fn in_clause_shapes() {
         .query_row(&sql, rusqlite::params![1, 2], |r| r.get(0))
         .unwrap();
     assert_eq!(n, 1);
-}
-
-#[test]
-fn make_hnsw_builds_searchable_cosine_index() {
-    let p = HnswParams::default();
-    let hnsw = make_hnsw(&p, 16);
-    let a = vec![1.0f32, 0.0, 0.0, 0.0];
-    let b = vec![0.0f32, 1.0, 0.0, 0.0];
-    hnsw.insert((&a, 0));
-    hnsw.insert((&b, 1));
-    let hits = hnsw.search(&a, 1, 16);
-    assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].d_id, 0);
 }
 
 #[test]

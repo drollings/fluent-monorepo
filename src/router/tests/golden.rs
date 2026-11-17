@@ -70,7 +70,7 @@ fn route(
     request: &RouterRequest,
 ) -> Result<PipelineResult, WorkError> {
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", request);
+    assert!(ctx.try_set_structured("request", request));
     let output = pipeline.execute(&ctx)?;
     output
         .data_take()

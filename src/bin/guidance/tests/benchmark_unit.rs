@@ -4,6 +4,7 @@
 //! `src/benchmark.rs`, per repo convention.
 
 use super::*;
+use guidance_core::eval as eval_contract;
 use std::collections::BTreeSet;
 
 #[test]
@@ -22,25 +23,26 @@ fn tokens_use_the_shared_tokenizer() {
 
 #[test]
 fn spam_helpers_reuse_the_eval_contracts() {
+    // Single home: `guidance_core::eval`. The benchmark module's former
+    // re-exports were deleted as dead duplicates; the contract is pinned
+    // here against the live home.
+    use guidance_core::eval as eval_contract;
+    assert_eq!(eval_contract::SPAM_MAX_CITATIONS, 8);
+    assert_eq!(eval_contract::SPAM_MAX_SPAN_LINES, 200);
+    assert_eq!(eval_contract::citation_span_lines("src/a.rs:1-536"), 535);
     assert_eq!(
-        super::SPAM_MAX_CITATIONS,
-        guidance_core::eval::SPAM_MAX_CITATIONS
+        eval_contract::max_citation_span(&["src/a.rs:1-10".to_string()]),
+        9
     );
     assert_eq!(
-        super::SPAM_MAX_SPAN_LINES,
-        guidance_core::eval::SPAM_MAX_SPAN_LINES
-    );
-    assert_eq!(citation_span_lines("src/a.rs:1-536"), 535);
-    assert_eq!(max_citation_span(&["src/a.rs:1-10".to_string()]), 9);
-    assert_eq!(
-        fixture_path_count(&[
+        eval_contract::fixture_path_count(&[
             "src/a.rs".to_string(),
             "src/guidance/fixture_read/a.rs".to_string(),
         ]),
         1
     );
-    assert!(spam_ok(8, 0, 200));
-    assert!(!spam_ok(9, 0, 10));
+    assert!(eval_contract::spam_ok(8, 0, 200));
+    assert!(!eval_contract::spam_ok(9, 0, 10));
 }
 
 #[test]
@@ -173,8 +175,8 @@ fn benchmark_reports_spam_doc_walk_and_control_floor() {
     assert_eq!(report.queries.len(), 2);
     let tune = &report.queries[0];
     let citations = tune.explain.order.len();
-    let fixtures = fixture_path_count(&tune.explain.order);
-    let span = max_citation_span(
+    let fixtures = eval_contract::fixture_path_count(&tune.explain.order);
+    let span = eval_contract::max_citation_span(
         &tune
             .explain
             .order
@@ -182,11 +184,14 @@ fn benchmark_reports_spam_doc_walk_and_control_floor() {
             .map(|base| format!("{base}:1"))
             .collect::<Vec<_>>(),
     );
-    assert!(spam_ok(citations, fixtures, span), "{tune:?}");
-    assert_eq!(fixtures, 0, "zero fixture paths: {tune:?}");
-    assert!(span <= SPAM_MAX_SPAN_LINES, "{span}");
     assert!(
-        tune.explain.order.len() <= SPAM_MAX_CITATIONS + 3,
+        eval_contract::spam_ok(citations, fixtures, span),
+        "{tune:?}"
+    );
+    assert_eq!(fixtures, 0, "zero fixture paths: {tune:?}");
+    assert!(span <= eval_contract::SPAM_MAX_SPAN_LINES, "{span}");
+    assert!(
+        tune.explain.order.len() <= eval_contract::SPAM_MAX_CITATIONS + 3,
         "citation budget holds: {:?}",
         tune.explain.order
     );

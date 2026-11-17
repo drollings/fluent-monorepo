@@ -12,14 +12,14 @@ use std::sync::RwLock;
 use common_core::registry::ConcurrentRegistry;
 use common_core::sync::{lock_read, lock_write};
 use fluent_db::error::DbError;
-use fluent_db::hnsw::{HnswIndex, HnswIndexHandle};
 use fluent_db::store::SqliteStore;
+use search_vector::hnsw::{HnswIndex, HnswIndexHandle};
 // Canonical vector-math import (M4: the search-vector math shim is deleted;
-// the owner `fluent_db::vector` is consumed directly).
-use fluent_db::vector::{
+// the owner `search_vector::math` is consumed directly).
+use fluent_llm::EmbeddingProvider;
+use search_vector::math::{
     distance_to_similarity_clamped, knn_brute_force, scored_hits, try_bytes_to_vec, vec_to_bytes,
 };
-use fluent_llm::EmbeddingProvider;
 
 use super::{ChartDef, ChartError};
 
@@ -76,7 +76,7 @@ struct ChartIndex {
     ids: Vec<String>,
     /// Flat `(chart, embedding)` list for the brute-force fallback.
     flat: Vec<(String, Vec<f32>)>,
-    /// Cosine HNSW graph (owned by `fluent_db::hnsw::HnswIndex`). Written
+    /// Cosine HNSW graph (owned by `search_vector::hnsw::HnswIndex`). Written
     /// exactly once (in `build_index`) and read-only thereafter;
     /// `invalidate_index` drops the whole `ChartIndex` rather than mutating
     /// the graph, so a `RwLock` here would be pure ceremony.
@@ -380,7 +380,7 @@ impl ChartStore {
 
         // The workflow_library persistence file is a `fluent_db::SqliteStore`
         // (connection lifecycle, schema init); the in-memory retrieval graph
-        // is a `fluent_db::hnsw::HnswIndex`.
+        // is a `search_vector::hnsw::HnswIndex`.
         //
         // NOTE (M9 decision): single-connection `SqliteStore`, not
         // `SqlitePool` — this is a boot-time index build (sync, single
@@ -501,11 +501,11 @@ impl ChartStore {
         // always-probe. The dispatch policy measures [B] cost/recall at
         // `ContentNodeStore` scale only.
         // M5: the HNSW probe + id resolution is the shared
-        // `fluent_db::hnsw::hnsw_lookup` (`None` = fall back). The inserted
+        // `search_vector::hnsw::hnsw_lookup` (`None` = fall back). The inserted
         // key is the `ids` position, so the resolved key indexes `ids`
         // exactly as the external id did. Similarity mapping, sort/truncate,
         // and the demotion filter below stay call-site code.
-        let mut hits: Vec<(String, f32)> = fluent_db::hnsw::hnsw_lookup(&index.hnsw, &query, k)
+        let mut hits: Vec<(String, f32)> = search_vector::hnsw::hnsw_lookup(&index.hnsw, &query, k)
             .map(|resolved| {
                 scored_hits(resolved, distance_to_similarity_clamped)
                     .into_iter()

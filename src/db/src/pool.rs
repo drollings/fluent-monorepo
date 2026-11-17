@@ -47,11 +47,19 @@ impl Default for PoolConfig {
 
 impl PoolConfig {
     /// A `PoolConfig` with the default busy timeout and the given pool size.
+    /// Refine with [`PoolConfig::with_busy_timeout_ms`].
     pub fn new(size: usize) -> Self {
         Self {
             size,
             ..Self::default()
         }
+    }
+
+    /// Override the `PRAGMA busy_timeout` (milliseconds).
+    #[must_use]
+    pub fn with_busy_timeout_ms(mut self, busy_timeout_ms: u64) -> Self {
+        self.busy_timeout_ms = busy_timeout_ms;
+        self
     }
 }
 

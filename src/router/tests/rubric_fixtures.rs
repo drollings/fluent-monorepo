@@ -17,7 +17,7 @@ fn scorer_ctx(query: &str, response: &str) -> WorkContext {
         "messages": [{"role": "user", "content": query}]
     });
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &request_json);
+    assert!(ctx.try_set_structured("request", &request_json));
     ctx.metadata.insert(
         "response".into(),
         MetadataValue::String(response.to_string()),
@@ -206,7 +206,7 @@ fn test_scorer_missing_response_returns_error() {
         "messages": [{"role": "user", "content": "hello"}]
     });
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &request_json);
+    assert!(ctx.try_set_structured("request", &request_json));
     let result = scorer.execute(&ctx);
     assert!(result.is_err());
 }

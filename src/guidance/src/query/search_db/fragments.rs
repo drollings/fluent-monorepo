@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use fluent_db::error::DbError;
-use fluent_db::vector;
 use rusqlite::params;
+use search_vector::math as vector;
 
 use super::VectorDbError;
 

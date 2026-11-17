@@ -426,17 +426,17 @@ protopyne-demo-check: ## Run the protopyne-rs trading-demo contract headless: te
 # write path (corrections atomic with the ledger).
 
 .PHONY: yago-load
-yago-load: ## Operator action: download the full YaGO 4.5 taxonomy and regenerate the embedded class registry (tools/download_yago_taxonomy.sh → src/ontology/data/yago_classes.json)
+yago-load: ## Operator action: download the full YaGO 4.5 taxonomy and regenerate the embedded class registry (tools/download_yago_taxonomy.sh → src/concept/data/yago_classes.json)
 	$(Q)tools/download_yago_taxonomy.sh
-	$(Q)if [ -f env/yago-taxonomy.ttl ]; then cargo run -q -p fluent-ontology --bin ysm1_encode -- env/yago-taxonomy.ttl env/yago-taxonomy.ysm1; fi
+	$(Q)if [ -f env/yago-taxonomy.ttl ]; then cargo run -q -p fluent-concept --bin ysm1_encode -- env/yago-taxonomy.ttl env/yago-taxonomy.ysm1; fi
 
 .PHONY: review-test
-review-test: ## Run the async parse-review + interlingua suites: spacy-rs review types, the router review worker + /v1/sessions/{id}/review-parse endpoints, and the ontology loader/reconciliation
+review-test: ## Run the async parse-review + interlingua suites: spacy-rs review types, the router review worker + /v1/sessions/{id}/review-parse endpoints, and the concept loader/reconciliation
 	$(Q)echo "Running parse-review + interlingua suites"
 	$(Q)cargo test -p spacy-rs review
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS) server::review
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS) review_parse
-	$(Q)cargo test -p fluent-ontology
+	$(Q)cargo test -p fluent-concept loader
 	$(Q)cargo test -p coral-router boot::
 
 # ── ONNX GPU Provider Check ────────────────────────────────────────────────
@@ -528,14 +528,14 @@ COMPONENT_NAMES := \
 # component -> the Cargo packages that make it up, plus any extra cargo args
 # (features). `dag` is the workspace name of package `fluent-dag`; the binary
 # components bundle their library (e.g. `coral-router` = `fluent-router` + the
-# `coral-router` bin; `guidance` = `guidance-core` + `guidance` + ontology).
+# `coral-router` bin; `guidance` = `guidance-core` + `guidance` + concept).
 common-core_PKGS        := common-core
 fluent-wvr_PKGS         := fluent-wvr fluent-wvr-macros
 fluent-concurrency_PKGS := fluent-concurrency
 dag_PKGS                := fluent-dag
 fluent-egui_PKGS        := fluent-egui
 coral-router_PKGS       := fluent-router coral-router
-guidance_PKGS           := guidance-core guidance fluent-ontology
+guidance_PKGS           := guidance-core guidance fluent-concept
 coral_PKGS              := coral-context coral
 protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
 protopyne-egui_PKGS     := protopyne-egui

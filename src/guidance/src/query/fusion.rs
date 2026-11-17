@@ -3,7 +3,7 @@
 //! `candidateToHit`, `candidateToTrace`, and the visible/track slice.
 //!
 //! Scoring runs through the single generalized kernel
-//! (`fluent_db::vector::rrf_merge_n`) with zvec 1-based storage ranks.
+//! (`search_vector::math::rrf_merge_n`) with zvec 1-based storage ranks.
 //!
 //! Score stance — read before touching this module: the fused score is an
 //! ordinal composite over incommensurable within-route orders, not a

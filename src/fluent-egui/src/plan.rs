@@ -293,11 +293,12 @@ impl PaneCache {
 
     /// Create an empty store holding up to `capacity` entries; refuses zero.
     pub fn with_capacity(capacity: usize) -> Result<Self, EguiError> {
-        let entries =
-            ArcLoadCache::new(capacity, never_load).map_err(|reason| EguiError::InvalidParam {
+        let entries = ArcLoadCache::try_new(capacity, never_load).map_err(|reason| {
+            EguiError::InvalidParam {
                 what: "capacity".to_owned(),
                 reason,
-            })?;
+            }
+        })?;
         Ok(Self {
             entries,
             revision: 0,
@@ -371,11 +372,11 @@ impl PaneCache {
 
 /// Write-through load: the frame path only inserts computed series, so a
 /// mistaken `get_or_load` fails closed instead of synthesizing a value.
-/// Takes the key by reference because `ArcLoadCache::new` dictates the shape.
+/// Takes the key by reference because `ArcLoadCache::try_new` dictates the shape.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 /// Write-through load: the frame path only inserts computed series, so a
 /// mistaken `get_or_load` fails closed instead of synthesizing a value.
-/// Takes the key by reference because `ArcLoadCache::new` dictates the shape.
+/// Takes the key by reference because `ArcLoadCache::try_new` dictates the shape.
 fn never_load(_key: &u64) -> Result<Arc<CachedSeries>, String> {
     Err("pane cache is write-through; load is never called".to_owned())
 }

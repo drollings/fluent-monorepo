@@ -179,7 +179,7 @@ fn field_error_partial_eq() {
 #[test]
 fn structured_ref_borrows_without_clone() {
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &serde_json::json!({"q": "hi"}));
+    assert!(ctx.try_set_structured("request", &serde_json::json!({"q": "hi"})));
     let borrowed = ctx.structured_ref("request").expect("present");
     assert!(std::ptr::eq(
         borrowed,
@@ -192,7 +192,7 @@ fn structured_ref_borrows_without_clone() {
 #[test]
 fn structured_owned_delegates_to_borrowed() {
     let mut ctx = WorkContext::default();
-    ctx.set_structured("n", &42_u32);
+    assert!(ctx.try_set_structured("n", &42_u32));
     let owned: u32 = ctx.structured("n").expect("reads");
     assert_eq!(owned, 42);
     let missing = ctx.structured::<u32>("absent").unwrap_err().to_string();
@@ -200,7 +200,7 @@ fn structured_owned_delegates_to_borrowed() {
         missing.contains("absent"),
         "missing-key error names the key"
     );
-    ctx.set_structured("s", &"not-a-number");
+    assert!(ctx.try_set_structured("s", &"not-a-number"));
     assert!(ctx.structured::<u32>("s").is_err());
 }
 
@@ -222,7 +222,7 @@ fn try_set_structured_reports_inserts() {
     assert!(!ctx.try_set_structured("never-stored", &Unserializable));
     assert!(ctx.structured_ref("never-stored").is_none());
     // The void setter keeps its signature and delegates.
-    ctx.set_structured("b", &"x");
+    assert!(ctx.try_set_structured("b", &"x"));
     assert_eq!(ctx.structured::<String>("b").expect("inserted"), "x");
 }
 

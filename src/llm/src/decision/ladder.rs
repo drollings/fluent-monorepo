@@ -45,7 +45,7 @@ enum Rung {
 /// .expect("rule");
 /// let out = block_on(decide_with_ladder(
 ///     Some(rule),
-///     &DecisionCache::new(4).expect("cache"),
+///     &DecisionCache::try_new(4).expect("cache"),
 ///     "k".to_string(),
 ///     true,
 ///     &DecisionBreaker::new(3, 60_000).expect("breaker"),

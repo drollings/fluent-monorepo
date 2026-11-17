@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use common_core::metrics::LatencyHistogram;
@@ -155,7 +156,10 @@ fn adapter_overrides_change_render_config_never_kernel_params() {
         .with_int("length", 14)
         .with_float("k", 1.2)
         .fingerprint();
-    let adapter = ComponentAdapter::new(inner.clone()).with_field_override("threshold", "150");
+    let adapter = ComponentAdapter::new(inner.clone()).with_field_overrides(HashMap::from([(
+        "threshold".to_string(),
+        "150".to_string(),
+    )]));
     assert_eq!(
         adapter.get_field("threshold").expect("override reads"),
         "150"

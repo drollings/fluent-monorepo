@@ -33,7 +33,7 @@ fn prelude_exposes_poison_safe_locks() {
 
 #[test]
 fn prelude_exposes_load_cache() {
-    let cache: LoadCache<String, u32, String> = LoadCache::new(8, |k: &String| {
+    let cache: LoadCache<String, u32, String> = LoadCache::try_new(8, |k: &String| {
         k.len().try_into().map_err(|e| format!("{e}"))
     })
     .unwrap();

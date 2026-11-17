@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use fluent_concept::mapper::PendingNode;
+use fluent_concept::yago;
 use fluent_db::error::DbError;
 use fluent_types::ContentNode;
 use fluent_types::NodeId;
-use guidance_ontology::mapper::PendingNode;
-use guidance_ontology::yago;
 use thiserror::Error;
 
 use crate::db::Library;
@@ -142,12 +142,11 @@ impl BatchIngestor {
     pub fn ingest_file(&mut self, path: &std::path::Path) -> Result<IngestStats, IngestError> {
         let source = common_core::io::read_to_string_err(path).map_err(IngestError::Io)?;
 
-        let mut mapper = guidance_ontology::mapper::TripleMapper::new(
-            guidance_ontology::mapper::MappingConfig {
+        let mut mapper =
+            fluent_concept::mapper::TripleMapper::new(fluent_concept::mapper::MappingConfig {
                 preferred_lang: self.config.preferred_lang.clone(),
                 scope: path.to_string_lossy().to_string(),
-            },
-        );
+            });
 
         // Try Turtle parser first
         let parser = guidance_rdf::parser::Parser::new(&source);

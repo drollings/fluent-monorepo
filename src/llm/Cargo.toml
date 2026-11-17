@@ -178,6 +178,10 @@ name = "decision_types"
 path = "tests/decision_types.rs"
 
 [[test]]
+name = "decision_threshold_sweep"
+path = "tests/decision_threshold_sweep.rs"
+
+[[test]]
 name = "live"
 path = "tests/live.rs"
 required-features = ["live-ai"]

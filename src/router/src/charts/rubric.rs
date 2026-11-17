@@ -79,7 +79,7 @@ impl RubricCache {
     pub fn with_capacity(capacity: usize) -> Self {
         let load = |_: &u64| -> Result<(), ()> { Ok(()) };
         Self {
-            accepted: LoadCache::new(capacity, load)
+            accepted: LoadCache::try_new(capacity, load)
                 .expect("rubric cache capacity must be non-zero"),
         }
     }

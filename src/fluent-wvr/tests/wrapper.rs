@@ -221,7 +221,8 @@ fn adapter_execute_override_short_circuits_inner() {
 #[test]
 fn adapter_field_override_set_then_get() {
     let host = AdapterHost::new("inner");
-    let mut adapter = ComponentAdapter::new(Arc::new(host)).with_field_override("port", "8079");
+    let mut adapter = ComponentAdapter::new(Arc::new(host))
+        .with_field_overrides(HashMap::from([("port".to_string(), "8079".to_string())]));
     assert_eq!(adapter.get_field("port").unwrap(), "8079");
     adapter.set_field("port", "9090").unwrap();
     assert_eq!(adapter.get_field("port").unwrap(), "9090");
@@ -231,8 +232,8 @@ fn adapter_field_override_set_then_get() {
 fn adapter_field_overrides_stack_last_wins() {
     let host = AdapterHost::new("inner");
     let adapter = ComponentAdapter::new(Arc::new(host))
-        .with_field_override("k", "v1")
-        .with_field_override("k", "v2");
+        .with_field_overrides(HashMap::from([("k".to_string(), "v1".to_string())]))
+        .with_field_overrides(HashMap::from([("k".to_string(), "v2".to_string())]));
     assert_eq!(adapter.get_field("k").unwrap(), "v2");
 }
 
@@ -260,7 +261,7 @@ fn adapter_describe_includes_overrides() {
     let host = AdapterHost::new("inner");
     let adapter = ComponentAdapter::new(Arc::new(host))
         .with_name_override("renamed")
-        .with_field_override("port", "8079");
+        .with_field_overrides(HashMap::from([("port".to_string(), "8079".to_string())]));
     let schema = adapter.describe();
     assert_eq!(schema["name"], "renamed");
     assert_eq!(schema["adapted"], true);
@@ -375,7 +376,8 @@ fn adapter_get_field_falls_back_to_inner() {
 #[test]
 fn adapter_override_takes_priority_over_inner() {
     let host = ConstrainedHost { port: 8079 };
-    let adapter = ComponentAdapter::new(Arc::new(host)).with_field_override("port", "9090");
+    let adapter = ComponentAdapter::new(Arc::new(host))
+        .with_field_overrides(HashMap::from([("port".to_string(), "9090".to_string())]));
     assert_eq!(adapter.get_field("port").unwrap(), "9090");
 }
 
@@ -385,7 +387,10 @@ fn adapter_hashmap_lookup_is_o1() {
     let mut adapter = ComponentAdapter::new(Arc::new(host));
     let n = 1000;
     for i in 0..n {
-        adapter = adapter.with_field_override(format!("k{i}"), format!("v{i}"));
+        adapter = adapter.with_field_overrides(HashMap::from([(
+            format!("k{i}").to_string(),
+            format!("v{i}").to_string(),
+        )]));
     }
     assert_eq!(
         adapter.get_field(&format!("k{}", n - 1)).unwrap(),
@@ -397,9 +402,9 @@ fn adapter_hashmap_lookup_is_o1() {
 fn adapter_describe_field_overrides_sorted() {
     let host = ConstrainedHost { port: 0 };
     let adapter = ComponentAdapter::new(Arc::new(host))
-        .with_field_override("c", "3")
-        .with_field_override("a", "1")
-        .with_field_override("b", "2");
+        .with_field_overrides(HashMap::from([("c".to_string(), "3".to_string())]))
+        .with_field_overrides(HashMap::from([("a".to_string(), "1".to_string())]))
+        .with_field_overrides(HashMap::from([("b".to_string(), "2".to_string())]));
     let schema = adapter.describe();
     let overrides = schema["field_overrides"].as_array().unwrap();
     assert_eq!(overrides.len(), 3);
@@ -422,7 +427,8 @@ fn adapter_with_field_overrides_bulk() {
 #[test]
 fn adapter_clear_field_overrides_reverts_to_inner() {
     let host = ConstrainedHost { port: 8079 };
-    let mut adapter = ComponentAdapter::new(Arc::new(host)).with_field_override("port", "9090");
+    let mut adapter = ComponentAdapter::new(Arc::new(host))
+        .with_field_overrides(HashMap::from([("port".to_string(), "9090".to_string())]));
     assert_eq!(adapter.get_field("port").unwrap(), "9090");
     adapter.clear_field_overrides();
     assert_eq!(adapter.get_field("port").unwrap(), "8079");
@@ -509,4 +515,15 @@ fn push_registers_unit_for_first_ok() {
         .execute_first_ok(&WorkContext::default())
         .expect("first-ok");
     assert_eq!(result.message, "done");
+}
+
+#[test]
+fn adapter_with_field_overrides_plural_last_wins() {
+    let host = ConstrainedHost { port: 0 };
+    let first = HashMap::from([("k".to_string(), "v1".to_string())]);
+    let second = HashMap::from([("k".to_string(), "v2".to_string())]);
+    let adapter = ComponentAdapter::new(Arc::new(host))
+        .with_field_overrides(first)
+        .with_field_overrides(second);
+    assert_eq!(adapter.get_field("k").unwrap(), "v2");
 }

@@ -3,10 +3,10 @@
 #
 # Fetches the YaGO 4.x taxonomy export from yago-knowledge.org into
 # data/yago-taxonomy.tsv, then pipes it through `gen_yago_classes.py` to
-# produce ontology/data/yago_classes.json (the 130k-class registry embedded at
+# produce concept/data/yago_classes.json (the 130k-class registry embedded at
 # build time).
 #
-# The repository ships a curated sample (ontology/data/yago_classes.json) so
+# The repository ships a curated sample (concept/data/yago_classes.json) so
 # the loader/build.rs pipeline is exercised hermetically; running this script
 # is an operator action to swap in the full taxonomy.
 #
@@ -15,13 +15,13 @@
 #
 # Output:
 #   data/yago-taxonomy.tsv          raw export (intermediate)
-#   src/ontology/data/yago_classes.json   the class registry
+#   src/concept/data/yago_classes.json   the class registry
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_TSV="$ROOT/data/yago-taxonomy.tsv"
-OUT_JSON="$ROOT/src/ontology/data/yago_classes.json"
+OUT_JSON="$ROOT/src/concept/data/yago_classes.json"
 
 # YaGO 4.5 ships as a set of N-Triples files; the taxonomy (classes +
 # rdfs:subClassOf) is the tractable subset for the interlingua registry.

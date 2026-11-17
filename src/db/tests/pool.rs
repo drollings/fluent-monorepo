@@ -7,6 +7,14 @@ fn pool() -> Arc<SqlitePool> {
     in_memory_pool()
 }
 
+#[test]
+fn pool_config_builder_overrides_timeout_and_keeps_size() {
+    let cfg = PoolConfig::new(3).with_busy_timeout_ms(250);
+    assert_eq!(cfg.size, 3);
+    assert_eq!(cfg.busy_timeout_ms, 250);
+    assert_eq!(PoolConfig::new(3).busy_timeout_ms, 5_000);
+}
+
 #[tokio::test]
 async fn acquire_release_round_trips() {
     CURRENT_CAPS

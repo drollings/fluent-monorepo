@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 fluent-db = { path = "../../db" }
+search-vector = { path = "../../search-vector" }
 # `fluent-onnx` is optional and entirely absent from default builds (its
 # config / registry / trait surface now lives in `fluent-llm`); `ort` /
 # `tokenizers` arrive only via the `onnx` feature below.
@@ -16,7 +17,6 @@ fluent-concurrency = { path = "../../fluent-concurrency" }
 common-core = { path = "../../common-core" }
 fluent-llm = { path = "../../llm" }
 coral-context = { path = "../../coral" }
-fluent-ontology = { path = "../../ontology" }
 fluent-rdf = { path = "../../rdf" }
 spacy-rs = { path = "../../spacy-rs" }
 clap = { workspace = true, features = ["derive"] }

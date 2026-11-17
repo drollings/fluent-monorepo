@@ -37,13 +37,13 @@ fn test_result_scorer_accepts_pristine_json() {
     // Must pass unchanged after the tolerant-codec migration.
     let scorer = ResultScorer::new(test_client(), 0.7);
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "hello"}],
         }),
-    );
+    ));
     ctx.metadata.insert(
         "response".into(),
         MetadataValue::String("the full response text".into()),
@@ -67,13 +67,13 @@ fn test_result_scorer_recovers_fenced_json() {
         0.7,
     );
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "hello"}],
         }),
-    );
+    ));
     ctx.metadata.insert(
         "response".into(),
         MetadataValue::String("the full response text".into()),
@@ -94,13 +94,13 @@ fn test_result_scorer_rejects_garbage() {
         0.7,
     );
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "local",
             "messages": [{"role": "user", "content": "hello"}],
         }),
-    );
+    ));
     ctx.metadata.insert(
         "response".into(),
         MetadataValue::String("the full response text".into()),

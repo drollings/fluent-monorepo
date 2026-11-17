@@ -90,7 +90,7 @@ mod tests {
             ]
         });
         let mut ctx = WorkContext::default();
-        ctx.set_structured("request", &request_json);
+        assert!(ctx.try_set_structured("request", &request_json));
         ctx
     }
 
@@ -394,13 +394,13 @@ mod tests {
             for _ in 0..4 {
                 scope.spawn(|| {
                     let mut ctx = WorkContext::default();
-                    ctx.set_structured(
+                    assert!(ctx.try_set_structured(
                         "request",
                         &serde_json::json!({
                             "model": "test",
                             "messages": [{"role": "user", "content": "hello"}],
                         }),
-                    );
+                    ));
                     let output = stage.execute(&ctx).expect("execute");
                     let _decision: StageDecision = output.data_ref().expect("data_as");
                 });
@@ -475,13 +475,13 @@ mod tests {
 
     fn classifier_ctx() -> WorkContext {
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "hello"}],
             }),
-        );
+        ));
         ctx
     }
 
@@ -728,13 +728,13 @@ mod tests {
             .expect("tree pipeline should build");
 
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "help me write a sort"}],
             }),
-        );
+        ));
 
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
@@ -793,13 +793,13 @@ mod tests {
             .expect("tree pipeline should build");
 
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "asdf qwerty"}],
             }),
-        );
+        ));
 
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
@@ -958,13 +958,13 @@ mod tests {
         let pipeline =
             flat_engine_pipeline(config, &[("code", "code"), ("local", "local")], backend);
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "help me write a sort"}],
             }),
-        );
+        ));
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         output.data_ref().expect("pipeline result")
     }
@@ -1286,13 +1286,13 @@ mod tests {
             let pipeline =
                 flat_engine_pipeline(&config, &[("code", "code")], std::sync::Arc::new(backend));
             let mut ctx = WorkContext::default();
-            ctx.set_structured(
+            assert!(ctx.try_set_structured(
                 "request",
                 &serde_json::json!({
                     "model": "test",
                     "messages": [{"role": "user", "content": "write a sort"}],
                 }),
-            );
+            ));
             let output = pipeline.execute(&ctx).expect("pipeline executes");
             output
                 .data_ref::<crate::pipeline::PipelineResult>()
@@ -1360,13 +1360,13 @@ mod tests {
             std::sync::Arc::new(AlwaysGarbageBackend),
         );
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "write a sort"}],
             }),
-        );
+        ));
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
 
@@ -1425,13 +1425,13 @@ mod tests {
         let pipeline =
             flat_engine_pipeline(&config, &[("code", "code")], std::sync::Arc::new(backend));
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "write a sort"}],
             }),
-        );
+        ));
         let _ = pipeline.execute(&ctx).expect("pipeline executes");
         assert_eq!(
             calls.load(std::sync::atomic::Ordering::SeqCst),
@@ -1467,13 +1467,13 @@ mod tests {
             .build_named_pipeline_with_backend("default", Some(backend))
             .expect("tree pipeline with retry should build");
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "help me write a sort"}],
             }),
-        );
+        ));
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");
         assert!(!result.rejected);
@@ -1523,13 +1523,13 @@ mod tests {
             Arc::new(crate::test_stubs::StubChatBackend::new(responses));
         let pipeline = flat_engine_pipeline(config, &[("code", "code")], backend);
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "help me write a sort"}],
             }),
-        );
+        ));
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         output.data_ref().expect("pipeline result")
     }
@@ -1566,13 +1566,13 @@ mod tests {
         });
         let pipeline = flat_engine_pipeline(config, &[("code", "code")], backend);
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "help me write a sort"}],
             }),
-        );
+        ));
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         output.data_ref().expect("pipeline result")
     }
@@ -1791,13 +1791,13 @@ mod tests {
         );
 
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "prose",
                 "messages": [{"role": "user", "content": "Write a 400-word gothic story..."}],
             }),
-        );
+        ));
         let (decision, target) = stage.evaluate_with_target(&ctx, &[]).expect("evaluate");
         let metadata = StageMetadata::from(decision.metadata.clone());
         // The direct response must have been overridden into a routing target.
@@ -1821,13 +1821,13 @@ mod tests {
 
         // A `local`-style route (always_route off) keeps the direct response.
         let mut ctx_local = WorkContext::default();
-        ctx_local.set_structured(
+        assert!(ctx_local.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "local",
                 "messages": [{"role": "user", "content": "what is 2+2?"}],
             }),
-        );
+        ));
         let (decision_local, target_local) = stage
             .evaluate_with_target(&ctx_local, &[])
             .expect("evaluate");
@@ -1857,13 +1857,13 @@ mod tests {
             .expect("nlp pipeline should build");
 
         let mut ctx = WorkContext::default();
-        ctx.set_structured(
+        assert!(ctx.try_set_structured(
             "request",
             &serde_json::json!({
                 "model": "test",
                 "messages": [{"role": "user", "content": "show me the report"}],
             }),
-        );
+        ));
 
         let output = pipeline.execute(&ctx).expect("pipeline executes");
         let result: crate::pipeline::PipelineResult = output.data_ref().expect("pipeline result");

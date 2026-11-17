@@ -406,13 +406,13 @@ fn typed_request_cache_parses_once_per_generation() {
         .push(stage_b)
         .build();
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "m",
             "messages": [{"role": "user", "content": "hello"}],
         }),
-    );
+    ));
     pipeline.execute(&ctx).expect("pipeline executes");
     let seen = seen.lock().unwrap().clone();
     assert_eq!(
@@ -454,13 +454,13 @@ fn reroute_invalidates_typed_request_cache() {
         .push(downstream)
         .build();
     let mut ctx = WorkContext::default();
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         "request",
         &serde_json::json!({
             "model": "m",
             "messages": [{"role": "user", "content": "original"}],
         }),
-    );
+    ));
     pipeline.execute(&ctx).expect("pipeline executes");
     let seen = seen.lock().unwrap().clone();
     assert_eq!(

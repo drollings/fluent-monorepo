@@ -1,16 +1,14 @@
 use std::path::Path;
 
+use crate::hnsw::{AdaptiveHnsw, HnswIndex};
+use crate::math as vector;
 use fluent_db::error::DbError;
-use fluent_db::hnsw::{AdaptiveHnsw, HnswIndex};
 use fluent_db::store::SqliteStore;
-use fluent_db::vector;
 use rusqlite::params;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum VectorDbError {
-    #[error("SQLite error: {0}")]
-    Sqlite(#[from] common_core::error::SqliteError),
     #[error("database error: {0}")]
     Db(#[from] DbError),
     #[error("embedding dimension mismatch: expected {expected}, got {got}")]
@@ -177,7 +175,7 @@ impl VectorDocStore {
         // `k == 0`) that would otherwise reach the distance kernel's dim
         // assertion, and resolves hits against the traversed generation (a
         // concurrent rebuild degrades to `None`, i.e. the brute-force path).
-        let resolved = fluent_db::hnsw::hnsw_lookup(&self.hnsw, query_vec, k)?;
+        let resolved = crate::hnsw::hnsw_lookup(&self.hnsw, query_vec, k)?;
 
         let mut results = Vec::with_capacity(resolved.len());
         for (node_id, distance) in resolved {
@@ -353,7 +351,7 @@ impl VectorDocStore {
         };
 
         // Generic ranked fusion over `(id, item)` pairs. Reached via the
-        // canonical `fluent_db::vector::rrf_merge`.
+        // canonical `crate::math::rrf_merge`.
         let mut fused: Vec<SearchResult> = vector::rrf_merge(
             keyword_results.into_iter().map(|r| (r.id, r)).collect(),
             vector_results.into_iter().map(|r| (r.id, r)).collect(),
@@ -423,3 +421,7 @@ impl VectorDocStore {
 #[cfg(test)]
 #[path = "../tests/vector_store.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/hybrid_calibration.rs"]
+mod hybrid_calibration_tests;

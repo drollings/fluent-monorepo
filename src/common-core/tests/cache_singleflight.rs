@@ -31,7 +31,7 @@ fn singleflight_coalesces_concurrent_miss_to_one_load() {
     let loads = Arc::new(AtomicUsize::new(0));
     let done = Arc::new(AtomicUsize::new(0));
     let cache = Arc::new(
-        LoadCache::new(16, {
+        LoadCache::try_new(16, {
             let loads = Arc::clone(&loads);
             move |key: &String| {
                 // Slow load: without coalescing, every storm member would
@@ -71,7 +71,7 @@ fn singleflight_distinct_keys_load_in_parallel() {
     let done = Arc::new(AtomicUsize::new(0));
     let gate = Arc::new(Barrier::new(2));
     let cache = Arc::new(
-        LoadCache::new(16, {
+        LoadCache::try_new(16, {
             let gate = Arc::clone(&gate);
             move |key: &String| {
                 if key == "a" || key == "b" {
@@ -101,7 +101,7 @@ fn singleflight_error_falls_back_to_individual_loads() {
     let loads = Arc::new(AtomicUsize::new(0));
     let done = Arc::new(AtomicUsize::new(0));
     let cache = Arc::new(
-        LoadCache::new(16, {
+        LoadCache::try_new(16, {
             let loads = Arc::clone(&loads);
             move |_: &String| {
                 let n = loads.fetch_add(1, Ordering::SeqCst) + 1;

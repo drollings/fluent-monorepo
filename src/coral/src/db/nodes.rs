@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use fluent_db::hnsw::AdaptiveHnsw;
-use fluent_db::vector::{knn_brute_force, try_bytes_to_vec, vec_to_bytes};
 use fluent_types::{ContentNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
+use search_vector::hnsw::AdaptiveHnsw;
+use search_vector::math::{knn_brute_force, try_bytes_to_vec, vec_to_bytes};
 
 use super::{blob_to_bitvec, LibraryError, MAX_KNN_CANDIDATES};
 
@@ -441,14 +441,14 @@ impl super::Library {
             // Shared top-K tail (P2): ascending distance + truncate(k). The
             // HNSW∪brute-force merge + `rrf_merge` staging above stays
             // (domain logic, not eligible).
-            fluent_db::vector::top_k_by_score(hits, k, |h| h.distance, false)
+            search_vector::math::top_k_by_score(hits, k, |h| h.distance, false)
         } else {
             Vec::new()
         };
 
         // Generic ranked fusion over `(id, item)` pairs — replaces the
         // inline RRF; dedup + truncation semantics unchanged.
-        let fused: Vec<(f64, KnnHit)> = fluent_db::vector::rrf_merge(
+        let fused: Vec<(f64, KnnHit)> = search_vector::math::rrf_merge(
             keyword_results
                 .into_iter()
                 .map(|r| (r.node_id.as_int(), r))

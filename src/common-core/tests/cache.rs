@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 // ─── LoadCache tests ────────────────────────────────────────────────
 
 fn make_load_cache(load_count: Arc<Mutex<usize>>) -> LoadCache<String, String, String> {
-    LoadCache::new(10, move |key: &String| {
+    LoadCache::try_new(10, move |key: &String| {
         *load_count.lock().unwrap() += 1;
         Ok(format!("loaded:{key}"))
     })
@@ -45,7 +45,7 @@ fn load_cache_get_does_not_load() {
 
 #[test]
 fn load_cache_load_error_propagates() {
-    let cache = LoadCache::new(2, |_: &String| -> Result<String, String> {
+    let cache = LoadCache::try_new(2, |_: &String| -> Result<String, String> {
         Err("load failed".into())
     })
     .expect("capacity non-zero");
@@ -74,7 +74,7 @@ fn load_cache_remove() {
 
 #[test]
 fn load_cache_evicts_lru() {
-    let cache = LoadCache::new(2, |key: &String| Ok::<_, String>(format!("loaded:{key}")))
+    let cache = LoadCache::try_new(2, |key: &String| Ok::<_, String>(format!("loaded:{key}")))
         .expect("capacity non-zero");
     cache.insert("a".to_string(), "1".to_string());
     cache.insert("b".to_string(), "2".to_string());
@@ -89,10 +89,24 @@ fn load_cache_evicts_lru() {
 
 #[test]
 fn load_cache_zero_capacity_rejected() {
-    assert!(LoadCache::new(0, |_: &String| -> Result<String, String> {
-        Ok(String::new())
-    })
-    .is_err());
+    assert!(
+        LoadCache::try_new(0, |_: &String| -> Result<String, String> {
+            Ok(String::new())
+        })
+        .is_err()
+    );
+    assert!(
+        LoadCache::try_new(4, |_: &String| -> Result<String, String> {
+            Ok(String::new())
+        })
+        .is_ok()
+    );
+    assert!(
+        ArcLoadCache::try_new(0, |_: &String| -> Result<std::sync::Arc<String>, String> {
+            Ok(std::sync::Arc::new(String::new()))
+        })
+        .is_err()
+    );
 }
 
 #[test]
@@ -214,7 +228,7 @@ async fn evict_until_fit_stops_when_already_under_budget() {
 #[test]
 fn arc_load_cache_hit_is_arc_clone_not_vec_clone() {
     let cache: ArcLoadCache<String, Vec<f32>, String> =
-        ArcLoadCache::new(10, |_: &String| Ok(std::sync::Arc::new(vec![1.0; 768]))).unwrap();
+        ArcLoadCache::try_new(10, |_: &String| Ok(std::sync::Arc::new(vec![1.0; 768]))).unwrap();
     let inserted = std::sync::Arc::new(vec![1.0_f32; 768]);
     cache.insert("k".to_string(), std::sync::Arc::clone(&inserted));
     let a = cache.get::<str>("k").expect("hit");
@@ -239,11 +253,12 @@ fn arc_load_cache_hit_is_arc_clone_not_vec_clone() {
 fn arc_load_cache_get_or_load_caches_arc() {
     let loads = std::sync::Arc::new(std::sync::Mutex::new(0usize));
     let loads2 = std::sync::Arc::clone(&loads);
-    let cache: ArcLoadCache<String, String, String> = ArcLoadCache::new(10, move |k: &String| {
-        *loads2.lock().unwrap() += 1;
-        Ok(std::sync::Arc::new(format!("loaded:{k}")))
-    })
-    .unwrap();
+    let cache: ArcLoadCache<String, String, String> =
+        ArcLoadCache::try_new(10, move |k: &String| {
+            *loads2.lock().unwrap() += 1;
+            Ok(std::sync::Arc::new(format!("loaded:{k}")))
+        })
+        .unwrap();
     let v1 = cache.get_or_load("x".to_string()).unwrap();
     assert_eq!(v1.as_str(), "loaded:x");
     let v2 = cache.get_or_load("x".to_string()).unwrap();

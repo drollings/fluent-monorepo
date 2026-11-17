@@ -19,7 +19,7 @@ fn make_ctx_with_messages(messages: Vec<RouterMessage>) -> WorkContext {
         metadata: Default::default(),
     };
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &request);
+    assert!(ctx.try_set_structured("request", &request));
     ctx
 }
 

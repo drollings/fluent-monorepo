@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 
 use fluent_dag::target::Target;
-use fluent_db::hnsw::HnswIndex;
-use fluent_db::vector::cosine_similarity_f32;
+use search_vector::hnsw::HnswIndex;
+use search_vector::math::cosine_similarity_f32;
 
 /// A workflow entry — one prior `query → local_attempts → escalation → frontier → assembly` chain.
 #[derive(Debug, Clone)]
@@ -119,10 +119,10 @@ impl WorkflowStore for InMemoryWorkflowStore {
         // always-probe. The dispatch policy measures [B] cost/recall at
         // `ContentNodeStore` scale only.
         // M5: the HNSW probe + id resolution is the shared
-        // `fluent_db::hnsw::hnsw_lookup` (`None` = fall back). The exact
+        // `search_vector::hnsw::hnsw_lookup` (`None` = fall back). The exact
         // re-score, k*2 over-fetch, and discard-partial-then-brute-force
         // policy below stay call-site code (store-specific semantics).
-        if let Some(hnsw_hits) = fluent_db::hnsw::hnsw_lookup(&self.hnsw, embedding, k * 2) {
+        if let Some(hnsw_hits) = search_vector::hnsw::hnsw_lookup(&self.hnsw, embedding, k * 2) {
             let entries = self.entries.read().unwrap();
             let mut out = Vec::new();
             for (node_id, _dist) in hnsw_hits {

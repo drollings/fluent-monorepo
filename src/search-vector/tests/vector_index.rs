@@ -132,15 +132,15 @@ fn ann_calibration_recall_and_latency_baseline() {
 #[test]
 fn store_and_math_seams_coexist_without_qualification_clash() {
     // `VectorIndex` unambiguously means the stateless math
-    // seam (`fluent_db::vector`) while the stateful store seam is
+    // seam (`crate::math`) while the stateful store seam is
     // `VectorStore`: both names resolve unqualified in one scope.
     use super::VectorStore;
-    use fluent_db::vector::VectorIndex;
+    use crate::math::VectorIndex;
     fn takes_math<T: VectorIndex>(_: &T) {}
     fn takes_store<T: VectorStore>(_: &T) {}
     let brute = BruteForceStore::new();
     takes_store(&brute);
-    let math = fluent_db::vector::BruteForceIndex::new(vec![(
+    let math = crate::math::PlainBruteForceIndex::new(vec![(
         NodeId::from_int(1),
         vec![1.0, 0.0],
         "one".to_string(),

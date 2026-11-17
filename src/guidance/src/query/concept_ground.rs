@@ -3,7 +3,7 @@
 //!
 //! Pure string-in/verdict-out over the shared primitives —
 //! `crate::query::tokens::split_tokens` (tokenization, no second splitter),
-//! `guidance_ontology::normalize::{token_variants, lemma_to_curies}` (plural
+//! `fluent_concept::normalize::{token_variants, lemma_to_curies}` (plural
 //! handling + curie fallbacks, no second table), `ConceptStore::resolve_name`
 //! (lookup). Reads the store, never gates on it: readiness and unknown names
 //! yield `Unknown`, and callers decide what `Unknown` means (rerank, never
@@ -16,7 +16,7 @@
 ///
 /// Pure string-in/verdict-out over the shared primitives —
 /// `crate::query::tokens::split_tokens` (tokenization, no second splitter),
-/// `guidance_ontology::normalize::{token_variants, lemma_to_curies}` (plural
+/// `fluent_concept::normalize::{token_variants, lemma_to_curies}` (plural
 /// handling + curie fallbacks, no second table), `ConceptStore::resolve_name`
 /// (lookup). Reads the store, never gates on it: readiness and unknown names
 /// yield `Unknown`, and callers decide what `Unknown` means (rerank, never
@@ -40,8 +40,8 @@ pub fn member_groundedness(
     store: &dyn fluent_concept::ConceptStore,
 ) -> MemberGroundedness {
     for token in crate::query::tokens::split_tokens(name) {
-        for variant in guidance_ontology::normalize::token_variants(&token) {
-            for curie in guidance_ontology::normalize::lemma_to_curies(&variant) {
+        for variant in fluent_concept::normalize::token_variants(&token) {
+            for curie in fluent_concept::normalize::lemma_to_curies(&variant) {
                 if store.resolve_name(&curie).is_ok() {
                     return MemberGroundedness::Grounded;
                 }
@@ -110,7 +110,7 @@ pub fn query_plausibility(
         return None;
     }
     let inputs = spacy_rs::triple::build_plausibility_inputs(&doc, &triples, resolver);
-    guidance_ontology::plausibility::score_plausibility(&inputs, store)
+    fluent_concept::plausibility::score_plausibility(&inputs, store)
 }
 
 #[cfg(test)]

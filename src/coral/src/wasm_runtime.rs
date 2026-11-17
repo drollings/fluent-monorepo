@@ -34,7 +34,7 @@ pub struct PluginPool {
 impl PluginPool {
     pub fn new(runtime: Arc<dyn WasmRuntime>, max_capacity: usize) -> Self {
         let cap = max_capacity.max(1);
-        let cache = LoadCache::new(cap, move |path: &String| {
+        let cache = LoadCache::try_new(cap, move |path: &String| {
             runtime
                 .load_plugin_from_file(Path::new(path))
                 .map(|plugin| Arc::new(Mutex::new(plugin)))

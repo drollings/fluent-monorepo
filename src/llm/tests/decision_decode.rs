@@ -257,8 +257,14 @@ fn score_rejects_degenerate_scale() {
 fn match_text_label_trims_folds_and_fails_closed() {
     use fluent_llm::decision::match_text_label;
     let labels = &["mechanical-import", "local-rewrite", "external"];
-    assert_eq!(match_text_label("mechanical-import", labels), Some("mechanical-import"));
-    assert_eq!(match_text_label("  Local-Rewrite\n", labels), Some("local-rewrite"));
+    assert_eq!(
+        match_text_label("mechanical-import", labels),
+        Some("mechanical-import")
+    );
+    assert_eq!(
+        match_text_label("  Local-Rewrite\n", labels),
+        Some("local-rewrite")
+    );
     assert_eq!(match_text_label("EXTERNAL ", labels), Some("external"));
     assert_eq!(match_text_label("", labels), None);
     assert_eq!(match_text_label("mechanical", labels), None);

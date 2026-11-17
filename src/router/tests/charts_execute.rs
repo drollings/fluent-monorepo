@@ -117,7 +117,7 @@ fn make_ctx(text: &str) -> WorkContext {
         "messages": [{"role": "user", "content": text}]
     });
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &request_json);
+    assert!(ctx.try_set_structured("request", &request_json));
     ctx
 }
 
@@ -522,10 +522,10 @@ async fn golden_rubric_gated_seed_chart_runs_through_batch() {
     // The ctx must carry both the request and the bound entities — the
     // stages re-bind from the structured `entities` at execution time.
     let mut ctx = make_ctx("app crashes on startup");
-    ctx.set_structured(
+    assert!(ctx.try_set_structured(
         crate::charts::binding::ENTITIES_META_KEY,
         &std::slice::from_ref(&entity),
-    );
+    ));
 
     let summary = plan
         .execute(&ctx, &opts)

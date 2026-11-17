@@ -465,7 +465,7 @@ fn vector_search_reads_legacy_fp32_rows() {
     legacy.embedding = Some(vec![1.0, 0.0]);
     db.upsert_fragments(&file_a(), &[legacy], &[])
         .expect("upsert");
-    let fp32_blob = fluent_db::vector::vec_to_bytes(&[1.0f32, 0.0]);
+    let fp32_blob = search_vector::math::vec_to_bytes(&[1.0f32, 0.0]);
     db.docs
         .sqlite_store()
         .execute(

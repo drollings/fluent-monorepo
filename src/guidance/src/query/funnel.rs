@@ -96,8 +96,8 @@ pub fn funnel_terms(
         .iter()
         .map(|term| {
             let mut curies = Vec::new();
-            for variant in guidance_ontology::normalize::token_variants(term) {
-                for curie in guidance_ontology::normalize::lemma_to_curies(&variant) {
+            for variant in fluent_concept::normalize::token_variants(term) {
+                for curie in fluent_concept::normalize::lemma_to_curies(&variant) {
                     if !curies.contains(&curie) {
                         curies.push(curie);
                     }

@@ -188,7 +188,7 @@ static FINDING_CACHE: std::sync::OnceLock<fluent_llm::decision::DecisionCache> =
 
 fn finding_cache() -> &'static fluent_llm::decision::DecisionCache {
     FINDING_CACHE.get_or_init(|| {
-        fluent_llm::decision::DecisionCache::new(256).expect("judge cache capacity")
+        fluent_llm::decision::DecisionCache::try_new(256).expect("judge cache capacity")
     })
 }
 

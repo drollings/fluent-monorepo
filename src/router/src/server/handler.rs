@@ -1225,7 +1225,10 @@ fn resolve_pipeline(
     };
 
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", router_request);
+    debug_assert!(
+        ctx.try_set_structured("request", router_request),
+        "structured handoff must serialize"
+    );
     // Availability view for role-member sentinel expansion: the shared
     // dispatch-success recency beside the stats, plus the supervisor liveness
     // probe. Stages without these channels degrade to unexpanded behavior.

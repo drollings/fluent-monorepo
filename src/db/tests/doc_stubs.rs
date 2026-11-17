@@ -7,8 +7,6 @@ use fluent_db::cache::TtlCache;
 #[allow(unused_imports)]
 use fluent_db::capability::DbCapability;
 #[allow(unused_imports)]
-use fluent_db::hnsw::HnswIndex;
-#[allow(unused_imports)]
 use fluent_db::pool::SqlitePool;
 #[allow(unused_imports)]
 use fluent_db::query::query_row;
@@ -26,7 +24,6 @@ fn stubs_name_only_real_public_items() {
         "DbCapability",
         "query_row",
         "TtlCache",
-        "HnswIndex",
     ] {
         assert!(
             VISION.contains(name) || ARCHITECTURE.contains(name),

@@ -39,13 +39,15 @@ impl QueryCache {
         max_entries: usize,
     ) -> Result<Self, DbError> {
         Ok(Self {
-            inner: TtlCache::open_with_key(db_path, default_ttl_seconds, max_entries, query_key)?,
+            inner: TtlCache::open(db_path, default_ttl_seconds)?
+                .with_cap(max_entries)
+                .with_key(query_key),
         })
     }
 
     pub fn new_in_memory(default_ttl_seconds: u64) -> Result<Self, DbError> {
         Ok(Self {
-            inner: TtlCache::open_in_memory_with_key(default_ttl_seconds, query_key)?,
+            inner: TtlCache::open_in_memory(default_ttl_seconds)?.with_key(query_key),
         })
     }
 

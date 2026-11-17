@@ -11,7 +11,7 @@
 //! `graph_index::rerank` boosts). Pure, no guidance types: ids are
 //! `String`, scores `f64`.
 //!
-//! The kernel itself stays in `fluent_db::vector::rrf_merge_n` — the single
+//! The kernel itself stays in `search_vector::math::rrf_merge_n` — the single
 //! generalized kernel, never a second implementation here. This module is
 //! the string-id contract surface plus the boost algebra over it: it calls
 //! the kernel in exactly one place ([`score_postings`]); [`rrf_fuse`] and
@@ -92,7 +92,7 @@ pub const ROLE_EPSILON: f64 = 1e-4;
 /// (one recall per route, as in zvec `fuseCandidates`). The one
 /// kernel-call site in the workspace — [`rrf_fuse`] and the guidance
 /// `fuse_candidates` both compose this seam instead of calling
-/// `fluent_db::vector::rrf_merge_n` themselves.
+/// `search_vector::math::rrf_merge_n` themselves.
 #[must_use]
 pub fn score_postings(postings: Vec<(String, usize)>, k: f64) -> HashMap<String, f64> {
     // Canonical summation order: identical multisets sum bitwise
@@ -102,7 +102,7 @@ pub fn score_postings(postings: Vec<(String, usize)>, k: f64) -> HashMap<String,
     // and answers would never be byte-identical.
     let mut postings = postings;
     postings.sort();
-    fluent_db::vector::rrf_merge_n(
+    search_vector::math::rrf_merge_n(
         postings
             .into_iter()
             .map(|(id, rank)| (id, rank, ()))

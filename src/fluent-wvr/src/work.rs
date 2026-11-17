@@ -343,6 +343,7 @@ impl WorkContext {
     /// The single place that does `serde_json::to_value` for the channel.
     /// Returns `false` (leaving any previous value intact) when the value
     /// has no JSON representation instead of silently skipping the write.
+    /// There is no silent variant: callers handle `false` explicitly.
     pub fn try_set_structured<T: serde::Serialize>(&mut self, key: &str, value: &T) -> bool {
         match serde_json::to_value(value) {
             Ok(v) => {
@@ -351,14 +352,6 @@ impl WorkContext {
             }
             Err(_) => false,
         }
-    }
-
-    /// Write a structured value by key, serializing a typed value.
-    /// The single place that does `serde_json::to_value` for the channel.
-    /// A serialization failure is silently skipped (matches the typed-setter
-    /// convention of `StageMetadata`).
-    pub fn set_structured<T: serde::Serialize>(&mut self, key: &str, value: &T) {
-        let _ = self.try_set_structured(key, value);
     }
 
     /// Returns a new `WorkContext` with `rt` and `caps` cloned from the

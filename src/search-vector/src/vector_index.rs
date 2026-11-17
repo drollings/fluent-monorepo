@@ -2,7 +2,7 @@
 //! implementations.
 //!
 //! `BruteForceIndex` was renamed to `BruteForceStore` to end the
-//! collision with the `fluent_db::vector` math type.
+//! collision with the old storage-crate math type.
 //!
 //! Moved verbatim from `fluent-router`'s `testing/vector_index.rs`:
 //! no production caller consumes this trait (ranking/retrieval use
@@ -12,15 +12,15 @@
 //!
 //! This trait is the stateful **store seam** (`insert`/`search`/`len`,
 //! `NodeId`-keyed, similarity-mapped) — deliberately distinct from
-//! `fluent_db::vector::VectorIndex::knn`, the stateless **math seam** (the
+//! `crate::math::VectorIndex::knn`, the stateless **math seam** (the
 //! shared name was a collision; the store side is `VectorStore`). Both
 //! implementations compose the shared primitives
-//! (`fluent_db::hnsw::HnswIndex` + `fluent_db::vector::knn_brute_force`)
+//! (`crate::hnsw::HnswIndex` + `crate::math::knn_brute_force`)
 //! instead of re-implementing top-K or cosine math — no second HNSW.
 
 use std::sync::Mutex;
 
-use fluent_db::hnsw::HnswIndex;
+use crate::hnsw::HnswIndex;
 use fluent_types::NodeId;
 
 pub trait VectorStore: Send + Sync {
@@ -59,12 +59,12 @@ impl VectorStore for BruteForceStore {
     }
     fn search(&self, query: &[f32], k: usize) -> Vec<(NodeId, f64)> {
         let entries = common_core::sync::lock(&self.entries);
-        let results = fluent_db::vector::knn_brute_force(
+        let results = crate::math::knn_brute_force(
             query,
             entries.iter().map(|(id, e)| (*id, e.as_slice())),
             k,
         );
-        fluent_db::vector::scored_hits(results, fluent_db::vector::distance_to_similarity)
+        crate::math::scored_hits(results, crate::math::distance_to_similarity)
             .into_iter()
             .map(|(id, similarity)| (id, f64::from(similarity)))
             .collect()
@@ -75,7 +75,7 @@ impl VectorStore for BruteForceStore {
     }
 }
 
-/// HNSW-backed ANN index composing `fluent_db::hnsw::HnswIndex`.
+/// HNSW-backed ANN index composing `crate::hnsw::HnswIndex`.
 pub struct HnswVectorIndex {
     inner: HnswIndex,
 }
@@ -104,11 +104,11 @@ impl VectorStore for HnswVectorIndex {
     }
     fn search(&self, query: &[f32], k: usize) -> Vec<(NodeId, f64)> {
         // The HNSW probe + id resolution is the shared
-        // `fluent_db::hnsw::hnsw_lookup` (`None` = no fallback here — the
+        // `crate::hnsw::hnsw_lookup` (`None` = no fallback here — the
         // test seam returns whatever the graph yields, empty when unbuilt).
-        fluent_db::hnsw::hnsw_lookup(&self.inner, query, k)
+        crate::hnsw::hnsw_lookup(&self.inner, query, k)
             .map(|resolved| {
-                fluent_db::vector::scored_hits(resolved, fluent_db::vector::distance_to_similarity)
+                crate::math::scored_hits(resolved, crate::math::distance_to_similarity)
                     .into_iter()
                     .map(|(raw, similarity)| (NodeId::from_int(raw), f64::from(similarity)))
                     .collect()

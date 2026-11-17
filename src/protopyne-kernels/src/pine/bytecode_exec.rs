@@ -412,7 +412,7 @@ pub(crate) fn cached_link(
     load: impl FnOnce() -> Option<std::sync::Arc<VmProgram>>,
 ) -> Option<std::sync::Arc<VmProgram>> {
     let cache = LINK_CACHE.get_or_init(|| {
-        LinkCache::new(LINK_CACHE_CAPACITY, |_: &[u8; 32]| {
+        LinkCache::try_new(LINK_CACHE_CAPACITY, |_: &[u8; 32]| {
             Ok::<_, std::convert::Infallible>(None)
         })
         .expect("nonzero link-cache capacity")

@@ -6,9 +6,10 @@
 //! lifecycle* (open/pool/checkout), *statement execution* (typed query/execute,
 //! transactions, batching, retry classification), *schema lifecycle* (DDL init,
 //! idempotent migrations, versioning), *reusable store shapes* (single-connection
-//! store, pooled store, TTL/LRU cache store, HNSW-backed vector store), *vector
-//! math* for embeddings, and *the capability-gated async surface* (the successor
-//! to `DbCapability`).
+//! store, pooled store, and TTL/LRU cache store), and *the capability-gated
+//! async surface* (the successor to `DbCapability`).
+//! (HNSW-backed vector stores live in `search-vector`, which composes this
+//! crate's connection and query primitives.)
 //!
 //! Domain semantics — what a "node", "session", "ledger entry", "query cache row",
 //! or "workflow chart" *is* — stay in the consumer crate. `fluent-db` is generic,
@@ -20,10 +21,10 @@
 //! ## Import boundary (D2)
 //!
 //! `fluent-db` may import `common-core` (with `sqlite` feature), `fluent-wvr`,
-//! `tokio`, `rusqlite`, `hnsw_rs`, `anndists`, `serde`, `thiserror`,
-//! `tracing`, and the weight-free `fluent-types` row-mapper leaf (`NodeId`,
-//! `KnnHit` in `vector` only). It must NOT import `fluent-concurrency`, `guidance`, `coral`,
-//! `fluent-router`, `search-vector`, `knowledge`, `ontology`, `rdf`,
+//! `tokio`, `rusqlite`, `serde`, `thiserror`, `tracing`, and the weight-free
+//! `fluent-types` row-mapper leaf (`NodeId`, `KnnHit`). It
+//! must NOT import `fluent-concurrency`, `guidance`, `coral`,
+//! `fluent-router`, `search-vector`, `knowledge`, `rdf`,
 //! or `wasm_ipc`. The dependency direction is **acyclic**:
 //! `fluent-concurrency` re-exports `fluent-db::capability::DbCapability`
 //! behind its `db` feature (never the reverse), and the capability-gating
@@ -34,7 +35,7 @@
 //!
 //! `fluent_db::sqlite` is the canonical home of the *raw* SQLite helpers
 //! (`open_wal`, `open_in_memory`, `open_shared_in_memory`, `run_batch`,
-//! `in_clause`, `is_unique_violation`, `make_hnsw`). `fluent-db` is both the
+//! `in_clause`, `is_unique_violation`). `fluent-db` is both the
 //! mechanics layer (these functions) and the policy layer (pooling, typing,
 //! orchestration) above it. The previous home, `common-core::sqlite`, was
 //! removed after callers migrated.
@@ -45,16 +46,13 @@
 //! that only wants pools/scope/batch pays nothing for the database layer.
 
 #[cfg(feature = "sqlite")]
-pub mod error;
-#[cfg(feature = "sqlite")]
-pub mod hnsw;
-
-#[cfg(feature = "sqlite")]
 pub mod cache;
 #[cfg(feature = "sqlite")]
 pub mod capability;
 #[cfg(feature = "sqlite")]
 pub mod embedding_cache;
+#[cfg(feature = "sqlite")]
+pub mod error;
 #[cfg(feature = "sqlite")]
 pub mod migrate;
 #[cfg(feature = "sqlite")]
@@ -67,8 +65,6 @@ pub mod query;
 pub mod sqlite;
 #[cfg(feature = "sqlite")]
 pub mod store;
-#[cfg(feature = "sqlite")]
-pub mod vector;
 #[cfg(feature = "sqlite")]
 pub mod wvr;
 

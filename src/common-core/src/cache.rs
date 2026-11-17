@@ -104,7 +104,7 @@ where
     /// Returns `Err("<what> capacity must be non-zero, got 0")` when
     /// `capacity` is zero — a `String`, not a typed error, because capacity
     /// is a call-site constant and the message is only ever logged.
-    pub fn new(
+    pub fn try_new(
         capacity: usize,
         load: impl Fn(&K) -> Result<V, E> + Send + Sync + 'static,
     ) -> Result<Self, String> {
@@ -274,11 +274,11 @@ where
     V: Clone,
 {
     /// Create a bounded `ArcLoadCache` holding up to `capacity` entries.
-    pub fn new(
+    pub fn try_new(
         capacity: usize,
         load: impl Fn(&K) -> Result<std::sync::Arc<V>, E> + Send + Sync + 'static,
     ) -> Result<Self, String> {
-        Ok(Self(LoadCache::new(capacity, load)?))
+        Ok(Self(LoadCache::try_new(capacity, load)?))
     }
 
     /// Look up `key`, returning an `Arc::clone` on hit (no `V::clone`).

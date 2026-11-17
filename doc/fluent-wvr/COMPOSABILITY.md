@@ -398,7 +398,7 @@ ctx.set("attempt", 2_i32);
 assert_eq!(ctx.get::<i32>("attempt"), Some(&2));
 
 // Structured handoff for Value-shaped payloads (e.g. RouterRequest).
-ctx.set_structured("request", &req);
+assert!(ctx.try_set_structured("request", &req));
 let req: RouterRequest = ctx.structured("request")?;
 
 // Unit return crossing a boundary.
@@ -650,7 +650,7 @@ from `fluent_concurrency`.
 | Content hash | `common_core::hash::blake3_hex(data)` |
 | Shared HTTP client | `common_core::http::shared_http_client()` |
 | Typed in-process handoff | `ctx.set::<T>(k, v)` / `ctx.get::<T>(k)` (`OutputStore`) |
-| JSON handoff across crates | `ctx.set_structured` / `ctx.structured::<T>()` |
+| JSON handoff across crates | `ctx.try_set_structured` / `ctx.structured::<T>()` |
 | Boundary decode | `decode_boundary_typed::<T>(raw)` |
 | String shaping | `coerce` + `Coercion::{Trim, Lowercase, StripQuotes, JsonEscape, NormalizeLiteral}` |
 | Concurrency cap | `Limiter::new(3).run(\|\| async { ... }).await` |

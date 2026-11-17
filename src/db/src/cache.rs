@@ -62,66 +62,48 @@ impl std::fmt::Debug for TtlCache {
     }
 }
 
+/// Default entry cap when the caller does not set one explicitly.
+pub const DEFAULT_TTL_CACHE_CAP: usize = 4096;
+
 impl TtlCache {
     /// Open (or create) a cache at `path` with the default (identity) key
-    /// derivation. Expired entries are evicted on open.
-    pub fn open(
-        path: &Path,
-        default_ttl_seconds: u64,
-        max_entries: usize,
-    ) -> Result<Self, DbError> {
-        Self::open_with_key(path, default_ttl_seconds, max_entries, identity_key)
+    /// derivation and the default entry cap. Expired entries are evicted
+    /// on open. Refine with [`TtlCache::with_key`]/[`TtlCache::with_cap`].
+    pub fn open(path: &Path, default_ttl_seconds: u64) -> Result<Self, DbError> {
+        Self::open_inner(SqliteStore::open(path)?, default_ttl_seconds)
     }
 
-    /// Like [`TtlCache::open`] with a consumer-provided key derivation.
-    pub fn open_with_key(
-        path: &Path,
-        default_ttl_seconds: u64,
-        max_entries: usize,
-        hash_key: fn(&str) -> String,
-    ) -> Result<Self, DbError> {
-        let store = SqliteStore::open(path)?;
+    /// Open an in-memory cache with the default key derivation and cap.
+    /// Refine with [`TtlCache::with_key`]/[`TtlCache::with_cap`].
+    pub fn open_in_memory(default_ttl_seconds: u64) -> Result<Self, DbError> {
+        Self::open_inner(SqliteStore::open_in_memory()?, default_ttl_seconds)
+    }
+
+    fn open_inner(store: SqliteStore, default_ttl_seconds: u64) -> Result<Self, DbError> {
         store.init_schema(QUERY_CACHE_DDL)?;
         let cache = Self {
             store,
             default_ttl_seconds,
-            max_entries,
-            hash_key,
+            max_entries: DEFAULT_TTL_CACHE_CAP,
+            hash_key: identity_key,
         };
         cache.evict_expired()?;
         Ok(cache)
     }
 
-    /// Open an in-memory cache with the default (identity) key derivation
-    /// and the default 4096-entry cap.
-    pub fn open_in_memory(default_ttl_seconds: u64) -> Result<Self, DbError> {
-        Self::open_in_memory_with_key(default_ttl_seconds, identity_key)
+    /// Use a consumer-provided key derivation instead of the identity
+    /// default (e.g. knowledge's lowercase-`fnv1a64`).
+    #[must_use]
+    pub fn with_key(mut self, hash_key: fn(&str) -> String) -> Self {
+        self.hash_key = hash_key;
+        self
     }
 
-    /// Like [`TtlCache::open_in_memory`] with a consumer-provided key
-    /// derivation (cap stays 4096).
-    pub fn open_in_memory_with_key(
-        default_ttl_seconds: u64,
-        hash_key: fn(&str) -> String,
-    ) -> Result<Self, DbError> {
-        Self::open_in_memory_with_key_and_cap(default_ttl_seconds, hash_key, 4096)
-    }
-
-    /// Like [`TtlCache::open_in_memory_with_key`] with a configurable
-    /// entry cap.
-    pub fn open_in_memory_with_key_and_cap(
-        default_ttl_seconds: u64,
-        hash_key: fn(&str) -> String,
-        max_entries: usize,
-    ) -> Result<Self, DbError> {
-        let store = SqliteStore::open_in_memory()?;
-        store.init_schema(QUERY_CACHE_DDL)?;
-        Ok(Self {
-            store,
-            default_ttl_seconds,
-            max_entries,
-            hash_key,
-        })
+    /// Bound the entry count (evicted oldest-first on `put` past the cap).
+    #[must_use]
+    pub fn with_cap(mut self, max_entries: usize) -> Self {
+        self.max_entries = max_entries;
+        self
     }
 
     /// Fetch a live entry for `key`. An expired entry (TTL `0`, or

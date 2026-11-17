@@ -40,44 +40,6 @@ pub const MAX_READ_BYTES: u64 = 1_000_000;
 /// Excerpt width for one grep match line.
 pub const GREP_EXCERPT_CHARS: usize = 120;
 
-/// Spam ceilings: the single eval contracts, re-exported so the
-/// benchmark and the scorecard read one value.
-pub const SPAM_MAX_CITATIONS: usize = guidance_core::eval::SPAM_MAX_CITATIONS;
-/// Spam ceilings: the single eval contracts, re-exported so the
-/// benchmark and the scorecard read one value.
-pub const SPAM_MAX_SPAN_LINES: u64 = guidance_core::eval::SPAM_MAX_SPAN_LINES;
-
-/// Lines spanned by one rendered citation (the eval contract).
-#[must_use]
-pub fn citation_span_lines(citation: &str) -> u64 {
-    guidance_core::eval::citation_span_lines(citation)
-}
-
-/// Longest citation range in one answer (the eval contract).
-#[must_use]
-pub fn max_citation_span(citations: &[String]) -> u64 {
-    guidance_core::eval::max_citation_span(citations)
-}
-
-/// Measurement paths in one citation set (the eval contract).
-#[must_use]
-pub fn fixture_path_count(paths: &[String]) -> usize {
-    guidance_core::eval::fixture_path_count(paths)
-}
-
-/// One spam verdict for one answer (the eval contract).
-#[must_use]
-pub fn spam_ok(citation_count: usize, fixture_count: usize, max_span: u64) -> bool {
-    guidance_core::eval::spam_ok(citation_count, fixture_count, max_span)
-}
-
-/// Rendered citation entries in one markdown answer (the eval
-/// contract): the payload trim caps this list.
-#[must_use]
-pub fn rendered_citation_count(rendered: &str) -> usize {
-    guidance_core::eval::rendered_citation_count(rendered)
-}
-
 /// One benchmark task: the shared eval shape plus the original golden
 /// paths (the basename list remains for continuity with older reports).
 #[derive(Debug, Clone)]

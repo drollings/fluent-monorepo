@@ -23,10 +23,8 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use common_core::sync::{lock, lock_read, lock_write};
 use fluent_db::error::DbError;
-use fluent_db::hnsw::AdaptiveHnsw;
 use fluent_db::migrate::migrate;
 use fluent_db::store::SqliteStore;
-use fluent_db::vector::knn_brute_force;
 use fluent_knowledge::views::{LedgerView, Lod, ParallelLedger};
 use fluent_llm::client::ChatBackend;
 use fluent_llm::EmbeddingProvider;
@@ -36,6 +34,8 @@ use fluent_types::{
 };
 use fluent_wvr::ArcIntern;
 use rusqlite::Connection;
+use search_vector::hnsw::AdaptiveHnsw;
+use search_vector::math::knn_brute_force;
 
 use crate::ledger::annotations::AnnotationStore;
 use crate::ledger::correction_index::{upsert_correction_row, CorrectionRow};
@@ -107,7 +107,7 @@ pub struct ContentNodeStore {
     /// `|store| > hnsw_threshold` (default 512, `DEFAULT_HNSW_THRESHOLD`).
     /// When `Some`, `knn_search` routes through HNSW (approximate,
     /// recall≥0.95); otherwise it uses brute-force (`knn_brute_force`).
-    hnsw: RwLock<Option<Arc<fluent_db::hnsw::HnswIndex>>>,
+    hnsw: RwLock<Option<Arc<search_vector::hnsw::HnswIndex>>>,
     /// Adaptive HNSW-vs-brute-force dispatch policy (M6) — the single
     /// threshold source (`DEFAULT_HNSW_THRESHOLD`). [B] cost/recall only.
     hnsw_policy: AdaptiveHnsw,
@@ -999,7 +999,7 @@ impl ContentNodeStore {
         if candidates.is_empty() {
             return;
         }
-        let hnsw = Arc::new(fluent_db::hnsw::HnswIndex::new());
+        let hnsw = Arc::new(search_vector::hnsw::HnswIndex::new());
         for (id, emb) in &candidates {
             hnsw.insert(id.as_int(), emb);
         }
@@ -1027,7 +1027,7 @@ impl ContentNodeStore {
             // duplicate entries).
             if !self.is_hnsw_built() {
                 // Fallback single insert if bulk had no embeddings (race).
-                let hnsw = Arc::new(fluent_db::hnsw::HnswIndex::new());
+                let hnsw = Arc::new(search_vector::hnsw::HnswIndex::new());
                 hnsw.insert(node_id.as_int(), embedding);
                 *lock_write(&self.hnsw) = Some(hnsw);
             }
@@ -1459,7 +1459,7 @@ impl ContentNodeStore {
         // shrink; build decisions go through the same policy) makes this
         // exactly the previous probe-if-built behavior.
         // M5: the HNSW probe + id resolution is the shared
-        // `fluent_db::hnsw::hnsw_lookup` (`None` = fall back). Name lookup
+        // `search_vector::hnsw::hnsw_lookup` (`None` = fall back). Name lookup
         // and the raw-distance `KnnHit` shape stay call-site code.
         let dispatch_hnsw = {
             let len = lock_read(&self.nodes).len();
@@ -1470,7 +1470,7 @@ impl ContentNodeStore {
             // check and this clone; a missing index degrades to the
             // brute-force path below instead of panicking.
             if let Some(hnsw) = lock_read(&self.hnsw).clone() {
-                if let Some(neighbours) = fluent_db::hnsw::hnsw_lookup(&hnsw, embedding, k) {
+                if let Some(neighbours) = search_vector::hnsw::hnsw_lookup(&hnsw, embedding, k) {
                     let mut results = Vec::with_capacity(neighbours.len());
                     for (raw, distance) in neighbours {
                         let node_id = NodeId::from_int(raw);

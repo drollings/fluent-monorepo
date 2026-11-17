@@ -8,9 +8,9 @@ fn make_ctx(user_text: &str, entities: &[Entity]) -> WorkContext {
         "messages": [{"role": "user", "content": user_text}]
     });
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &request_json);
+    assert!(ctx.try_set_structured("request", &request_json));
     if !entities.is_empty() {
-        ctx.set_structured(super::super::binding::ENTITIES_META_KEY, &entities);
+        assert!(ctx.try_set_structured(super::super::binding::ENTITIES_META_KEY, &entities));
     }
     ctx
 }

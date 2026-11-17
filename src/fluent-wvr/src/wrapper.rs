@@ -262,25 +262,14 @@ impl ComponentAdapter {
         self
     }
 
-    /// Add a field override. If a value for this name already exists,
-    /// it is replaced — the most recently set value wins.
-    #[must_use]
-    pub fn with_field_override(
-        mut self,
-        name: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Self {
-        self.field_overrides.insert(name.into(), value.into());
-        self
-    }
-
     /// Borrow the wrapped component.
     pub fn inner(&self) -> &Arc<dyn Component> {
         &self.inner
     }
 
     /// Bulk-set field overrides from a pre-built `HashMap`. Existing
-    /// overrides for the same keys are replaced.
+    /// overrides for the same keys are replaced (last write wins, whether
+    /// across calls or within one map).
     #[must_use]
     pub fn with_field_overrides(mut self, overrides: HashMap<String, String>) -> Self {
         self.field_overrides.extend(overrides);
@@ -330,7 +319,7 @@ impl FieldAccess for ComponentAdapter {
         // Fail closed when the inner handle is shared: without exclusive
         // access the write cannot be validated against the inner component,
         // so storing it would fork `get_field` (override) from `execute`
-        // (inner). The explicit `with_field_override` builders remain the
+        // (inner). The explicit `with_field_overrides` builder remains the
         // deliberate unchecked path.
         match Arc::get_mut(&mut self.inner) {
             Some(inner) => {

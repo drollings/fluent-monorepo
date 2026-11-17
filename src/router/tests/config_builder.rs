@@ -783,9 +783,9 @@ fn request_ctx(text: &str, entities: &[Entity]) -> fluent_wvr::WorkContext {
         "messages": [{"role": "user", "content": text}]
     });
     let mut ctx = fluent_wvr::WorkContext::default();
-    ctx.set_structured("request", &ctx_json);
+    assert!(ctx.try_set_structured("request", &ctx_json));
     if !entities.is_empty() {
-        ctx.set_structured(crate::charts::binding::ENTITIES_META_KEY, &entities);
+        assert!(ctx.try_set_structured(crate::charts::binding::ENTITIES_META_KEY, &entities));
     }
     ctx
 }

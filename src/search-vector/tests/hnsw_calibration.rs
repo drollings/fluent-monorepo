@@ -109,3 +109,36 @@ fn dispatch_boundary_is_exact_and_filtered_queries_abstain() {
             && db.vector_search(&query, 0).expect("k == 0").is_empty()
     );
 }
+
+#[ignore = "heavy (~2s): latency record for the dispatch policy (informational only — no timing asserts; CI machines vary); run via `make test-heavy`"]
+#[test]
+fn dispatch_latency_record_above_threshold() {
+    // Record, don't gate: single-probe HNSW-vs-brute-force wall times at
+    // N=2048 (above threshold, HNSW serves) for the calibration log. The
+    // enforced artifact remains the recall bound in
+    // `hnsw_recall_at_scale_meets_threshold`; this table is evidence that
+    // the cost half of the cost/recall heuristic holds on the recorder.
+    use std::time::Instant;
+    let dim = 8;
+    let k = 10;
+    let db = calib_db();
+    fill(&db, 2048, dim);
+    let query = calib_vec(0, dim);
+    let t0 = Instant::now();
+    let approx = db
+        .hnsw_search(&query, k)
+        .expect("HNSW serves above threshold");
+    let hnsw_dt = t0.elapsed();
+    let t1 = Instant::now();
+    let exact = db
+        .bruteforce_vector_search(&query, k)
+        .expect("ground truth");
+    let brute_dt = t1.elapsed();
+    assert!(!approx.is_empty() && !exact.is_empty());
+    eprintln!(
+        "dispatch latency N=2048 k={k}: hnsw={:?} brute={:?} (informational — threshold stays {}; recall bound enforced separately)",
+        hnsw_dt,
+        brute_dt,
+        common_core::constants::DEFAULT_HNSW_THRESHOLD
+    );
+}

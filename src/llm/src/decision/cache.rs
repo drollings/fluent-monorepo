@@ -154,7 +154,7 @@ impl CacheKeyInput {
 /// use fluent_llm::decision::{Decision, DecisionCache, DecisionError};
 /// use fluent_llm::client::block_on;
 ///
-/// let cache = DecisionCache::new(16).expect("capacity");
+/// let cache = DecisionCache::try_new(16).expect("capacity");
 /// let decision = block_on(cache.get_or_decide("k".to_string(), async {
 ///     Ok::<_, DecisionError>(Decision::from_distribution(
 ///         "A",
@@ -176,9 +176,9 @@ pub struct DecisionCache {
 
 impl DecisionCache {
     /// Create a cache holding up to `capacity` decisions.
-    pub fn new(capacity: usize) -> Result<Self, String> {
+    pub fn try_new(capacity: usize) -> Result<Self, String> {
         Ok(Self {
-            inner: common_core::cache::LoadCache::new(capacity, |_| {
+            inner: common_core::cache::LoadCache::try_new(capacity, |_| {
                 Err(DecisionError::Unavailable(
                     "sync load unsupported; use get_or_decide".to_string(),
                 ))
@@ -269,7 +269,7 @@ impl DecisionCache {
     /// ```rust
     /// use fluent_llm::decision::DecisionCache;
     ///
-    /// let cache = DecisionCache::new(4).expect("capacity");
+    /// let cache = DecisionCache::try_new(4).expect("capacity");
     /// assert!(cache.get("missing").is_none());
     /// assert_eq!(cache.len(), 0);
     /// assert!(cache.is_empty());

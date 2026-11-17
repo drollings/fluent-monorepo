@@ -31,7 +31,7 @@ fn ctx_for(text: &str) -> WorkContext {
         metadata: Default::default(),
     };
     let mut ctx = WorkContext::default();
-    ctx.set_structured("request", &request);
+    assert!(ctx.try_set_structured("request", &request));
     ctx
 }
 
