@@ -560,3 +560,72 @@ fn chunk_boundaries_never_split_characters() {
             .is_char_boundary(window.content_text.len()));
     }
 }
+
+/// M1.1 characterization: `byte_offset_for_units` edge table.
+/// Must stay byte-identical to the markdown/text copies (C1).
+#[test]
+fn byte_offset_for_units_table() {
+    let cases: &[(&str, usize, usize)] = &[
+        ("", 0, 0),
+        ("hello", 0, 0),
+        ("hello", 2, 2),
+        ("hello", 5, 5),
+        ("hello", 99, 5),
+        ("h\u{e9}llo", 2, 3),
+        ("a\u{1f4bb}b", 2, 5),
+    ];
+    for (line, units, want) in cases {
+        assert_eq!(
+            crate::extractor::byte_offset_for_units(line, *units),
+            *want,
+            "line={line:?} units={units}"
+        );
+    }
+    assert_eq!(crate::extractor::byte_offset_for_units("a\u{1f4bb}b", 4), 6);
+}
+
+/// M1.4: `one_line` migrated to
+/// `common_core::string::collapse_whitespace` (C2). Expected outputs
+/// below were verified byte-identical against the removed `one_line`
+/// before migration; they now pin the shared primitive at this call
+/// site.
+#[test]
+fn one_line_matches_shared_collapse() {
+    let cases = [
+        ("a  b", "a b"),
+        ("\ttab\nnewline  mix ", "tab newline mix"),
+        ("", ""),
+        ("   ", ""),
+        ("a b c", "a b c"),
+        ("line1\nline2", "line1 line2"),
+        ("a b", "a b"),
+        ("h\u{e9}llo  w\u{f6}rld", "h\u{e9}llo w\u{f6}rld"),
+        ("x", "x"),
+        ("  padded  ", "padded"),
+    ];
+    for (input, want) in cases {
+        assert_eq!(
+            common_core::string::collapse_whitespace(input),
+            want,
+            "input={input:?}"
+        );
+    }
+}
+
+/// M1.1 characterization: `compute_line_overlap_code` edge table (C3).
+/// Counts lines backwards accumulating `utf16_len + 1`, capped at half
+/// the window. Must stay identical to the markdown twin.
+#[test]
+fn compute_line_overlap_code_table() {
+    let lines = ["aaa", "bb", "c"];
+    assert_eq!(super::compute_line_overlap_code(&lines, 0, 3, 0), 0);
+    assert_eq!(super::compute_line_overlap_code(&lines, 0, 3, 2), 1);
+    assert_eq!(super::compute_line_overlap_code(&lines, 0, 3, 1), 0);
+    assert_eq!(super::compute_line_overlap_code(&lines, 0, 3, 100), 1);
+    assert_eq!(super::compute_line_overlap_code(&lines, 1, 2, 100), 0);
+    assert_eq!(super::compute_line_overlap_code(&lines, 0, 0, 100), 0);
+    let nine = ["a", "b", "c", "d", "e", "f", "g", "h", "i"];
+    assert_eq!(super::compute_line_overlap_code(&nine, 0, 9, 5), 2);
+    let heavy = ["aaaaaaaaaa", "b", "c", "d"];
+    assert_eq!(super::compute_line_overlap_code(&heavy, 0, 4, 12), 2);
+}

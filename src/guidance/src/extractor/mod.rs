@@ -208,3 +208,132 @@ pub mod code;
 pub mod markdown;
 pub mod text;
 pub mod vector_content;
+
+/// M1.2 shared text-shape core (C1/C3/C4): UTF-16-unit offset,
+/// backward overlap counting, and long-line window splitting.
+/// Call-site wrappers in `code`, `markdown`, and `text` preserve
+/// their exact edge contracts; see `tests/extract_text_shape.rs`.
+#[must_use]
+/// M1.2 shared text-shape core (C1/C3/C4): UTF-16-unit offset,
+/// backward overlap counting, and long-line window splitting.
+/// Call-site wrappers in `code`, `markdown`, and `text` preserve
+/// their exact edge contracts; see `tests/extract_text_shape.rs`.
+pub(crate) fn byte_offset_for_units(line: &str, units: usize) -> usize {
+    let mut seen = 0;
+    for (byte, ch) in line.char_indices() {
+        if seen >= units {
+            return byte;
+        }
+        seen += ch.len_utf16();
+    }
+    line.len()
+}
+
+/// Backward overlap walk shared by the three overlap counters.
+/// `inclusive` selects the text rule (count the line that
+/// meets/exceeds the budget) versus the code/markdown rule (stop
+/// before it). `overlap_units == 0` counts nothing either way.
+fn count_trailing_overlap(
+    lines: &[&str],
+    start: usize,
+    end: usize,
+    overlap_units: usize,
+    inclusive: bool,
+) -> usize {
+    if overlap_units == 0 {
+        return 0;
+    }
+    let mut weight = 0usize;
+    let mut count = 0usize;
+    for index in (start..end).rev() {
+        weight += utf16_len(lines[index]) + 1;
+        if weight > overlap_units {
+            return if inclusive { count + 1 } else { count };
+        }
+        count += 1;
+        if inclusive && weight >= overlap_units {
+            return count;
+        }
+    }
+    count
+}
+
+/// Trailing-line overlap count, code/markdown rule: lines whose
+/// cumulative `utf16_len + 1` weight stays within budget, walking
+/// back from `end` (exclusive) to `start` (inclusive). No cap here;
+/// callers apply their own window clamp.
+#[must_use]
+/// Trailing-line overlap count, code/markdown rule: lines whose
+/// cumulative `utf16_len + 1` weight stays within budget, walking
+/// back from `end` (exclusive) to `start` (inclusive). No cap here;
+/// callers apply their own window clamp.
+pub(crate) fn overlap_lines_back(
+    lines: &[&str],
+    start: usize,
+    end: usize,
+    overlap_units: usize,
+) -> usize {
+    count_trailing_overlap(lines, start, end, overlap_units, false)
+}
+
+/// Trailing-line overlap count, text rule: as above but the line
+/// that meets the budget still counts.
+#[must_use]
+/// Trailing-line overlap count, text rule: as above but the line
+/// that meets the budget still counts.
+pub(crate) fn overlap_lines_back_inclusive(
+    lines: &[&str],
+    start: usize,
+    end: usize,
+    overlap_units: usize,
+) -> usize {
+    count_trailing_overlap(lines, start, end, overlap_units, true)
+}
+
+/// Long-line window split over UTF-16 units: `(byte_start, slice)`
+/// pairs in order. `cut(window, max)` picks the slice length for an
+/// over-budget remainder (pass `find_line_cut`); callers map pairs
+/// to their window struct and own skipping. The byte start is the
+/// historical `byte_offset_for_units` value (it can sit past an
+/// astral char the slice starts inside — preserved exactly as the
+/// historical ranges did, never re-sliced here, so no new panics).
+/// Mirrors the historical splitters exactly, including advancing
+/// past whitespace-only slices and no `max == 0` guard (budgets
+/// are validated upstream in `ChunkOptions::resolve`).
+#[must_use]
+/// Long-line window split over UTF-16 units: `(byte_start, slice)`
+/// pairs in order. `cut(window, max)` picks the slice length for an
+/// over-budget remainder (pass `find_line_cut`); callers map pairs
+/// to their window struct and own skipping. The byte start is the
+/// historical `byte_offset_for_units` value (it can sit past an
+/// astral char the slice starts inside — preserved exactly as the
+/// historical ranges did, never re-sliced here, so no new panics).
+/// Mirrors the historical splitters exactly, including advancing
+/// past whitespace-only slices and no `max == 0` guard (budgets
+/// are validated upstream in `ChunkOptions::resolve`).
+pub(crate) fn split_long_units(
+    line: &str,
+    max_units: usize,
+    cut: fn(&str, usize) -> usize,
+) -> Vec<(usize, &str)> {
+    let total = utf16_len(line);
+    let mut out = Vec::new();
+    let mut offset = 0;
+    while offset < total {
+        let remaining = total - offset;
+        let slice_len = if remaining <= max_units {
+            remaining
+        } else {
+            cut(utf16_slice(line, offset, remaining), max_units)
+        };
+        let slice = utf16_slice(line, offset, slice_len);
+        let byte_start = byte_offset_for_units(line, offset);
+        out.push((byte_start, slice));
+        offset += slice_len;
+    }
+    out
+}
+
+#[cfg(test)]
+#[path = "../../tests/extract_text_shape.rs"]
+mod text_shape_tests;

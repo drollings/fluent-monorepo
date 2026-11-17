@@ -18,11 +18,11 @@
 | `score` | `ScoreMatrix` generic math, `ScoreDimension` closed enum, `normalize_score`, `top_k_by_score` | `src/common-core/src/score.rs` |
 | `interner` | `CapabilityRegistry` interned-name bitsets | `src/common-core/src/interner.rs` |
 | `drift` | `BitSetDrift` follow-up tracking | `src/common-core/src/drift.rs` |
-| `string` | byte-trim, case-insensitive search, HTML/ANSI strip, slug, sentence truncation, CJK bigrams, FTS quoting | `src/common-core/src/string.rs` |
-| `io` | `mtime`, `write_atomic`, `read_to_string_err`, `read_file_alloc[_err]`, `resolve_path`, `ensure_dir`, `bind_unix_listener_with_stale_reclaim` + `ReclaimBindError` | `src/common-core/src/io.rs` |
+| `string` | byte-trim, case-insensitive search, `contains_token` (caller-separator whole-word match), HTML/ANSI strip, slug, sentence truncation, CJK bigrams, FTS quoting | `src/common-core/src/string.rs` |
+| `io` | `mtime`, `read_first_line` (header-line reads: missing/empty → `None`), `write_atomic`, `read_to_string_err`, `read_file_alloc[_err]`, `resolve_path`, `ensure_dir`, `bind_unix_listener_with_stale_reclaim` + `ReclaimBindError` | `src/common-core/src/io.rs` |
 | `path` | pure lexical cleaners (`normalize_lexical`, `collapse_separators`, `is_absolute_lexical`) — no I/O | `src/common-core/src/path.rs` |
 | `format` | `format_json`/`format_csv`/`format_size`/`parse_size`, `Table`, generic `render_markdown_table` | `src/common-core/src/format.rs` |
-| `calibration` | threshold sweeps, `CalibrationReport`, `render_calibration_table` (legacy `render_markdown_table` alias) | `src/common-core/src/calibration.rs` |
+| `calibration` | threshold sweeps, `CalibrationReport`, `render_calibration_table` (legacy `render_markdown_table` alias); per-class counting (`ClassCounts`, `precision_or`/`recall_or`/`macro_*_or` with caller-supplied empty fallback); `GateBars` + `passes_gate_at` (shipping default 0.90/0.05) | `src/common-core/src/calibration.rs` |
 | `walk` | `walk_files`/`walk_files_filtered`, `WalkFilter`, `SkipReason`, `make_tree` test helper | `src/common-core/src/walk.rs` |
 | `config` | `load_json[_or_default]`, `find_hierarchical` | `src/common-core/src/config.rs` |
 | `shell` / `shell_parser` | subprocess capture (`shell_cmd`, `run_capture`) + `parse_command` | `src/common-core/src/shell.rs`, `shell_parser.rs` |

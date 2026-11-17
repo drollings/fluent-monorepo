@@ -190,3 +190,31 @@ fn parse_stamps_normalized_match_hashes() {
         );
     }
 }
+
+/// M1.4: `collapse_ws` migrated to
+/// `common_core::string::collapse_whitespace` (C2). Expected outputs
+/// below were verified byte-identical against the removed
+/// `collapse_ws` before migration; they now pin the shared
+/// primitive on the hash-normalization path.
+#[test]
+fn collapse_ws_matches_shared_collapse() {
+    let cases = [
+        ("a  b", "a b"),
+        ("\ttab\nnewline  mix ", "tab newline mix"),
+        ("", ""),
+        ("   ", ""),
+        ("a b c", "a b c"),
+        ("line1\nline2", "line1 line2"),
+        ("a b", "a b"),
+        ("h\u{e9}llo  w\u{f6}rld", "h\u{e9}llo w\u{f6}rld"),
+        ("x", "x"),
+        ("  padded  ", "padded"),
+    ];
+    for (input, want) in cases {
+        assert_eq!(
+            common_core::string::collapse_whitespace(input),
+            want,
+            "input={input:?}"
+        );
+    }
+}

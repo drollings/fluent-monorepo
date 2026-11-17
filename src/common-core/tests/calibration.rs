@@ -173,3 +173,70 @@ fn emit_calibration_artifact_smoke() {
         eprintln!("{md}");
     }
 }
+
+/// M2.2: per-class counting conventions. Triage passes 0.0 (an
+/// unpredicted class scores 0); intent measurement passes 1.0 (an
+/// unused class cannot fail its bar). Both must stay pinned.
+#[test]
+fn class_counts_conventions() {
+    let zero = ClassCounts {
+        label: "never".to_string(),
+        hits: 0,
+        predicted: 0,
+        actual: 0,
+    };
+    assert_eq!(zero.precision_or(0.0), 0.0);
+    assert_eq!(zero.recall_or(0.0), 0.0);
+    assert_eq!(zero.precision_or(1.0), 1.0);
+    assert_eq!(zero.recall_or(1.0), 1.0);
+    let some = ClassCounts {
+        label: "partial".to_string(),
+        hits: 3,
+        predicted: 4,
+        actual: 6,
+    };
+    assert_eq!(some.precision_or(0.0), 0.75);
+    assert_eq!(some.recall_or(1.0), 0.5);
+    assert_eq!(precision_or(0, 0, 0.0), 0.0);
+    assert_eq!(recall_or(0, 0, 1.0), 1.0);
+    assert_eq!(macro_precision_or(&[], 0.0), 0.0);
+    assert_eq!(macro_recall_or(&[], 1.0), 0.0);
+    let classes = vec![zero, some];
+    assert_eq!(macro_precision_or(&classes, 0.0), f64::midpoint(0.0, 0.75));
+    assert_eq!(macro_recall_or(&classes, 1.0), f64::midpoint(1.0, 0.5));
+}
+
+/// M2.4: gate bars are parameterizable; the shipping default
+/// preserves the historical operating point exactly.
+#[test]
+fn gate_bars_match_shipping_gate() {
+    let at_bar = CalibrationReport {
+        precision: 0.90,
+        recall: 1.0,
+        fpr: 0.05,
+        support: 10,
+        tp: 9,
+        fp: 1,
+        tn: 19,
+        r#fn: 0,
+    };
+    assert!(at_bar.passes_gate());
+    assert!(at_bar.passes_gate_at(GateBars::SHIPPING));
+    assert!(at_bar.passes_gate_at(GateBars {
+        precision_min: 0.90,
+        fpr_max: 0.05
+    }));
+    assert!(!at_bar.passes_gate_at(GateBars {
+        precision_min: 0.95,
+        fpr_max: 0.05
+    }));
+    assert!(!at_bar.passes_gate_at(GateBars {
+        precision_min: 0.90,
+        fpr_max: 0.01
+    }));
+    let below = CalibrationReport {
+        precision: 0.89,
+        ..at_bar.clone()
+    };
+    assert!(!below.passes_gate());
+}

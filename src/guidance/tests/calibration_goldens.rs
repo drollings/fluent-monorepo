@@ -119,3 +119,60 @@ fn corrupt_corpus_labels_refuse() {
         "empty corpora never load"
     );
 }
+
+/// M6.1 characterization: loader prologue error strings (C12) —
+/// missing file, invalid JSON, missing/non-array `cases` array.
+/// Prefixes asserted by `starts_with` (OS/serde text varies);
+/// sentinels asserted exactly — the migration must not reword them.
+#[test]
+fn corpus_loader_prologue_errors_are_stable() {
+    let dir = fluent_wvr_testutil::tempdir();
+    let missing = dir.path().join("nope.json");
+    for err in [
+        load_gold_corpus(&missing).expect_err("missing file"),
+        load_route_corpus(&missing).expect_err("missing file"),
+    ] {
+        assert!(
+            err.starts_with(&format!("corpus read {}: ", missing.display())),
+            "unexpected: {err:?}"
+        );
+    }
+    let bad_json = dir.path().join("bad.json");
+    std::fs::write(&bad_json, "{not json").expect("write");
+    for err in [
+        load_gold_corpus(&bad_json).expect_err("invalid json"),
+        load_route_corpus(&bad_json).expect_err("invalid json"),
+    ] {
+        assert!(err.starts_with("corpus parse: "), "unexpected: {err:?}");
+    }
+    let no_cases = dir.path().join("no_cases.json");
+    std::fs::write(&no_cases, r#"{"other": []}"#).expect("write");
+    assert_eq!(
+        load_gold_corpus(&no_cases).expect_err("missing cases"),
+        "corpus has no cases array"
+    );
+    assert_eq!(
+        load_route_corpus(&no_cases).expect_err("missing cases"),
+        "corpus has no cases array"
+    );
+    let not_array = dir.path().join("not_array.json");
+    std::fs::write(&not_array, r#"{"cases": {}}"#).expect("write");
+    assert_eq!(
+        load_gold_corpus(&not_array).expect_err("non-array cases"),
+        "corpus has no cases array"
+    );
+    assert_eq!(
+        load_route_corpus(&not_array).expect_err("non-array cases"),
+        "corpus has no cases array"
+    );
+    let empty = dir.path().join("empty.json");
+    std::fs::write(&empty, r#"{"cases": []}"#).expect("write");
+    assert_eq!(
+        load_gold_corpus(&empty).expect_err("empty cases"),
+        "corpus has no cases"
+    );
+    assert_eq!(
+        load_route_corpus(&empty).expect_err("empty cases"),
+        "corpus has no cases"
+    );
+}

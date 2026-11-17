@@ -1,5 +1,12 @@
 //! Shadow decision hooks for the guidance query pipeline.
 //!
+//! Naming note (M8.2): this is decision-observation shadowing
+//! (a `Decision` recorded alongside the authoritative path), not
+//! the patch-verification shadow tree in top-level `shadow.rs`
+//! (model drafts verified in scratch dirs). The names collide by
+//! history; both are load-bearing, so the collision is documented
+//! here instead of renamed.
+//!
 //! Each hook runs a precomputed `Decision` alongside the authoritative
 //! deterministic path and records a `ShadowRecord` — label, confidence,
 //! latency, would-have-acted — without altering the response. Indexed source
@@ -138,19 +145,27 @@ pub fn scope_shadow(
     hypothesis: Option<&Decision>,
     funnel_terms: &[String],
 ) -> Option<ShadowRecord> {
-    use fluent_llm::decision::ThresholdSet;
-    let thresholds = ThresholdSet {
-        act: 0.9,
-        review: 0.7,
-    };
     hypothesis.map(|d| {
         record(
             crate::query::decision_points::SCOPE_POINT,
             d,
-            &thresholds,
+            &SHADOW_THRESHOLDS,
             format!("funnel:{}", funnel_terms.join(",")),
         )
     })
+}
+
+/// M8.1 shared shadow-gate thresholds (0.9 act / 0.7 review):
+/// one home for the production `scope_shadow` default and both
+/// test modules. Values are pinned by the shadow suites.
+pub(crate) const SHADOW_THRESHOLDS: ThresholdSet = ThresholdSet {
+    act: 0.9,
+    review: 0.7,
+};
+
+#[cfg(test)]
+pub(crate) fn test_thresholds() -> ThresholdSet {
+    SHADOW_THRESHOLDS
 }
 /// Capability-judge shadow: one record per scored brief for the
 /// judge corpus. The tier is the label; the score is the confidence.
@@ -294,12 +309,7 @@ mod tests {
     use super::*;
     use crate::query::strategy::{FsmEngine, QueryClass};
 
-    fn thresholds() -> ThresholdSet {
-        ThresholdSet {
-            act: 0.9,
-            review: 0.7,
-        }
-    }
+    use super::test_thresholds as thresholds;
 
     fn choice(label: &str, top: f64) -> Decision {
         Decision::from_distribution(
@@ -426,14 +436,9 @@ pub fn summary_route_shadow(
 
 #[cfg(test)]
 mod capability_judge_shadow_tests {
-    use super::{capability_judge_shadow, ThresholdSet};
+    use super::capability_judge_shadow;
 
-    fn thresholds() -> ThresholdSet {
-        ThresholdSet {
-            act: 0.9,
-            review: 0.7,
-        }
-    }
+    use super::test_thresholds as thresholds;
 
     #[test]
     fn judge_shadow_pins_tier_confidence_and_rank() {

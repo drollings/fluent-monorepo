@@ -223,10 +223,8 @@ pub fn sweep_sidecars(
 
 /// Read only the first line of a file: the sweep never pays for bodies.
 fn first_line(path: &Path) -> Option<String> {
-    use std::io::BufRead as _;
-    let file = std::fs::File::open(path).ok()?;
-    let mut lines = std::io::BufReader::new(file).lines();
-    lines.next()?.ok()
+    // M3.3: shared header-line reader.
+    common_core::io::read_first_line(path)
 }
 
 fn sweep_one(

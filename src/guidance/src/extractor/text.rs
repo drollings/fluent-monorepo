@@ -4,8 +4,7 @@
 //! offsets (Rust-side slicing is byte-based — documented deviation).
 
 use super::{
-    utf16_len, utf16_slice, ChunkOptions, ExtractError, ExtractSource, FragmentRange,
-    PreparedFragment,
+    utf16_len, ChunkOptions, ExtractError, ExtractSource, FragmentRange, PreparedFragment,
 };
 
 /// Extract whole-file text windows (port of `extractPlainTextFragments`).
@@ -109,45 +108,22 @@ fn split_long_line(
 ) -> Vec<TextChunk> {
     let line = lines[index];
     let line_number = index + 1;
-    let total = utf16_len(line);
     let mut chunks = Vec::new();
-    let mut offset = 0;
-    while offset < total {
-        let remaining = total - offset;
-        let slice_len = if remaining <= max {
-            remaining
-        } else {
-            find_line_cut(utf16_slice(line, offset, remaining), max)
-        };
-        let slice = utf16_slice(line, offset, slice_len);
+    // M1.6: shared window splitter; the whitespace-only skip stays here.
+    for (byte_start, slice) in super::split_long_units(line, max, find_line_cut) {
         if !slice.trim().is_empty() {
-            // Byte offset of the UTF-16 `offset`: walk char boundaries.
-            let byte_base = byte_offset_for_units(line, offset);
             chunks.push(TextChunk {
                 text: slice.to_string(),
                 range: FragmentRange {
                     start_line: line_number,
                     end_line: line_number,
-                    start_offset: line_offsets[index] + byte_base,
-                    end_offset: line_offsets[index] + byte_base + slice.len(),
+                    start_offset: line_offsets[index] + byte_start,
+                    end_offset: line_offsets[index] + byte_start + slice.len(),
                 },
             });
         }
-        offset += slice_len;
     }
     chunks
-}
-
-/// Byte offset of the character starting at UTF-16 `units`.
-fn byte_offset_for_units(line: &str, units: usize) -> usize {
-    let mut seen = 0;
-    for (byte, ch) in line.char_indices() {
-        if seen >= units {
-            return byte;
-        }
-        seen += ch.len_utf16();
-    }
-    line.len()
 }
 
 /// Scored intra-line cut (port of `findLineCut`): sentence > clause >
@@ -196,24 +172,13 @@ fn compute_next_start_line(
     end_index: usize,
     overlap_chars: usize,
 ) -> usize {
+    // M1.5: shared backward-count core, text rule (the meeting line
+    // counts); absolute-index contract and no-cap clamp stay here.
     if overlap_chars == 0 {
         return end_index;
     }
-    let mut overlap_lines = 0;
-    let mut overlap_count = 0;
-    let mut index = end_index.saturating_sub(1);
-    loop {
-        if index < start_index || overlap_count >= overlap_chars {
-            break;
-        }
-        overlap_count += utf16_len(lines[index]) + 1;
-        overlap_lines += 1;
-        if index == 0 {
-            break;
-        }
-        index -= 1;
-    }
-    let next = end_index.saturating_sub(overlap_lines);
+    let overlap = super::overlap_lines_back_inclusive(lines, start_index, end_index, overlap_chars);
+    let next = end_index.saturating_sub(overlap);
     if next > start_index {
         next
     } else {

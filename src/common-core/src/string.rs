@@ -133,6 +133,27 @@ pub fn contains_ignore_case(text: &str, pattern: &str) -> bool {
     text.to_lowercase().contains(&pattern.to_lowercase())
 }
 
+/// Whole-token match with a caller-supplied separator predicate
+/// (M3.2 shared core for cue-style matching): `token` is trimmed,
+/// empty never matches, and `text` splits on `is_separator` with
+/// exact word equality. Case handling belongs to the caller (pass
+/// pre-lowered text for case-insensitive matching, as intent
+/// routing does).
+#[must_use]
+/// Whole-token match with a caller-supplied separator predicate
+/// (M3.2 shared core for cue-style matching): `token` is trimmed,
+/// empty never matches, and `text` splits on `is_separator` with
+/// exact word equality. Case handling belongs to the caller (pass
+/// pre-lowered text for case-insensitive matching, as intent
+/// routing does).
+pub fn contains_token(text: &str, token: &str, is_separator: impl Fn(char) -> bool) -> bool {
+    let token = token.trim();
+    if token.is_empty() {
+        return false;
+    }
+    text.split(is_separator).any(|word| word == token)
+}
+
 pub fn contains_word(text: &str, word: &str) -> bool {
     contains_word_with_boundary(text, word, |c| !c.is_ascii_alphanumeric())
 }

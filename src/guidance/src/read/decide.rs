@@ -57,10 +57,10 @@ impl CandidateLabel for DocLabel {
     }
 
     fn from_label(label: &str) -> Self {
-        if label.trim().eq_ignore_ascii_case("strong") {
-            Self::Strong
-        } else {
-            Self::Considered
+        // M4.3: shared closed match; fail-closed default preserved.
+        match fluent_llm::decision::match_text_label(label, &["strong"]) {
+            Some(_) => Self::Strong,
+            None => Self::Considered,
         }
     }
 
@@ -210,10 +210,10 @@ impl CandidateLabel for FindingLabel {
     }
 
     fn from_label(label: &str) -> Self {
-        let lower = label.trim().to_lowercase();
-        match lower.as_str() {
-            "relevant" => Self::Relevant,
-            "irrelevant" => Self::Irrelevant,
+        // M4.3: shared closed match; fail-closed default preserved.
+        match fluent_llm::decision::match_text_label(label, &["relevant", "irrelevant"]) {
+            Some("relevant") => Self::Relevant,
+            Some("irrelevant") => Self::Irrelevant,
             _ => Self::Insufficient,
         }
     }
@@ -291,10 +291,10 @@ impl CandidateLabel for SupportLabel {
     }
 
     fn from_label(label: &str) -> Self {
-        let lower = label.trim().to_lowercase();
-        match lower.as_str() {
-            "supported" => Self::Supported,
-            "contradicted" => Self::Contradicted,
+        // M4.3: shared closed match; fail-closed default preserved.
+        match fluent_llm::decision::match_text_label(label, &["supported", "contradicted"]) {
+            Some("supported") => Self::Supported,
+            Some("contradicted") => Self::Contradicted,
             _ => Self::Insufficient,
         }
     }

@@ -293,3 +293,38 @@ fn judge_labels_do_not_reorder_or_filter_before_calibration() {
     );
     assert_eq!(ranked.len(), 2);
 }
+
+/// M2.1 characterization: NaN FTS falls into the `Equal` arm, so id
+/// order decides; empty input ranks empty (C7).
+#[test]
+fn rank_nan_fts_falls_back_to_id_order() {
+    use super::{rank_briefs, BriefCandidate};
+    let signals = crate::graph_index::GraphQuerySignals::default();
+    let candidate = |id: &str, fts: Option<f64>| BriefCandidate {
+        id: id.to_string(),
+        purpose: format!("Purpose {id}."),
+        predicate: String::new(),
+        roles: Vec::new(),
+        crate_name: "guidance-core".to_string(),
+        domain: "guidance".to_string(),
+        source_path: "doc/a.md".to_string(),
+        anchor: id.to_string(),
+        fts_score: fts,
+    };
+    // NaN poisons its FTS comparisons into the `Equal` arm, so id
+    // order decides among NaNs — and against the scored candidate
+    // too, since every NaN-vs-score comparison is also `Equal`.
+    let ranked = rank_briefs(
+        &signals,
+        &[
+            candidate("b", Some(f64::NAN)),
+            candidate("a", Some(f64::NAN)),
+            candidate("c", Some(1.0)),
+        ],
+    );
+    assert_eq!(
+        ranked.iter().map(|b| b.id.as_str()).collect::<Vec<_>>(),
+        vec!["a", "b", "c"]
+    );
+    assert!(rank_briefs(&signals, &[]).is_empty());
+}

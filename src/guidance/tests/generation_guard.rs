@@ -317,3 +317,25 @@ fn fingerprint_marker_roundtrips_beside_the_generation_marker() {
         Some("fp-2")
     );
 }
+
+/// M3.1 characterization: `first_line` edge table (C9) — missing
+/// file, empty file, no trailing newline, multiline (first only).
+/// Must hold after migrating to `common_core::io::read_first_line`.
+#[test]
+fn first_line_edge_table() {
+    use std::io::Write as _;
+    let dir = tempdir();
+    let missing = dir.path().join("missing.txt");
+    assert_eq!(super::first_line(&missing), None);
+    let empty = dir.path().join("empty.txt");
+    std::fs::write(&empty, "").expect("write");
+    assert_eq!(super::first_line(&empty), None);
+    let noeol = dir.path().join("noeol.txt");
+    std::fs::write(&noeol, "only").expect("write");
+    assert_eq!(super::first_line(&noeol).as_deref(), Some("only"));
+    let multi = dir.path().join("multi.txt");
+    let mut file = std::fs::File::create(&multi).expect("create");
+    writeln!(file, "first").expect("write");
+    writeln!(file, "second").expect("write");
+    assert_eq!(super::first_line(&multi).as_deref(), Some("first"));
+}

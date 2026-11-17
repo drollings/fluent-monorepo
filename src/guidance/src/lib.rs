@@ -49,7 +49,6 @@ pub mod journal;
 pub mod jumps;
 pub mod maintenance;
 pub mod model_lanes;
-pub mod model_text;
 pub mod offload;
 pub mod orchestrator;
 pub mod pipeline;

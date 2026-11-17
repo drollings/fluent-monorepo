@@ -4,6 +4,7 @@
 //! recall. Cards render with source anchors and code paths, so every
 //! answer jumps deterministically from card to doc to code.
 
+use common_core::sort::sorted_by_vec;
 use search_vector::db::{GuidanceDb, ProjectCard};
 
 /// One card finding for the read engine.
@@ -43,13 +44,14 @@ impl OrientationPlane {
     /// then crates, then domains.
     #[must_use]
     pub fn orientation_cards(&self) -> Vec<CardFinding> {
-        let mut out: Vec<CardFinding> = self
+        let out: Vec<CardFinding> = self
             .cards
             .iter()
             .filter(|card| matches!(card.kind.as_str(), "workspace" | "crate" | "domain"))
             .map(CardFinding::from)
             .collect();
-        out.sort_by(|a, b| {
+        // M2.5: shared stable sorter; kind-rank then id, verbatim.
+        sorted_by_vec(out, |a, b| {
             fn rank(kind: &str) -> u8 {
                 match kind {
                     "workspace" => 0,
@@ -58,8 +60,7 @@ impl OrientationPlane {
                 }
             }
             (rank(&a.kind), &a.id).cmp(&(rank(&b.kind), &b.id))
-        });
-        out
+        })
     }
 
     /// Cards for an ownership question: the owning crate card plus its

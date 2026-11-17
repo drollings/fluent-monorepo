@@ -114,13 +114,27 @@ pub fn static_classify(diagnostic: &str) -> Option<TriageVerdict> {
 
 /// Parse one closed-enum model verdict. Anything outside the four
 /// labels (including prose around them) rejects to `None` and the
-/// deterministic fallback decides instead.
+/// deterministic fallback decides instead. Shared closed match via
+/// `fluent_llm::decision::match_text_label` (M4.1/M4.2 tables pin
+/// the fold and the Kelvin-K rejection).
 #[must_use]
 /// Parse one closed-enum model verdict. Anything outside the four
 /// labels (including prose around them) rejects to `None` and the
-/// deterministic fallback decides instead.
+/// deterministic fallback decides instead. Shared closed match via
+/// `fluent_llm::decision::match_text_label` (M4.1/M4.2 tables pin
+/// the fold and the Kelvin-K rejection).
 pub fn parse_triage_verdict(text: &str) -> Option<TriageVerdict> {
-    match text.trim().to_lowercase().as_str() {
+    match fluent_llm::decision::match_text_label(
+        text,
+        &[
+            "mechanical-import",
+            "mechanical-borrow",
+            "mechanical-removal",
+            "local-rewrite",
+            "needs-human",
+            "external",
+        ],
+    )? {
         "mechanical-import" => Some(TriageVerdict::Mechanical {
             fix_class: "import",
         }),
@@ -572,30 +586,24 @@ pub struct GoldCase {
     pub expected: TriageVerdict,
 }
 
-/// Per-class precision and recall over a golden set.
+/// Triage calibration report: accuracy plus per-class scores.
+/// Named for its owner: `common_core::calibration::CalibrationReport`
+/// is the threshold-sweep shape, a different contract.
 #[derive(Debug, Clone, Default)]
-/// Per-class precision and recall over a golden set.
-pub struct ClassScores {
-    /// Class label.
-    pub label: String,
-    /// Precision over the golden set.
-    pub precision: f64,
-    /// Recall over the golden set.
-    pub recall: f64,
-}
-
-/// Calibration report: accuracy plus per-class scores.
-#[derive(Debug, Clone, Default)]
-/// Calibration report: accuracy plus per-class scores.
-pub struct CalibrationReport {
+/// Triage calibration report: accuracy plus per-class scores.
+/// Named for its owner: `common_core::calibration::CalibrationReport`
+/// is the threshold-sweep shape, a different contract.
+pub struct TriageReport {
     /// Cases measured.
     pub total: usize,
     /// Exact matches.
     pub correct: usize,
     /// Overall accuracy.
     pub accuracy: f64,
-    /// Per-class precision and recall.
-    pub classes: Vec<ClassScores>,
+    /// Per-class hit counts (shared `ClassCounts` shape; the 0.0
+    /// empty-class fallback preserves the historical `.max(1.0)`
+    /// arithmetic exactly).
+    pub classes: Vec<common_core::calibration::ClassCounts>,
     /// Macro-averaged precision.
     pub macro_precision: f64,
     /// Macro-averaged recall.
@@ -623,49 +631,52 @@ fn verdict_label(verdict: &TriageVerdict) -> String {
 pub fn calibrate(
     cases: &[GoldCase],
     classify: impl Fn(&str) -> TriageVerdict,
-) -> CalibrationReport {
+) -> TriageReport {
+    use common_core::calibration::{
+        macro_precision_or, macro_recall_or, ClassCounts,
+    };
     use std::collections::BTreeMap;
     let mut correct = 0usize;
-    let mut expected_count: BTreeMap<String, usize> = BTreeMap::new();
-    let mut predicted_count: BTreeMap<String, usize> = BTreeMap::new();
-    let mut hits: BTreeMap<String, usize> = BTreeMap::new();
+    let mut counts: BTreeMap<String, ClassCounts> = BTreeMap::new();
     for case in cases {
         let predicted = classify(&case.diagnostic);
         let want = verdict_label(&case.expected);
         let got = verdict_label(&predicted);
-        *expected_count.entry(want.clone()).or_default() += 1;
-        *predicted_count.entry(got.clone()).or_default() += 1;
         if want == got {
             correct += 1;
-            *hits.entry(want).or_default() += 1;
         }
-    }
-    let mut labels: Vec<String> = expected_count.keys().cloned().collect();
-    for label in predicted_count.keys() {
-        if !labels.contains(label) {
-            labels.push(label.clone());
-        }
-    }
-    let mut classes = Vec::new();
-    for label in &labels {
-        let hit = *hits.get(label).unwrap_or(&0) as f64;
-        let precision = hit / (*predicted_count.get(label).unwrap_or(&0) as f64).max(1.0);
-        let recall = hit / (*expected_count.get(label).unwrap_or(&0) as f64).max(1.0);
-        classes.push(ClassScores {
-            label: label.clone(),
-            precision,
-            recall,
+        let hit = want == got;
+        let entry = counts.entry(want.clone()).or_insert_with(|| ClassCounts {
+            label: want.clone(),
+            ..Default::default()
         });
+        entry.actual += 1;
+        if hit {
+            entry.predicted += 1;
+            entry.hits += 1;
+        }
+        if got != want {
+            let entry = counts.entry(got.clone()).or_insert_with(|| ClassCounts {
+                label: got.clone(),
+                ..Default::default()
+            });
+            entry.predicted += 1;
+        }
     }
-    let (macro_precision, macro_recall) = if classes.is_empty() {
-        (0.0, 0.0)
-    } else {
-        (
-            classes.iter().map(|c| c.precision).sum::<f64>() / classes.len() as f64,
-            classes.iter().map(|c| c.recall).sum::<f64>() / classes.len() as f64,
-        )
-    };
-    CalibrationReport {
+    // Historical label order: expected labels (sorted) first, then
+    // predicted-only labels (sorted). BTreeMap iteration is sorted,
+    // so partition on `actual > 0` reproduces it exactly.
+    let mut classes = Vec::new();
+    for pass_actual in [true, false] {
+        for entry in counts.values() {
+            if (entry.actual > 0) == pass_actual {
+                classes.push(entry.clone());
+            }
+        }
+    }
+    let macro_precision = macro_precision_or(&classes, 0.0);
+    let macro_recall = macro_recall_or(&classes, 0.0);
+    TriageReport {
         total: cases.len(),
         correct,
         accuracy: if cases.is_empty() {
@@ -684,7 +695,7 @@ pub fn calibrate(
 #[must_use]
 /// Whether a calibration report authorizes auto-apply: macro precision
 /// and recall both clear their pinned bars.
-pub fn auto_apply_allowed(report: &CalibrationReport) -> bool {
+pub fn auto_apply_allowed(report: &TriageReport) -> bool {
     report.total > 0
         && report.macro_precision >= MIN_AUTO_APPLY_PRECISION
         && report.macro_recall >= MIN_AUTO_APPLY_RECALL
@@ -708,14 +719,7 @@ pub struct GoldCorpus {
 /// shape): closed-enum expected verdicts, unknown labels refuse the
 /// file rather than guessing.
 pub fn load_gold_corpus(path: &std::path::Path) -> Result<GoldCorpus, String> {
-    let raw = std::fs::read_to_string(path)
-        .map_err(|error| format!("corpus read {}: {error}", path.display()))?;
-    let value: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|error| format!("corpus parse: {error}"))?;
-    let entries = value
-        .get("cases")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| "corpus has no cases array".to_string())?;
+    let entries = read_json_cases(path)?;
     let mut cases = Vec::with_capacity(entries.len());
     let mut controls = Vec::new();
     for entry in entries {
@@ -769,9 +773,10 @@ fn parse_route_primitive(name: &str) -> Option<RoutePrimitive> {
     parse_route_plan(&format!("{name}: _")).map(|plan| plan.primitive)
 }
 
-/// Load a routing golden corpus (`corpora/route_calibration.json`
-/// shape): closed-enum expected primitives, unknown names refuse.
-pub fn load_route_corpus(path: &std::path::Path) -> Result<Vec<RouteGoldCase>, String> {
+/// Shared `{"cases": [...]}` file prologue (M6.2): read, parse,
+/// extract the cases array. Error strings are the contract (tests
+/// and CLI output assert on them verbatim).
+fn read_json_cases(path: &std::path::Path) -> Result<Vec<serde_json::Value>, String> {
     let raw = std::fs::read_to_string(path)
         .map_err(|error| format!("corpus read {}: {error}", path.display()))?;
     let value: serde_json::Value =
@@ -780,6 +785,13 @@ pub fn load_route_corpus(path: &std::path::Path) -> Result<Vec<RouteGoldCase>, S
         .get("cases")
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| "corpus has no cases array".to_string())?;
+    Ok(entries.clone())
+}
+
+/// Load a routing golden corpus (`corpora/route_calibration.json`
+/// shape): closed-enum expected primitives, unknown names refuse.
+pub fn load_route_corpus(path: &std::path::Path) -> Result<Vec<RouteGoldCase>, String> {
+    let entries = read_json_cases(path)?;
     let mut out = Vec::with_capacity(entries.len());
     for entry in entries {
         let question = entry
@@ -829,7 +841,7 @@ pub const STATIC_PROCEDURE_FINGERPRINT: &str = "static-table";
 /// stores only when the bars pass.
 pub struct TriageCalibrate {
     /// Precision/recall over goldens plus harvested negatives.
-    pub report: CalibrationReport,
+    pub report: TriageReport,
     /// Control diagnostics that fired (false positives on the slice
     /// the static table already gets right).
     pub control_fires: Vec<String>,

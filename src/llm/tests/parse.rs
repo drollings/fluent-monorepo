@@ -320,3 +320,73 @@ fn parse_rerank_output_rejects_garbage() {
         "empty ranking is unusable"
     );
 }
+
+/// M4.2: span contract for model-output extraction. Mirrors the
+/// guidance `model_text::extract_json_value` tables (M4.1): first
+/// balanced value wins by opener position; an unbalanced first
+/// opener fails the whole scan; strict stack matching; strings
+/// with brackets never count.
+#[test]
+fn first_json_span_matches_model_text_contract() {
+    use super::extract_first_json_span;
+    assert_eq!(extract_first_json_span(r#"{"1": 85}"#), Some(r#"{"1": 85}"#));
+    assert_eq!(extract_first_json_span("[1, 2]"), Some("[1, 2]"));
+    assert_eq!(
+        extract_first_json_span("<think>x</think>{\"1\": 85}"),
+        Some(r#"{"1": 85}"#)
+    );
+    assert_eq!(
+        extract_first_json_span("Here:\n{\"a\": 1}\nbye"),
+        Some(r#"{"a": 1}"#)
+    );
+    assert_eq!(extract_first_json_span(r#"{"a": 1"#), None);
+    assert_eq!(extract_first_json_span("[1, 2"), None);
+    assert_eq!(extract_first_json_span(""), None);
+    assert_eq!(extract_first_json_span("hello world"), None);
+    assert_eq!(
+        extract_first_json_span(r#"{"a": "}{"}"#),
+        Some(r#"{"a": "}{"}"#)
+    );
+    assert_eq!(
+        extract_first_json_span(r#"{"a": "x\"y"}"#),
+        Some(r#"{"a": "x\"y"}"#)
+    );
+    assert_eq!(
+        extract_first_json_span(r#"{"a": [1}"#),
+        None,
+        "mixed nesting must fail, not skip"
+    );
+    assert_eq!(extract_first_json_span("[1}"), None);
+    assert_eq!(
+        extract_first_json_span(r#"[1, 2] then {"a": 3}"#),
+        Some("[1, 2]")
+    );
+    assert_eq!(extract_first_json_span(r#"{"a": 1 [2, 3]"#), None);
+    assert_eq!(
+        extract_first_json_span("prefix {\"k\": \"v]\"} suffix"),
+        Some(r#"{"k": "v]"}"#)
+    );
+}
+
+/// M4.2: fence contract mirrors `parse_draft_fence` (M4.1).
+#[test]
+fn extract_fence_matches_draft_fence_contract() {
+    use super::extract_fence;
+    let response = "fixed:\n```rust\nfn a() -> u32 {\n    1\n}\n```\n";
+    assert_eq!(
+        extract_fence(response, "rust").as_deref(),
+        Some("fn a() -> u32 {\n    1\n}")
+    );
+    assert!(extract_fence("no fence here", "rust").is_none());
+    assert!(extract_fence("```rust\nfn a()", "rust").is_none());
+    assert_eq!(
+        extract_fence("```python\ncode\n```", "rust").as_deref(),
+        Some("python\ncode")
+    );
+    assert!(extract_fence("```rust\n```", "rust").is_none());
+    assert!(extract_fence("```rust\n   \n```", "rust").is_none());
+    assert_eq!(
+        extract_fence("note\n```\nbody\n```\ntail", "rust").as_deref(),
+        Some("body")
+    );
+}

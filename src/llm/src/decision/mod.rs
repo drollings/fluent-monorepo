@@ -11,6 +11,7 @@ pub mod cache;
 pub mod canary;
 pub mod decode;
 pub mod eval;
+pub mod flow;
 pub mod ladder;
 pub mod question;
 pub mod registry;
@@ -38,6 +39,10 @@ pub use eval::{
     control_fires, emit_point_artifact, evaluate_point, gate_for_point, render_point_table,
     ScoredCase,
 };
+pub use flow::{
+    descend_tree, match_arm, rerank_items, semantic_if, DescentOutcome, FlowAsk, RerankItem,
+    TreeLevel,
+};
 pub use ladder::{decide_with_ladder, prefix_cascade};
 pub use registry::{
     authorize, authorize_advisory, authorize_pinned, gate_for_point_with, CalibrationRegistry,
@@ -51,7 +56,7 @@ pub use transport::{
     RedactHook,
 };
 
-pub use decode::{decode_choice, decode_noul, decode_score};
+pub use decode::{decode_choice, decode_noul, decode_score, match_text_label};
 pub use question::{
     render_prompt, rotated_options, DecisionOptions, Question, QuestionSpec, MAX_DECISION_OPTIONS,
     MAX_DECISION_PROMPT_BYTES,

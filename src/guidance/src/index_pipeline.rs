@@ -1293,6 +1293,7 @@ pub fn prepare_fragments(
     }
 }
 
+#[derive(Debug, Clone)]
 enum EmbedFailure {
     FailFast(String),
     Retryable(EmbedFileFailure),
@@ -1320,22 +1321,27 @@ fn is_unavailable(error: &EmbeddingError) -> bool {
     matches!(error, EmbeddingError::RequestFailed(_))
 }
 
-fn embed_with_retry<P>(
-    provider: &CachedEmbeddingProvider<P>,
-    texts: &[&str],
+/// Wave retry contract shared by both embed loops (M5.2 core):
+/// fail-fast aborts at once, retryable errors retry to the attempt
+/// budget with `backoff_ms` sleeps, then map to `FailFast` /
+/// `Retryable`. `histogram` records per-attempt latency on success
+/// only (`None` for the backfill loop, which embeds once per
+/// change). The error mapping is identical in both callers, so it
+/// lives here rather than behind a mapping closure.
+fn embed_retry_core(
     options: &IndexOptions,
-    histogram: &LatencyHistogram,
-) -> Result<BatchEmbedding, EmbedFailure>
-where
-    P: EmbeddingProvider + Sync + 'static,
-{
+    histogram: Option<&LatencyHistogram>,
+    mut attempt_embed: impl FnMut() -> Result<BatchEmbedding, EmbeddingError>,
+) -> Result<BatchEmbedding, EmbedFailure> {
     let mut attempt = 0;
     loop {
         attempt += 1;
         let started = Instant::now();
-        match provider.embed_batch(texts) {
+        match attempt_embed() {
             Ok(batch) => {
-                histogram.observe_duration(started);
+                if let Some(histogram) = histogram {
+                    histogram.observe_duration(started);
+                }
                 return Ok(batch);
             }
             Err(e) if is_fail_fast(&e) => return Err(EmbedFailure::FailFast(e.to_string())),
@@ -1353,6 +1359,18 @@ where
     }
 }
 
+fn embed_with_retry<P>(
+    provider: &CachedEmbeddingProvider<P>,
+    texts: &[&str],
+    options: &IndexOptions,
+    histogram: &LatencyHistogram,
+) -> Result<BatchEmbedding, EmbedFailure>
+where
+    P: EmbeddingProvider + Sync + 'static,
+{
+    // M5.2: shared retry core (histogram records per-attempt latency).
+    embed_retry_core(options, Some(histogram), || provider.embed_batch(texts))
+}
 /// Fail-fast errors (auth/config/permanent) abort the run at once instead
 /// of burning the retry budget (ports `:314-627` + `:593`).
 fn is_fail_fast(error: &EmbeddingError) -> bool {
@@ -1524,14 +1542,20 @@ fn embed_input_for_row(fragment: &FragmentRow) -> Option<String> {
             .as_deref()
             .filter(|text| !text.is_empty())
         {
-            lines.push(format!("signature: {}", one_line(signature)));
+            lines.push(format!(
+                "signature: {}",
+                common_core::string::collapse_whitespace(signature)
+            ));
         }
         if let Some(doc) = fragment
             .doc
             .as_deref()
             .filter(|text| !text.trim().is_empty())
         {
-            lines.push(format!("doc: {}", one_line(doc)));
+            lines.push(format!(
+                "doc: {}",
+                common_core::string::collapse_whitespace(doc)
+            ));
         }
     } else if let Some(heading) = fragment.heading.as_deref().filter(|text| !text.is_empty()) {
         lines.push(format!("heading: {heading}"));
@@ -1555,11 +1579,6 @@ fn embed_input_for_row(fragment: &FragmentRow) -> Option<String> {
         text.truncate(end);
     }
     Some(text)
-}
-
-/// One-line rendering for embedding metadata (mirrors the extractor).
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Whether a stored file path is index metadata rather than source:
@@ -1672,26 +1691,9 @@ fn embed_batch_with_retry(
     texts: &[&str],
     options: &IndexOptions,
 ) -> Result<BatchEmbedding, EmbedFailure> {
-    let mut attempt = 0;
-    loop {
-        attempt += 1;
-        match provider.embed_batch(texts) {
-            Ok(batch) => return Ok(batch),
-            Err(error) if is_fail_fast(&error) => {
-                return Err(EmbedFailure::FailFast(error.to_string()));
-            }
-            Err(error) if attempt >= options.retry_max_attempts.max(1) => {
-                return Err(EmbedFailure::Retryable(EmbedFileFailure {
-                    reason: error.to_string(),
-                    unavailable: is_unavailable(&error),
-                }));
-            }
-            Err(_) => {
-                let delay = backoff_ms(options.retry_base_ms, attempt, EMBED_RETRY_JITTER_PCT);
-                std::thread::sleep(std::time::Duration::from_millis(delay));
-            }
-        }
-    }
+    // M5.2: shared retry core (no histogram: backfill inputs embed
+    // once per change).
+    embed_retry_core(options, None, || provider.embed_batch(texts))
 }
 
 /// Backfill vectors for stored fragments without any: select semantic

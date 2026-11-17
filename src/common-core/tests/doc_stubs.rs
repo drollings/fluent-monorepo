@@ -7,9 +7,15 @@
 //! `#[allow(unused_imports)]` — they exist as existence proofs, not uses.
 
 #[allow(unused_imports)]
+use common_core::calibration::{ClassCounts, GateBars};
+#[allow(unused_imports)]
+use common_core::io::read_first_line;
+#[allow(unused_imports)]
 use common_core::runtime::{block_on, block_on_shared as block_on_shared_path};
 #[allow(unused_imports)]
 use common_core::score::{ScoreDimension, ScoreMatrix};
+#[allow(unused_imports)]
+use common_core::string::contains_token;
 #[allow(unused_imports)]
 use common_core::{
     retry_async, BitSetDrift, CapabilityRegistry, ConcurrentRegistry, KeyedRegistry,
@@ -33,6 +39,10 @@ fn stubs_name_only_real_public_items() {
         "ScoreMatrix",
         "ScoreDimension",
         "BitSetDrift",
+        "ClassCounts",
+        "GateBars",
+        "contains_token",
+        "read_first_line",
     ] {
         assert!(
             VISION.contains(name) || ARCHITECTURE.contains(name),

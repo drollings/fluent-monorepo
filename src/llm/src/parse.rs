@@ -93,6 +93,104 @@ pub fn extract_first_json_value(raw: &str) -> Option<Value> {
     None
 }
 
+/// First balanced `{...}` or `[...]` span, whichever opener comes
+/// first, as an unparsed slice. Strict stack matching: a `}` must
+/// close a `{` (and `]` a `[`); string literals (with `\"` escapes)
+/// never open, close, or end the scan. `None` when no opener exists
+/// or the first value does not balance — the scan never skips past
+/// a failure.
+///
+/// Span contract for model-output extraction (the guidance
+/// `model_text::extract_json_value` migration target): unlike
+/// [`extract_first_json_value`], which parses and skips past
+/// unparseable regions, this returns the raw span so callers keep
+/// their own parse/fail-open choice.
+#[must_use]
+pub fn extract_first_json_span(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        let open = bytes[cursor];
+        if open == b'{' || open == b'[' {
+            if let Some(end) = balanced_span_end(bytes, cursor) {
+                return Some(&text[cursor..=end]);
+            }
+            return None;
+        }
+        cursor += 1;
+    }
+    None
+}
+
+/// Byte offset of the closer matching the opener at `start`, or
+/// `None`. A stack tracks the expected closers, so mixed brackets
+/// must nest properly; JSON strings are skipped whole (backslash
+/// escapes respected), so brackets inside string literals never
+/// count.
+fn balanced_span_end(bytes: &[u8], start: usize) -> Option<usize> {
+    debug_assert!(bytes[start] == b'{' || bytes[start] == b'[');
+    let mut expected: Vec<u8> = Vec::new();
+    let mut index = start;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' => {
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index += 2;
+                    } else if bytes[index] == b'"' {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'{' => {
+                expected.push(b'}');
+                index += 1;
+            }
+            b'[' => {
+                expected.push(b']');
+                index += 1;
+            }
+            b'}' | b']' => {
+                if expected.pop() != Some(bytes[index]) {
+                    return None;
+                }
+                index += 1;
+                if expected.is_empty() {
+                    return Some(index - 1);
+                }
+            }
+            _ => {
+                index += 1;
+            }
+        }
+    }
+    None
+}
+
+/// First fenced code block for `language` (e.g. `"rust"`), trimmed.
+/// Falls back to the first bare ```` ``` ```` fence when no language
+/// fence opens. `None` when no fence opens, no fence closes, or the
+/// body is empty after trimming. Span contract for model-output
+/// extraction (the guidance `parse_draft_fence` migration target).
+#[must_use]
+pub fn extract_fence(response: &str, language: &str) -> Option<String> {
+    let tagged = format!("```{language}");
+    let start = response
+        .find(&tagged)
+        .map(|i| i + tagged.len())
+        .or_else(|| response.find("```").map(|i| i + "```".len()))?;
+    let end = response[start..].find("```")?;
+    let body = response[start..start + end].trim();
+    if body.is_empty() {
+        return None;
+    }
+    Some(body.to_string())
+}
+
 /// Close any open string literals and containers left dangling by a truncated
 /// response, producing a well-formed document. Extra/mismatched closers are
 /// dropped so a stray `}}` cannot poison an otherwise-truncated value.

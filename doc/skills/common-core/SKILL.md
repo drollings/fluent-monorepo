@@ -9,8 +9,8 @@ crate in the workspace. It must NOT import any `guidance-*`, `coral-*`,
 | Concern | Module | Path |
 |---------|--------|------|
 | Hashing (blake3, sha256, fnv1a64, hex) + canonical fingerprint framing (`fingerprint_json` for serializable configs, `fingerprint_framed` for sorted length-framed name/payload pairs) + size-then-SHA-256 file verification (`verify_sha256_file` → `FileVerification::{Match, SizeMismatch, HashMismatch}`, size pinned via `Option<NonZeroU64>`, I/O errors returned unchanged) | `hash` | `src/common-core/src/hash.rs` |
-| Text utilities (contains_ignore_case, truncate_at_sentence, strip_html, AnsiStripper, filter_unsafe_chars, trim_doc_prefix, detect_identifier_kind, slugify, fts_match_tokens, ascii_alnum_tokens, …) | `string` | `src/common-core/src/string.rs` |
-| Path/fs helpers (mtime, read_file_alloc_err, write_atomic, ensure_dir, `bind_unix_listener_with_stale_reclaim` bounded stale-Unix-socket reclaim → `ReclaimBindError::{LiveHolder, Bind, Remove, Validate}` …) | `io` | `src/common-core/src/io.rs` |
+| Text utilities (contains_ignore_case, `contains_token` whole-word match on a caller-supplied separator, truncate_at_sentence, strip_html, AnsiStripper, filter_unsafe_chars, trim_doc_prefix, detect_identifier_kind, slugify, fts_match_tokens, ascii_alnum_tokens, …) | `string` | `src/common-core/src/string.rs` |
+| Path/fs helpers (mtime, `read_first_line` header-line reads: missing/empty file → `None`, read_file_alloc_err, write_atomic, ensure_dir, `bind_unix_listener_with_stale_reclaim` bounded stale-Unix-socket reclaim → `ReclaimBindError::{LiveHolder, Bind, Remove, Validate}` …) | `io` | `src/common-core/src/io.rs` |
 | Lexical path helpers (`normalize_lexical` fail-open strings; `normalize_std_path` fail-closed `Path` component normalization for verified/jailed paths; `collapse_separators`, parent/file splits, `MAX_SYMLINK_HOPS`) | `path` | `src/common-core/src/path.rs` |
 | Shared error leaf types (IoError, SqliteError, ResolverError) + `impl_from_io_error!` macro | `error` | `src/common-core/src/error.rs` |
 | Cross-crate magic constants (MAX_FILE_SIZE, HnswParams, MAX_KNN_CANDIDATES, MAX_MCP_REQUEST_SIZE, …) | `constants` | `src/common-core/src/constants.rs` |
@@ -30,6 +30,7 @@ crate in the workspace. It must NOT import any `guidance-*`, `coral-*`,
 | Generic keyed registry (insert/get/keys/remove/len) — `KeyedRegistry` (sync) and `ConcurrentRegistry` (thread-safe, `resolve_or_create` single-construction, Arc-shared) | `registry` | `src/common-core/src/registry.rs` |
 | Retry with jittered exponential backoff (`retry_async`, `backoff_ms`, `capped_backoff_ms`, `capped_exp_backoff_ms`) + poll-with-backoff (`PollWithBackoff`, `PollResult`) + abort-aware verdict-loop composition recipe (tested doc example on `retry`: loop-top abort check, per-error-type `is_retryable` verdict, sleep raced against abort only where the loop's abort-latency contract requires it) | `retry` | `src/common-core/src/retry.rs` |
 | PCM sample math (`f32_to_i16_sample`/`i16_to_f32_sample` under `Scale16::{Symmetric32767, Symmetric32768}` + `Rounding::{Nearest, TowardZero}`, `root_mean_square_f32` exact-`f32` RMS, `extend_mono_from_interleaved` channel averaging with trailing-partial remainder, `encode_wav_mono_pcm16` mono PCM16 WAV assembly, `wav_frame_header`, base64 framing) | `pcm` | `src/common-core/src/pcm.rs` |
+| Per-class precision/recall counting (`ClassCounts` + `precision_or`/`recall_or` with caller-supplied empty-denominator fallback, `macro_precision_or`/`macro_recall_or`) + parameterizable gate bars (`GateBars`, `passes_gate_at`; the shipping default preserves the 0.90/0.05 operating point) | `calibration` | `src/common-core/src/calibration.rs` |
 
 ## Import pattern
 
@@ -70,6 +71,14 @@ move to the shared home below rather than copy the consumer copy.
 > in `guidance` or `common-core::string`.
 
 ## Completed promotions (do not reintroduce a second copy)
+
+- Whitespace folding: the single `common_core::string::collapse_whitespace`
+  (verified against the removed guidance copies `one_line` ×4 and
+  `collapse_ws` by table test) — do not add another splitter-join
+  one-liner in any consumer.
+- Header-line reads: the single `common_core::io::read_first_line`
+  (missing/empty file → `None`) — do not reimplement the
+  open-`BufReader`-first-line pattern in consumers.
 
 - Weighted ranked-candidate scoring: the generic math (`ScoreMatrix::from_parts`,
   `ScoreMatrix::resolve`, `normalize_score`, `top_k_by_score` and the closed

@@ -371,27 +371,12 @@ fn compute_markdown_overlap_lines(
     end_index: usize,
     overlap_chars: usize,
 ) -> usize {
-    if overlap_chars == 0 {
-        return 0;
-    }
-    let mut chars = 0;
-    let mut count = 0;
-    let mut index = end_index.saturating_sub(1);
-    loop {
-        if index <= start_index {
-            break;
-        }
-        chars += utf16_len(lines[index]) + 1;
-        if chars > overlap_chars {
-            break;
-        }
-        count += 1;
-        if index == 0 {
-            break;
-        }
-        index -= 1;
-    }
-    count.min((end_index - start_index) / 2)
+    // M1.5: shared backward-count core over `start + 1..end` (this
+    // call site never counts its start line — the /2 window clamp
+    // masks the difference against the code twin on every input,
+    // pinned by the M1.1 tables); the clamp stays here.
+    super::overlap_lines_back(lines, start_index + 1, end_index, overlap_chars)
+        .min((end_index - start_index) / 2)
 }
 
 fn split_long_md_line(
@@ -401,40 +386,21 @@ fn split_long_md_line(
     max_chars: usize,
 ) -> Vec<MarkdownWindow> {
     let line = lines[index];
-    let total = utf16_len(line);
     let mut windows = Vec::new();
-    let mut offset = 0;
-    while offset < total {
-        let remaining = total - offset;
-        let slice_len = if remaining <= max_chars {
-            remaining
-        } else {
-            find_line_cut(super::utf16_slice(line, offset, remaining), max_chars)
-        };
-        let text = super::utf16_slice(line, offset, slice_len);
+    // M1.6: shared window splitter; no skip here (whitespace-only
+    // windows are kept, unlike the text twin).
+    for (byte_start, text) in super::split_long_units(line, max_chars, find_line_cut) {
         windows.push(MarkdownWindow {
             text: text.to_string(),
             range: FragmentRange {
                 start_line: index + 1,
                 end_line: index + 1,
-                start_offset: line_offsets[index] + byte_offset_for_units(line, offset),
-                end_offset: line_offsets[index] + byte_offset_for_units(line, offset) + text.len(),
+                start_offset: line_offsets[index] + byte_start,
+                end_offset: line_offsets[index] + byte_start + text.len(),
             },
         });
-        offset += slice_len;
     }
     windows
-}
-
-fn byte_offset_for_units(line: &str, units: usize) -> usize {
-    let mut seen = 0;
-    for (byte, ch) in line.char_indices() {
-        if seen >= units {
-            return byte;
-        }
-        seen += ch.len_utf16();
-    }
-    line.len()
 }
 
 fn lines_to_window(

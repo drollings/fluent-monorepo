@@ -76,3 +76,39 @@ fn empty_candidates_make_no_calls() {
     assert!(judge.judge("q", &[]).is_empty());
     assert!(backend.requests().is_empty());
 }
+
+/// M4.1 characterization: closed-enum label parsing (C10) — case
+/// folding, surrounding whitespace, unknown → fail-closed default.
+/// Pinned before migrating `from_label` bodies to `match_label`.
+#[test]
+fn from_label_edge_table() {
+    use super::{CandidateLabel, DocLabel, FindingLabel, SupportLabel};
+    assert_eq!(DocLabel::from_label("STRONG"), DocLabel::Strong);
+    assert_eq!(DocLabel::from_label(" strong "), DocLabel::Strong);
+    assert_eq!(DocLabel::from_label("weak"), DocLabel::Considered);
+    assert_eq!(DocLabel::from_label(""), DocLabel::Considered);
+    assert_eq!(
+        FindingLabel::from_label("RELEVANT"),
+        FindingLabel::Relevant
+    );
+    assert_eq!(
+        FindingLabel::from_label("  irrelevant\n"),
+        FindingLabel::Irrelevant
+    );
+    assert_eq!(
+        FindingLabel::from_label("maybe"),
+        FindingLabel::Insufficient
+    );
+    assert_eq!(
+        SupportLabel::from_label("SUPPORTED"),
+        SupportLabel::Supported
+    );
+    assert_eq!(
+        SupportLabel::from_label("contradicted"),
+        SupportLabel::Contradicted
+    );
+    assert_eq!(
+        SupportLabel::from_label("nope"),
+        SupportLabel::Insufficient
+    );
+}

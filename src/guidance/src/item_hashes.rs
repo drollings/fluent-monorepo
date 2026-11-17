@@ -21,11 +21,6 @@ pub struct ItemHashes {
     pub item: String,
 }
 
-/// Collapse whitespace runs to single spaces and trim ends.
-fn collapse_ws(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 /// Strip Rust line and block comments, keeping string and char literal
 /// contents byte-identical (a `//` inside `"..."` is content, not prose).
 /// Lifetimes (`'a`) scan like char literals: an approximation that costs
@@ -139,7 +134,7 @@ pub fn normalize_code_text(language: &str, text: &str) -> String {
     if language == "rust" {
         leaf_tokens(&strip_rust_comments(text)).join("\0")
     } else {
-        collapse_ws(text)
+        common_core::string::collapse_whitespace(text)
     }
 }
 
@@ -165,7 +160,9 @@ pub fn item_hashes_for(
     let body = hash_text(&normalize_code_text(language, body));
     // Doc attributes are prose, not code: collapsing keeps reflows
     // stable without letting comment-stripping erase the text itself.
-    let doc = hash_text(&collapse_ws(doc.unwrap_or("")));
+    let doc = hash_text(&common_core::string::collapse_whitespace(
+        doc.unwrap_or(""),
+    ));
     let item = common_core::hash::blake3_hex(format!("{sig}\0{body}\0{doc}").as_bytes());
     ItemHashes {
         sig,

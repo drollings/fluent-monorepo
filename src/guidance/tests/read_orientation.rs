@@ -88,3 +88,25 @@ fn absent_corpus_is_an_empty_plane_not_an_error() {
     assert!(plane.orientation_cards().is_empty());
     assert!(plane.ownership_cards("guidance-core").is_empty());
 }
+
+/// M2.1 characterization: orientation order is kind-rank then id
+/// (workspace 0, crate 1, domain 2), ascending within a kind (C7).
+#[test]
+fn orientation_order_is_kind_then_id() {
+    let (_dir, db) = fixture();
+    let plane = OrientationPlane::load(&db).expect("load");
+    let cards = plane.orientation_cards();
+    let mut kinds: Vec<&str> = cards.iter().map(|c| c.kind.as_str()).collect();
+    kinds.dedup();
+    assert_eq!(kinds[0], "workspace");
+    assert!(cards.iter().position(|c| c.kind == "crate").expect("crate")
+        < cards.iter().position(|c| c.kind == "domain").unwrap_or(usize::MAX));
+    let ids: Vec<&str> = cards
+        .iter()
+        .filter(|c| c.kind == "crate")
+        .map(|c| c.id.as_str())
+        .collect();
+    let mut sorted = ids.clone();
+    sorted.sort_unstable();
+    assert_eq!(ids, sorted, "crates in id order: {ids:?}");
+}

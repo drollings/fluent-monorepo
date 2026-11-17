@@ -524,3 +524,23 @@ fn reclaim_non_addrinuse_failure_returns_bind_unchanged() {
     }
     assert_eq!(validated, 0, "no validation off the reclaim path");
 }
+
+/// M3.2: header-line reads — missing, empty, no-EOL, multiline.
+#[test]
+fn read_first_line_edge_table() {
+    use std::io::Write as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("missing.txt");
+    assert_eq!(read_first_line(&missing), None);
+    let empty = dir.path().join("empty.txt");
+    fs::write(&empty, "").expect("write");
+    assert_eq!(read_first_line(&empty), None);
+    let noeol = dir.path().join("noeol.txt");
+    fs::write(&noeol, "only").expect("write");
+    assert_eq!(read_first_line(&noeol).as_deref(), Some("only"));
+    let multi = dir.path().join("multi.txt");
+    let mut file = fs::File::create(&multi).expect("create");
+    writeln!(file, "first").expect("write");
+    writeln!(file, "second").expect("write");
+    assert_eq!(read_first_line(&multi).as_deref(), Some("first"));
+}

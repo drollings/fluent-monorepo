@@ -170,6 +170,10 @@ name = "decision_decode"
 path = "tests/decision_decode.rs"
 
 [[test]]
+name = "decision_flow"
+path = "tests/decision_flow.rs"
+
+[[test]]
 name = "decision_types"
 path = "tests/decision_types.rs"
 

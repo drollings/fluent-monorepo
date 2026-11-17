@@ -103,7 +103,7 @@ model, prompt, or question version returns the point to shadow.
 | `coordinator.rs`, `scheduler.rs`, `watcher.rs` | Watch batches to ordered revisions through the coalescing driver (bespoke by design; never re-platformed onto pools) |
 | `change_set.rs` | Watch-event accumulation with compaction budget |
 | `runtime.rs` | Shared AST/DB pools plus thread-local resources |
-| `extractor/` (`mod`, `adapter`, `code`, `markdown`, `text`, `vector_content`) | Registry-dispatched fragment extraction with chunking parity |
+| `extractor/` (`mod`, `adapter`, `code`, `markdown`, `text`, `vector_content`) | Registry-dispatched fragment extraction with chunking parity; shared text-shape core in `mod` (`byte_offset_for_units`, `overlap_lines_back[_inclusive]` backward counters, `split_long_units` window splitter) composing `common_core::string::collapse_whitespace` |
 | `ast_parser.rs` | Tree-sitter grammars plus the single syntax home: `CommentBlock` collection in one parse (top-of-file plus documentable nodes, attributes, nested items), top items, test spans, prose units, pub headers, error counts, cfg-gated items, span/hash stamping; doc readers delegate to the one cleaner |
 
 ### Control plane
@@ -123,7 +123,7 @@ model, prompt, or question version returns the point to shadow.
 | `scorecard.rs` | Hermetic improvement instrument: fast tier with ratchet baselines that block release on regression (nav, graph, freshness, speed, decision, lanes, loop, avoidance) |
 | `config.rs` | Project configuration load and precedence (providers, embed config, model roles, lane budgets) |
 | `search_types.rs`, `search_constants.rs` | Tested index/search contracts, budgets, and value types |
-| `eval.rs`, `jumps.rs`, `model_text.rs` | Eval corpus loader (corpus lives in `doc/guidance/eval/`, outside every indexed root, never a retrieval input); doc→code jump records (crate attribution plus the funnel vocabulary, one scanner/table shared with capability ingest); single home for model-JSON extraction with think-tag stripping delegated to `fluent-llm` |
+| `eval.rs`, `jumps.rs` | Eval corpus loader (corpus lives in `doc/guidance/eval/`, outside every indexed root, never a retrieval input); doc→code jump records (crate attribution plus the funnel vocabulary, one scanner/table shared with capability ingest). Model-output parsing lives in `fluent-llm` (`parse::extract_first_json_span`/`extract_fence`, `decision::match_text_label`); guidance's `model_text.rs` shim was deleted after migration |
 | `runtime.rs` | Shared AST/DB pools: per-call `ResultPool`s (`ast_pool`, index pools) over `fluent-concurrency` with backpressure; thread-local parser resources |
 | `source_ref.rs`, `source_scope.rs` | Covered under the read plane above; top-level so selection, read, and graph share them without depending on `read::engine` |
 

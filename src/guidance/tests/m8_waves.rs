@@ -599,3 +599,23 @@ fn draft_prompt_fences_file_and_parses_response_fence() {
     );
     assert!(crate::waves::parse_draft_fence("no fence here").is_none());
 }
+
+/// M4.1 characterization: fence edge table (C10) — missing close,
+/// wrong lang (falls back to the bare fence, lang line included),
+/// empty body, and unclosed body all pinned before migration to
+/// the shared `extract_fence`.
+#[test]
+fn draft_fence_edge_table() {
+    use crate::waves::parse_draft_fence;
+    assert!(parse_draft_fence("```rust\nfn a()").is_none());
+    assert_eq!(
+        parse_draft_fence("```python\ncode\n```").as_deref(),
+        Some("python\ncode")
+    );
+    assert!(parse_draft_fence("```rust\n```").is_none());
+    assert!(parse_draft_fence("```rust\n   \n```").is_none());
+    assert_eq!(
+        parse_draft_fence("note\n```\nbody\n```\ntail").as_deref(),
+        Some("body")
+    );
+}

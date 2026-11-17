@@ -135,24 +135,19 @@ pub struct IntentClassScore {
 
 impl IntentClassScore {
     /// Precision: correct / predicted (1.0 when never predicted —
-    /// an unused class cannot fail its bar).
+    /// an unused class cannot fail its bar). Shared arithmetic via
+    /// `common_core::calibration::precision_or`.
     #[must_use]
     pub fn precision(&self) -> f64 {
-        if self.predicted == 0 {
-            1.0
-        } else {
-            self.correct as f64 / self.predicted as f64
-        }
+        common_core::calibration::precision_or(self.correct, self.predicted, 1.0)
     }
 
     /// Recall: correct / golden (1.0 when no golden maps here).
+    /// Shared arithmetic via
+    /// `common_core::calibration::recall_or`.
     #[must_use]
     pub fn recall(&self) -> f64 {
-        if self.golden == 0 {
-            1.0
-        } else {
-            self.correct as f64 / self.golden as f64
-        }
+        common_core::calibration::recall_or(self.correct, self.golden, 1.0)
     }
 }
 

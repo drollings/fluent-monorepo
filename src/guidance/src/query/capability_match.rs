@@ -10,6 +10,8 @@
 
 use std::collections::HashSet;
 
+use common_core::sort::sorted_by_vec;
+
 use crate::graph_index::{signals_from_routing, GraphQuerySignals};
 
 use super::funnel::FunneledTerms;
@@ -167,7 +169,7 @@ pub const CAPABILITY_TOP_BRIEFS: usize = 3;
 /// signals, then FTS score, then id. Deterministic; rank-only, never
 /// filtered. Capped at [`CAPABILITY_TOP_BRIEFS`].
 pub fn rank_briefs(signals: &GraphQuerySignals, candidates: &[BriefCandidate]) -> Vec<RankedBrief> {
-    let mut scored: Vec<(RankedBrief, (usize, usize), f64)> = candidates
+    let scored: Vec<(RankedBrief, (usize, usize), f64)> = candidates
         .iter()
         .map(|candidate| {
             let brief_predicate = if candidate.predicate.is_empty() {
@@ -196,7 +198,10 @@ pub fn rank_briefs(signals: &GraphQuerySignals, candidates: &[BriefCandidate]) -
             )
         })
         .collect();
-    scored.sort_by(|a, b| {
+    // M2.5: shared stable sorter; comparator moves verbatim
+    // (SVO overlap desc, FTS desc with NaN collapsing to `Equal`,
+    // id asc), so NaN and tie behavior from the M2.1 tables hold.
+    let scored = sorted_by_vec(scored, |a, b| {
         b.1.cmp(&a.1)
             .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
             .then_with(|| a.0.id.cmp(&b.0.id))

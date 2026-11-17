@@ -204,7 +204,11 @@ Facade `decision/mod.rs` re-exports all submodules.
 - `decision/decode.rs` — `decode_choice/decode_score/decode_noul` over
   `content.logprobs.top_logprobs` (variant-sum over space/case; all-labels-
   must-appear else text fallback at 0.5/degraded prior; score needs ≥2 rungs;
-  noul fixed `Yes/No`). Internals `from_tops/match_label/canonical/
+  noul fixed `Yes/No`); public `match_text_label` (trim-both-ends +
+  ASCII case-insensitive closed-enum match, fail-closed `None` — the
+  `from_label`/`parse_triage_verdict` shape; distinct from the private
+  token-level `match_label`, which keeps its trim-start contract for
+  tokenizer artifacts). Internals `from_tops/match_label/canonical/
   entry_prob/parts/fallback/downgraded`; JSON fallback chains `parse_typed`
   then `decode_boundary_typed` with private `LabelDoc
   (FieldAccess/Describable)`.
@@ -240,6 +244,16 @@ Facade `decision/mod.rs` re-exports all submodules.
 - `decision/eval.rs` — Thinnest wrapper: `ScoredCase`; `evaluate_point/
   control_fires/gate_for_point/render_point_table/emit_point_artifact` all
   delegate to `common_core::calibration`.
+- `decision/flow.rs` — Low-boilerplate logical flow (specs built
+  internally via `FlowAsk {id/version/act/timeout_ms}`; transport and
+  validation failures resolve to the caller's fail-closed default, never
+  an exception): `semantic_if` (gated yes/no → `bool`), `match_arm`
+  (closed multi-arm dispatch → `(index, Option<Decision>)`),
+  `rerank_items` (one-call Score rank over `RerankItem`s → input order,
+  input order preserved on failure), `descend_tree` (per-node options +
+  act gates over `TreeLevel`s → `DescentOutcome {path/decision/settled}`).
+  Composes `decide_all`/`rank_score`/`match_text_label`; pure table tests
+  with `ScriptedDecideBackend`, no call-site specifics.
 - `decision/shadow.rs` — `ShadowOutcome` + `record`; `ShadowLog
   (record/outcomes/len/is_empty)`; `shadow_adapter` (byte-identical
   passthrough via `ComponentAdapter::with_execute_override`);
@@ -274,7 +288,13 @@ Facade `decision/mod.rs` re-exports all submodules.
   numbers.
 - `parse.rs` — `JsonParseError (NoJson/Serde)`; `strip_json_fence/
   extract_first_json_value/repair_json/close_open_containers/
-  drop_incomplete_tail/parse_json_response/parse_typed/parse_rerank_output`.
+  drop_incomplete_tail/parse_json_response/parse_typed/parse_rerank_output`
+  plus the strict model-output span contract: `extract_first_json_span`
+  (first balanced `{...}`/`[...]` as an unparsed slice; stack-matched,
+  fails the whole scan on the first unbalanced opener — unlike
+  `extract_first_json_value`, which parses and skips past unparseable
+  regions) and `extract_fence` (first ```lang fence, ```-fallback,
+  `None` on missing close/empty body).
   Multi-stage fallback (direct → extract → repair → close → tail-drop) over
   `fluent_wvr::boundary::repair_boundary` + `coerce::escaped_char`; fast path
   bypasses defaults/sanitize.

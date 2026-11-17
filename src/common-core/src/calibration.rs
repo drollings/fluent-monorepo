@@ -1,8 +1,8 @@
 //! Calibration harness for confidence vs task-value thresholds.
 //!
 //! Pure, zero-domain: no I/O, no domain types. Composed everywhere thresholds
-//! are trusted for caching/persisting decisions. The gate is precision ≥0.90
-//! and FPR ≤0.05 on control groups (see ROADMAP_20260901_FIXES_4.md M1).
+//! are trusted for caching/persisting decisions. The shipping gate is
+//! precision ≥0.90 and FPR ≤0.05 on control groups (see [`GateBars::SHIPPING`]).
 //!
 //! Scope: threshold sweeps over scored cases only. Must-fire/must-not-fire
 //! control gates (binary accept at a frozen expectation, no scores, no
@@ -17,7 +17,7 @@
 ///
 /// Pure, zero-domain: no I/O, no domain types. Composed everywhere thresholds
 /// are trusted for caching/persisting decisions. The gate is precision ≥0.90
-/// and FPR ≤0.05 on control groups (see ROADMAP_20260901_FIXES_4.md M1).
+/// and FPR ≤0.05 on control groups (see [`GateBars::SHIPPING`]).
 ///
 /// Scope: threshold sweeps over scored cases only. Must-fire/must-not-fire
 /// control gates (binary accept at a frozen expectation, no scores, no
@@ -43,10 +43,19 @@ pub struct CalibrationReport {
 }
 
 impl CalibrationReport {
-    /// Whether this operating point passes the roadmap M1 gate.
+    /// Whether this operating point passes the shipping gate
+    /// (precision ≥ 0.90, FPR ≤ 0.05 — the historical operating
+    /// point, kept as the default, not as shared-code constants
+    /// other gates must reuse; see [`GateBars`]).
     #[must_use]
     pub fn passes_gate(&self) -> bool {
-        self.precision >= 0.90 && self.fpr <= 0.05
+        self.passes_gate_at(GateBars::SHIPPING)
+    }
+
+    /// Whether this operating point passes caller-supplied bars.
+    #[must_use]
+    pub fn passes_gate_at(&self, bars: GateBars) -> bool {
+        bars.passes(self)
     }
 
     /// Markdown row for CI artifact tables.
@@ -61,6 +70,42 @@ impl CalibrationReport {
             self.support,
             if self.passes_gate() { "✅" } else { "❌" }
         )
+    }
+}
+
+/// Bars for [`CalibrationReport::passes_gate`]: minimum precision
+/// and maximum FPR. The shipping default (0.90 / 0.05) preserves the
+/// historical operating point; call sites with their own bars use
+/// `passes_gate_at` instead of forking the predicate. (Deliberately
+/// not `score::ThresholdGate`: that gate is coherence/safety with
+/// `>=` on both axes, and FPR needs `<=` — routing through it would
+/// invert the comparison under a borrowed name.)
+#[derive(Debug, Clone, Copy, PartialEq)]
+/// Bars for [`CalibrationReport::passes_gate`]: minimum precision
+/// and maximum FPR. The shipping default (0.90 / 0.05) preserves the
+/// historical operating point; call sites with their own bars use
+/// `passes_gate_at` instead of forking the predicate. (Deliberately
+/// not `score::ThresholdGate`: that gate is coherence/safety with
+/// `>=` on both axes, and FPR needs `<=` — routing through it would
+/// invert the comparison under a borrowed name.)
+pub struct GateBars {
+    /// Minimum precision to pass.
+    pub precision_min: f64,
+    /// Maximum false-positive rate to pass.
+    pub fpr_max: f64,
+}
+
+impl GateBars {
+    /// Historical shipping operating point (0.90 / 0.05).
+    pub const SHIPPING: Self = Self {
+        precision_min: 0.90,
+        fpr_max: 0.05,
+    };
+
+    /// Whether `report` clears these bars.
+    #[must_use]
+    pub fn passes(&self, report: &CalibrationReport) -> bool {
+        report.precision >= self.precision_min && report.fpr <= self.fpr_max
     }
 }
 
@@ -137,6 +182,94 @@ pub fn sweep_thresholds<S>(
 /// Default sweep grid 0.0..1.0 step 0.05 (21 points) plus caller-supplied extras.
 pub fn default_thresholds() -> Vec<f64> {
     (0..=20).map(|i| f64::from(i) * 0.05).collect()
+}
+
+/// Per-label hit counts for multi-class precision/recall (M2.2 shared
+/// core). The empty-denominator convention is a caller-supplied
+/// fallback, never a hidden constant: triage passes 0.0 (an
+/// unpredicted class scores 0), intent measurement passes 1.0 (an
+/// unused class cannot fail its bar).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Per-label hit counts for multi-class precision/recall (M2.2 shared
+/// core). The empty-denominator convention is a caller-supplied
+/// fallback, never a hidden constant: triage passes 0.0 (an
+/// unpredicted class scores 0), intent measurement passes 1.0 (an
+/// unused class cannot fail its bar).
+pub struct ClassCounts {
+    /// Class label.
+    pub label: String,
+    /// Predicted correctly.
+    pub hits: usize,
+    /// Times predicted.
+    pub predicted: usize,
+    /// Times actually correct (golden).
+    pub actual: usize,
+}
+
+impl ClassCounts {
+    /// Precision: hits / predicted, `empty` when never predicted.
+    #[must_use]
+    pub fn precision_or(&self, empty: f64) -> f64 {
+        precision_or(self.hits, self.predicted, empty)
+    }
+
+    /// Recall: hits / actual, `empty` when never golden.
+    #[must_use]
+    pub fn recall_or(&self, empty: f64) -> f64 {
+        recall_or(self.hits, self.actual, empty)
+    }
+}
+
+/// Precision with an explicit empty-denominator fallback: hits /
+/// predicted, `empty` when predicted == 0.
+#[must_use]
+/// Precision with an explicit empty-denominator fallback: hits /
+/// predicted, `empty` when predicted == 0.
+pub fn precision_or(hits: usize, predicted: usize, empty: f64) -> f64 {
+    if predicted == 0 {
+        empty
+    } else {
+        hits as f64 / predicted as f64
+    }
+}
+
+/// Recall with an explicit empty-denominator fallback: hits / actual,
+/// `empty` when actual == 0.
+#[must_use]
+/// Recall with an explicit empty-denominator fallback: hits / actual,
+/// `empty` when actual == 0.
+pub fn recall_or(hits: usize, actual: usize, empty: f64) -> f64 {
+    if actual == 0 {
+        empty
+    } else {
+        hits as f64 / actual as f64
+    }
+}
+
+/// Macro-averaged precision over classes (0.0 when there are none,
+/// matching the triage rollup).
+#[must_use]
+/// Macro-averaged precision over classes (0.0 when there are none,
+/// matching the triage rollup).
+pub fn macro_precision_or(classes: &[ClassCounts], empty: f64) -> f64 {
+    if classes.is_empty() {
+        0.0
+    } else {
+        classes.iter().map(|c| c.precision_or(empty)).sum::<f64>() / classes.len() as f64
+    }
+}
+
+/// Macro-averaged recall over classes (0.0 when there are none,
+/// matching the triage rollup).
+#[must_use]
+/// Macro-averaged recall over classes (0.0 when there are none,
+/// matching the triage rollup).
+pub fn macro_recall_or(classes: &[ClassCounts], empty: f64) -> f64 {
+    if classes.is_empty() {
+        0.0
+    } else {
+        classes.iter().map(|c| c.recall_or(empty)).sum::<f64>() / classes.len() as f64
+    }
 }
 
 /// Render a markdown table for `reports` (from `sweep_thresholds`) to `path`.

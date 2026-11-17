@@ -127,19 +127,15 @@ pub fn draft_prompt(source: &str, reason: &str) -> String {
 
 /// First rust fence in a draft response, trimmed. No fence parses to
 /// nothing: the rung asks for a fresh draft instead of guessing.
+/// Shared contract via `fluent_llm::parse::extract_fence`
+/// (M4.1/M4.2 tables pin the edges).
 #[must_use]
-/// First rust fence in a draft response, trimmed.
+/// First rust fence in a draft response, trimmed. No fence parses to
+/// nothing: the rung asks for a fresh draft instead of guessing.
+/// Shared contract via `fluent_llm::parse::extract_fence`
+/// (M4.1/M4.2 tables pin the edges).
 pub fn parse_draft_fence(response: &str) -> Option<String> {
-    let start = response
-        .find("```rust")
-        .map(|i| i + "```rust".len())
-        .or_else(|| response.find("```").map(|i| i + "```".len()))?;
-    let end = response[start..].find("```")?;
-    let body = response[start..start + end].trim();
-    if body.is_empty() {
-        return None;
-    }
-    Some(body.to_string())
+    fluent_llm::parse::extract_fence(response, "rust")
 }
 
 /// Run the model-draft rung over escalated files: up to three fresh

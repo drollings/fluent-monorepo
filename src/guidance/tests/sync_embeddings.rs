@@ -353,3 +353,109 @@ fn no_embedder_records_nothing() {
         .expect("status")
         .is_empty());
 }
+
+/// M1.4 characterization: `embed_input_for_row` collapses
+/// multiline signatures and docs to one line (C2, fourth `one_line`
+/// call site — found after the initial inventory). Expected strings
+/// were verified against the removed `one_line` before migration.
+#[test]
+fn embed_input_collapses_multiline_signature_and_doc() {
+    let mut fragment = frow("sig");
+    fragment.signature = Some("pub fn alpha(\n    x: u32,\n) -> u64".to_string());
+    fragment.doc = Some("Adds\none.".to_string());
+    let input = super::embed_input_for_row(&fragment).expect("embed input");
+    assert!(input.contains("signature: pub fn alpha( x: u32, ) -> u64"), "{input:?}");
+    assert!(input.contains("doc: Adds one."), "{input:?}");
+}
+
+/// M5.1 characterization: wave retry contract (C11) — fail-fast
+/// aborts at once, retryable errors retry to the attempt budget,
+/// success short-circuits, exhaustion maps transport vs input.
+/// Backoff delays use a 1ms base so the table stays fast while
+/// asserting the attempt counts exactly.
+#[test]
+fn embed_batch_retry_attempt_counts() {
+    struct ScriptedEmbedder {
+        script: std::sync::Mutex<Vec<Result<BatchEmbedding, EmbeddingError>>>,
+        calls: std::sync::Mutex<usize>,
+    }
+    impl EmbeddingProvider for ScriptedEmbedder {
+        fn name(&self) -> &'static str {
+            "scripted"
+        }
+        fn dimensions(&self) -> u32 {
+            2
+        }
+        fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            Ok(vec![text.len() as f32; 2])
+        }
+        fn embed_batch(&self, _texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+            *common_core::sync::lock(&self.calls) += 1;
+            common_core::sync::lock(&self.script)
+                .pop()
+                .expect("script exhausted")
+        }
+    }
+    fn ok_batch() -> BatchEmbedding {
+        BatchEmbedding {
+            flat: vec![0.0; 2],
+            count: 1,
+            dims: 2,
+        }
+    }
+    fn run(
+        script: Vec<Result<BatchEmbedding, EmbeddingError>>,
+        max_attempts: u32,
+    ) -> (Result<BatchEmbedding, super::EmbedFailure>, usize) {
+        let embedder = ScriptedEmbedder {
+            script: std::sync::Mutex::new(script.into_iter().rev().collect()),
+            calls: std::sync::Mutex::new(0),
+        };
+        let options = super::IndexOptions {
+            retry_max_attempts: max_attempts,
+            retry_base_ms: 1,
+            ..Default::default()
+        };
+        let out = super::embed_batch_with_retry(&embedder, &["a"], &options);
+        let calls = *common_core::sync::lock(&embedder.calls);
+        (out, calls)
+    }
+    let transport = || EmbeddingError::RequestFailed("down".to_string());
+    let input_err = || EmbeddingError::ParseError("bad input".to_string());
+
+    let (out, calls) = run(vec![Ok(ok_batch())], 3);
+    assert!(out.is_ok());
+    assert_eq!(calls, 1);
+
+    let (out, calls) = run(vec![Err(EmbeddingError::InvalidApiUrl)], 3);
+    assert!(matches!(out, Err(super::EmbedFailure::FailFast(_))));
+    assert_eq!(calls, 1);
+
+    let (out, calls) = run(vec![Err(transport()), Ok(ok_batch())], 3);
+    assert!(out.is_ok());
+    assert_eq!(calls, 2);
+
+    let (out, calls) = run(
+        vec![Err(transport()), Err(transport()), Err(transport())],
+        3,
+    );
+    match out {
+        Err(super::EmbedFailure::Retryable(f)) => assert!(f.unavailable, "{f:?}"),
+        other => panic!("expected transport Retryable, got {other:?}"),
+    }
+    assert_eq!(calls, 3);
+
+    let (out, calls) = run(
+        vec![Err(input_err()), Err(input_err()), Err(input_err())],
+        3,
+    );
+    match out {
+        Err(super::EmbedFailure::Retryable(f)) => assert!(!f.unavailable, "{f:?}"),
+        other => panic!("expected input Retryable, got {other:?}"),
+    }
+    assert_eq!(calls, 3);
+
+    let (out, calls) = run(vec![Err(transport())], 1);
+    assert!(matches!(out, Err(super::EmbedFailure::Retryable(_))));
+    assert_eq!(calls, 1);
+}

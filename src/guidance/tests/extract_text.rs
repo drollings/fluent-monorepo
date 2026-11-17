@@ -103,3 +103,100 @@ fn chunk_options_reject_bad_budgets() {
     assert!(ChunkOptions::resolve(Some(100), Some(100)).is_err());
     assert!(ChunkOptions::resolve(Some(100), Some(10)).is_ok());
 }
+
+/// M1.1 characterization: `byte_offset_for_units` edge table.
+/// Must stay byte-identical to the code/markdown copies (C1).
+#[test]
+fn byte_offset_for_units_table() {
+    let cases: &[(&str, usize, usize)] = &[
+        ("", 0, 0),
+        ("hello", 0, 0),
+        ("hello", 2, 2),
+        ("hello", 5, 5),
+        ("hello", 99, 5),
+        ("h\u{e9}llo", 2, 3),
+        ("a\u{1f4bb}b", 2, 5),
+    ];
+    for (line, units, want) in cases {
+        assert_eq!(
+            crate::extractor::byte_offset_for_units(line, *units),
+            *want,
+            "line={line:?} units={units}"
+        );
+    }
+    assert_eq!(crate::extractor::byte_offset_for_units("a\u{1f4bb}b", 4), 6);
+}
+
+/// M1.1 characterization: `compute_next_start_line` edge table
+/// (C3). Same backward accumulation as the code/markdown twins but
+/// an absolute-index contract with a different clamp (no /2 cap:
+/// full overlap returns `end`).
+#[test]
+fn compute_next_start_line_table() {
+    let lines = ["aaa", "bb", "c"];
+    assert_eq!(super::compute_next_start_line(&lines, 0, 3, 0), 3);
+    assert_eq!(super::compute_next_start_line(&lines, 0, 3, 2), 2);
+    assert_eq!(super::compute_next_start_line(&lines, 0, 3, 1), 2);
+    assert_eq!(super::compute_next_start_line(&lines, 0, 3, 100), 3);
+    assert_eq!(super::compute_next_start_line(&lines, 1, 2, 100), 2);
+    assert_eq!(super::compute_next_start_line(&lines, 0, 0, 100), 0);
+    let nine = ["a", "b", "c", "d", "e", "f", "g", "h", "i"];
+    assert_eq!(super::compute_next_start_line(&nine, 0, 9, 5), 6);
+    let heavy = ["aaaaaaaaaa", "b", "c", "d"];
+    assert_eq!(super::compute_next_start_line(&heavy, 0, 4, 12), 4);
+}
+
+/// M1.1 characterization: `split_long_line` window boundaries (C4).
+/// Same slide-while-`find_line_cut` algorithm as the markdown twin;
+/// text skips whitespace-only windows (offset still advances).
+#[test]
+fn split_long_line_table() {
+    let offsets = [0usize];
+    let texts = |chunks: Vec<super::TextChunk>| {
+        chunks.into_iter().map(|c| c.text).collect::<Vec<_>>()
+    };
+    let lines = ["hello world foo"];
+    assert_eq!(
+        texts(super::split_long_line(&lines, &offsets, 0, 5)),
+        vec!["hello", " worl", "d foo"]
+    );
+    let lines = ["abcde"];
+    assert_eq!(
+        texts(super::split_long_line(&lines, &offsets, 0, 5)),
+        vec!["abcde"]
+    );
+    let lines = ["abcdef"];
+    assert_eq!(
+        texts(super::split_long_line(&lines, &offsets, 0, 5)),
+        vec!["abcde", "f"]
+    );
+    let lines = ["aaa. bbb. ccc"];
+    assert_eq!(
+        texts(super::split_long_line(&lines, &offsets, 0, 6)),
+        vec!["aaa. ", "bbb. ", "ccc"]
+    );
+    let lines = ["ab   "];
+    assert_eq!(
+        texts(super::split_long_line(&lines, &offsets, 0, 2)),
+        vec!["ab"]
+    );
+    let lines = ["h\u{e9}llo w\u{f6}rld"];
+    let chunks = super::split_long_line(&lines, &offsets, 0, 5);
+    assert_eq!(
+        texts(chunks.clone()),
+        vec!["h\u{e9}llo", " w\u{f6}rl", "d"]
+    );
+    assert_eq!(
+        chunks
+            .iter()
+            .map(|c| (c.range.start_offset, c.range.end_offset))
+            .collect::<Vec<_>>(),
+        vec![(0, 6), (6, 12), (12, 13)]
+    );
+    assert!(chunks.iter().all(|c| c.range.start_line == 1));
+    let lines = ["a\u{1f4bb}b"];
+    assert_eq!(
+        texts(super::split_long_line(&lines, &offsets, 0, 2)),
+        vec!["a", "\u{1f4bb}b"]
+    );
+}

@@ -25,6 +25,25 @@ fn match_label<'a>(token: &str, candidates: &[&'a str]) -> Option<&'a str> {
         .find(|c| c.eq_ignore_ascii_case(t))
 }
 
+/// Closed-enum text match for model answers: trim both ends, then
+/// exact match, then ASCII case-insensitive match. Returns the
+/// matched candidate; `None` when nothing matches (callers keep
+/// their own fail-closed default). Single home for the
+/// `from_label`/`parse_triage_verdict` shape. (The logprob
+/// `match_label` above keeps its trim-start contract for tokenizer
+/// artifacts and stays private to the decode path.)
+#[must_use]
+pub fn match_text_label<'a>(text: &str, candidates: &[&'a str]) -> Option<&'a str> {
+    let trimmed = text.trim();
+    if let Some(hit) = candidates.iter().copied().find(|c| *c == trimmed) {
+        return Some(hit);
+    }
+    candidates
+        .iter()
+        .copied()
+        .find(|c| c.eq_ignore_ascii_case(trimmed))
+}
+
 /// One top-logprob entry: `(token, probability)`.
 fn entry_prob(entry: &serde_json::Value) -> Option<(&str, f64)> {
     let token = entry.get("token")?.as_str()?;

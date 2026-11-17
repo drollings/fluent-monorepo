@@ -436,9 +436,11 @@ fn validate_summary_response(
     response: &str,
     requests: &[SummaryRequest],
 ) -> Vec<(String, SummaryOutcome)> {
-    let stripped = crate::model_text::strip_think_tags(response);
+    // M4.3: shared llm parse primitives (span contract proven
+    // identical to the old model_text helpers by the M4.1/M4.2 tables).
+    let stripped = fluent_llm::thinking::strip_think_block(response);
     let map: Option<BTreeMap<String, String>> =
-        crate::model_text::extract_json_value(stripped.trim())
+        fluent_llm::parse::extract_first_json_span(stripped.trim())
             .and_then(|json| serde_json::from_str(json).ok());
     let Some(map) = map else {
         return requests

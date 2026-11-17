@@ -28,6 +28,19 @@ pub fn now_ns() -> u64 {
     system_time_ns(SystemTime::now())
 }
 
+/// First line of the file at `path`; `None` when the file cannot
+/// be read or is empty. No trailing newline required. Shared core
+/// for header-line reads (sidecar receipts, generation markers).
+#[must_use]
+/// First line of the file at `path`; `None` when the file cannot
+/// be read or is empty. No trailing newline required. Shared core
+/// for header-line reads (sidecar receipts, generation markers).
+pub fn read_first_line(path: &Path) -> Option<String> {
+    use std::io::BufRead as _;
+    let file = fs::File::open(path).ok()?;
+    std::io::BufReader::new(file).lines().next()?.ok()
+}
+
 /// Modification time of `metadata`, in nanoseconds since the UNIX epoch, or
 /// 0 when the platform reports none.
 ///

@@ -11,15 +11,12 @@
 
 use crate::query::strategy::QueryIntent;
 
-/// Lowercase cue match on whole-word boundaries.
+/// Lowercase cue match on whole-word boundaries (M3.3: shared
+/// `contains_token` core with the intent-routing separator rule).
 fn contains_cue(lower: &str, cue: &str) -> bool {
-    let cue = cue.trim();
-    if cue.is_empty() {
-        return false;
-    }
-    lower
-        .split(|c: char| !c.is_alphanumeric() && c != '_')
-        .any(|word| word == cue)
+    common_core::string::contains_token(lower, cue, |c: char| {
+        !c.is_alphanumeric() && c != '_'
+    })
 }
 
 /// Cue-phrase match: every word of the phrase appears in order.

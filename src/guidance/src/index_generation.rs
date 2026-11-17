@@ -204,9 +204,8 @@ pub fn verify_generation(index_dir: &Path, sidecar_dir: &Path) -> GenerationVerd
 }
 
 fn first_line(path: &Path) -> Option<String> {
-    use std::io::BufRead as _;
-    let file = std::fs::File::open(path).ok()?;
-    std::io::BufReader::new(file).lines().next()?.ok()
+    // M3.3: shared header-line reader.
+    common_core::io::read_first_line(path)
 }
 
 #[cfg(test)]

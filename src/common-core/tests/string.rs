@@ -729,3 +729,20 @@ fn ascii_alnum_tokens_splits_preserves_case() {
     assert_eq!(ascii_alnum_tokens("naïve"), vec!["na", "ve"]);
     assert_eq!(ascii_alnum_tokens("a  b"), vec!["a", "b"]);
 }
+
+/// M3.2: whole-token match with a caller separator predicate.
+/// Empty tokens never match; case handling stays with the caller.
+#[test]
+fn contains_token_matches_whole_words_only() {
+    let cue = |c: char| !c.is_alphanumeric() && c != '_';
+    assert!(contains_token("how does the pipeline work", "pipeline", cue));
+    assert!(!contains_token("pipelines carry data", "pipeline", cue));
+    assert!(contains_token("pipeline!", "pipeline", cue));
+    assert!(!contains_token("my_pipeline", "pipeline", cue));
+    assert!(!contains_token("anything", "", cue));
+    assert!(!contains_token("anything", "   ", cue));
+    assert!(contains_token("le m\u{e9}canisme", "m\u{e9}canisme", cue));
+    assert!(contains_token("a-b c", "b", cue));
+    assert!(!contains_token("a-b c", "a-b", cue));
+    assert!(contains_token("a-b c", "a-b", |c: char| c == ' '));
+}

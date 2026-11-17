@@ -77,6 +77,25 @@ fn grammar_parses_closed_enum_and_rejects_prose() {
     assert!(parse_triage_verdict("mechanical-everything").is_none());
 }
 
+/// M4.1 characterization: label edge table (C10) — case folding,
+/// surrounding whitespace, and a Kelvin-K that must NOT match
+/// (ASCII-fold only), pinned before migration to `match_label`.
+#[test]
+fn verdict_label_edge_table() {
+    assert_eq!(
+        parse_triage_verdict("MECHANICAL-IMPORT"),
+        Some(TriageVerdict::Mechanical {
+            fix_class: "import"
+        })
+    );
+    assert_eq!(
+        parse_triage_verdict("external "),
+        Some(TriageVerdict::External)
+    );
+    assert!(parse_triage_verdict("MECHANICAL-\u{212a}MPORT").is_none());
+    assert!(parse_triage_verdict("mechanical").is_none());
+}
+
 #[test]
 fn ladder_prefers_table_then_cache_then_model_then_fallback() {
     let mut state = TriageState::default();

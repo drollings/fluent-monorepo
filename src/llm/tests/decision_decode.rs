@@ -249,3 +249,20 @@ fn score_rejects_degenerate_scale() {
     let err = decode_score(&body, &["only"], "m", 1).expect_err("one rung is no scale");
     assert!(!err.is_unavailable());
 }
+
+/// M4.2: closed-enum text match for the `from_label`/
+/// `parse_triage_verdict` shape — trim both ends, exact match,
+/// then ASCII case-insensitive match, fail-closed to `None`.
+#[test]
+fn match_text_label_trims_folds_and_fails_closed() {
+    use fluent_llm::decision::match_text_label;
+    let labels = &["mechanical-import", "local-rewrite", "external"];
+    assert_eq!(match_text_label("mechanical-import", labels), Some("mechanical-import"));
+    assert_eq!(match_text_label("  Local-Rewrite\n", labels), Some("local-rewrite"));
+    assert_eq!(match_text_label("EXTERNAL ", labels), Some("external"));
+    assert_eq!(match_text_label("", labels), None);
+    assert_eq!(match_text_label("mechanical", labels), None);
+    assert_eq!(match_text_label("I think mechanical-import", labels), None);
+    assert_eq!(match_text_label("MECHANICAL-\u{212a}MPORT", labels), None);
+    assert_eq!(match_text_label("x", &[] as &[&str]), None);
+}

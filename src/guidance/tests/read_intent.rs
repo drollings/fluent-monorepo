@@ -127,3 +127,32 @@ fn symbol_extraction_runs_only_for_symbol_and_graph() {
     assert!(!extracts_symbols(QueryIntent::Ownership));
     assert!(!extracts_symbols(QueryIntent::Provenance));
 }
+
+/// M3.1 characterization: `contains_cue` boundary table (C8).
+/// Whole-word match on `!alphanumeric && != '_'` separators:
+/// `_` joins, Unicode alphanumerics count as word chars, empty
+/// cues never match. Must hold after migrating onto the shared
+/// separator-predicate primitive.
+#[test]
+fn contains_cue_boundary_table() {
+    let cases: &[(&str, &str, bool)] = &[
+        ("how does the pipeline work", "pipeline", true),
+        ("pipelines carry data", "pipeline", false),
+        ("pipeline!", "pipeline", true),
+        ("my_pipeline", "pipeline", false),
+        ("pipe x", "pipe", true),
+        ("xpipe", "pipe", false),
+        ("anything", "", false),
+        ("anything", "   ", false),
+        ("le m\u{e9}canisme", "m\u{e9}canisme", true),
+        ("how does the pipeline work", " pipeline ", true),
+        ("a-b c", "b", true),
+    ];
+    for (lower, cue, want) in cases {
+        assert_eq!(
+            super::contains_cue(lower, cue),
+            *want,
+            "lower={lower:?} cue={cue:?}"
+        );
+    }
+}

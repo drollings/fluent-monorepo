@@ -42,13 +42,19 @@ pub fn metadata_lines(metadata: &Option<FragmentMetadata>) -> Vec<String> {
                 lines.push(format!("scope: {scope}"));
             }
             if let Some(signature) = signature {
-                lines.push(format!("signature: {}", one_line(signature)));
+                lines.push(format!(
+                    "signature: {}",
+                    common_core::string::collapse_whitespace(signature)
+                ));
             }
             if !modifiers.is_empty() {
                 lines.push(format!("modifiers: {}", modifiers.join(" ")));
             }
             if let Some(doc) = doc {
-                lines.push(format!("doc: {}", one_line(doc)));
+                lines.push(format!(
+                    "doc: {}",
+                    common_core::string::collapse_whitespace(doc)
+                ));
             }
             lines
         }
@@ -151,10 +157,6 @@ pub fn fit_text_to_chars(value: &str, max_chars: usize) -> String {
     }
     let end = utf16_prefix(value, max_chars - 3);
     format!("{}...", end.trim_end())
-}
-
-fn one_line(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

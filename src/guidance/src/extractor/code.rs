@@ -514,7 +514,7 @@ fn format_outline_member(member: &OutlineMember) -> String {
     let signature = member
         .signature
         .as_deref()
-        .map(|s| truncate_outline_line(&one_line(s)))
+        .map(|s| truncate_outline_line(&common_core::string::collapse_whitespace(s)))
         .unwrap_or_default();
     if !signature.is_empty() {
         let type_name = symbol_type_name(member.symbol_type);
@@ -565,10 +565,6 @@ fn truncate_outline_line(value: &str) -> String {
     } else {
         value.to_string()
     }
-}
-
-fn one_line(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn collect_members(
@@ -941,19 +937,10 @@ fn compute_line_overlap_code(
     end_index: usize,
     overlap_chars: usize,
 ) -> usize {
-    if overlap_chars == 0 {
-        return 0;
-    }
-    let mut chars = 0;
-    let mut count = 0;
-    for index in (start_index..end_index).rev() {
-        chars += utf16_len(lines[index]) + 1;
-        if chars > overlap_chars {
-            break;
-        }
-        count += 1;
-    }
-    count.min((end_index - start_index) / 2)
+    // M1.5: shared backward-count core; the /2 window clamp is this
+    // call site's contract and stays here.
+    super::overlap_lines_back(lines, start_index, end_index, overlap_chars)
+        .min((end_index - start_index) / 2)
 }
 
 /// Raw character cuts with overlap (port of `splitLongLineByChars`;
@@ -972,7 +959,7 @@ fn split_long_line_by_chars(
         let raw_end = (relative_start + max_chars).min(total);
         let slice = utf16_slice(text, relative_start, raw_end - relative_start);
         let relative_end = relative_start + utf16_len(slice);
-        let byte_start = byte_offset_for_units(text, relative_start);
+        let byte_start = super::byte_offset_for_units(text, relative_start);
         windows.push(CodeWindow {
             text: slice.to_string(),
             embedding_text: None,
@@ -1001,17 +988,6 @@ fn snap_forward_units(line: &str, units: usize) -> usize {
         seen += ch.len_utf16();
     }
     seen
-}
-
-fn byte_offset_for_units(line: &str, units: usize) -> usize {
-    let mut seen = 0;
-    for (byte, ch) in line.char_indices() {
-        if seen >= units {
-            return byte;
-        }
-        seen += ch.len_utf16();
-    }
-    line.len()
 }
 
 // -- Script blocks -------------------------------------------------------------
