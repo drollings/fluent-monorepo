@@ -57,7 +57,10 @@ impl MergeQueue {
     #[must_use]
     pub fn new(capacity: usize) -> Arc<Self> {
         Arc::new(Self {
-            queue: BoundedPriorityQueue::new(capacity.max(1)),
+            // `max(1)` keeps the constructor total; the queue itself
+            // refuses zero, so this clamp is the documented nonzero floor.
+            queue: BoundedPriorityQueue::new(capacity.max(1))
+                .expect("merge queue capacity is nonzero by max(1)"),
         })
     }
 

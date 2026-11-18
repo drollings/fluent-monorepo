@@ -307,3 +307,32 @@ async fn handler_sees_starter_caps_for_gated_io() {
         "gated handler call must succeed under starter caps"
     );
 }
+
+/// A zero queue capacity is refused before the channel is created: the
+/// shared guard vocabulary names the refusal, and the boundary value one
+/// stays accepted.
+#[test]
+fn feed_config_validate_refuses_zero_queue_capacity() {
+    let bad = FeedConfig {
+        queue_capacity: 0,
+        ..config()
+    };
+    assert!(bad.validate().is_err());
+    assert!(config().validate().is_ok());
+}
+
+/// Constructing the worker on a zero-capacity config fails fast instead
+/// of building a channel that can never carry items.
+#[test]
+fn feed_worker_new_panics_on_zero_queue_capacity() {
+    let bad = FeedConfig {
+        queue_capacity: 0,
+        ..config()
+    };
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            CreditedFeedWorker::new(runtime(), bad, |_: usize| async {})
+        }))
+        .is_err()
+    );
+}

@@ -198,9 +198,8 @@ Facade `decision/mod.rs` re-exports all submodules.
 - `decision/ladder.rs` — Canonical composition example:
   `decide_with_ladder(rule/cache/key/cacheable/breaker/model/factory/
   fallback)` via `fluent_wvr::ladder::first_accept_in_order`
-  (`Unavailable` skips, only `Rejected` terminal, degraded never cached);
-  `prefix_cascade` via `ComponentCascade`. Private `Rung` enum +
-  `FixedDecisionUnit` boilerplate for the two-element cascade.
+  (`Unavailable` skips, only `Rejected` terminal, degraded never cached).
+  Private `Rung` enum drives the walk.
 - `decision/decode.rs` — `decode_choice/decode_score/decode_noul` over
   `content.logprobs.top_logprobs` (variant-sum over space/case; all-labels-
   must-appear else text fallback at 0.5/degraded prior; score needs ≥2 rungs;

@@ -19,6 +19,12 @@ pub struct FtsBackend<'a> {
 }
 
 impl SearchBackend for FtsBackend<'_> {
+    fn name(&self) -> &'static str {
+        "backend.fts"
+    }
+    fn kind(&self) -> &'static str {
+        "fts"
+    }
     fn matches(&self, _intent: QueryIntent) -> bool {
         true
     }

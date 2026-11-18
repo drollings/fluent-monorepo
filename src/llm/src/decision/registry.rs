@@ -320,7 +320,7 @@ impl CalibrationRegistry {
     /// use fluent_llm::decision::CalibrationRegistry;
     ///
     /// let mut registry = CalibrationRegistry::empty();
-    /// assert!(registry.lookup("intent", "fp", 1).is_none());
+    /// assert!(registry.lookup_unpinned("intent", "fp", 1).is_none());
     /// ```
     pub fn upsert(&mut self, entry: RegistryEntry) {
         if let Some(slot) = self.entries.iter_mut().find(|e| {
@@ -334,9 +334,26 @@ impl CalibrationRegistry {
         }
     }
 
-    /// Look up a passing entry by all three keys.
+    /// Look up a passing entry by all three keys, ignoring dataset pins.
+    /// Deprecated: this is the legacy dataset-blind match, kept so
+    /// existing callers compile. New code must state its dataset
+    /// expectation with [`Self::lookup_unpinned`] (dataset-agnostic
+    /// points) or [`Self::lookup_pinned`] (dataset-pinned points).
+    #[deprecated(note = "use lookup_unpinned or lookup_pinned instead")]
     #[must_use]
     pub fn lookup(
+        &self,
+        point: &str,
+        model_fingerprint: &str,
+        question_version: u64,
+    ) -> Option<&RegistryEntry> {
+        self.find_passing(point, model_fingerprint, question_version)
+    }
+
+    /// Shared legacy match: passing entry on all three keys, dataset
+    /// ignored. `authorize`/`authorize_advisory` keep this exact
+    /// behavior; the dataset-explicit paths add their own pin check.
+    fn find_passing(
         &self,
         point: &str,
         model_fingerprint: &str,
@@ -347,6 +364,44 @@ impl CalibrationRegistry {
                 && e.model_fingerprint == model_fingerprint
                 && e.question_version == question_version
                 && e.gate.passed
+        })
+    }
+
+    /// Look up a passing entry that carries no dataset pin. Dataset-pinned
+    /// entries never match here, so this path can never authorize a
+    /// rotated dataset.
+    #[must_use]
+    pub fn lookup_unpinned(
+        &self,
+        point: &str,
+        model_fingerprint: &str,
+        question_version: u64,
+    ) -> Option<&RegistryEntry> {
+        self.entries.iter().find(|e| {
+            e.point == point
+                && e.model_fingerprint == model_fingerprint
+                && e.question_version == question_version
+                && e.gate.passed
+                && e.dataset.is_empty()
+        })
+    }
+
+    /// Look up a passing entry pinned to `dataset`. A rotated dataset
+    /// (or an unpinned query against a pinned entry) misses.
+    #[must_use]
+    pub fn lookup_pinned(
+        &self,
+        point: &str,
+        model_fingerprint: &str,
+        question_version: u64,
+        dataset: &str,
+    ) -> Option<&RegistryEntry> {
+        self.entries.iter().find(|e| {
+            e.point == point
+                && e.model_fingerprint == model_fingerprint
+                && e.question_version == question_version
+                && e.gate.passed
+                && e.dataset == dataset
         })
     }
 
@@ -395,7 +450,7 @@ pub fn authorize(
     model_fingerprint: &str,
     question_version: u64,
 ) -> CalibrationStatus {
-    match registry.lookup(point, model_fingerprint, question_version) {
+    match registry.find_passing(point, model_fingerprint, question_version) {
         Some(entry) => CalibrationStatus::Calibrated(entry.thresholds),
         None => CalibrationStatus::ShadowOnly {
             reason: format!(
@@ -415,7 +470,7 @@ pub fn authorize_advisory(
     model_fingerprint: &str,
     question_version: u64,
 ) -> CalibrationStatus {
-    match registry.lookup(point, model_fingerprint, question_version) {
+    match registry.find_passing(point, model_fingerprint, question_version) {
         Some(entry) => CalibrationStatus::Advisory(entry.thresholds),
         None => CalibrationStatus::ShadowOnly {
             reason: format!(
@@ -437,16 +492,11 @@ pub fn authorize_pinned(
     question_version: u64,
     dataset: &str,
 ) -> CalibrationStatus {
-    match registry.lookup(point, model_fingerprint, question_version) {
-        Some(entry) if entry.dataset == dataset => CalibrationStatus::Calibrated(entry.thresholds),
-        Some(_) => CalibrationStatus::ShadowOnly {
-            reason: format!(
-                "dataset rotated for ({point}, {model_fingerprint}, v{question_version})"
-            ),
-        },
+    match registry.lookup_pinned(point, model_fingerprint, question_version, dataset) {
+        Some(entry) => CalibrationStatus::Calibrated(entry.thresholds),
         None => CalibrationStatus::ShadowOnly {
             reason: format!(
-                "no passing calibration for ({point}, {model_fingerprint}, v{question_version})"
+                "no passing calibration for ({point}, {model_fingerprint}, v{question_version}) on this dataset"
             ),
         },
     }

@@ -107,7 +107,7 @@ impl CorrectionIndex for SqliteCorrectionIndex {
         lemma_id: InterlinguaId,
         entity_id: Option<InterlinguaId>,
     ) -> Option<Vec<Correction>> {
-        let entity = entity_id.unwrap_or(InterlinguaId::from_u64(0));
+        let entity = entity_id.unwrap_or(InterlinguaId::from_stored_u64(0));
         let row = self
             .store
             .query_row(
@@ -133,7 +133,7 @@ impl CorrectionIndex for SqliteCorrectionIndex {
         entity_id: Option<InterlinguaId>,
         corrections: &[Correction],
     ) -> Result<(), fluent_concept::ConceptStoreError> {
-        let entity = entity_id.unwrap_or(InterlinguaId::from_u64(0));
+        let entity = entity_id.unwrap_or(InterlinguaId::from_stored_u64(0));
         let json = serde_json::to_string(corrections)
             .map_err(|e| fluent_concept::ConceptStoreError::Storage(e.to_string()))?;
         let row = CorrectionRow {

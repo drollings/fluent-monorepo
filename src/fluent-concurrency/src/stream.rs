@@ -15,7 +15,7 @@
 //! disconnect drops the upstream connection (and may trigger a management-plane
 //! abort) instead of draining the upstream to the end.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::Notify;
@@ -33,6 +33,7 @@ pub struct StreamAbort {
 #[derive(Default)]
 struct AbortState {
     fired: AtomicBool,
+    generation: AtomicUsize,
     notify: Notify,
 }
 
@@ -47,26 +48,35 @@ impl StreamAbort {
         self.state.fired.load(Ordering::Acquire)
     }
 
+    /// Wake-epoch counter: 0 until the firing `cancel`, 1 after. Repeat
+    /// cancels are no-ops that neither re-notify nor advance the epoch.
+    pub fn generation(&self) -> usize {
+        self.state.generation.load(Ordering::Acquire)
+    }
+
     /// Fire the signal (idempotent). Wakes every currently- and future-waiting
     /// task; a waiter that registers after this resolves immediately.
     pub fn cancel(&self) {
         if self.state.fired.swap(true, Ordering::AcqRel) {
             return;
         }
+        self.state.generation.fetch_add(1, Ordering::AcqRel);
         self.state.notify.notify_waiters();
     }
 
     /// Resolve once the signal has fired. Sticky: a caller that registers
     /// after `cancel()` resolves immediately, never blocking.
     ///
-    /// The `notified()` future is created *before* the second `is_cancelled`
-    /// check and awaited after it, closing the lost-wakeup race: `Notify` does
-    /// not store a permit, so a waiter must register before the notifier fires.
+    /// The wait registers (`enable`) before the second `is_cancelled`
+    /// check, so a fire landing in the window wakes the registered waiter
+    /// instead of slipping past it.
     pub async fn cancelled(&self) {
         if self.is_cancelled() {
             return;
         }
         let notified = self.state.notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
         if self.is_cancelled() {
             return;
         }

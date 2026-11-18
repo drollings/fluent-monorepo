@@ -314,7 +314,7 @@ async fn cold_evict_empty_store_returns_zero() {
 async fn cold_evict_ttl_boundary_age_equals_ttl_is_evicted() {
     // Locks the cold tier's boundary: entries are kept while
     // `age < ttl_secs`, so `age == ttl_secs` is evicted. (This differs by
-    // one second from `db::cache::TtlCache::get`'s strict `now > ts + ttl`
+    // one second from `db::cache::SqliteTtlCache::get`'s strict `now > ts + ttl`
     // keep — a deliberate, documented divergence preserved by M10, not a
     // bug to "fix" by unification.)
     let ttl = 100u64;

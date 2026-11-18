@@ -4,6 +4,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use common_core::capacity::nonzero_capacity;
 use tokio::sync::Semaphore;
 
 /// A semaphore-based concurrency limiter. Runs at most `cap` futures concurrently.
@@ -27,7 +28,14 @@ pub struct Limiter {
 
 impl Limiter {
     /// Creates a new limiter that allows at most `cap` concurrent executions.
+    ///
+    /// Panics on zero `cap`: a zero-permit semaphore would hang every
+    /// guarded future on acquire instead of bounding concurrency.
     pub fn new(cap: usize) -> Self {
+        let cap = match nonzero_capacity(cap, "limiter") {
+            Ok(cap) => cap.get(),
+            Err(refused) => panic!("{refused}"),
+        };
         Self {
             sem: Arc::new(Semaphore::new(cap)),
         }

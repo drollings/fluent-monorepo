@@ -1,10 +1,12 @@
 use super::*;
 use crate::charts::binding::Entity;
+use crate::charts::compile::CompiledTarget;
 use crate::charts::store::chart_from_str;
+use crate::pipeline_types::{PipelineStage, StageDecision, StageVerdict};
 use crate::test_stubs::StubChatBackend;
 use common_core::sync::lock;
 use fluent_llm::{ChatMessage, LlmError};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// A deterministic test backend that keys responses on a substring of the
 /// rendered system prompt. `"__error__"` maps to `LlmError::NoResponse`.
@@ -638,4 +640,89 @@ async fn passing_run_promotes_draft_and_resets_streak() {
         store.charts_sorted().iter().any(|c| c.name == "gated"),
         "promoted chart is selectable"
     );
+}
+
+/// A chart stage performing a capability-gated effect directly in
+/// `execute` (the task the batch installs caps into): it succeeds only
+/// when the caller's `FsCapability` flows through the batch and context.
+struct GatedStage;
+
+impl WorkUnit for GatedStage {
+    fn name(&self) -> &str {
+        "gated"
+    }
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        fluent_wvr::capability::check_capability(&fluent_wvr::FsCapability::new())
+            .map_err(|e| WorkError::Execution(format!("gated effect denied: {e}")))?;
+        WorkOutput::typed(
+            "passed",
+            &StageDecision {
+                stage: PipelineStage::DeterministicPreFilter,
+                verdict: StageVerdict::Passed,
+                score: None,
+                reason: "gated stage ran".to_string(),
+                latency_ms: 0,
+                metadata: serde_json::Value::Object(Default::default()),
+            },
+        )
+    }
+}
+
+impl_fieldless!(GatedStage);
+
+impl Describable for GatedStage {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({})
+    }
+}
+impl_component!(GatedStage);
+
+/// A single-target plan wrapping the gated stage (fields are private to
+/// the executor module, which this test module is a child of).
+fn gated_plan() -> ChartExecutionPlan {
+    ChartExecutionPlan {
+        chart_name: "gated".to_string(),
+        chart_rubric: None,
+        targets: vec![CompiledTarget {
+            stage: Arc::new(GatedStage),
+            name: "gated".to_string(),
+            essential: true,
+            rubric: None,
+            upstream_ids: vec![],
+        }],
+        order: vec!["gated".to_string()],
+    }
+}
+
+/// A gated stage succeeds only when the caller's caps flow through the
+/// batch and target contexts; stripped caps fail it closed.
+#[tokio::test]
+async fn gated_stage_succeeds_only_with_inherited_caps() {
+    let plan = gated_plan();
+    let mut ctx = make_ctx("run gated");
+    ctx.caps = CapabilitySet::new().with(fluent_wvr::FsCapability::new());
+    let summary = plan.execute(&ctx, &default_opts()).await.expect("runs");
+    assert_eq!(summary.completed.len(), 1, "gated stage ran with caller caps");
+    assert!(summary.failed.is_empty());
+}
+
+/// The explicit unprivileged opt-out still denies the gated stage even
+/// when the caller holds caps: denial stays fail-closed and deliberate.
+#[tokio::test]
+async fn unprivileged_opt_out_denies_gated_stage() {
+    let plan = gated_plan();
+    let mut ctx = make_ctx("run gated");
+    ctx.caps = CapabilitySet::new().with(fluent_wvr::FsCapability::new());
+    let mut opts = default_opts();
+    opts.unprivileged = true;
+    let summary = plan.execute(&ctx, &opts).await.expect("runs");
+    assert!(summary.completed.is_empty(), "unprivileged chart runs nothing gated");
+    assert_eq!(summary.failed.len(), 1);
 }

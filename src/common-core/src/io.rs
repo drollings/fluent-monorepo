@@ -20,11 +20,11 @@ pub fn system_time_ns(time: SystemTime) -> u64 {
 }
 
 /// Wall clock now, in nanoseconds since the UNIX epoch.
-#[must_use]
-/// Wall clock now, in nanoseconds since the UNIX epoch.
-pub fn now_ns() -> u64 {
-    system_time_ns(SystemTime::now())
-}
+///
+/// Canonical home is [`crate::time::now_ns`]; this re-export stays
+/// while callers migrate.
+#[deprecated(note = "use common_core::time::now_ns instead")]
+pub use crate::time::now_ns;
 
 /// First line of the file at `path`; `None` when the file cannot
 /// be read or is empty. No trailing newline required. Shared core
@@ -189,19 +189,27 @@ pub fn make_path_absolute(path: &str) -> std::io::Result<String> {
 
 /// Read a file to a string, returning `None` on any failure (missing file,
 /// oversized file, invalid UTF-8). Fail-open convenience over
-/// [`read_file_alloc_err`]: use when a missing file means "unchanged" or
+/// [`read_file_alloc_result`]: use when a missing file means "unchanged" or
 /// "absent" rather than an error (file-id hashing, optional config).
-pub fn read_file_alloc(path: &str) -> Option<String> {
-    read_file_alloc_err(path).ok()
+pub fn read_file_alloc_opt(path: &str) -> Option<String> {
+    read_file_alloc_result(path).ok()
 }
+
+/// Deprecated alias: use [`read_file_alloc_opt`] instead.
+#[deprecated(note = "use read_file_alloc_opt instead")]
+pub use self::read_file_alloc_opt as read_file_alloc;
 
 /// Read a file to a string, returning `std::io::Error` on failure.
 /// Unlike [`read_to_string_err`] this reports the raw OS error (no
 /// [`IoError`](crate::error::IoError) wrapping, no size cap): use at
 /// trust boundaries where the caller maps the error itself.
-pub fn read_file_alloc_err(path: &str) -> Result<String, std::io::Error> {
+pub fn read_file_alloc_result(path: &str) -> Result<String, std::io::Error> {
     fs::read_to_string(path)
 }
+
+/// Deprecated alias: use [`read_file_alloc_result`] instead.
+#[deprecated(note = "use read_file_alloc_result instead")]
+pub use self::read_file_alloc_result as read_file_alloc_err;
 
 /// Join `relative` onto the parent directory of `base` without touching the
 /// filesystem (pure string join; no normalization, no existence check).

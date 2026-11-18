@@ -133,8 +133,8 @@ async fn wave_fires_one_fetch_and_promotes_valid_sense_only() {
 
     let p1 = pid(1);
     let p2 = pid(2);
-    let c1 = InterlinguaId::from_u64(281474976710656);
-    let c2 = InterlinguaId::from_u64(281474976710657);
+    let c1 = InterlinguaId::from_stored_u64(281474976710656);
+    let c2 = InterlinguaId::from_stored_u64(281474976710657);
     let job = FrameResolutionJob {
         requests: vec![
             FrameResolutionRequest {
@@ -278,8 +278,8 @@ async fn validator_failures_never_promote() {
         &gate,
     ));
 
-    let c1 = InterlinguaId::from_u64(101);
-    let c2 = InterlinguaId::from_u64(102);
+    let c1 = InterlinguaId::from_stored_u64(101);
+    let c2 = InterlinguaId::from_stored_u64(102);
     worker
         .enqueue(FrameResolutionJob {
             requests: vec![
@@ -333,7 +333,7 @@ async fn unparseable_reply_never_promotes() {
         .enqueue(FrameResolutionJob {
             requests: vec![polysemy_request(
                 21,
-                vec![InterlinguaId::from_u64(201), InterlinguaId::from_u64(202)],
+                vec![InterlinguaId::from_stored_u64(201), InterlinguaId::from_stored_u64(202)],
             )],
         })
         .await
@@ -372,7 +372,7 @@ async fn repeated_pattern_makes_zero_model_calls_on_second_occurrence() {
         &gate,
     ));
 
-    let candidates = vec![InterlinguaId::from_u64(301), InterlinguaId::from_u64(302)];
+    let candidates = vec![InterlinguaId::from_stored_u64(301), InterlinguaId::from_stored_u64(302)];
     let job = || FrameResolutionJob {
         requests: vec![polysemy_request(31, candidates.clone())],
     };
@@ -407,7 +407,7 @@ async fn repeated_pattern_makes_zero_model_calls_on_second_occurrence() {
             .preferred_sense(pid(31), AmbiguityKind::PredicatePolysemy)
             .expect("replay")
             .chosen_candidate_id,
-        InterlinguaId::from_u64(301)
+        InterlinguaId::from_stored_u64(301)
     );
 }
 
@@ -438,7 +438,7 @@ async fn closed_gate_drops_jobs_before_fetch_or_promote() {
 
     worker
         .enqueue(FrameResolutionJob {
-            requests: vec![polysemy_request(41, vec![InterlinguaId::from_u64(401)])],
+            requests: vec![polysemy_request(41, vec![InterlinguaId::from_stored_u64(401)])],
         })
         .await
         .expect("enqueue still accepted");
@@ -486,7 +486,7 @@ async fn established_sense_survives_conflicting_model_output() {
         .enqueue(FrameResolutionJob {
             requests: vec![polysemy_request(
                 51,
-                vec![InterlinguaId::from_u64(501), InterlinguaId::from_u64(502)],
+                vec![InterlinguaId::from_stored_u64(501), InterlinguaId::from_stored_u64(502)],
             )],
         })
         .await

@@ -36,17 +36,17 @@ pub struct SearchContext<'a> {
 ///
 /// Each backend handles one `QueryIntent`. The orchestrator iterates registered
 /// backends and calls `matches` + `search` without branching on implementation.
-///
-/// M10.3: owned backends are also `fluent_wvr::Component`s and register
-/// through `RegisteredBackend` (native dispatch view + uniform handle, one
-/// allocation). Invocation stays native (`matches` + `search` through the
-/// ladder): `search` needs a live `SearchContext` (storage/embedder/NLP/
-/// filter refs) that no handoff channel can carry, and a `GuidanceDoc`
-/// JSON round-trip per dispatch would buy nothing. Borrowed index backends
-/// (`Lemma`/`Fts`/`Vector`) implement this trait natively only — uniform
-/// handles require `'static` (`as_any`); they gain handles via an owned
-/// adapter if a registrar ever appears (no speculative wrapper today).
+/// Backends are deliberately not `Component`s: `search` needs a live
+/// `SearchContext` (storage/embedder/NLP/filter refs) that no handoff
+/// channel can carry, so invocation stays native. Registration pairs the
+/// native dispatch view with an inventory-only adapter handle
+/// (`RegisteredBackend`): names and schema stay queryable, execution
+/// stays native.
 pub trait SearchBackend: Send + Sync {
+    /// Stable handle name (`backend.identifier`).
+    fn name(&self) -> &'static str;
+    /// Inventory slug (`identifier`).
+    fn kind(&self) -> &'static str;
     /// Returns true if this backend handles the given intent.
     fn matches(&self, intent: QueryIntent) -> bool;
 
@@ -82,6 +82,12 @@ pub trait SearchBackend: Send + Sync {
 pub struct IdentifierBackend;
 
 impl SearchBackend for IdentifierBackend {
+    fn name(&self) -> &'static str {
+        "backend.identifier"
+    }
+    fn kind(&self) -> &'static str {
+        "identifier"
+    }
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(intent, QueryIntent::SingleIdentifier)
     }
@@ -123,6 +129,12 @@ impl SearchBackend for IdentifierBackend {
 pub struct KeywordBackend;
 
 impl SearchBackend for KeywordBackend {
+    fn name(&self) -> &'static str {
+        "backend.keyword"
+    }
+    fn kind(&self) -> &'static str {
+        "keyword"
+    }
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(
             intent,
@@ -169,6 +181,12 @@ impl SearchBackend for KeywordBackend {
 pub struct ConceptBackend;
 
 impl SearchBackend for ConceptBackend {
+    fn name(&self) -> &'static str {
+        "backend.concept"
+    }
+    fn kind(&self) -> &'static str {
+        "concept"
+    }
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(intent, QueryIntent::Conceptual | QueryIntent::HowTo)
     }
@@ -223,6 +241,12 @@ impl SearchBackend for ConceptBackend {
 pub struct FilePathBackend;
 
 impl SearchBackend for FilePathBackend {
+    fn name(&self) -> &'static str {
+        "backend.filepath"
+    }
+    fn kind(&self) -> &'static str {
+        "filepath"
+    }
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(intent, QueryIntent::FilePath)
     }
@@ -259,6 +283,12 @@ impl SearchBackend for FilePathBackend {
 pub struct GeneralBackend;
 
 impl SearchBackend for GeneralBackend {
+    fn name(&self) -> &'static str {
+        "backend.general"
+    }
+    fn kind(&self) -> &'static str {
+        "general"
+    }
     fn matches(&self, intent: QueryIntent) -> bool {
         matches!(intent, QueryIntent::GeneralSearch)
     }
@@ -293,74 +323,69 @@ impl SearchBackend for GeneralBackend {
     }
 }
 
-// --- M10.2: uniform handles (additive; native `search` untouched) ----------
+// --- Uniform handles: native dispatch, inventory-only Component ---------
 //
-// Each backend is a `fluent_wvr::Component` so the orchestrator can hold
-// `Arc<dyn Component>` handles. Unlike formatters, search backends cannot
-// run standalone: `search` needs a live `SearchContext` (storage,
-// embedder, NLP, LLM filter refs) that no handoff channel can carry, so
-// `execute` documents the native entry point and the orchestrator
-// downcasts to `SearchBackend` for dispatch (zero round-trip cost,
-// byte-identical arbitration).
+// Backends are not `Component`s: `search` needs a live `SearchContext`
+// that no handoff channel can carry, so `execute` can never run one.
+// Each registration therefore pairs the native dispatch view with an
+// inventory-only adapter handle carrying the backend's name and schema.
+// Dispatch stays native (zero round-trip cost, byte-identical
+// arbitration); the handle answers inventory, never execution.
 
-macro_rules! impl_search_backend_component {
-    ($type:ty, $name:literal, $backend:literal) => {
-        impl WorkUnit for $type {
-            fn name(&self) -> &str {
-                $name
-            }
-            fn depends(&self) -> &[ArcIntern<str>] {
-                &[]
-            }
-            fn provides(&self) -> &[ArcIntern<str>] {
-                &[]
-            }
-            fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-                Err(WorkError::Execution(
-                    concat!(
-                        $name,
-                        " runs through QueryEngine dispatch: downcast the",
-                        " handle to SearchBackend and call search natively"
-                    )
-                    .into(),
-                ))
-            }
-        }
-
-        impl Describable for $type {
-            fn describe(&self) -> serde_json::Value {
-                serde_json::json!({
-                    "kind": "search_backend",
-                    "backend": $backend,
-                    "name": $name,
-                })
-            }
-        }
-
-        fluent_wvr::impl_fieldless!($type);
-        fluent_wvr::impl_component!($type);
-    };
+/// Inventory-only `Component` for one registered backend.
+///
+/// Never executes a search: `execute` reports the native entry point.
+/// The orchestrator dispatches through `SearchBackend::search` and reads
+/// names and schema through this handle.
+struct BackendInventory {
+    name: &'static str,
+    kind: &'static str,
 }
 
-impl_search_backend_component!(IdentifierBackend, "backend.identifier", "identifier");
-impl_search_backend_component!(KeywordBackend, "backend.keyword", "keyword");
-impl_search_backend_component!(ConceptBackend, "backend.concept", "concept");
-impl_search_backend_component!(FilePathBackend, "backend.filepath", "filepath");
-impl_search_backend_component!(GeneralBackend, "backend.general", "general");
+impl WorkUnit for BackendInventory {
+    fn name(&self) -> &str {
+        self.name
+    }
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        Err(WorkError::Execution(format!(
+            "{} runs through QueryEngine native dispatch: call SearchBackend::search; \
+             this handle is inventory only",
+            self.name
+        )))
+    }
+}
 
-/// One registered backend: native dispatch view + uniform control-plane view.
+impl Describable for BackendInventory {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "search_backend",
+            "backend": self.kind,
+            "name": self.name,
+        })
+    }
+}
+
+fluent_wvr::impl_fieldless!(BackendInventory);
+fluent_wvr::impl_component!(BackendInventory);
+
+/// One registered backend: native dispatch view + inventory handle.
 ///
-/// Built only from owned `T: SearchBackend + Component` (one `Arc<T>`
-/// shared as two fat pointers), so both views always agree. The
-/// orchestrator dispatches through `backend` (ladder, byte-identical) and
-/// inventories through `component`. Borrowed backends cannot register
-/// (uniform handles require `'static`); custom owned backends implement
-/// `Component` alongside `SearchBackend` (see `CountingBackend` in the
-/// engine tests for the minimal shape).
+/// Built from any owned `T: SearchBackend`: the orchestrator dispatches
+/// through `backend` (ladder, byte-identical) and inventories through
+/// `component` (a `ComponentAdapter` whose execute reports native
+/// dispatch without pretending to run). Borrowed backends cannot
+/// register (uniform handles require `'static`); custom owned backends
+/// implement `name`/`kind` alongside `matches`/`search`.
 pub struct RegisteredBackend {
     /// Native dispatch (`matches` + `search` through the ladder).
     pub backend: std::sync::Arc<dyn SearchBackend>,
-    /// Uniform control-plane handle (inventory, supervision, config).
+    /// Inventory handle (name, schema, fieldless config surface).
     pub component: std::sync::Arc<dyn Component>,
 }
 
@@ -368,12 +393,30 @@ impl RegisteredBackend {
     /// Register one owned backend behind both views.
     pub fn new<T>(backend: T) -> Self
     where
-        T: SearchBackend + Component + 'static,
+        T: SearchBackend + 'static,
     {
         let shared: std::sync::Arc<T> = std::sync::Arc::new(backend);
+        let inventory = BackendInventory {
+            name: shared.name(),
+            kind: shared.kind(),
+        };
+        let component: std::sync::Arc<dyn Component> = std::sync::Arc::new(
+            fluent_wvr::wrapper::ComponentAdapter::new(
+                std::sync::Arc::new(inventory) as std::sync::Arc<dyn Component>
+            )
+            .with_execute_override(std::sync::Arc::new({
+                let name = shared.name();
+                move |_ctx: &WorkContext| {
+                    Err(WorkError::Execution(format!(
+                        "{name} runs through QueryEngine native dispatch: call \
+                         SearchBackend::search; this handle is inventory only"
+                    )))
+                }
+            })),
+        );
         Self {
-            backend: shared.clone(),
-            component: shared,
+            backend: shared,
+            component,
         }
     }
 }
@@ -877,87 +920,119 @@ mod tests {
         );
     }
 
-    // --- M10.2: uniform-handle contract ------------------------------------
+    // --- Uniform-handle contract (Option B: honest handles) ----------------
+    //
+    // Backends are not `Component`s: `execute` cannot run without a live
+    // `SearchContext`, so each registration pairs the native dispatch view
+    // with an inventory-only adapter handle. These tests pin that shape.
 
-    use fluent_wvr::{Component, FieldAccess, WorkContext};
+    use fluent_wvr::{FieldAccess, WorkContext};
 
-    #[test]
-    fn m10_search_backend_handles_carry_names_and_schema() {
-        let handles: Vec<(&str, &str, std::sync::Arc<dyn Component>)> = vec![
-            (
-                "backend.identifier",
-                "identifier",
-                std::sync::Arc::new(IdentifierBackend),
-            ),
-            (
-                "backend.keyword",
-                "keyword",
-                std::sync::Arc::new(KeywordBackend),
-            ),
-            (
-                "backend.concept",
-                "concept",
-                std::sync::Arc::new(ConceptBackend),
-            ),
-            (
-                "backend.filepath",
-                "filepath",
-                std::sync::Arc::new(FilePathBackend),
-            ),
-            (
-                "backend.general",
-                "general",
-                std::sync::Arc::new(GeneralBackend),
-            ),
-        ];
-        for (name, backend, handle) in &handles {
-            assert_eq!(handle.name(), *name);
-            assert_eq!(
-                fluent_wvr::Describable::describe(handle.as_ref())["backend"],
-                serde_json::json!(*backend)
-            );
+    /// A `SearchBackend` with no `Component` impl must still register:
+    /// the uniform contract never required executability.
+    struct SearchOnlyBackend;
+
+    impl SearchBackend for SearchOnlyBackend {
+        fn name(&self) -> &'static str {
+            "backend.search-only"
+        }
+        fn kind(&self) -> &'static str {
+            "search-only"
+        }
+        fn matches(&self, intent: QueryIntent) -> bool {
+            matches!(intent, QueryIntent::GeneralSearch)
+        }
+        fn search(
+            &self,
+            _query: &str,
+            _doc: &GuidanceDoc,
+            _ctx: &SearchContext<'_>,
+        ) -> Result<Vec<Stage>, QueryEngineError> {
+            Err(QueryEngineError::NoResults)
         }
     }
 
     #[test]
-    fn m10_search_backend_execute_documents_native_dispatch() {
-        // No live SearchContext travels the handoff: execute guides back to
-        // downcast-native dispatch instead of failing opaquely.
-        let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(IdentifierBackend);
-        let err = handle
+    fn registered_backends_report_names_and_schema() {
+        let registrations = [
+            RegisteredBackend::new(IdentifierBackend),
+            RegisteredBackend::new(SearchOnlyBackend),
+        ];
+        let names: Vec<String> = registrations
+            .iter()
+            .map(|r| r.component.name().to_string())
+            .collect();
+        assert_eq!(names, vec!["backend.identifier", "backend.search-only"]);
+        let kinds: Vec<serde_json::Value> = registrations
+            .iter()
+            .map(|r| fluent_wvr::Describable::describe(r.component.as_ref())["backend"].clone())
+            .collect();
+        assert_eq!(kinds, vec![serde_json::json!("identifier"), serde_json::json!("search-only")]);
+    }
+
+    #[test]
+    fn registered_execute_reports_native_dispatch() {
+        // No live SearchContext travels the handoff: execute says where
+        // to go instead of pretending to run.
+        let registration = RegisteredBackend::new(IdentifierBackend);
+        let err = registration
+            .component
             .execute(&WorkContext::default())
-            .expect_err("native-only");
+            .expect_err("inventory-only");
         match err {
             fluent_wvr::WorkError::Execution(message) => {
-                assert!(message.contains("downcast"), "{message}");
+                assert!(message.contains("native dispatch"), "{message}");
             }
             other => panic!("expected Execution, got {other:?}"),
         }
     }
 
     #[test]
-    fn m10_search_backend_handle_downcasts_to_native_dispatch() {
-        // The uniform handle recovers the native backend: arbitration and
-        // outputs stay byte-identical (no serialize round-trip).
-        let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(IdentifierBackend);
-        let native = fluent_wvr::component_downcast_ref::<IdentifierBackend>(handle.as_ref())
-            .expect("downcast");
-        assert!(native.matches(QueryIntent::SingleIdentifier));
-        let stages = native
-            .search(
-                "helloWorld",
-                &make_test_doc(),
-                &ctx_with_filter(&noop_filter()),
-            )
-            .expect("search");
-        assert!(!stages.is_empty());
+    fn registered_inventory_is_fieldless() {
+        let registration = RegisteredBackend::new(KeywordBackend);
+        let mut component = registration.component;
+        assert_eq!(component.field_names(), &[] as &[&str]);
+        assert!(component.get_field("intent").is_err());
+        assert!(component.set_field("intent", "x").is_err());
     }
 
+    /// Source guard: no `component_downcast_ref::<*Backend>` may exist in
+    /// the guidance tree — native dispatch needs no downcast, and the
+    /// router pipeline is the only sanctioned exception (other crate).
     #[test]
-    fn m10_search_backends_are_fieldless() {
-        let mut handle = KeywordBackend;
-        assert_eq!(handle.field_names(), &[] as &[&str]);
-        assert!(handle.get_field("intent").is_err());
-        assert!(handle.set_field("intent", "x").is_err());
+    fn no_backend_downcast_in_guidance_tree() {
+        fn rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).expect("read_dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    rs_files(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rs_files(&root, &mut files);
+        // Split the needle so this guard's own source never matches it.
+        let needle = ["component_downcast_ref", "::<"].concat();
+        let mut hits = Vec::new();
+        for file in files {
+            let content = std::fs::read_to_string(&file).expect("read rs file");
+            for (i, line) in content.lines().enumerate() {
+                let code = line.trim_start();
+                if code.starts_with("//") {
+                    continue;
+                }
+                if code.contains(&needle) && code.contains("Backend") {
+                    hits.push(format!("{}:{}: {code}", file.display(), i + 1));
+                }
+            }
+        }
+        assert!(
+            hits.is_empty(),
+            "backend downcasts forbidden in guidance (dispatch natively):\n{}",
+            hits.join("\n")
+        );
     }
 }

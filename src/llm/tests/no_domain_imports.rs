@@ -116,3 +116,114 @@ fn protocol_types_still_resolve_via_fluent_llm() {
     assert_send_sync::<fluent_llm::LlmRequestQueue>();
     let _ = fluent_llm::LlmError::NoResponse;
 }
+
+/// Consumer crates no shared crate may import (lib names): guidance and
+/// coral front-ends, the router, orator/protopyne/spacy/egui/onnx
+/// surfaces, the memory plugin, and the WASM IPC boundary. Shared
+/// crates depending inward on any of these would invert the dependency
+/// direction (consumers compose shared primitives, never the reverse).
+const CONSUMER_FORBIDDEN: &[&str] = &[
+    "guidance_core",
+    "coral_context",
+    "fluent_router",
+    "orator",
+    "orator_agent",
+    "orator_audio",
+    "orator_cli",
+    "orator_daemon",
+    "orator_desktop",
+    "orator_memory",
+    "orator_models",
+    "orator_supervise",
+    "orator_testkit",
+    "orator_voice",
+    "protopyne_types",
+    "protopyne_kernels",
+    "protopyne_store",
+    "protopyne_strategy",
+    "protopyne_venue",
+    "protopyne_server",
+    "protopyne_chart_model",
+    "protopyne_chart_scale",
+    "protopyne_view",
+    "protopyne_egui",
+    "spacy_rs",
+    "fluent_egui",
+    "fluent_onnx",
+    "memory_plugin",
+    "wasm_ipc",
+];
+
+/// Shared-crate roots checked for consumer-direction imports (the
+/// `llm`/`common-core` pair keeps its stricter dedicated test above).
+const SHARED_ROOTS: &[&str] = &[
+    "../types/src",
+    "../dag/src",
+    "../db/src",
+    "../fluent-wvr/src",
+    "../fluent-wvr-macros/src",
+    "../fluent-concurrency/src",
+    "../search-vector/src",
+    "../concept/src",
+    "../knowledge/src",
+    "../rdf/src",
+    "../vector-math/src",
+    "../wasm_ipc/src",
+];
+
+fn is_consumer_use(line: &str) -> Option<String> {
+    let t = line.trim_start();
+    if t.starts_with("//") || t.starts_with('*') {
+        return None;
+    }
+    let rest = t
+        .strip_prefix("pub use ")
+        .or_else(|| t.strip_prefix("use "))?;
+    let head = rest.split([':', ';', ' ', '{']).next().unwrap_or("").trim();
+    CONSUMER_FORBIDDEN
+        .iter()
+        .find(|&&banned| head == banned)
+        .map(std::string::ToString::to_string)
+}
+
+#[test]
+fn no_consumer_imports_in_shared_crates() {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut hits = Vec::new();
+    for root in SHARED_ROOTS {
+        let dir = manifest.join(root);
+        if !dir.is_dir() {
+            continue;
+        }
+        let mut files = Vec::new();
+        rs_files(&dir, &mut files);
+        for f in files {
+            let content = std::fs::read_to_string(&f).expect("read rs file");
+            for (i, line) in content.lines().enumerate() {
+                // `use crate::…` / `use super::…` / `use self::…` are
+                // intra-crate paths, never consumer imports.
+                let t = line.trim_start();
+                if t.starts_with("use crate::")
+                    || t.starts_with("use super::")
+                    || t.starts_with("use self::")
+                    || t.starts_with("pub use crate::")
+                {
+                    continue;
+                }
+                if let Some(banned) = is_consumer_use(line) {
+                    hits.push(format!(
+                        "{}:{}: shared crate uses consumer `{}`",
+                        f.display(),
+                        i + 1,
+                        banned
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "shared crates must not depend on consumers:\n{}",
+        hits.join("\n")
+    );
+}

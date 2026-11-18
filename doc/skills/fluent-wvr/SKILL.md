@@ -311,8 +311,8 @@ beyond its return value:
 - NO mutation of shared state without synchronization.
 
 Violations defeat the supervisor's timeout and retry invariants. This is why
-`DbWorkUnit` (Pattern 8) offloads blocking rusqlite work to a blocking thread
-instead of doing it inline.
+blocking rusqlite work is offloaded to a blocking thread instead of
+running inline in `execute`.
 
 **What a violation costs (the zombie).** The per-attempt timeout bounds the
 supervisor's await/retry loop, never a blocking body: a body that sleeps or
@@ -1246,7 +1246,8 @@ pub trait WorkUnit: Send + Sync {
 
 ### Implementation: native command
 
-`CommandUnit` in `dag/src/work_unit.rs`. Note that `WorkContext` does
+A native command unit (illustrative sketch — the `dag::CommandUnit`
+spelling is pruned). Note that `WorkContext` does
 **not** carry a `library` or `input` field — those belong in
 component-specific configuration or in the `data` payload of
 `WorkOutput`. `WorkError` does not have `ExecutionFailed` or

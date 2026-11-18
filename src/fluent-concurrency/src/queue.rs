@@ -3,6 +3,8 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Mutex;
 
+use common_core::capacity::nonzero_capacity;
+
 use crate::pool::PoolError;
 use crate::sync::lock;
 
@@ -181,13 +183,16 @@ pub struct BoundedPriorityQueue<T> {
 
 impl<T: Send + 'static> BoundedPriorityQueue<T> {
     /// Creates a new bounded priority queue with the given capacity.
-    pub fn new(capacity: usize) -> Self {
-        debug_assert!(capacity > 0, "queue capacity must be >0");
-        Self {
+    ///
+    /// Refuses zero capacity: a zero-slot queue could never hand an item
+    /// from a blocked `push_wait` to a `pop`, hanging both sides.
+    pub fn new(capacity: usize) -> Result<Self, String> {
+        let capacity = nonzero_capacity(capacity, "priority queue")?;
+        Ok(Self {
             inner: Mutex::new(PriorityQueue::new()),
-            capacity,
+            capacity: capacity.get(),
             waker: crate::close::CloseWaker::new(),
-        }
+        })
     }
 
     /// Pushes an item with the given priority. Returns `Err(Full)` if at
@@ -213,7 +218,6 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
             if self.waker.is_closed() {
                 return Err(PoolError::Closed);
             }
-            let waited = self.waker.space_available();
             {
                 let mut inner = lock(&self.inner);
                 if inner.len() < self.capacity {
@@ -222,7 +226,14 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
                     return Ok(());
                 }
             }
-            waited.await;
+            // Same full/closed verdicts, parked on the shared helper so a
+            // space wake in the check-then-park window still releases us.
+            let capacity = self.capacity;
+            self.waker
+                .wait_while(crate::close::WaitChannel::Space, &self.inner, |inner| {
+                    inner.len() >= capacity && !self.waker.is_closed()
+                })
+                .await;
         }
     }
 
@@ -231,7 +242,6 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
     /// (the same shape as `Queue::pop`).
     pub async fn pop(&self) -> Option<T> {
         loop {
-            let notified = self.waker.items_available();
             {
                 let mut inner = lock(&self.inner);
                 if let Some(item) = inner.pop() {
@@ -242,7 +252,13 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
                     return None;
                 }
             }
-            notified.await;
+            // Same empty/closed verdicts, parked on the shared helper so an
+            // item wake or close in the check-then-park window still wakes us.
+            self.waker
+                .wait_while(crate::close::WaitChannel::Items, &self.inner, |inner| {
+                    inner.is_empty() && !self.waker.is_closed()
+                })
+                .await;
         }
     }
 

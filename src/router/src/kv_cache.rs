@@ -317,12 +317,12 @@ impl HotSnapshotIndex {
 ///   (in-process LRU, capacity-bounded).
 /// - **Cold tier** (this type): a named, in-memory TTL predicate sweep
 ///   (`evict` retains entries with `age < ttl_secs`). It is *not* delegated
-///   to `db::cache::TtlCache`: that type is SQLite-backed with string
+///   to `db::cache::SqliteTtlCache`: that type is SQLite-backed with string
 ///   key→payload rows and `max_entries` LRU, while this tier holds structured
 ///   `KvSnapshot` values keyed by `(model, adapter, session)` with no entry
 ///   cap and fork-layout path derivation. Delegating would change durability,
 ///   key/value shapes, and capacity behavior. The one-second boundary
-///   difference (`age == ttl` evicts here; `TtlCache::get` keeps while
+///   difference (`age == ttl` evicts here; `SqliteTtlCache::get` keeps while
 ///   `now <= ts + ttl`) is preserved verbatim — unifying it would be a
 ///   behavior change.
 /// - **Residency ordering** (`instances::pool`): shared

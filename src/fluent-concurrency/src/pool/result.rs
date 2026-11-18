@@ -4,6 +4,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use common_core::capacity::nonzero_capacity;
 use fluent_wvr::Runtime;
 use thiserror::Error;
 use tokio::sync::Notify;
@@ -55,6 +56,9 @@ where
 {
     /// Creates a new result pool with `cap` workers and a queue of `queue_capacity`.
     /// The handler receives a job and returns `Result<R, E>`.
+    ///
+    /// Panics on zero `cap` or zero `queue_capacity`: no workers would
+    /// drain submits, and no slots would hold them, hanging submitters.
     #[allow(clippy::needless_pass_by_value)]
     pub fn new<F, Fut>(
         runtime: Arc<dyn Runtime>,
@@ -66,7 +70,11 @@ where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<R, E>> + Send,
     {
-        let queue: Arc<Queue<WrappedJob<T, R, E>>> = Arc::new(Queue::new(queue_capacity));
+        let cap = nonzero_capacity(cap, "result pool worker")
+            .unwrap_or_else(|refused| panic!("{refused}"))
+            .get();
+        let queue: Arc<Queue<WrappedJob<T, R, E>>> =
+            Arc::new(Queue::new(queue_capacity).unwrap_or_else(|refused| panic!("{refused}")));
         let shutdown = Arc::new(Notify::new());
         let handler = Arc::new(handler);
         let workers = spawn_queue_workers(runtime, cap, &queue, &shutdown, {

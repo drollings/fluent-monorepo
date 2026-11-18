@@ -1,19 +1,19 @@
-//! `KnowledgeCapability` implementation for the router's shared `ContentNodeStore`.
+//! `KnowledgeStore` implementation for the router's shared `ContentNodeStore`.
 //!
 //! The router server calls `ContentNodeStore` **directly** on the hot path — no
 //! gating, no trait indirection. This trait impl is the boundary for
 //! embedded/cross-crate consumers that reach the store through
-//! `fluent_types::KnowledgeCapability`; each method asserts a router-owned
+//! `fluent_types::KnowledgeStore`; each method asserts a router-owned
 //! capability token (`RouterKnowledgeCapability`) in the current task-local,
 //! mirroring `fluent_db::capability::check_db_capability`.
 
-use fluent_types::{ContentNode, KnnHit, KnowledgeCapability, KnowledgeError, NodeId};
+use fluent_types::{ContentNode, KnnHit, KnowledgeError, KnowledgeStore, NodeId};
 use fluent_wvr::capability::{check_capability, Capability};
 
 use crate::ledger::LedgerError;
 use crate::node_store::ContentNodeStore;
 
-/// Router-owned capability token gating the `KnowledgeCapability` surface.
+/// Router-owned capability token gating the `KnowledgeStore` surface.
 pub struct RouterKnowledgeCapability;
 
 impl Capability for RouterKnowledgeCapability {
@@ -33,7 +33,7 @@ fn ledger_to_knowledge(e: &LedgerError) -> KnowledgeError {
     }
 }
 
-impl KnowledgeCapability for ContentNodeStore {
+impl KnowledgeStore for ContentNodeStore {
     fn get_node(&self, node_id: NodeId) -> Option<ContentNode> {
         if check_capability(&RouterKnowledgeCapability).is_err() {
             return None;

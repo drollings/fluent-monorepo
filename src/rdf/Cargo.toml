@@ -12,5 +12,8 @@ name = "guidance_rdf"
 common-core = { path = "../common-core" }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+fluent-types = { path = "../types" }
+
 [lints]
 workspace = true

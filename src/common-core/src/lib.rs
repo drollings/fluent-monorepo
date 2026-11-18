@@ -40,7 +40,6 @@ pub mod envelope;
 pub mod error;
 pub mod error_context;
 pub mod format;
-pub mod git;
 pub mod golden;
 pub mod hash;
 #[cfg(feature = "http")]
@@ -85,7 +84,8 @@ pub use hash::{
 pub use interner::CapabilityRegistry;
 pub use io::{
     ensure_dir, ensure_dir_or_panic, make_path_absolute, mtime, read_file_alloc,
-    read_file_alloc_err, read_to_string_err, resolve_path, strip_path_prefix, write_atomic,
+    read_file_alloc_err, read_file_alloc_opt, read_file_alloc_result, read_to_string_err,
+    resolve_path, strip_path_prefix, write_atomic,
 };
 pub use jsonrpc::{
     method_not_found, serve_stdio, JsonRpcError, JsonRpcHandler, JsonRpcRequest, JsonRpcResponse,
@@ -110,7 +110,7 @@ pub use string::{
     looks_like_identifier, lower_into, slugify, strip_boilerplate, strip_nl_prefix, trim_left,
     trim_right, truncate_at_sentence, AnsiStripper, IdentifierKind, STOP_WORDS,
 };
-pub use time::now_secs;
+pub use time::{now_ns, now_secs};
 pub use walk::{
     collect_extensions, should_skip_dir, sniff_is_binary, walk_files, walk_files_filtered,
     SkipReason, WalkEntry, WalkFilter, BINARY_CONTROL_CHAR_RATIO, BINARY_SNIFF_BYTES,

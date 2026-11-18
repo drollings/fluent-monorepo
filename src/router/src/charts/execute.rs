@@ -118,6 +118,10 @@ pub struct ChartExecOptions {
     /// consecutive failures demote the chart, a pass promotes a draft.
     /// `None` disables the recording (executor stays decoupled).
     pub health: Option<Arc<ChartStore>>,
+    /// When true, the batch and every target context run with empty
+    /// capabilities (explicit deny). Default false inherits the
+    /// caller's capability set from `base_ctx`.
+    pub unprivileged: bool,
 }
 
 impl Default for ChartExecOptions {
@@ -132,6 +136,7 @@ impl Default for ChartExecOptions {
             fit: None,
             score: None,
             health: None,
+            unprivileged: false,
         }
     }
 }
@@ -215,7 +220,8 @@ impl ChartExecutionPlan {
     /// target's dependents never become ready (they land in `cancelled`).
     ///
     /// `base_ctx` must carry the request (`request`) and, when the chart has
-    /// entity deps, the bound entities (structured `entities`).
+    /// entity deps, the bound entities (structured `entities`). Capabilities
+    /// flow from `base_ctx.caps` unless `opts.unprivileged` denies them.
     pub async fn execute(
         &self,
         base_ctx: &WorkContext,
@@ -262,7 +268,13 @@ impl ChartExecutionPlan {
 
             let mut batch = SupervisedBatch::new_with_config(
                 opts.runtime.clone(),
-                CapabilitySet::default(),
+                // Caller caps flow into the batch by default; the explicit
+                // opt-out runs the chart with an empty set instead.
+                if opts.unprivileged {
+                    CapabilitySet::default()
+                } else {
+                    base_ctx.caps.clone()
+                },
                 SupervisedBatchConfig {
                     is_retryable: chart_retry_predicate,
                     ..SupervisedBatchConfig::default()
@@ -273,7 +285,9 @@ impl ChartExecutionPlan {
                 ctx.max_retries = opts.max_retries;
                 ctx.timeout_ms = opts.timeout_ms;
                 ctx.rt = opts.runtime.clone();
-                ctx.caps = CapabilitySet::default();
+                if opts.unprivileged {
+                    ctx.caps = CapabilitySet::default();
+                }
 
                 let wrapped: Arc<dyn Component> = match &opts.metrics {
                     Some(hist) => Arc::new(Instrumented::with_metrics(

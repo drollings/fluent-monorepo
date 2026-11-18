@@ -23,6 +23,12 @@ pub struct LemmaBackend<'a> {
 }
 
 impl SearchBackend for LemmaBackend<'_> {
+    fn name(&self) -> &'static str {
+        "backend.lemma"
+    }
+    fn kind(&self) -> &'static str {
+        "lemma"
+    }
     fn matches(&self, _intent: QueryIntent) -> bool {
         true
     }

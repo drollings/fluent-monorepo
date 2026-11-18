@@ -27,16 +27,16 @@ fn doc_with(texts: &[(&str, f64, Option<InterlinguaId>)]) -> Doc {
 #[test]
 fn lemma_grep_returns_hits_with_confidence_and_lemma_id() {
     let doc = doc_with(&[
-        ("Show", 0.9, Some(InterlinguaId::from_u64(7))),
+        ("Show", 0.9, Some(InterlinguaId::from_stored_u64(7))),
         ("me", 0.8, None),
         ("the", 0.7, None),
-        ("report", 0.6, Some(InterlinguaId::from_u64(9))),
+        ("report", 0.6, Some(InterlinguaId::from_stored_u64(9))),
     ]);
     let hits = lemma_grep(&doc, "show");
     assert_eq!(hits.len(), 1);
     let hit = &hits[0];
     assert_eq!(hit.lemma, "show");
-    assert_eq!(hit.lemma_id, Some(InterlinguaId::from_u64(7)));
+    assert_eq!(hit.lemma_id, Some(InterlinguaId::from_stored_u64(7)));
     assert!((hit.parse_confidence - 0.9).abs() < 1e-12);
     // Byte span of the first token in "Show me the report".
     assert_eq!(hit.span, Span { start: 0, end: 4 });

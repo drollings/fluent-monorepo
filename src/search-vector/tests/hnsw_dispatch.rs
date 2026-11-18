@@ -60,7 +60,7 @@ fn unbuilt_index_matches_brute_force_byte_for_byte() {
 fn dispatch_gate_threshold_boundary() {
     // Below/at the threshold a built index still routes to brute force
     // (`hnsw_search` abstains); above it the probe runs.
-    use common_core::constants::DEFAULT_HNSW_THRESHOLD;
+    use crate::hnsw::DEFAULT_HNSW_THRESHOLD;
     let db = dispatch_db();
     insert_embedded(&db, 2);
     let query = dispatch_vec(0);

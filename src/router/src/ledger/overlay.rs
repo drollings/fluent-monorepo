@@ -244,7 +244,7 @@ impl OverlayCandidateStore {
             .map(|(token, entity_id, text_hash)| {
                 Ok(EntityStampRow {
                     token: token as usize,
-                    entity_id: InterlinguaId::from_u64(entity_id as u64),
+                    entity_id: InterlinguaId::from_stored_u64(entity_id as u64),
                     text_hash: u64::from_str_radix(&text_hash, 16)
                         .map_err(|e| LedgerError::Db(e.to_string()))?,
                 })
@@ -381,7 +381,7 @@ fn row_to_candidate(row: CandidateRow) -> OverlayCandidate {
         entity_id: if entity_id == 0 {
             None
         } else {
-            Some(InterlinguaId::from_u64(entity_id as u64))
+            Some(InterlinguaId::from_stored_u64(entity_id as u64))
         },
         score,
         source,

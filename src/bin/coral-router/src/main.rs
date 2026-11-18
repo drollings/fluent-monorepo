@@ -1243,7 +1243,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             // genuine entities (`is_subclass_of`), resolved through the store.
             let entity_root = concepts
                 .resolve_yago_iri(fluent_router::overlay::canonical::ENTITY_ROOT_IRI)
-                .unwrap_or_else(|_| fluent_types::InterlinguaId::from_u64(0x0100_0000_0000_0000));
+                .unwrap_or_else(|_| fluent_types::InterlinguaId::from_stored_u64(0x0100_0000_0000_0000));
             // ColBERT entity-link scorer (the `colbert` role): baked over the
             // concept store's labels at boot. Fail-open — the colbert role
             // unconfigured/unregistered → empty scorer, and the worker yields

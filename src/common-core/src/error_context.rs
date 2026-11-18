@@ -109,6 +109,12 @@ impl HeapErrorContext {
     }
 }
 
+impl std::error::Error for HeapErrorContext {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.cause.as_ref())
+    }
+}
+
 impl fmt::Display for HeapErrorContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}", self.operation)?;

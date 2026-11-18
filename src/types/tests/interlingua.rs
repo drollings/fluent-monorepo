@@ -33,10 +33,18 @@ fn local_id_of_truncates_to_48_bits() {
 #[test]
 fn roundtrip_via_u64_and_i64() {
     let id = InterlinguaId::new(InterlinguaNamespace::SpacyLemma, 42);
-    assert_eq!(InterlinguaId::from_u64(id.as_u64()), id);
+    assert_eq!(InterlinguaId::from_stored_u64(id.as_u64()), id);
     assert_eq!(InterlinguaId::from_i64(id.as_i64()), Some(id));
     // Negative input never reconstructs.
     assert_eq!(InterlinguaId::from_i64(-1), None);
+}
+
+/// The deprecated `from_u64` spelling still resolves while the shim lives.
+#[test]
+#[allow(deprecated)]
+fn deprecated_from_u64_still_resolves() {
+    let id = InterlinguaId::new(InterlinguaNamespace::SpacyLemma, 42);
+    assert_eq!(InterlinguaId::from_u64(id.as_u64()), id);
 }
 
 #[test]

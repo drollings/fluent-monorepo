@@ -21,7 +21,7 @@ fn corrections() -> Vec<Correction> {
 #[test]
 fn record_and_query_roundtrip() {
     let (_store, idx) = open();
-    let lemma = InterlinguaId::from_u64(0x0300_0000_0000_0001);
+    let lemma = InterlinguaId::from_stored_u64(0x0300_0000_0000_0001);
     assert!(idx.query_previous_corrections(lemma, None).is_none());
     idx.record_correction(lemma, None, &corrections())
         .expect("record");
@@ -29,16 +29,16 @@ fn record_and_query_roundtrip() {
     assert_eq!(back, corrections());
     // A different lemma has no cached correction.
     assert!(idx
-        .query_previous_corrections(InterlinguaId::from_u64(0x0300_0000_0000_0002), None)
+        .query_previous_corrections(InterlinguaId::from_stored_u64(0x0300_0000_0000_0002), None)
         .is_none());
 }
 
 #[test]
 fn entity_scoped_patterns_do_not_collide() {
     let (_store, idx) = open();
-    let lemma = InterlinguaId::from_u64(0x0300_0000_0000_0001);
-    let entity_a = Some(InterlinguaId::from_u64(0x0100_0000_0000_0001));
-    let entity_b = Some(InterlinguaId::from_u64(0x0100_0000_0000_0002));
+    let lemma = InterlinguaId::from_stored_u64(0x0300_0000_0000_0001);
+    let entity_a = Some(InterlinguaId::from_stored_u64(0x0100_0000_0000_0001));
+    let entity_b = Some(InterlinguaId::from_stored_u64(0x0100_0000_0000_0002));
     idx.record_correction(lemma, entity_a, &corrections())
         .expect("a");
     assert!(idx.query_previous_corrections(lemma, entity_b).is_none());
@@ -48,8 +48,8 @@ fn entity_scoped_patterns_do_not_collide() {
 #[test]
 fn review_status_is_status_only_and_entity_id_is_real() {
     let (store, idx) = open();
-    let lemma = InterlinguaId::from_u64(0x0300_0000_0000_0001);
-    let entity = InterlinguaId::from_u64(0x0100_0000_0000_0009);
+    let lemma = InterlinguaId::from_stored_u64(0x0300_0000_0000_0001);
+    let entity = InterlinguaId::from_stored_u64(0x0100_0000_0000_0009);
     idx.record_correction(lemma, Some(entity), &corrections())
         .expect("record");
     let (entity_id, status): (i64, String) = store
@@ -71,7 +71,7 @@ fn review_status_is_status_only_and_entity_id_is_real() {
 #[test]
 fn record_upserts_instead_of_duplicating() {
     let (store, idx) = open();
-    let lemma = InterlinguaId::from_u64(0x0300_0000_0000_0001);
+    let lemma = InterlinguaId::from_stored_u64(0x0300_0000_0000_0001);
     idx.record_correction(lemma, None, &corrections())
         .expect("first");
     idx.record_correction(lemma, None, &corrections())

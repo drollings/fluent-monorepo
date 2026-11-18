@@ -369,7 +369,7 @@ fn policy_thresholds_use_canonical_unit_thresholds() {
     assert!((TaskRelevanceThreshold::new(0.15).unwrap().get() - 0.15).abs() < f64::EPSILON);
     assert_eq!(
         TaskRelevanceThreshold::new(2.0).unwrap_err(),
-        "TaskRelevanceThreshold 2 out of range"
+        "TaskRelevanceThreshold 2 out of 0.0..=1.0"
     );
 }
 

@@ -99,6 +99,25 @@ fn display_round_trip() {
     assert_eq!(InstanceId::parse(&id.to_string()).unwrap(), id);
 }
 
+/// Error wire strings stay byte-identical, and the error behaves as a
+/// `std::error::Error` object.
+#[test]
+fn instance_id_errors_behave_as_std_error_objects() {
+    fn assert_error<T: std::error::Error + Send + Sync + 'static>(_: &T) {}
+    let err = InstanceIdError::InvalidName("bad/name".to_string());
+    assert_error(&err);
+    assert_eq!(
+        err.to_string(),
+        "invalid instance name 'bad/name' (allowed: [A-Za-z0-9._-])"
+    );
+    assert_eq!(
+        InstanceIdError::MissingSeparator.to_string(),
+        "missing ':' separator"
+    );
+    let obj: &dyn std::error::Error = &err;
+    assert!(obj.source().is_none(), "leaf error has no deeper source");
+}
+
 #[test]
 fn from_str_round_trip() {
     let id: InstanceId = "model:instance".parse().unwrap();

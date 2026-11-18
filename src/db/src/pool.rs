@@ -19,6 +19,7 @@ use std::time::Duration;
 use rusqlite::Connection;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use common_core::capacity::nonzero_capacity;
 use common_core::sync::lock;
 
 use crate::error::DbError;
@@ -55,12 +56,31 @@ impl PoolConfig {
         }
     }
 
+    /// A `PoolConfig` with the default busy timeout, refusing zero size.
+    /// Prefer this over `new` for caller-supplied sizes: a zero-permit
+    /// pool would hang every `acquire` instead of serving connections.
+    pub fn try_new(size: usize) -> Result<Self, String> {
+        let size = nonzero_capacity(size, "pool")?;
+        Ok(Self {
+            size: size.get(),
+            ..Self::default()
+        })
+    }
+
     /// Override the `PRAGMA busy_timeout` (milliseconds).
     #[must_use]
     pub fn with_busy_timeout_ms(mut self, busy_timeout_ms: u64) -> Self {
         self.busy_timeout_ms = busy_timeout_ms;
         self
     }
+}
+
+/// Refuse a zero-size pool with a typed error: a zero-permit semaphore
+/// would hang every `acquire` instead of serving connections.
+fn refuse_zero_size(config: &PoolConfig) -> Result<(), DbError> {
+    nonzero_capacity(config.size, "pool")
+        .map(|_| ())
+        .map_err(DbError::Other)
 }
 
 /// Where the pool's connections point, so a replacement opened after a
@@ -100,6 +120,7 @@ impl SqlitePool {
     /// checkouts. It is routed to the shared-name path so an in-memory pool is
     /// coherent.
     pub fn open(path: &Path, config: &PoolConfig) -> Result<Self, DbError> {
+        refuse_zero_size(config)?;
         if path == Path::new(":memory:") {
             return Self::open_in_memory(config);
         }
@@ -128,6 +149,7 @@ impl SqlitePool {
     /// the `busy_timeout` (5s before `SQLITE_BUSY`) already mitigate this for
     /// the pool's traffic; do not re-architect around it.
     pub fn open_in_memory(config: &PoolConfig) -> Result<Self, DbError> {
+        refuse_zero_size(config)?;
         let name = shared_memory_name();
         let mut connections = Vec::with_capacity(config.size);
         for _ in 0..config.size {
@@ -363,10 +385,9 @@ impl SqlitePool {
     //
     // The async helpers above collect one `OwnedValue` per param so an owned
     // `IntoIterator` can cross the `spawn_blocking` boundary. Callers who are
-    // *already* inside a blocking op — a `with_conn`/`transaction` closure, a
-    // `PooledConnection` deref, or a `DbWorkUnit` store op — hold a
-    // `&Connection` on the current thread and should not pay that per-query
-    // allocation. These borrowed variants run the canonical `crate::query`
+    // *already* inside a blocking op — a `with_conn`/`transaction` closure or
+    // a `PooledConnection` deref — hold a `&Connection` on the current thread
+    // and should not pay that per-query allocation. These borrowed variants run the canonical `crate::query`
     // helpers against such a connection with borrowed `rusqlite::Params`
     // (`rusqlite::params![...]`, `[]`, a `ParamsFromIter`). No capability
     // token is re-checked: the connection was already checked out through a

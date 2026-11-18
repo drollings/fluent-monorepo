@@ -59,14 +59,17 @@ impl<'de> Deserialize<'de> for BoundedRounds {
     }
 }
 /// Tag for one validated unit-interval threshold: the consumer name used in
-/// validation errors plus that consumer's historical range suffix (kept
-/// per-tag so every alias preserves its exact error text).
+/// validation errors plus that consumer's historical range suffix. All tags
+/// share one suffix so every alias reports the same range text.
 pub trait ThresholdTag: Send + Sync + 'static {
     /// Consumer name in validation errors (e.g. `"SeverityThreshold"`).
     const NAME: &'static str;
-    /// Range suffix in validation errors (e.g. `"out of 0.0..=1.0"`).
-    const RANGE_SUFFIX: &'static str;
+    /// Range suffix in validation errors: the shared unit-interval text.
+    const RANGE_SUFFIX: &'static str = UNIT_RANGE_SUFFIX;
 }
+
+/// One shared range suffix for every unit-interval threshold error.
+pub const UNIT_RANGE_SUFFIX: &str = "out of 0.0..=1.0";
 
 /// One validated 0.0–1.0 threshold, parameterized by consumer tag. Replaces
 /// four hand-rolled newtypes; the old names survive as aliases below with
@@ -106,7 +109,6 @@ impl<'de, Tag: ThresholdTag> Deserialize<'de> for UnitThreshold<Tag> {
 pub struct SeverityTag;
 impl ThresholdTag for SeverityTag {
     const NAME: &'static str = "SeverityThreshold";
-    const RANGE_SUFFIX: &'static str = "out of 0.0..=1.0";
 }
 
 /// Tag for [`EscalationConfidence`].
@@ -115,7 +117,6 @@ impl ThresholdTag for SeverityTag {
 pub struct EscalationTag;
 impl ThresholdTag for EscalationTag {
     const NAME: &'static str = "EscalationConfidence";
-    const RANGE_SUFFIX: &'static str = "out of 0.0..=1.0";
 }
 
 /// Tag for [`TaskRelevanceThreshold`].
@@ -124,7 +125,6 @@ impl ThresholdTag for EscalationTag {
 pub struct TaskRelevanceTag;
 impl ThresholdTag for TaskRelevanceTag {
     const NAME: &'static str = "TaskRelevanceThreshold";
-    const RANGE_SUFFIX: &'static str = "out of range";
 }
 
 /// Tag for [`ProducerConfidenceThreshold`].
@@ -133,18 +133,22 @@ impl ThresholdTag for TaskRelevanceTag {
 pub struct ProducerConfidenceTag;
 impl ThresholdTag for ProducerConfidenceTag {
     const NAME: &'static str = "ProducerConfidenceThreshold";
-    const RANGE_SUFFIX: &'static str = "out of range";
 }
 
-/// Severity gate (0.0–1.0); default 0.7.
+/// Severity gate (0.0–1.0); default 0.7. Task-value gated: measured
+/// against labeled outcomes before it steers anything.
 pub type SeverityThreshold = UnitThreshold<SeverityTag>;
-/// Escalation gate (0.0–1.0); default 0.4.
+/// Escalation gate (0.0–1.0); default 0.4. Task-value gated: precision
+/// and recall on labeled cases, plus a must-not-fire control group.
 pub type EscalationConfidence = UnitThreshold<EscalationTag>;
-/// Task relevance threshold, axis B (0.0–1.0). Canonical home for the
-/// `fluent-db` policy of the same name, which re-exports this alias.
+/// Task relevance threshold, axis B (0.0–1.0). Task-value gated.
+/// Canonical home for the `fluent-db` policy of the same name, which
+/// re-exports this alias.
 pub type TaskRelevanceThreshold = UnitThreshold<TaskRelevanceTag>;
-/// Producer confidence threshold, axis A (0.0–1.0). Canonical home for the
-/// `fluent-db` policy of the same name, which re-exports this alias.
+/// Producer confidence threshold, axis A (0.0–1.0). Confidence-gated:
+/// self-doubt signal, never a correctness verdict on its own.
+/// Canonical home for the `fluent-db` policy of the same name, which
+/// re-exports this alias.
 pub type ProducerConfidenceThreshold = UnitThreshold<ProducerConfidenceTag>;
 
 impl Default for UnitThreshold<SeverityTag> {

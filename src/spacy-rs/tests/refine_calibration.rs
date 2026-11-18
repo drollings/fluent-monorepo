@@ -52,12 +52,12 @@ fn signal_with(
     token_ids: Vec<u64>,
 ) -> InterlinguaSignal {
     InterlinguaSignal {
-        predicate_id: predicate.map(InterlinguaId::from_u64),
-        subject_id: subject.map(InterlinguaId::from_u64),
-        direct_object_id: dobj.map(InterlinguaId::from_u64),
+        predicate_id: predicate.map(InterlinguaId::from_stored_u64),
+        subject_id: subject.map(InterlinguaId::from_stored_u64),
+        direct_object_id: dobj.map(InterlinguaId::from_stored_u64),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: token_ids.into_iter().map(InterlinguaId::from_u64).collect(),
+        token_ids: token_ids.into_iter().map(InterlinguaId::from_stored_u64).collect(),
         confidence: None,
     }
 }

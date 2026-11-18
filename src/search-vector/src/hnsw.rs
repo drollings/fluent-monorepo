@@ -23,11 +23,44 @@
 use std::sync::{Mutex, RwLock};
 
 use anndists::dist::DistCosine;
-use common_core::constants::{HnswParams, DEFAULT_HNSW_THRESHOLD};
 use common_core::sync::{lock, lock_read, lock_write};
 use hnsw_rs::hnsw::Hnsw;
 
 use fluent_db::error::DbError;
+
+/// Upper bound on KNN candidates before routing through the HNSW index.
+///
+/// Canonical home of the bound coral's `db` module promoted to the
+/// workspace; the `common_core::constants` twin stays value-identical
+/// while the shim lives.
+pub const MAX_KNN_CANDIDATES: usize = 100_000;
+
+/// Default node count threshold above which a store switches from
+/// brute-force to HNSW. Single source for the adaptive dispatch policy.
+pub const DEFAULT_HNSW_THRESHOLD: usize = 512;
+
+/// Tunables for the cosine-distance HNSW graph.
+///
+/// Centralizes the positional-argument contract `make_hnsw` unpacks, so
+/// the ordering is decided in exactly one place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HnswParams {
+    pub max_nb_connection: usize,
+    pub max_layer: usize,
+    pub ef_construction: usize,
+    pub initial_capacity: usize,
+}
+
+impl Default for HnswParams {
+    fn default() -> Self {
+        Self {
+            max_nb_connection: 16,
+            max_layer: 16,
+            ef_construction: 200,
+            initial_capacity: 1024,
+        }
+    }
+}
 
 /// Build a cosine-distance HNSW index from `HnswParams` with a pluggable
 /// `initial_capacity`.
@@ -60,7 +93,7 @@ pub fn make_hnsw(p: &HnswParams, initial_capacity: usize) -> Hnsw<'static, f32, 
 /// frontier escalation (those are [A]/[B]-outcome decisions owned by the
 /// calibrated workflow/rubric gates).
 ///
-/// [`DEFAULT_HNSW_THRESHOLD`]: common_core::constants::DEFAULT_HNSW_THRESHOLD
+/// [`DEFAULT_HNSW_THRESHOLD`]: crate::hnsw::DEFAULT_HNSW_THRESHOLD
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdaptiveHnsw {
     /// Corpus size above which a built HNSW graph is consulted. Strict `>`:

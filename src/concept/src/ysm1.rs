@@ -151,7 +151,7 @@ pub fn decode(bytes: &[u8]) -> Result<Ysm1File, ConceptStoreError> {
             .ok_or_else(|| reject("short curie"))
             .and_then(|b| String::from_utf8(b.to_vec()).map_err(|_| reject("bad curie")))?;
         let id = cursor.u64().ok_or_else(|| reject("short id"))?;
-        classes.push((curie, InterlinguaId::from_u64(id)));
+        classes.push((curie, InterlinguaId::from_stored_u64(id)));
     }
     let mut edges = Vec::with_capacity(edge_count.min(1 << 20));
     for _ in 0..edge_count {

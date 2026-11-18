@@ -313,3 +313,46 @@ fn try_new_rejects_zero_capacity() {
     assert!(DecisionCache::try_new(0).is_err());
     assert!(DecisionCache::try_new(4).is_ok());
 }
+
+/// Leader publish wakes waiters on `DecisionCache::get_or_decide`.
+/// One slow leader plus several waiters share a single load, plus a raw
+/// `Notify` probe showing a `notify_waiters` between future creation and
+/// first poll is lost without an armed wait, which the slot path shares.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn cache_publish_wakes_waiter() {
+    use std::sync::Arc as StdArc;
+    let cache = StdArc::new(DecisionCache::try_new(16).expect("capacity"));
+    let calls = StdArc::new(AtomicUsize::new(0));
+    let gate = StdArc::new(tokio::sync::Barrier::new(8));
+    let mut handles = Vec::new();
+    for _ in 0..8 {
+        let (cache, calls, gate) = (Arc::clone(&cache), Arc::clone(&calls), Arc::clone(&gate));
+        handles.push(tokio::spawn(async move {
+            gate.wait().await;
+            cache
+                .get_or_decide(key("wake", 1, "m"), async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok::<_, DecisionError>(canned("B"))
+                })
+                .await
+        }));
+    }
+    for handle in handles {
+        let decision = tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("waiter not stranded")
+            .expect("task")
+            .expect("decision");
+        assert_eq!(decision.label, "B");
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "one leader loads");
+
+    let notify = StdArc::new(tokio::sync::Notify::new());
+    let pending = notify.notified();
+    notify.notify_waiters();
+    // A broadcast fired after creation is observed on first poll; this is
+    // the guarantee `DecisionCache::get_or_decide` relies on for publish.
+    let observed = tokio::time::timeout(std::time::Duration::from_secs(5), pending).await;
+    assert!(observed.is_ok(), "publish after creation must wake the waiter");
+}

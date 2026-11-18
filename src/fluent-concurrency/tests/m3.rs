@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 #[tokio::test(start_paused = true)]
 async fn test_queue_push_and_pop_order() {
-    let q = Queue::new(10);
+    let q = Queue::new(10).expect("test capacity is nonzero");
     q.push(1).unwrap();
     q.push(2).unwrap();
     q.push(3).unwrap();
@@ -17,7 +17,7 @@ async fn test_queue_push_and_pop_order() {
 
 #[tokio::test(start_paused = true)]
 async fn test_queue_bounded_full() {
-    let q = Queue::new(2);
+    let q = Queue::new(2).expect("test capacity is nonzero");
     assert!(q.push(1).is_ok());
     assert!(q.push(2).is_ok());
     assert_eq!(q.push(3), Err(PoolError::Full));
@@ -26,7 +26,7 @@ async fn test_queue_bounded_full() {
 
 #[tokio::test(start_paused = true)]
 async fn test_queue_close_wakes_waiters() {
-    let q: Queue<i32> = Queue::new(2);
+    let q: Queue<i32> = Queue::new(2).expect("test capacity is nonzero");
     let q2 = Arc::new(q);
     let q_clone = Arc::clone(&q2);
     let handle = tokio::spawn(async move {
@@ -42,7 +42,7 @@ async fn test_queue_close_wakes_waiters() {
 /// remaining items then `None` once closed and drained.
 #[tokio::test(start_paused = true)]
 async fn test_bounded_priority_queue_push_wait_closed_after_close() {
-    let q = BoundedPriorityQueue::<i32>::new(1);
+    let q = BoundedPriorityQueue::<i32>::new(1).expect("test capacity is nonzero");
     assert_eq!(q.push(1, 0), Ok(()));
     assert_eq!(q.push(2, 0), Err(PoolError::Full));
     assert_eq!(q.len(), 1);
@@ -363,7 +363,7 @@ async fn result_pool_multiple_jobs() {
 #[tokio::test]
 async fn result_pool_queue_full_returns_error() {
     // Queue capacity 1: push one, second push returns Full (capacity guard)
-    let q = Queue::new(1);
+    let q = Queue::new(1).expect("test capacity is nonzero");
     assert!(q.push(1).is_ok());
     assert_eq!(q.push(2), Err(PoolError::Full));
     q.close();
@@ -381,20 +381,18 @@ async fn result_pool_shutdown_returns_canceled() {
 }
 
 #[test]
-#[should_panic(expected = "queue capacity must be >0")]
-fn queue_capacity_zero_panics_in_debug() {
-    let _q = Queue::<i32>::new(0);
+fn queue_capacity_zero_is_refused() {
+    assert!(Queue::<i32>::new(0).is_err());
 }
 
 #[test]
-#[should_panic(expected = "queue capacity must be >0")]
-fn bounded_priority_queue_capacity_zero_panics_in_debug() {
-    let _q = BoundedPriorityQueue::<i32>::new(0);
+fn bounded_priority_queue_capacity_zero_is_refused() {
+    assert!(BoundedPriorityQueue::<i32>::new(0).is_err());
 }
 
 #[test]
 fn queue_push_is_sync_no_await_needed() {
-    let q = Queue::new(10);
+    let q = Queue::new(10).expect("test capacity is nonzero");
     // Compile-only: push is sync, no .await
     let _: Result<(), _> = q.push(1);
     assert!(q.push(2).is_ok());
@@ -404,7 +402,7 @@ fn queue_push_is_sync_no_await_needed() {
 /// (space-waiter half of close-wakes-waiters), for both queue types.
 #[tokio::test(start_paused = true)]
 async fn test_queue_close_wakes_blocked_push_wait() {
-    let q: Queue<i32> = Queue::new(1);
+    let q: Queue<i32> = Queue::new(1).expect("test capacity is nonzero");
     q.push(1).unwrap();
     let q = Arc::new(q);
     let q2 = Arc::clone(&q);
@@ -416,7 +414,7 @@ async fn test_queue_close_wakes_blocked_push_wait() {
 
 #[tokio::test(start_paused = true)]
 async fn test_bounded_priority_queue_close_wakes_blocked_push_wait() {
-    let q = BoundedPriorityQueue::<i32>::new(1);
+    let q = BoundedPriorityQueue::<i32>::new(1).expect("test capacity is nonzero");
     q.push(1, 0).unwrap();
     let q = Arc::new(q);
     let q2 = Arc::clone(&q);
@@ -429,7 +427,7 @@ async fn test_bounded_priority_queue_close_wakes_blocked_push_wait() {
 /// `close()` wakes a `pop` blocked on an empty priority queue with `None`.
 #[tokio::test(start_paused = true)]
 async fn test_bounded_priority_queue_close_wakes_blocked_pop() {
-    let q = Arc::new(BoundedPriorityQueue::<i32>::new(2));
+    let q = Arc::new(BoundedPriorityQueue::<i32>::new(2).expect("test capacity is nonzero"));
     let q2 = Arc::clone(&q);
     let handle = tokio::spawn(async move { q2.pop().await });
     tokio::task::yield_now().await;
@@ -441,7 +439,7 @@ async fn test_bounded_priority_queue_close_wakes_blocked_pop() {
 /// space must complete rather than sleep through the notification.
 #[tokio::test(start_paused = true)]
 async fn test_queue_push_wait_racing_pop_completes() {
-    let q = Arc::new(Queue::new(1));
+    let q = Arc::new(Queue::new(1).expect("test capacity is nonzero"));
     q.push(1).unwrap();
     let q2 = Arc::clone(&q);
     let waiter = tokio::spawn(async move { q2.push_wait(2).await });
@@ -454,7 +452,7 @@ async fn test_queue_push_wait_racing_pop_completes() {
 
 #[tokio::test(start_paused = true)]
 async fn test_bounded_priority_queue_push_wait_racing_pop_completes() {
-    let q = Arc::new(BoundedPriorityQueue::new(1));
+    let q = Arc::new(BoundedPriorityQueue::new(1).expect("test capacity is nonzero"));
     q.push(1, 0).unwrap();
     let q2 = Arc::clone(&q);
     let waiter = tokio::spawn(async move { q2.push_wait(2, 5).await });
@@ -469,7 +467,7 @@ async fn test_bounded_priority_queue_push_wait_racing_pop_completes() {
 /// a priority, priority-0 between positive and negative.
 #[tokio::test(start_paused = true)]
 async fn test_bounded_priority_queue_concurrent_ordering() {
-    let q = BoundedPriorityQueue::new(8);
+    let q = BoundedPriorityQueue::new(8).expect("test capacity is nonzero");
     q.push("neg", -1).unwrap();
     q.push("zero-a", 0).unwrap();
     q.push("hi-a", 10).unwrap();

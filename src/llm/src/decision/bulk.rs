@@ -6,10 +6,15 @@
 //! caller's cap, and outputs preserve input order via `submit_all`.
 //! `bulk_filter` / `bulk_rerank` / `bulk_route` are pure post-processors.
 
+use std::sync::Arc;
+
 use fluent_concurrency::pool::{ResultPool, ResultPoolError};
+use fluent_wvr::Runtime;
 
 use crate::client::LlmClient;
-use crate::decision::{decide_verdict, Decision, DecisionError, Question, QuestionSpec};
+use crate::decision::{
+    decide_verdict, DecideRequest, Decision, DecisionError, DecisionOption, Question, QuestionSpec,
+};
 
 /// Owned bulk job: the rendered prompt plus everything decoding needs.
 /// Borrowed `Question`s render into these before fan-out so the pool owns
@@ -27,6 +32,236 @@ fn pool_error(error: ResultPoolError<DecisionError>) -> DecisionError {
         ResultPoolError::Inner(inner) => inner,
         ResultPoolError::Canceled => DecisionError::Unavailable("bulk submit canceled".to_string()),
         ResultPoolError::Pool(pool) => DecisionError::Unavailable(pool.to_string()),
+    }
+}
+
+/// Caller-owned decision pool: a `ResultPool` bound to one client's
+/// prompt handler, living across calls instead of per call.
+///
+/// Pool sizing (`cap`, `queue_capacity`) is backpressure tuning owned by
+/// the caller (router/orchestrator), not by the decision library: a
+/// saturated pool slows submitters down, never changes a verdict.
+pub struct DecidePool {
+    pool: ResultPool<OwnedJob, Decision, DecisionError>,
+}
+
+impl DecidePool {
+    /// Build a pool bound to `client`'s prompt handler. Degenerate bounds
+    /// clamp to 1, matching the ephemeral path.
+    pub fn new(
+        runtime: Arc<dyn Runtime>,
+        client: &LlmClient,
+        cap: usize,
+        queue_capacity: usize,
+    ) -> Self {
+        let pool = ResultPool::new(runtime, cap.max(1), queue_capacity.max(1), {
+            let client = client.clone();
+            move |job: OwnedJob| {
+                let client = client.clone();
+                async move {
+                    client
+                        .decide_prompt(
+                            job.prompt,
+                            job.candidates,
+                            job.kind,
+                            job.version,
+                            job.timeout_ms,
+                        )
+                        .await
+                }
+            }
+        });
+        Self { pool }
+    }
+
+    /// The configured number of workers, stable for the pool's lifetime.
+    #[must_use]
+    pub fn worker_count(&self) -> usize {
+        self.pool.worker_count()
+    }
+
+    /// Shut the pool down: close the queue and await the workers.
+    pub async fn shutdown(self) {
+        self.pool.shutdown().await;
+    }
+}
+
+/// Validated render shared by both entry points: invalid specs become
+/// loud per-index `Rejected`, never a send; the `order` vector preserves
+/// input positions across the concurrent fan-out.
+struct Rendered {
+    outcomes: Vec<Option<Result<Decision, DecisionError>>>,
+    order: Vec<usize>,
+    requests: Vec<DecideRequest>,
+}
+
+fn render_requests(client: &LlmClient, questions: &[Question<'_>]) -> Rendered {
+    let mut outcomes: Vec<Option<Result<Decision, DecisionError>>> = Vec::new();
+    outcomes.resize_with(questions.len(), || None);
+    let mut order: Vec<usize> = Vec::new();
+    let mut requests: Vec<DecideRequest> = Vec::new();
+    for (index, q) in questions.iter().enumerate() {
+        match q.spec.validate() {
+            Ok(()) => {
+                order.push(index);
+                requests.push(DecideRequest {
+                    prompt: q.render(),
+                    state: q.state.to_string(),
+                    question: q.question.to_string(),
+                    options: q
+                        .spec
+                        .options()
+                        .into_iter()
+                        .map(|label| DecisionOption {
+                            label,
+                            description: String::new(),
+                        })
+                        .collect(),
+                    kind: q
+                        .spec
+                        .kind_enum()
+                        .unwrap_or(crate::decision::DecisionKind::Choice),
+                    version: q.spec.version,
+                    timeout_ms: q.spec.timeout_ms,
+                    model: client.model.clone(),
+                });
+            }
+            Err(detail) => {
+                outcomes[index] = Some(Err(DecisionError::Rejected(detail)));
+            }
+        }
+    }
+    Rendered {
+        outcomes,
+        order,
+        requests,
+    }
+}
+
+/// Collect pre-filled outcomes into the dense per-index result vector.
+fn finalize(
+    outcomes: Vec<Option<Result<Decision, DecisionError>>>,
+) -> Vec<Result<Decision, DecisionError>> {
+    outcomes
+        .into_iter()
+        .map(|slot| slot.expect("every index filled"))
+        .collect()
+}
+
+/// Backend fan-out shared by both entry points: the multi-question path
+/// zipped back into input positions.
+async fn fan_out_backend(
+    client: &LlmClient,
+    mut outcomes: Vec<Option<Result<Decision, DecisionError>>>,
+    order: Vec<usize>,
+    requests: Vec<DecideRequest>,
+    abort: Option<fluent_concurrency::stream::StreamAbort>,
+) -> Vec<Result<Decision, DecisionError>> {
+    for (slot, result) in order
+        .into_iter()
+        .zip(client.decide_batch_requests(requests, abort).await)
+    {
+        outcomes[slot] = Some(result);
+    }
+    finalize(outcomes)
+}
+
+/// Pool fan-out shared by both entry points: rendered requests become
+/// owned jobs, `submit_all` runs them concurrently, and results land
+/// back in input order with `pool_error` mapping.
+async fn fan_out_pool(
+    pool: &ResultPool<OwnedJob, Decision, DecisionError>,
+    mut outcomes: Vec<Option<Result<Decision, DecisionError>>>,
+    order: Vec<usize>,
+    requests: Vec<DecideRequest>,
+    abort: Option<fluent_concurrency::stream::StreamAbort>,
+) -> Vec<Result<Decision, DecisionError>> {
+    let jobs: Vec<OwnedJob> = requests
+        .into_iter()
+        .map(|r| OwnedJob {
+            prompt: r.prompt,
+            candidates: r.options.into_iter().map(|o| o.label).collect(),
+            kind: r.kind,
+            version: r.version,
+            timeout_ms: r.timeout_ms,
+        })
+        .collect();
+    let mut slots = order.into_iter();
+    let results = pool.submit_all(jobs, abort).await;
+    for result in results {
+        outcomes[slots.next().expect("slot per result")] = Some(result.map_err(pool_error));
+    }
+    finalize(outcomes)
+}
+
+/// Decide every question concurrently over a caller-owned pool,
+/// preserving input order in the outputs.
+///
+/// The pool outlives the call: build one `DecidePool`, share it across
+/// calls, and shut it down when the owner is done. Either way an
+/// invalid spec is a loud per-index `Rejected`, never a send.
+///
+/// ```rust
+/// use std::sync::Arc;
+/// use fluent_llm::client::{block_on, LlmClient};
+/// use fluent_llm::decision::{
+///     decide_all_with_pool, DecidePool, Decision, Question, QuestionSpec, ScriptedDecideBackend,
+/// };
+///
+/// let backend = Arc::new(ScriptedDecideBackend::canned(
+///     Decision::from_distribution(
+///         "B",
+///         vec![("B".to_string(), 0.9), ("A".to_string(), 0.1)],
+///         "stub".to_string(),
+///         1,
+///         0,
+///         false,
+///     )
+///     .expect("canned"),
+/// ));
+/// let mut client = LlmClient::new("http://127.0.0.1:9", "stub");
+/// client.decide_backend = Some(backend);
+/// # let spec = QuestionSpec::new()
+/// #     .id("q".to_string()).version(1).kind("choice".to_string())
+/// #     .prompt_template("Pick.".to_string()).options_csv("A,B".to_string())
+/// #     .act_threshold(0.9).review_threshold(0.7)
+/// #     .timeout_ms(1000).cacheable(false).build();
+/// let out = block_on(async {
+///     let pool = DecidePool::new(fluent_concurrency::tokio_runtime(), &client, 2, 4);
+///     let questions = [Question { spec: &spec, state: "st", question: "qq?" }];
+///     let out = decide_all_with_pool(&client, &pool, &questions, None).await;
+///     assert_eq!(out.len(), 1);
+///     pool.shutdown().await;
+/// });
+/// ```
+pub async fn decide_all_with_pool(
+    client: &LlmClient,
+    pool: &DecidePool,
+    questions: &[Question<'_>],
+    abort: Option<fluent_concurrency::stream::StreamAbort>,
+) -> Vec<Result<Decision, DecisionError>> {
+    let rendered = render_requests(client, questions);
+    if rendered.requests.is_empty() {
+        return finalize(rendered.outcomes);
+    }
+    if client.decide_backend.is_some() {
+        fan_out_backend(
+            client,
+            rendered.outcomes,
+            rendered.order,
+            rendered.requests,
+            abort,
+        )
+        .await
+    } else {
+        fan_out_pool(
+            &pool.pool,
+            rendered.outcomes,
+            rendered.order,
+            rendered.requests,
+            abort,
+        )
+        .await
     }
 }
 
@@ -70,98 +305,39 @@ pub async fn decide_all(
     queue_capacity: usize,
     abort: Option<fluent_concurrency::stream::StreamAbort>,
 ) -> Vec<Result<Decision, DecisionError>> {
-    use crate::decision::{DecideRequest, DecisionOption};
-    // Validate before any send: an invalid spec is a loud per-index
-    // `Rejected`, never a silently coerced kind or threshold.
-    let mut outcomes: Vec<Option<Result<Decision, DecisionError>>> = Vec::new();
-    outcomes.resize_with(questions.len(), || None);
-    let mut order: Vec<usize> = Vec::new();
-    let mut requests: Vec<DecideRequest> = Vec::new();
-    for (index, q) in questions.iter().enumerate() {
-        match q.spec.validate() {
-            Ok(()) => {
-                order.push(index);
-                requests.push(DecideRequest {
-                    prompt: q.render(),
-                    state: q.state.to_string(),
-                    question: q.question.to_string(),
-                    options: q
-                        .spec
-                        .options()
-                        .into_iter()
-                        .map(|label| DecisionOption {
-                            label,
-                            description: String::new(),
-                        })
-                        .collect(),
-                    kind: q
-                        .spec
-                        .kind_enum()
-                        .unwrap_or(crate::decision::DecisionKind::Choice),
-                    version: q.spec.version,
-                    timeout_ms: q.spec.timeout_ms,
-                    model: client.model.clone(),
-                });
-            }
-            Err(detail) => {
-                outcomes[index] = Some(Err(DecisionError::Rejected(detail)));
-            }
-        }
+    let rendered = render_requests(client, questions);
+    if rendered.requests.is_empty() {
+        return finalize(rendered.outcomes);
     }
-    if !requests.is_empty() {
-        if client.decide_backend.is_some() {
-            for (slot, result) in order
-                .into_iter()
-                .zip(client.decide_batch_requests(requests, abort).await)
-            {
-                outcomes[slot] = Some(result);
-            }
-        } else {
-            let jobs: Vec<OwnedJob> = requests
-                .into_iter()
-                .map(|r| OwnedJob {
-                    prompt: r.prompt,
-                    candidates: r.options.into_iter().map(|o| o.label).collect(),
-                    kind: r.kind,
-                    version: r.version,
-                    timeout_ms: r.timeout_ms,
-                })
-                .collect();
-            // Degenerate bounds would wedge or fail every submit; clamp to 1.
-            let pool = ResultPool::new(
-                fluent_concurrency::tokio_runtime(),
-                cap.max(1),
-                queue_capacity.max(1),
-                {
-                    let client = client.clone();
-                    move |job: OwnedJob| {
-                        let client = client.clone();
-                        async move {
-                            client
-                                .decide_prompt(
-                                    job.prompt,
-                                    job.candidates,
-                                    job.kind,
-                                    job.version,
-                                    job.timeout_ms,
-                                )
-                                .await
-                        }
-                    }
-                },
-            );
-            let mut slots = order.into_iter();
-            let results = pool.submit_all(jobs, abort).await;
-            pool.shutdown().await;
-            for result in results {
-                outcomes[slots.next().expect("slot per result")] = Some(result.map_err(pool_error));
-            }
-        }
+    if client.decide_backend.is_some() {
+        fan_out_backend(
+            client,
+            rendered.outcomes,
+            rendered.order,
+            rendered.requests,
+            abort,
+        )
+        .await
+    } else {
+        // Ephemeral pool, built exactly as before: used for this call,
+        // then shut down, so existing callers behave byte-identically.
+        let pool = DecidePool::new(
+            fluent_concurrency::tokio_runtime(),
+            client,
+            cap,
+            queue_capacity,
+        );
+        let out = fan_out_pool(
+            &pool.pool,
+            rendered.outcomes,
+            rendered.order,
+            rendered.requests,
+            abort,
+        )
+        .await;
+        pool.shutdown().await;
+        out
     }
-    outcomes
-        .into_iter()
-        .map(|slot| slot.expect("every index filled"))
-        .collect()
 }
 
 /// Merge per-rotation decisions by summing label masses and renormalizing.

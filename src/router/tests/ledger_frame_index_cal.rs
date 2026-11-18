@@ -35,27 +35,27 @@ fn goldens() -> Vec<Golden> {
     vec![
         Golden {
             predicate: 101,
-            candidates: vec![InterlinguaId::from_u64(1001), InterlinguaId::from_u64(1002)],
-            expected_sense: InterlinguaId::from_u64(1001),
+            candidates: vec![InterlinguaId::from_stored_u64(1001), InterlinguaId::from_stored_u64(1002)],
+            expected_sense: InterlinguaId::from_stored_u64(1001),
         },
         Golden {
             predicate: 102,
-            candidates: vec![InterlinguaId::from_u64(1003), InterlinguaId::from_u64(1004)],
-            expected_sense: InterlinguaId::from_u64(1004),
+            candidates: vec![InterlinguaId::from_stored_u64(1003), InterlinguaId::from_stored_u64(1004)],
+            expected_sense: InterlinguaId::from_stored_u64(1004),
         },
         Golden {
             predicate: 103,
             candidates: vec![
-                InterlinguaId::from_u64(1005),
-                InterlinguaId::from_u64(1006),
-                InterlinguaId::from_u64(1007),
+                InterlinguaId::from_stored_u64(1005),
+                InterlinguaId::from_stored_u64(1006),
+                InterlinguaId::from_stored_u64(1007),
             ],
-            expected_sense: InterlinguaId::from_u64(1006),
+            expected_sense: InterlinguaId::from_stored_u64(1006),
         },
         Golden {
             predicate: 104,
-            candidates: vec![InterlinguaId::from_u64(1008), InterlinguaId::from_u64(1009)],
-            expected_sense: InterlinguaId::from_u64(1008),
+            candidates: vec![InterlinguaId::from_stored_u64(1008), InterlinguaId::from_stored_u64(1009)],
+            expected_sense: InterlinguaId::from_stored_u64(1008),
         },
     ]
 }
@@ -93,13 +93,13 @@ fn control_requests() -> Vec<FrameResolutionRequest> {
             predicate_lemma_id: pid(203),
             ambiguity_kind: AmbiguityKind::PredicatePolysemy,
             detail: "zero".into(),
-            candidate_ids: vec![InterlinguaId::from_u64(2001), InterlinguaId::from_u64(2002)],
+            candidate_ids: vec![InterlinguaId::from_stored_u64(2001), InterlinguaId::from_stored_u64(2002)],
         },
         FrameResolutionRequest {
             predicate_lemma_id: pid(204),
             ambiguity_kind: AmbiguityKind::PredicatePolysemy,
             detail: "foreign".into(),
-            candidate_ids: vec![InterlinguaId::from_u64(2001), InterlinguaId::from_u64(2002)],
+            candidate_ids: vec![InterlinguaId::from_stored_u64(2001), InterlinguaId::from_stored_u64(2002)],
         },
     ]
 }
@@ -142,7 +142,7 @@ async fn sense_promotion_calibration_precision_and_recall() {
     // The wave below carries it too — reuse serves the seed, so the fetch
     // never fires for it and replay stays golden (route-neutral).
     let seeded_predicate = pid(205);
-    let seeded_sense = InterlinguaId::from_u64(2051);
+    let seeded_sense = InterlinguaId::from_stored_u64(2051);
     index
         .record_preferred_sense(
             seeded_predicate,
@@ -178,7 +178,7 @@ async fn sense_promotion_calibration_precision_and_recall() {
         predicate_lemma_id: seeded_predicate,
         ambiguity_kind: AmbiguityKind::PredicatePolysemy,
         detail: "seeded".into(),
-        candidate_ids: vec![seeded_sense, InterlinguaId::from_u64(2052)],
+        candidate_ids: vec![seeded_sense, InterlinguaId::from_stored_u64(2052)],
     });
     worker
         .enqueue(FrameResolutionJob { requests })

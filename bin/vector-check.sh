@@ -12,10 +12,14 @@
 #      kernel (`fluent_db::vector::{distance_to_similarity[_clamped],
 #      scored_hits}` in `src/db/src/vector.rs`, the one allowed home).
 #   4. The deleted shim files themselves.
-#   5. A second `DEFAULT_HNSW_THRESHOLD` / `HnswParams` / `AdaptiveHnsw`
-#      definition (single threshold source).
+#   5. Threshold/vocabulary definitions outside their two allowed homes
+#      (canonical `search-vector/src/hnsw.rs` + deprecated
+#      `common-core/src/constants.rs` shim; `AdaptiveHnsw` has no shim).
 #   6. A second `From<rusqlite::Error>` impl (single error taxonomy in
 #      `src/db/src/error.rs`).
+#   7. New uses of the deprecated `common_core::constants::` HNSW path
+#      outside the grandfathered files (new code imports
+#      `search_vector::hnsw` directly).
 #
 # Usage:  bin/vector-check.sh [root]   # exit 0 clean, non-zero on violation
 #   `root` overrides the tree to scan (default: repo root) so the checks can
@@ -67,13 +71,24 @@ for f in src/router/src/hnsw.rs src/search-vector/src/error.rs; do
   fi
 done
 
-# ── Check 5: single threshold source ────────────────────────────────────
-for def in "pub const DEFAULT_HNSW_THRESHOLD" "pub struct HnswParams" "pub struct AdaptiveHnsw"; do
-  count=$(grep -rn -- "$def" src --include="*.rs" 2>/dev/null | wc -l)
-  if [ "$count" -ne 1 ]; then
-    fail "expected exactly 1 definition of \`$def\`, found $count"
+# ── Check 5: canonical threshold source plus one deprecated shim ──────
+# `AdaptiveHnsw` was born in `search-vector` (no shim anywhere): exactly 1
+# definition. The moved vocabulary lives canonically in
+# `search-vector/src/hnsw.rs` with a value-identical
+# `common-core/src/constants.rs` shim: exactly 2 definitions (one per
+# home) until the shim is removed in an explicit later breaking change.
+for def in "pub const DEFAULT_HNSW_THRESHOLD" "pub struct HnswParams"; do
+  total=$(grep -rn -- "$def" src --include="*.rs" 2>/dev/null | wc -l)
+  canonical=$(grep -c -- "$def" src/search-vector/src/hnsw.rs 2>/dev/null || true)
+  shim=$(grep -c -- "$def" src/common-core/src/constants.rs 2>/dev/null || true)
+  if [ "$total" -ne 2 ] || [ "$canonical" -ne 1 ] || [ "$shim" -ne 1 ]; then
+    fail "expected \`$def\` in search-vector/src/hnsw.rs + common-core/src/constants.rs only, found $total"
   fi
 done
+count=$(grep -rn -- "pub struct AdaptiveHnsw" src --include="*.rs" 2>/dev/null | wc -l)
+if [ "$count" -ne 1 ]; then
+  fail "expected exactly 1 definition of \`pub struct AdaptiveHnsw\`, found $count"
+fi
 
 # ── Check 6: single rusqlite error taxonomy ─────────────────────────────
 impls=$(grep -rn "impl From<rusqlite::Error>" src --include="*.rs" 2>/dev/null || true)
@@ -83,6 +98,15 @@ if [ "$count" -ne 1 ]; then
 elif ! echo "$impls" | grep -q "^src/db/src/error\.rs:"; then
   fail "From<rusqlite::Error> impl lives outside src/db/src/error.rs: $impls"
 fi
+
+# ── Check 7: no new uses of the deprecated HNSW vocabulary path ─────────
+# Grandfathered files pinning the shim (definitions, re-export, value
+# tests, and the cross-crate identity test). Any other file naming the
+# old path fails: new code imports `search_vector::hnsw` directly.
+allowed_old_path="^(src/common-core/src/constants\.rs|src/common-core/src/lib\.rs|src/common-core/tests/constants\.rs|src/coral/src/db/mod\.rs|src/search-vector/tests/hnsw\.rs):"
+while IFS= read -r line; do
+  fail "${line}: deprecated common_core::constants HNSW path (import search_vector::hnsw directly)"
+done < <(grep -rn -E "common_core::constants::(Hnsw|DEFAULT_HNSW_THRESHOLD|MAX_KNN_CANDIDATES)" src --include="*.rs" 2>/dev/null | grep -v -E "$allowed_old_path" || true)
 
 if [ "$FAIL" -eq 0 ]; then
   echo "ok: raw HNSW types contained; no re-export shims, no second threshold/error source, no fresh distance closures"

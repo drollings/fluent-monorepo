@@ -10,13 +10,7 @@ use crate::error::RegistryError;
 ///
 /// `depends`/`provides` are `BitVec` indexed by [`CapabilityRegistry`]
 /// bit index (compact, O(1) membership). Execution-plane [`WorkUnit`]s use
-/// `Vec<ArcIntern<str>>` for the same names instead — convert at the bridge
-/// (`TargetWorkUnit::from_target` maps each set bit through the registry;
-/// unmapped bits warn and skip). `id` is the target's bit index in the
-/// *target-id* space, which shares the `usize` representation with the
-/// capability-bit space but is never interchangeable: use [`get`](Self::get)
-/// (by name), [`get_by_index`](Self::get_by_index) (Vec position), or
-/// [`get_by_bit_index`](Self::get_by_bit_index) (by `id`) accordingly.
+/// `Vec<ArcIntern<str>>` for the same names instead.
 /// `executor` records the intended runtime (`Native` for yamake-loaded
 /// targets); dispatch reads it, the resolver itself does not execute.
 #[derive(Debug, Clone, Builder)]

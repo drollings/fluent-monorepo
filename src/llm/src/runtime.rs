@@ -208,6 +208,33 @@ pub struct LlmResidencyRow {
     pub last_used: i64,
 }
 
+impl LlmResidencyRow {
+    /// Last use for llama rows in seconds (the fork's `/instances`
+    /// clock). `None` for onnx rows and never-used contexts: read the
+    /// native `last_used` field directly only when the caller already
+    /// branched on `runtime`.
+    #[must_use]
+    pub fn last_used_llama_secs(&self) -> Option<u64> {
+        if self.runtime == LlmRuntime::Llama && self.last_used >= 0 {
+            Some(self.last_used as u64)
+        } else {
+            None
+        }
+    }
+
+    /// Last use for onnx rows in milliseconds (the registry's
+    /// `last_used_ms` clock). `None` for llama rows and never-used
+    /// contexts.
+    #[must_use]
+    pub fn last_used_onnx_ms(&self) -> Option<u64> {
+        if self.runtime == LlmRuntime::Onnx && self.last_used > 0 {
+            Some(self.last_used as u64)
+        } else {
+            None
+        }
+    }
+}
+
 /// Metadata for one context KV snapshot — the trait-object form of
 /// `SnapshotInfo` (llama) / the RAM snapshot index entry (onnx).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

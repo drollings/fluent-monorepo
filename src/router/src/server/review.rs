@@ -423,7 +423,7 @@ fn process_job(
             &reply,
             job.patterns
                 .first()
-                .map_or(InterlinguaId::from_u64(0), |(lemma, _)| *lemma),
+                .map_or(InterlinguaId::from_stored_u64(0), |(lemma, _)| *lemma),
             job.patterns.first().and_then(|(_, entity)| *entity),
             review_model,
         ))

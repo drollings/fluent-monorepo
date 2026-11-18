@@ -1,11 +1,11 @@
-//! TTL/LRU query cache delegating to `fluent_db::cache::TtlCache` (D7).
+//! TTL/FIFO query cache delegating to `fluent_db::cache::SqliteTtlCache` (D7).
 //!
 //! The eviction/expiry logic and `query_cache` table now live in `fluent-db`;
 //! this module keeps the knowledge-specific lowercase-`fnv1a64` key
 //! derivation and the domain `QueryCache`/`Entry` types.
 
 use common_core::hash::fnv1a64;
-use fluent_db::cache::TtlCache;
+use fluent_db::cache::SqliteTtlCache;
 use fluent_db::error::DbError;
 use std::path::Path;
 
@@ -25,7 +25,7 @@ fn query_key(query: &str) -> String {
 }
 
 pub struct QueryCache {
-    inner: TtlCache,
+    inner: SqliteTtlCache,
 }
 
 impl QueryCache {
@@ -39,7 +39,7 @@ impl QueryCache {
         max_entries: usize,
     ) -> Result<Self, DbError> {
         Ok(Self {
-            inner: TtlCache::open(db_path, default_ttl_seconds)?
+            inner: SqliteTtlCache::open(db_path, default_ttl_seconds)?
                 .with_cap(max_entries)
                 .with_key(query_key),
         })
@@ -47,7 +47,7 @@ impl QueryCache {
 
     pub fn new_in_memory(default_ttl_seconds: u64) -> Result<Self, DbError> {
         Ok(Self {
-            inner: TtlCache::open_in_memory(default_ttl_seconds)?.with_key(query_key),
+            inner: SqliteTtlCache::open_in_memory(default_ttl_seconds)?.with_key(query_key),
         })
     }
 

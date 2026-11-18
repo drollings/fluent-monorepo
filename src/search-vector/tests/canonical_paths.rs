@@ -7,19 +7,20 @@
 //! distance mapping, byte codecs, int8 codec, brute-force core, and RRF in
 //! `search-vector`, `HnswIndex`/`AdaptiveHnsw`/`hnsw_lookup`/`make_hnsw` in
 //! `search-vector`, storage taxonomy solely in `fluent_db::error::DbError`.
-//! Raw `hnsw_rs` types stay in the index home; `HnswParams` stays in
-//! `common-core`. No second threshold, error, top-K, or distance mapping
-//! may appear anywhere else (`bin/vector-check.sh` enforces the same).
+//! Raw `hnsw_rs` types stay in the index home; `HnswParams` and the
+//! threshold/bound constants live in `search-vector::hnsw` with a
+//! value-identical `common_core::constants` shim. No second threshold,
+//! error, top-K, or distance mapping may appear anywhere else
+//! (`bin/vector-check.sh` enforces the same).
 
 #![allow(clippy::float_cmp)]
 
-use crate::hnsw::{hnsw_lookup, make_hnsw, AdaptiveHnsw, HnswIndex};
+use crate::hnsw::{hnsw_lookup, make_hnsw, AdaptiveHnsw, HnswIndex, HnswParams};
 use crate::math::{
     bytes_to_vec, distance_to_similarity, distance_to_similarity_clamped, knn_brute_force,
     knn_brute_force_q8, quantized_from_bytes, quantized_to_bytes, rrf_merge, rrf_merge_n, rrf_term,
     scored_hits, try_bytes_to_vec, vec_to_bytes, PlainBruteForceIndex, QuantizedEmbedding,
 };
-use common_core::constants::HnswParams;
 use common_core::score::top_k_by_score;
 use fluent_db::error::DbError;
 use vector_math::cosine_similarity_f32;

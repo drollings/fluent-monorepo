@@ -4,6 +4,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use common_core::capacity::nonzero_capacity;
 use fluent_wvr::Runtime;
 use tokio::task::JoinHandle;
 
@@ -63,6 +64,9 @@ where
     /// it is the synchronous [`crate::queue::BoundedPriorityQueue::push`]
     /// fast path's error). Returns `Err(Pool(Closed))` from a submit once the
     /// pool has shut down.
+    ///
+    /// Panics on zero `cap` or zero `queue_capacity`: no workers would
+    /// drain submits, and no slots would hold them, hanging submitters.
     #[allow(clippy::needless_pass_by_value)]
     pub fn with_queue_capacity<F, Fut>(
         runtime: Arc<dyn Runtime>,
@@ -74,8 +78,12 @@ where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<R, E>> + Send,
     {
+        let cap = nonzero_capacity(cap, "priority result pool worker")
+            .unwrap_or_else(|refused| panic!("{refused}"))
+            .get();
         let queue: Arc<crate::queue::BoundedPriorityQueue<WrappedJob<T, R, E>>> =
-            Arc::new(crate::queue::BoundedPriorityQueue::new(queue_capacity));
+            Arc::new(crate::queue::BoundedPriorityQueue::new(queue_capacity)
+                .unwrap_or_else(|refused| panic!("{refused}")));
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let handler = Arc::new(handler);
         let workers = spawn_priority_workers(runtime, cap, &queue, &shutdown_rx, {

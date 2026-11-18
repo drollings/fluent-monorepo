@@ -610,14 +610,14 @@ pub fn set_token_attr(
             token.interlingua_lemma_id = if value == 0 {
                 None
             } else {
-                Some(InterlinguaId::from_u64(value))
+                Some(InterlinguaId::from_stored_u64(value))
             };
         }
         Attribute::InterlinguaEntityId => {
             token.interlingua_entity_id = if value == 0 {
                 None
             } else {
-                Some(InterlinguaId::from_u64(value))
+                Some(InterlinguaId::from_stored_u64(value))
             };
         }
         Attribute::AnnotationConfidence => {

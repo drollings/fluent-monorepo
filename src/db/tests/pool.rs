@@ -595,3 +595,20 @@ async fn open_literal_memory_path_is_shared() {
         })
         .await;
 }
+
+/// Zero pool size is refused with a typed error instead of building a
+/// zero-permit semaphore that hangs on acquire. `PoolConfig::new` stays
+/// a plain constructor; validation lives in `try_new` and the `open`
+/// paths. Size one stays accepted.
+#[test]
+fn zero_capacity_refused() {
+    assert!(PoolConfig::try_new(0).is_err());
+    let opened = SqlitePool::open_in_memory(&PoolConfig::new(0));
+    assert!(
+        matches!(opened, Err(DbError::Other(_))),
+        "zero-size pool must be refused with a typed error"
+    );
+    let cfg = PoolConfig::try_new(1).expect("size one is accepted");
+    assert_eq!(cfg.size, 1);
+    assert!(SqlitePool::open_in_memory(&cfg).is_ok());
+}

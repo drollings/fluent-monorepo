@@ -193,12 +193,13 @@ impl QueryEngine {
     /// can be registered here with a storage seam; without storage they
     /// decline and the legacy doc backends serve.
     ///
-    /// M10.3: registration takes an owned `T: SearchBackend + Component`
-    /// and stores both views (`RegisteredBackend`); dispatch stays native.
+    /// Registration takes an owned `T: SearchBackend` and stores the
+    /// native dispatch view plus an inventory handle
+    /// (`RegisteredBackend`); dispatch stays native.
     #[must_use]
     pub fn with_backend<T>(mut self, backend: T) -> Self
     where
-        T: SearchBackend + Component + 'static,
+        T: SearchBackend + 'static,
     {
         self.backends.push(RegisteredBackend::new(backend));
         self
@@ -621,6 +622,12 @@ mod tests {
     }
 
     impl SearchBackend for CountingBackend {
+        fn name(&self) -> &'static str {
+            "backend.counting"
+        }
+        fn kind(&self) -> &'static str {
+            "counting"
+        }
         fn matches(&self, intent: QueryIntent) -> bool {
             intent == self.intent
         }
@@ -642,42 +649,6 @@ mod tests {
             }
         }
     }
-
-    // M10.3: test stub joins the uniform contract (native-only execute).
-    impl WorkUnit for CountingBackend {
-        fn name(&self) -> &str {
-            "backend.counting"
-        }
-        fn depends(&self) -> &[fluent_wvr::ArcIntern<str>] {
-            &[]
-        }
-        fn provides(&self) -> &[fluent_wvr::ArcIntern<str>] {
-            &[]
-        }
-        fn execute(
-            &self,
-            _ctx: &WorkContext,
-        ) -> Result<fluent_wvr::WorkOutput, fluent_wvr::WorkError> {
-            Err(fluent_wvr::WorkError::Execution(
-                "backend.counting runs through QueryEngine dispatch: downcast the handle to \
-                 SearchBackend and call search natively"
-                    .into(),
-            ))
-        }
-    }
-
-    impl fluent_wvr::Describable for CountingBackend {
-        fn describe(&self) -> serde_json::Value {
-            serde_json::json!({
-                "kind": "search_backend",
-                "backend": "counting",
-                "name": "backend.counting",
-            })
-        }
-    }
-
-    fluent_wvr::impl_fieldless!(CountingBackend);
-    fluent_wvr::impl_component!(CountingBackend);
 
     fn dummy_stages() -> Vec<Stage> {
         vec![Stage {

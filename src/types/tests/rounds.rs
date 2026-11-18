@@ -57,6 +57,7 @@ fn unit_threshold_aliases_share_range_validation() {
 
 #[test]
 fn unit_threshold_error_text_preserved_per_tag() {
+    // One shared range suffix across all four tags.
     assert_eq!(
         SeverityThreshold::new(2.0).unwrap_err(),
         "SeverityThreshold 2 out of 0.0..=1.0"
@@ -67,11 +68,11 @@ fn unit_threshold_error_text_preserved_per_tag() {
     );
     assert_eq!(
         TaskRelevanceThreshold::new(2.0).unwrap_err(),
-        "TaskRelevanceThreshold 2 out of range"
+        "TaskRelevanceThreshold 2 out of 0.0..=1.0"
     );
     assert_eq!(
         ProducerConfidenceThreshold::new(2.0).unwrap_err(),
-        "ProducerConfidenceThreshold 2 out of range"
+        "ProducerConfidenceThreshold 2 out of 0.0..=1.0"
     );
 }
 

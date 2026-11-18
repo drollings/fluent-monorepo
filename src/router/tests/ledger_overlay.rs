@@ -6,12 +6,12 @@ fn store(ledger: &ContentNodeStore) -> OverlayCandidateStore {
 }
 
 fn cand(node: NodeId, start: usize, entity: Option<i64>) -> OverlayCandidate {
-    let entity_id = entity.map(|e| InterlinguaId::from_u64(e as u64));
+    let entity_id = entity.map(|e| InterlinguaId::from_stored_u64(e as u64));
     let mut c = OverlayCandidate::entity_link(
         node,
         start,
         start + 3,
-        entity_id.unwrap_or(InterlinguaId::from_u64(0x0200_0000_0000_0001)),
+        entity_id.unwrap_or(InterlinguaId::from_stored_u64(0x0200_0000_0000_0001)),
         0.9,
         "entity_link",
     );
@@ -83,8 +83,8 @@ fn promote_linked_for_node_promotes_matching_entity_candidates() {
     let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(4);
-    let linked_id = InterlinguaId::from_u64(0x0200_0000_0000_0001);
-    let other_id = InterlinguaId::from_u64(0x0200_0000_0000_0002);
+    let linked_id = InterlinguaId::from_stored_u64(0x0200_0000_0000_0001);
+    let other_id = InterlinguaId::from_stored_u64(0x0200_0000_0000_0002);
     s.write_candidate(&cand(node, 0, Some(linked_id.as_i64())))
         .expect("write");
     s.write_candidate(&cand(node, 8, Some(other_id.as_i64())))

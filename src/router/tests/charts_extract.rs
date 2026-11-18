@@ -291,7 +291,7 @@ fn parse_review_step_adapter() {
         "the cat sat",
         "review prompt",
         r#"{"corrections":[{"token_index":1,"field":"dep","old_value":"dep","new_value":"nsubj"}]}"#,
-        InterlinguaId::from_u64(0x0300_0000_0000_0001),
+        InterlinguaId::from_stored_u64(0x0300_0000_0000_0001),
         None,
         "review-model",
     );

@@ -227,7 +227,7 @@ fn signal_for_sentence(doc: &Doc, roles: &SentenceRoles) -> RoutingSignal {
 
     // The interlingua frame: content-addressed ids of the routing-relevant
     // roles plus the aligned per-token lemma ids (`InterlinguaId(0)` = none).
-    let none_id = InterlinguaId::from_u64(0);
+    let none_id = InterlinguaId::from_stored_u64(0);
     let id_of = |i: usize| doc.token(i).interlingua_lemma_id.unwrap_or(none_id);
     let interlingua = Some(InterlinguaSignal {
         predicate_id: doc.token(root).interlingua_lemma_id,

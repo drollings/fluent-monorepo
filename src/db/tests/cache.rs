@@ -7,7 +7,7 @@ fn tempdir() -> tempfile::TempDir {
 #[test]
 fn put_and_get() {
     let dir = tempdir();
-    let cache = TtlCache::open(&dir.path().join("cache.db"), 3600).unwrap();
+    let cache = SqliteTtlCache::open(&dir.path().join("cache.db"), 3600).unwrap();
     cache.put("test query", "test result").unwrap();
     let entry = cache.get("test query").unwrap().unwrap();
     assert_eq!(entry.result_summary, "test result");
@@ -16,7 +16,7 @@ fn put_and_get() {
 #[test]
 fn stats_work() {
     let dir = tempdir();
-    let cache = TtlCache::open(&dir.path().join("cache.db"), 3600).unwrap();
+    let cache = SqliteTtlCache::open(&dir.path().join("cache.db"), 3600).unwrap();
     let (count, ttl, _expired) = cache.stats().unwrap();
     assert_eq!(count, 0);
     assert_eq!(ttl, 3600);
@@ -28,7 +28,7 @@ fn stats_work() {
 #[test]
 fn clear_works() {
     let dir = tempdir();
-    let cache = TtlCache::open(&dir.path().join("cache.db"), 3600).unwrap();
+    let cache = SqliteTtlCache::open(&dir.path().join("cache.db"), 3600).unwrap();
     cache.put("q", "r").unwrap();
     cache.clear().unwrap();
     assert!(cache.get("q").unwrap().is_none());
@@ -37,7 +37,7 @@ fn clear_works() {
 #[test]
 fn oldest_eviction_works() {
     let dir = tempdir();
-    let cache = TtlCache::open(&dir.path().join("cache.db"), 3600)
+    let cache = SqliteTtlCache::open(&dir.path().join("cache.db"), 3600)
         .unwrap()
         .with_cap(3);
     cache.put("q1", "r1").unwrap();
@@ -56,7 +56,7 @@ fn in_memory_cap_is_configurable() {
     fn identity(key: &str) -> String {
         key.to_string()
     }
-    let cache = TtlCache::open_in_memory(3600)
+    let cache = SqliteTtlCache::open_in_memory(3600)
         .unwrap()
         .with_key(identity)
         .with_cap(2);
@@ -71,7 +71,7 @@ fn in_memory_cap_is_configurable() {
 fn expired_entry_returns_none() {
     let dir = tempdir();
     // TTL of 0 seconds means immediately expired.
-    let cache = TtlCache::open(&dir.path().join("cache.db"), 0).unwrap();
+    let cache = SqliteTtlCache::open(&dir.path().join("cache.db"), 0).unwrap();
     cache.put("expired", "data").unwrap();
     let entry = cache.get("expired").unwrap();
     assert!(entry.is_none(), "expired entry should return None");
@@ -80,7 +80,7 @@ fn expired_entry_returns_none() {
 #[test]
 fn evict_expired_works() {
     let dir = tempdir();
-    let cache = TtlCache::open(&dir.path().join("cache.db"), 0).unwrap();
+    let cache = SqliteTtlCache::open(&dir.path().join("cache.db"), 0).unwrap();
     cache.put("a", "1").unwrap();
     cache.put("b", "2").unwrap();
     let evicted = cache.evict_expired().unwrap();
@@ -89,9 +89,51 @@ fn evict_expired_works() {
     assert_eq!(count, 0);
 }
 
+/// Reads never refresh recency: eviction is write-order FIFO, not LRU.
+/// `q1` is read repeatedly after `q2` lands, yet the over-cap `put`
+/// still evicts `q1` first.
+#[test]
+fn reads_do_not_refresh_fifo_order() {
+    let cache = SqliteTtlCache::open_in_memory(3600).unwrap().with_cap(2);
+    cache.put("q1", "r1").unwrap();
+    cache.put("q2", "r2").unwrap();
+    // Pin distinct write timestamps (same-second puts would tie).
+    let now = common_core::time::now_secs();
+    cache
+        .store
+        .execute(
+            "UPDATE query_cache SET timestamp = ?1 WHERE key = 'q1'",
+            rusqlite::params![now - 10],
+        )
+        .unwrap();
+    assert!(cache.get("q1").unwrap().is_some());
+    assert!(cache.get("q1").unwrap().is_some());
+    cache.put("q3", "r3").unwrap();
+    assert!(
+        cache.get("q1").unwrap().is_none(),
+        "reads must not refresh FIFO recency"
+    );
+    assert!(cache.get("q2").unwrap().is_some());
+    assert!(cache.get("q3").unwrap().is_some());
+}
+
+/// The deprecated `TtlCache` / `evict_oldest` spellings keep resolving
+/// while the shim lives.
+#[test]
+#[allow(deprecated)]
+fn deprecated_cache_aliases_still_resolve() {
+    let cache = TtlCache::open_in_memory(3600).unwrap().with_cap(2);
+    cache.put("q1", "r1").unwrap();
+    cache.put("q2", "r2").unwrap();
+    cache.put("q3", "r3").unwrap();
+    assert_eq!(cache.evict_oldest().unwrap(), 0);
+    let (count, _, _) = cache.stats().unwrap();
+    assert_eq!(count, 2);
+}
+
 #[test]
 fn open_in_memory_round_trips() {
-    let cache = TtlCache::open_in_memory(3600).unwrap();
+    let cache = SqliteTtlCache::open_in_memory(3600).unwrap();
     cache.put("mem", "value").unwrap();
     let entry = cache.get("mem").unwrap().unwrap();
     assert_eq!(entry.result_summary, "value");
@@ -103,7 +145,7 @@ fn hash_key_is_configurable() {
     fn upper_key(key: &str) -> String {
         key.to_uppercase()
     }
-    let cache = TtlCache::open(&dir.path().join("cache.db"), 3600)
+    let cache = SqliteTtlCache::open(&dir.path().join("cache.db"), 3600)
         .unwrap()
         .with_key(upper_key);
     cache.put("query", "r").unwrap();

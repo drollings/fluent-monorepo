@@ -275,3 +275,192 @@ async fn priority_pool_submit_blocks_when_queue_full() {
         pool.shutdown().await;
     }
 }
+
+/// Close-during-pop on `Queue::pop` must return `None` within a bound.
+/// Exercises `Queue::pop` with `CloseWaker::close` mid-wait, plus a direct
+/// `CloseWaker::items_available` probe showing a `notify_waiters` fired
+/// between future creation and first poll is lost without an armed wait.
+#[tokio::test]
+async fn close_wakes_pop() {
+    let q = std::sync::Arc::new(Queue::<i32>::new(4).expect("test capacity is nonzero"));
+    let waiter = std::sync::Arc::clone(&q);
+    let popped = tokio::spawn(async move { waiter.pop().await });
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    q.close();
+    let item = tokio::time::timeout(Duration::from_secs(5), popped)
+        .await
+        .expect("pop must not hang after close")
+        .expect("join");
+    assert!(item.is_none(), "closed empty queue pops None");
+
+    let waker = crate::close::CloseWaker::new();
+    let pending = waker.items_available();
+    waker.close();
+    // A broadcast fired after creation is observed on first poll; this is
+    // the guarantee `Queue::pop` relies on via `CloseWaker::items_available`.
+    let observed = tokio::time::timeout(Duration::from_secs(5), pending).await;
+    assert!(observed.is_ok(), "close after creation must wake the waiter");
+}
+
+/// Zero capacity is refused at construction: leaf queues return `Err`
+/// and limiters fail fast, instead of hanging on a zero permit.
+#[test]
+fn zero_capacity_refused() {
+    assert!(Queue::<i32>::new(0).is_err());
+    assert!(crate::queue::BoundedPriorityQueue::<i32>::new(0).is_err());
+    assert!(std::panic::catch_unwind(|| Limiter::new(0)).is_err());
+}
+
+/// Capacity one builds and works on every constructor: the refusal
+/// boundary is exactly zero, nothing above it.
+#[test]
+fn nonzero_boundary_accepts_one() {
+    assert!(Queue::<i32>::new(1).is_ok());
+    assert!(crate::queue::BoundedPriorityQueue::<i32>::new(1).is_ok());
+    let _limiter = Limiter::new(1);
+}
+
+/// Pools refuse a zero worker cap or zero queue capacity immediately,
+/// before spawning any worker, instead of hanging on undrained submits.
+#[test]
+fn result_pool_refuses_zero_capacity() {
+    let refused = |cap: usize, queue_capacity: usize| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            ResultPool::<i32, i32, String>::new(
+                crate::tokio_runtime(),
+                cap,
+                queue_capacity,
+                |job: i32| async move { Ok(job) },
+            )
+        }))
+        .is_err()
+    };
+    assert!(refused(0, 8));
+    assert!(refused(1, 0));
+}
+
+/// Same fail-fast contract for the fire-and-forget pool: zero workers
+/// or zero queue slots panic before any task spawns.
+#[tokio::test]
+async fn worker_pool_refuses_zero_capacity() {
+    let refused = |cap: usize, queue_capacity: usize| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            WorkerPool::<i32>::new(crate::tokio_runtime(), cap, queue_capacity, |_| async {})
+        }))
+        .is_err()
+    };
+    assert!(refused(0, 8));
+    assert!(refused(1, 0));
+    WorkerPool::<i32>::new(crate::tokio_runtime(), 1, 1, |_| async {})
+        .shutdown()
+        .await;
+}
+
+/// Same fail-fast contract for the priority-ordered pool, on both the
+/// default-sized and explicit queue-capacity paths.
+#[tokio::test]
+async fn priority_pool_refuses_zero_capacity() {
+    let rt = || crate::tokio_runtime();
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            PriorityResultPool::<i32, i32, String>::new(rt(), 0, |job: i32| async move { Ok(job) })
+        }))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            PriorityResultPool::<i32, i32, String>::with_queue_capacity(
+                rt(),
+                1,
+                0,
+                |job: i32| async move { Ok(job) },
+            )
+        }))
+        .is_err()
+    );
+    PriorityResultPool::<i32, i32, String>::with_queue_capacity(
+        rt(),
+        1,
+        1,
+        |job: i32| async move { Ok(job) },
+    )
+    .shutdown()
+    .await;
+}
+
+/// Closing mid-flight terminates every blocked task: full-queue
+/// `push_wait` submitters observe `Closed`, empty-queue `pop` waiters
+/// observe `None`, and none hangs past the bound.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn close_storm_wakes_pushers_and_poppers() {
+    let q = Arc::new(Queue::<i32>::new(4).expect("test capacity is nonzero"));
+    for i in 0..4 {
+        q.push(i).expect("fill");
+    }
+    let mut pushers = Vec::new();
+    let mut poppers = Vec::new();
+    for i in 0..8 {
+        let q = Arc::clone(&q);
+        pushers.push(tokio::spawn(async move {
+            let _ = q.push_wait(100 + i).await;
+        }));
+    }
+    for _ in 0..8 {
+        let q = Arc::clone(&q);
+        poppers.push(tokio::spawn(async move {
+            let _ = q.pop().await;
+        }));
+    }
+    tokio::task::yield_now().await;
+    q.close();
+    for task in pushers {
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("blocked pusher must terminate after close")
+            .expect("join");
+    }
+    for task in poppers {
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("blocked popper must terminate after close")
+            .expect("join");
+    }
+}
+
+/// Same storm contract for the priority-ordered queue: blocked
+/// `push_wait` and `pop` tasks all terminate once closed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn bounded_priority_close_storm_wakes_pushers_and_poppers() {
+    let q = Arc::new(crate::queue::BoundedPriorityQueue::<i32>::new(4).expect("test capacity is nonzero"));
+    for i in 0..4 {
+        q.push(i, 0).expect("fill");
+    }
+    let mut pushers = Vec::new();
+    let mut poppers = Vec::new();
+    for i in 0..8 {
+        let q = Arc::clone(&q);
+        pushers.push(tokio::spawn(async move {
+            let _ = q.push_wait(100 + i, 0).await;
+        }));
+    }
+    for _ in 0..8 {
+        let q = Arc::clone(&q);
+        poppers.push(tokio::spawn(async move {
+            let _ = q.pop().await;
+        }));
+    }
+    tokio::task::yield_now().await;
+    q.close();
+    for task in pushers {
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("blocked pusher must terminate after close")
+            .expect("join");
+    }
+    for task in poppers {
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("blocked popper must terminate after close")
+            .expect("join");
+    }
+}

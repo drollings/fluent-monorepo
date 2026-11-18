@@ -1,6 +1,8 @@
 //! Calibration registry tests (tests-first).
 
-use fluent_llm::decision::{authorize, CalibrationRegistry, CaseOrigin, GateParams, RegistryEntry};
+use fluent_llm::decision::{
+    authorize, authorize_pinned, CalibrationRegistry, CaseOrigin, GateParams, RegistryEntry,
+};
 use std::path::PathBuf;
 
 fn seed_corpus_path() -> PathBuf {
@@ -54,6 +56,31 @@ fn registry_round_trip_and_lookup() {
     assert!(authorize(&loaded, "intent", "fp-other", 1).is_shadow_only());
     assert!(authorize(&loaded, "intent", "fp-test", 2).is_shadow_only());
     assert!(authorize(&loaded, "other-point", "fp-test", 1).is_shadow_only());
+}
+
+/// Dataset-explicit lookup: `lookup_unpinned` never returns a
+/// dataset-pinned entry (so it can never authorize a rotated dataset),
+/// while the legacy `authorize` path keeps its exact three-key behavior
+/// and the pinned path requires the exact dataset.
+#[test]
+fn unpinned_lookup_never_authorizes_rotated_dataset() {
+    let corpus = CalibrationRegistry::load_corpus(&seed_corpus_path()).expect("seed");
+    let mut pinned = RegistryEntry::calibrate("intent", "fp-test", 1, &corpus, 0.5).expect("calibrate");
+    pinned.dataset = "ds-v1".to_string();
+    let mut registry = CalibrationRegistry::empty();
+    registry.upsert(pinned);
+    assert!(registry.lookup_unpinned("intent", "fp-test", 1).is_none());
+    // Legacy `authorize` keeps its three-key behavior byte-identically.
+    assert!(authorize(&registry, "intent", "fp-test", 1).is_calibrated());
+    assert!(authorize_pinned(&registry, "intent", "fp-test", 1, "ds-v1").is_calibrated());
+    assert!(authorize_pinned(&registry, "intent", "fp-test", 1, "ds-v2").is_shadow_only());
+
+    let plain = RegistryEntry::calibrate("intent", "fp-test", 1, &corpus, 0.5).expect("calibrate");
+    assert!(plain.dataset.is_empty());
+    let mut registry2 = CalibrationRegistry::empty();
+    registry2.upsert(plain);
+    assert!(registry2.lookup_unpinned("intent", "fp-test", 1).is_some());
+    assert!(authorize(&registry2, "intent", "fp-test", 1).is_calibrated());
 }
 
 #[test]

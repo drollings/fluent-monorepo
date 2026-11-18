@@ -4,6 +4,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use common_core::capacity::nonzero_capacity;
 use fluent_wvr::Runtime;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -42,6 +43,9 @@ impl<T: Send + Sync + 'static> WorkerPool<T> {
     /// Creates a new worker pool with `cap` workers and a queue of `queue_capacity`.
     /// All worker tasks are spawned through the injected `runtime` to avoid ambient
     /// `tokio::spawn` calls in the Data Plane.
+    ///
+    /// Panics on zero `cap` or zero `queue_capacity`: no workers would
+    /// drain submits, and no slots would hold them, hanging submitters.
     #[allow(clippy::needless_pass_by_value)]
     pub fn new<F, Fut>(
         runtime: Arc<dyn Runtime>,
@@ -53,7 +57,10 @@ impl<T: Send + Sync + 'static> WorkerPool<T> {
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send,
     {
-        let queue = Arc::new(Queue::new(queue_capacity));
+        let cap = nonzero_capacity(cap, "worker pool worker")
+            .unwrap_or_else(|refused| panic!("{refused}"))
+            .get();
+        let queue = Arc::new(Queue::new(queue_capacity).unwrap_or_else(|refused| panic!("{refused}")));
         let shutdown = Arc::new(Notify::new());
         let handler = Arc::new(handler);
         let workers = spawn_queue_workers(runtime, cap, &queue, &shutdown, move |job: T| {

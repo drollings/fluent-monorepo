@@ -62,11 +62,13 @@ impl CalibrationReport {
 }
 
 /// Bars for [`CalibrationReport::passes_gate`]: minimum precision
-/// and maximum FPR. The shipping default (0.90 / 0.05) preserves the
-/// historical operating point; call sites with their own bars use
-/// `passes_gate_at` instead of forking the predicate. (Deliberately
-/// not a shared coherence/safety gate: FPR needs `<=` while coherence
-/// needs `>=` — routing through one borrowed name would invert a comparison.)
+/// and maximum FPR. Task-value gated: measured against labeled cases
+/// plus a must-not-fire control group before any heuristic ships. The
+/// shipping default (0.90 / 0.05) preserves the historical operating
+/// point; call sites with their own bars use `passes_gate_at` instead
+/// of forking the predicate. (Deliberately not a shared
+/// coherence/safety gate: FPR needs `<=` while coherence needs `>=` —
+/// routing through one borrowed name would invert a comparison.)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GateBars {
     /// Minimum precision to pass.

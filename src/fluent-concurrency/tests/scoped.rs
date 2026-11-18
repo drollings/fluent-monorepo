@@ -1,4 +1,4 @@
-use fluent_concurrency::scope::scoped;
+use fluent_concurrency::scope::{scoped, Scope, ScopeCloseReport};
 use fluent_wvr::{CapabilitySet, FsCapability};
 
 #[tokio::test]
@@ -25,4 +25,27 @@ async fn output_passes_through_untouched() {
     let caps = CapabilitySet::new();
     let value = scoped(caps, async { 41 + 1 }).await;
     assert_eq!(value, 42);
+}
+
+/// A spawned panic surfaces in the close report instead of vanishing:
+/// the report names the failure and carries its payload.
+#[tokio::test]
+async fn close_report_surfaces_spawned_panic() {
+    let mut scope = Scope::new();
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    scope.spawn(async move {
+        let _ = tx.send(());
+        panic!("boom-payload-marker");
+    });
+    // The send runs in the same synchronous segment as the panic, so a
+    // received signal means the task already finished panicking — no
+    // race with the abort below.
+    rx.await.expect("task ran to its panic");
+    let report: ScopeCloseReport = scope.close().await;
+    assert_eq!(report.panicked.len(), 1);
+    assert!(
+        report.panicked[0].contains("boom-payload-marker"),
+        "payload preserved, got: {:?}",
+        report.panicked
+    );
 }

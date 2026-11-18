@@ -67,7 +67,7 @@ fn hnsw_recall_at_scale_meets_threshold() {
         assert_eq!(db.get_embedding_count().expect("count"), n as i64);
         let query = calib_vec(0, dim);
         let (recall, approx, exact) = recall_at(&db, &query, k);
-        if n > common_core::constants::DEFAULT_HNSW_THRESHOLD {
+        if n > crate::hnsw::DEFAULT_HNSW_THRESHOLD {
             assert!(
                 recall >= 0.95,
                 "N={n}: recall {recall:.2} below 0.95 (approx {approx:?} vs exact {exact:?})"
@@ -88,7 +88,7 @@ fn dispatch_boundary_is_exact_and_filtered_queries_abstain() {
     // (a) len == threshold (strict `>` boundary) → abstains;
     // (b) malformed probes on a large built index → abstain, never panic;
     // (c) `vector_search` at/below threshold ≡ brute force exactly.
-    use common_core::constants::DEFAULT_HNSW_THRESHOLD;
+    use crate::hnsw::DEFAULT_HNSW_THRESHOLD;
     let dim = 8;
     let db = calib_db();
     fill(&db, DEFAULT_HNSW_THRESHOLD, dim);
@@ -139,6 +139,6 @@ fn dispatch_latency_record_above_threshold() {
         "dispatch latency N=2048 k={k}: hnsw={:?} brute={:?} (informational — threshold stays {}; recall bound enforced separately)",
         hnsw_dt,
         brute_dt,
-        common_core::constants::DEFAULT_HNSW_THRESHOLD
+        crate::hnsw::DEFAULT_HNSW_THRESHOLD
     );
 }

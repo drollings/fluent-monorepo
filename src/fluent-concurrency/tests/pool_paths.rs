@@ -11,8 +11,8 @@ fn assert_same_type<T>(_: T, _: T) {}
 #[test]
 fn facade_and_leaf_name_the_same_types() {
     assert_same_type::<Queue<u8>>(
-        Queue::new(1),
-        fluent_concurrency::pool::queue::Queue::new(1),
+        Queue::new(1).expect("test capacity is nonzero"),
+        fluent_concurrency::pool::queue::Queue::new(1).expect("test capacity is nonzero"),
     );
     assert_same_type::<Limiter>(
         Limiter::new(1),

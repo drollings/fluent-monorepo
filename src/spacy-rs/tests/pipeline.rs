@@ -1048,9 +1048,9 @@ fn should_refine_off_never_triggers() {
 fn should_refine_always_always_triggers() {
     let base = high_confidence_base();
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
@@ -1064,9 +1064,9 @@ fn should_refine_always_always_triggers() {
 fn should_refine_on_uncertain_low_overall() {
     let base = low_confidence_base();
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
@@ -1091,9 +1091,9 @@ fn should_refine_on_uncertain_low_role_coverage() {
             }),
         );
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
@@ -1118,9 +1118,9 @@ fn should_refine_on_uncertain_ties() {
             }),
         );
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
@@ -1148,7 +1148,7 @@ fn should_refine_on_uncertain_no_confidence_still_checks_task_value() {
 fn task_value_trigger_fires_on_confident_base() {
     let base = high_confidence_base();
     // Predicate is None → unresolved critical role, even though confidence is high.
-    let signal = signal_with_ids(None, Some(InterlinguaId::from_u64(200)), None);
+    let signal = signal_with_ids(None, Some(InterlinguaId::from_stored_u64(200)), None);
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
         mode: RefineMode::OnUncertain,
@@ -1165,9 +1165,9 @@ fn collision_note_triggers_refine_despite_high_confidence() {
     let mut base = high_confidence_base();
     base.collision_count = 1;
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
@@ -1185,9 +1185,9 @@ fn refine_on_collision_note_flag_gates_the_trigger() {
     let mut base = high_confidence_base();
     base.collision_count = 1;
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
@@ -1276,7 +1276,7 @@ fn refine_focus_empty_for_confident_base() {
 // ── M2.1: focus derivation includes unresolved-routing tokens ──
 
 fn resolved_id(n: u64) -> fluent_types::InterlinguaId {
-    fluent_types::InterlinguaId::from_u64(n)
+    fluent_types::InterlinguaId::from_stored_u64(n)
 }
 
 #[test]
@@ -1306,7 +1306,7 @@ fn refine_focus_includes_all_trigger_kinds() {
             resolved_id(1),
             resolved_id(2),
             resolved_id(3),
-            fluent_types::InterlinguaId::from_u64(0),
+            fluent_types::InterlinguaId::from_stored_u64(0),
         ],
         confidence: None,
     };
@@ -1336,7 +1336,7 @@ fn refine_focus_unresolved_tokens_gated_by_task_value_flags() {
         direct_object_id: None,
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![resolved_id(1), fluent_types::InterlinguaId::from_u64(0)],
+        token_ids: vec![resolved_id(1), fluent_types::InterlinguaId::from_stored_u64(0)],
         confidence: None,
     };
     let policy = RefinePolicy {
@@ -1360,9 +1360,9 @@ fn frame_coverage_is_bounded() {
         (Some(1), Some(2), Some(3)),
     ] {
         let signal = signal_with_ids(
-            p.map(InterlinguaId::from_u64),
-            s.map(InterlinguaId::from_u64),
-            d.map(InterlinguaId::from_u64),
+            p.map(InterlinguaId::from_stored_u64),
+            s.map(InterlinguaId::from_stored_u64),
+            d.map(InterlinguaId::from_stored_u64),
         );
         let cov = frame_coverage_signal(&signal);
         assert!((0.0..=1.0).contains(&cov), "coverage {cov} out of bounds");
@@ -1375,16 +1375,16 @@ fn frame_coverage_is_bounded() {
 fn frame_coverage_is_monotonic() {
     // Resolving an additional critical role never lowers coverage.
     let none = signal_with_ids(None, None, None);
-    let pred = signal_with_ids(Some(InterlinguaId::from_u64(1)), None, None);
+    let pred = signal_with_ids(Some(InterlinguaId::from_stored_u64(1)), None, None);
     let pred_subj = signal_with_ids(
-        Some(InterlinguaId::from_u64(1)),
-        Some(InterlinguaId::from_u64(2)),
+        Some(InterlinguaId::from_stored_u64(1)),
+        Some(InterlinguaId::from_stored_u64(2)),
         None,
     );
     let all = signal_with_ids(
-        Some(InterlinguaId::from_u64(1)),
-        Some(InterlinguaId::from_u64(2)),
-        Some(InterlinguaId::from_u64(3)),
+        Some(InterlinguaId::from_stored_u64(1)),
+        Some(InterlinguaId::from_stored_u64(2)),
+        Some(InterlinguaId::from_stored_u64(3)),
     );
     let cov_none = frame_coverage_signal(&none);
     let cov_pred = frame_coverage_signal(&pred);
@@ -1400,8 +1400,8 @@ fn frame_coverage_is_monotonic() {
 #[test]
 fn frame_coverage_zero_sentinel_is_not_counted() {
     // InterlinguaId(0) is the RESERVED none-sentinel — must not count as resolved.
-    let sentinel = InterlinguaId::from_u64(0);
-    let signal = signal_with_ids(Some(sentinel), Some(InterlinguaId::from_u64(2)), None);
+    let sentinel = InterlinguaId::from_stored_u64(0);
+    let signal = signal_with_ids(Some(sentinel), Some(InterlinguaId::from_stored_u64(2)), None);
     let cov = frame_coverage_signal(&signal);
     assert!(
         (cov - 1.0 / 3.0).abs() < f64::EPSILON,
@@ -1425,9 +1425,9 @@ fn frame_coverage_golden_values() {
     ];
     for (p, s, d, expected) in cases {
         let signal = signal_with_ids(
-            p.map(InterlinguaId::from_u64),
-            s.map(InterlinguaId::from_u64),
-            d.map(InterlinguaId::from_u64),
+            p.map(InterlinguaId::from_stored_u64),
+            s.map(InterlinguaId::from_stored_u64),
+            d.map(InterlinguaId::from_stored_u64),
         );
         let cov = frame_coverage_signal(&signal);
         assert!(
@@ -1440,9 +1440,9 @@ fn frame_coverage_golden_values() {
 #[test]
 fn frame_coverage_deterministic_across_repeated_runs() {
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(42)),
+        Some(InterlinguaId::from_stored_u64(42)),
         None,
-        Some(InterlinguaId::from_u64(99)),
+        Some(InterlinguaId::from_stored_u64(99)),
     );
     let first = frame_coverage_signal(&signal);
     for _ in 0..10 {
@@ -1454,9 +1454,9 @@ fn frame_coverage_deterministic_across_repeated_runs() {
 fn subject_present_but_unresolved_triggers_refine() {
     let base = high_confidence_base();
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
+        Some(InterlinguaId::from_stored_u64(100)),
         None, // subject unresolved
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat")); // subject present
     let policy = RefinePolicy {
@@ -1470,9 +1470,9 @@ fn subject_present_but_unresolved_triggers_refine() {
 fn subject_absent_does_not_trigger_refine() {
     let base = high_confidence_base();
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
+        Some(InterlinguaId::from_stored_u64(100)),
         None, // subject absent → None
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(None, Some("mat")); // no subject
     let policy = RefinePolicy {
@@ -1501,9 +1501,9 @@ fn refine_on_ties_flag_gates_the_trigger() {
             }),
         );
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     let policy = RefinePolicy {
@@ -1539,9 +1539,9 @@ fn refine_reason_off_is_no_trigger() {
 fn refine_reason_always_is_always_policy() {
     let base = high_confidence_base();
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(100)),
-        Some(InterlinguaId::from_u64(200)),
-        Some(InterlinguaId::from_u64(300)),
+        Some(InterlinguaId::from_stored_u64(100)),
+        Some(InterlinguaId::from_stored_u64(200)),
+        Some(InterlinguaId::from_stored_u64(300)),
     );
     let routing = routing_with(Some("cat"), Some("mat"));
     assert_eq!(
@@ -1562,15 +1562,15 @@ fn refine_reason_always_is_always_policy() {
 fn refine_reason_confidence_overall() {
     let base = low_confidence_base(); // overall 0.3 < 0.7
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(10)),
-        Some(InterlinguaId::from_u64(20)),
-        Some(InterlinguaId::from_u64(30)),
+        Some(InterlinguaId::from_stored_u64(10)),
+        Some(InterlinguaId::from_stored_u64(20)),
+        Some(InterlinguaId::from_stored_u64(30)),
     );
     // Routing has no subject/object so task-value unresolved_role won't fire.
     let routing = routing_with(None, None);
     // Disable other task-value triggers so confidence is the only trigger.
     let mut signal_no_propn = signal.clone();
-    signal_no_propn.token_ids = vec![InterlinguaId::from_u64(1)];
+    signal_no_propn.token_ids = vec![InterlinguaId::from_stored_u64(1)];
     let policy = RefinePolicy {
         mode: RefineMode::OnUncertain,
         refine_on_unresolved_propn: false,
@@ -1599,12 +1599,12 @@ fn refine_reason_confidence_role_coverage() {
             }),
         );
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(10)),
-        Some(InterlinguaId::from_u64(20)),
-        Some(InterlinguaId::from_u64(30)),
+        Some(InterlinguaId::from_stored_u64(10)),
+        Some(InterlinguaId::from_stored_u64(20)),
+        Some(InterlinguaId::from_stored_u64(30)),
     );
     let mut signal_no_propn = signal.clone();
-    signal_no_propn.token_ids = vec![InterlinguaId::from_u64(1)];
+    signal_no_propn.token_ids = vec![InterlinguaId::from_stored_u64(1)];
     let routing = routing_with(None, None);
     let policy = RefinePolicy {
         mode: RefineMode::OnUncertain,
@@ -1634,12 +1634,12 @@ fn refine_reason_confidence_ties() {
             }),
         );
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(10)),
-        Some(InterlinguaId::from_u64(20)),
-        Some(InterlinguaId::from_u64(30)),
+        Some(InterlinguaId::from_stored_u64(10)),
+        Some(InterlinguaId::from_stored_u64(20)),
+        Some(InterlinguaId::from_stored_u64(30)),
     );
     let mut signal_no_propn = signal.clone();
-    signal_no_propn.token_ids = vec![InterlinguaId::from_u64(1)];
+    signal_no_propn.token_ids = vec![InterlinguaId::from_stored_u64(1)];
     let routing = routing_with(None, None);
     let policy = RefinePolicy {
         mode: RefineMode::OnUncertain,
@@ -1676,12 +1676,12 @@ fn refine_reason_task_value_unresolved_role() {
 fn refine_reason_task_value_unresolved_propn() {
     let base = high_confidence_base();
     let signal = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
-        subject_id: Some(InterlinguaId::from_u64(20)),
-        direct_object_id: Some(InterlinguaId::from_u64(30)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+        subject_id: Some(InterlinguaId::from_stored_u64(20)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(0)],
+        token_ids: vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(0)],
         confidence: None,
     };
     let routing = routing_with(None, None);
@@ -1702,12 +1702,12 @@ fn refine_reason_task_value_collision() {
     let mut base = high_confidence_base();
     base.collision_count = 2;
     let signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(10)),
-        Some(InterlinguaId::from_u64(20)),
-        Some(InterlinguaId::from_u64(30)),
+        Some(InterlinguaId::from_stored_u64(10)),
+        Some(InterlinguaId::from_stored_u64(20)),
+        Some(InterlinguaId::from_stored_u64(30)),
     );
     let mut signal_no_propn = signal.clone();
-    signal_no_propn.token_ids = vec![InterlinguaId::from_u64(1)];
+    signal_no_propn.token_ids = vec![InterlinguaId::from_stored_u64(1)];
     let routing = routing_with(None, None);
     let policy = RefinePolicy {
         mode: RefineMode::OnUncertain,
@@ -1725,12 +1725,12 @@ fn refine_reason_task_value_collision() {
 fn refine_reason_no_trigger_on_confident_and_resolved() {
     let base = high_confidence_base();
     let signal = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
-        subject_id: Some(InterlinguaId::from_u64(20)),
-        direct_object_id: Some(InterlinguaId::from_u64(30)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+        subject_id: Some(InterlinguaId::from_stored_u64(20)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(1), InterlinguaId::from_u64(2)],
+        token_ids: vec![InterlinguaId::from_stored_u64(1), InterlinguaId::from_stored_u64(2)],
         confidence: None,
     };
     let routing = routing_with(Some("cat"), Some("mat"));
@@ -1766,12 +1766,12 @@ fn refine_reason_metrics_snapshot_counts_per_reason() {
     let base_low = low_confidence_base();
     let base_high = high_confidence_base();
     let resolved = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
-        subject_id: Some(InterlinguaId::from_u64(20)),
-        direct_object_id: Some(InterlinguaId::from_u64(30)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+        subject_id: Some(InterlinguaId::from_stored_u64(20)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(1)],
+        token_ids: vec![InterlinguaId::from_stored_u64(1)],
         confidence: None,
     };
     let routing_none = routing_with(None, None);
@@ -1829,12 +1829,12 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
     // Cases: Overall
     let base_low = low_confidence_base();
     let sig = signal_with_ids(
-        Some(InterlinguaId::from_u64(10)),
-        Some(InterlinguaId::from_u64(20)),
-        Some(InterlinguaId::from_u64(30)),
+        Some(InterlinguaId::from_stored_u64(10)),
+        Some(InterlinguaId::from_stored_u64(20)),
+        Some(InterlinguaId::from_stored_u64(30)),
     );
     let mut sig_one = sig.clone();
-    sig_one.token_ids = vec![InterlinguaId::from_u64(1)];
+    sig_one.token_ids = vec![InterlinguaId::from_stored_u64(1)];
     let routing_none = routing_with(None, None);
     let r1 = refine_reason(&base_low, &sig_one, &routing_none, policy);
     let r1_agg = refine_reason_aggregated(
@@ -1847,12 +1847,12 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
     // NoTrigger (confident, resolved)
     let base_high = high_confidence_base();
     let sig_resolved = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
-        subject_id: Some(InterlinguaId::from_u64(20)),
-        direct_object_id: Some(InterlinguaId::from_u64(30)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+        subject_id: Some(InterlinguaId::from_stored_u64(20)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(1), InterlinguaId::from_u64(2)],
+        token_ids: vec![InterlinguaId::from_stored_u64(1), InterlinguaId::from_stored_u64(2)],
         confidence: None,
     };
     let routing_some = routing_with(Some("cat"), Some("mat"));
@@ -1877,12 +1877,12 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
 
     // UnresolvedPropn
     let sig_propn = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
-        subject_id: Some(InterlinguaId::from_u64(20)),
-        direct_object_id: Some(InterlinguaId::from_u64(30)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+        subject_id: Some(InterlinguaId::from_stored_u64(20)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(0)],
+        token_ids: vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(0)],
         confidence: None,
     };
     let r4 = refine_reason(&base_high, &sig_propn, &routing_none, policy);
@@ -1897,7 +1897,7 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
     let mut base_coll = high_confidence_base();
     base_coll.collision_count = 1;
     let mut sig_coll = sig.clone();
-    sig_coll.token_ids = vec![InterlinguaId::from_u64(1)];
+    sig_coll.token_ids = vec![InterlinguaId::from_stored_u64(1)];
     let r5 = refine_reason(&base_coll, &sig_coll, &routing_none, policy);
     let r5_agg = refine_reason_aggregated(
         &base_coll,
@@ -1915,28 +1915,28 @@ fn refine_reason_aggregated_propn_is_document_wide() {
     let base = high_confidence_base();
     // Each signal: 3 tokens, 1 unresolved = 33% < 40% -> single NoTrigger
     let sig_a = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
-        subject_id: Some(InterlinguaId::from_u64(20)),
-        direct_object_id: Some(InterlinguaId::from_u64(30)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+        subject_id: Some(InterlinguaId::from_stored_u64(20)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
         token_ids: vec![
-            InterlinguaId::from_u64(1),
-            InterlinguaId::from_u64(2),
-            InterlinguaId::from_u64(0),
+            InterlinguaId::from_stored_u64(1),
+            InterlinguaId::from_stored_u64(2),
+            InterlinguaId::from_stored_u64(0),
         ],
         confidence: None,
     };
     let sig_b = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(11)),
-        subject_id: Some(InterlinguaId::from_u64(21)),
-        direct_object_id: Some(InterlinguaId::from_u64(31)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(11)),
+        subject_id: Some(InterlinguaId::from_stored_u64(21)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(31)),
         indirect_object_id: None,
         concept_ids: vec![],
         token_ids: vec![
-            InterlinguaId::from_u64(1),
-            InterlinguaId::from_u64(2),
-            InterlinguaId::from_u64(0),
+            InterlinguaId::from_stored_u64(1),
+            InterlinguaId::from_stored_u64(2),
+            InterlinguaId::from_stored_u64(0),
         ],
         confidence: None,
     };
@@ -1967,15 +1967,15 @@ fn refine_reason_aggregated_propn_is_document_wide() {
     );
     // Now 2 unresolved out of 3 per sentence =66% >40% -> single triggers
     let sig_high = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
-        subject_id: Some(InterlinguaId::from_u64(20)),
-        direct_object_id: Some(InterlinguaId::from_u64(30)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+        subject_id: Some(InterlinguaId::from_stored_u64(20)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
         token_ids: vec![
-            InterlinguaId::from_u64(0),
-            InterlinguaId::from_u64(0),
-            InterlinguaId::from_u64(1),
+            InterlinguaId::from_stored_u64(0),
+            InterlinguaId::from_stored_u64(0),
+            InterlinguaId::from_stored_u64(1),
         ],
         confidence: None,
     };
@@ -2739,12 +2739,12 @@ fn async_sync_refine_agree() {
                 semantic_plausibility: None,
             },
             InterlinguaSignal {
-                predicate_id: Some(InterlinguaId::from_u64(10)),
-                subject_id: Some(InterlinguaId::from_u64(20)),
-                direct_object_id: Some(InterlinguaId::from_u64(30)),
+                predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+                subject_id: Some(InterlinguaId::from_stored_u64(20)),
+                direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
                 indirect_object_id: None,
                 concept_ids: vec![],
-                token_ids: vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(20)],
+                token_ids: vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(20)],
                 confidence: None,
             },
             RoutingSignal {
@@ -2785,7 +2785,7 @@ fn async_sync_refine_agree() {
                 direct_object_id: None,
                 indirect_object_id: None,
                 concept_ids: vec![],
-                token_ids: vec![InterlinguaId::from_u64(0)],
+                token_ids: vec![InterlinguaId::from_stored_u64(0)],
                 confidence: None,
             },
             RoutingSignal {
@@ -2821,12 +2821,12 @@ fn async_sync_refine_agree() {
                 semantic_plausibility: None,
             },
             InterlinguaSignal {
-                predicate_id: Some(InterlinguaId::from_u64(10)),
-                subject_id: Some(InterlinguaId::from_u64(20)),
-                direct_object_id: Some(InterlinguaId::from_u64(30)),
+                predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+                subject_id: Some(InterlinguaId::from_stored_u64(20)),
+                direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
                 indirect_object_id: None,
                 concept_ids: vec![],
-                token_ids: vec![InterlinguaId::from_u64(10)],
+                token_ids: vec![InterlinguaId::from_stored_u64(10)],
                 confidence: None,
             },
             RoutingSignal {
@@ -2868,7 +2868,7 @@ fn async_sync_refine_agree() {
                 direct_object_id: None,
                 indirect_object_id: None,
                 concept_ids: vec![],
-                token_ids: vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(20)],
+                token_ids: vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(20)],
                 confidence: None,
             },
             RoutingSignal {
@@ -2904,17 +2904,17 @@ fn async_sync_refine_agree() {
                 semantic_plausibility: None,
             },
             InterlinguaSignal {
-                predicate_id: Some(InterlinguaId::from_u64(10)),
-                subject_id: Some(InterlinguaId::from_u64(20)),
-                direct_object_id: Some(InterlinguaId::from_u64(30)),
+                predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+                subject_id: Some(InterlinguaId::from_stored_u64(20)),
+                direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
                 indirect_object_id: None,
                 concept_ids: vec![],
                 token_ids: vec![
-                    InterlinguaId::from_u64(10),
-                    InterlinguaId::from_u64(0),
-                    InterlinguaId::from_u64(0),
-                    InterlinguaId::from_u64(0),
-                    InterlinguaId::from_u64(0),
+                    InterlinguaId::from_stored_u64(10),
+                    InterlinguaId::from_stored_u64(0),
+                    InterlinguaId::from_stored_u64(0),
+                    InterlinguaId::from_stored_u64(0),
+                    InterlinguaId::from_stored_u64(0),
                 ],
                 confidence: None,
             },
@@ -2951,12 +2951,12 @@ fn async_sync_refine_agree() {
                 semantic_plausibility: None,
             },
             InterlinguaSignal {
-                predicate_id: Some(InterlinguaId::from_u64(10)),
-                subject_id: Some(InterlinguaId::from_u64(20)),
-                direct_object_id: Some(InterlinguaId::from_u64(30)),
+                predicate_id: Some(InterlinguaId::from_stored_u64(10)),
+                subject_id: Some(InterlinguaId::from_stored_u64(20)),
+                direct_object_id: Some(InterlinguaId::from_stored_u64(30)),
                 indirect_object_id: None,
                 concept_ids: vec![],
-                token_ids: vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(20)],
+                token_ids: vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(20)],
                 confidence: None,
             },
             RoutingSignal {
@@ -3140,28 +3140,28 @@ fn r2_aggregated_threshold_across_multi_sentence_document() {
     let base = high_confidence_base();
     let s1_routing = routing_with(None, None);
     let s1_signal = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(10)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(10)),
         subject_id: None,
         direct_object_id: None,
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(20)],
+        token_ids: vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(20)],
         confidence: None,
     };
     let s2_routing = routing_with(Some("cat"), Some("mat"));
     let s2_signal = InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(30)),
-        subject_id: Some(InterlinguaId::from_u64(40)),
-        direct_object_id: Some(InterlinguaId::from_u64(50)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(30)),
+        subject_id: Some(InterlinguaId::from_stored_u64(40)),
+        direct_object_id: Some(InterlinguaId::from_stored_u64(50)),
         indirect_object_id: None,
         concept_ids: vec![],
         token_ids: vec![
-            InterlinguaId::from_u64(0),
-            InterlinguaId::from_u64(0),
-            InterlinguaId::from_u64(0),
-            InterlinguaId::from_u64(0),
-            InterlinguaId::from_u64(0),
-            InterlinguaId::from_u64(10),
+            InterlinguaId::from_stored_u64(0),
+            InterlinguaId::from_stored_u64(0),
+            InterlinguaId::from_stored_u64(0),
+            InterlinguaId::from_stored_u64(0),
+            InterlinguaId::from_stored_u64(0),
+            InterlinguaId::from_stored_u64(10),
         ],
         confidence: None,
     };
@@ -3193,24 +3193,24 @@ fn r2_aggregated_no_false_positive_when_all_sentences_resolved() {
     let s1 = (
         routing_with(None, None),
         InterlinguaSignal {
-            predicate_id: Some(InterlinguaId::from_u64(10)),
+            predicate_id: Some(InterlinguaId::from_stored_u64(10)),
             subject_id: None,
             direct_object_id: None,
             indirect_object_id: None,
             concept_ids: vec![],
-            token_ids: vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(20)],
+            token_ids: vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(20)],
             confidence: None,
         },
     );
     let s2 = (
         routing_with(Some("cat"), Some("mat")),
         InterlinguaSignal {
-            predicate_id: Some(InterlinguaId::from_u64(30)),
-            subject_id: Some(InterlinguaId::from_u64(40)),
-            direct_object_id: Some(InterlinguaId::from_u64(50)),
+            predicate_id: Some(InterlinguaId::from_stored_u64(30)),
+            subject_id: Some(InterlinguaId::from_stored_u64(40)),
+            direct_object_id: Some(InterlinguaId::from_stored_u64(50)),
             indirect_object_id: None,
             concept_ids: vec![],
-            token_ids: vec![InterlinguaId::from_u64(30), InterlinguaId::from_u64(40)],
+            token_ids: vec![InterlinguaId::from_stored_u64(30), InterlinguaId::from_stored_u64(40)],
             confidence: None,
         },
     );
@@ -3526,9 +3526,9 @@ fn m71_policy() -> RefinePolicy {
 fn m71_resolved() -> (InterlinguaSignal, RoutingSignal) {
     (
         signal_with_ids(
-            Some(InterlinguaId::from_u64(10)),
-            Some(InterlinguaId::from_u64(20)),
-            Some(InterlinguaId::from_u64(30)),
+            Some(InterlinguaId::from_stored_u64(10)),
+            Some(InterlinguaId::from_stored_u64(20)),
+            Some(InterlinguaId::from_stored_u64(30)),
         ),
         routing_with(Some("cat"), Some("mat")),
     )
@@ -3590,11 +3590,11 @@ fn unresolved_fraction_boundary_and_empty_signal() {
     let (_, routing) = m71_resolved();
     // Exactly at threshold (1/2 == 0.5) does NOT trigger (strict `>`).
     let mut signal = signal_with_ids(
-        Some(InterlinguaId::from_u64(10)),
-        Some(InterlinguaId::from_u64(20)),
-        Some(InterlinguaId::from_u64(30)),
+        Some(InterlinguaId::from_stored_u64(10)),
+        Some(InterlinguaId::from_stored_u64(20)),
+        Some(InterlinguaId::from_stored_u64(30)),
     );
-    signal.token_ids = vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(0)];
+    signal.token_ids = vec![InterlinguaId::from_stored_u64(10), InterlinguaId::from_stored_u64(0)];
     let base = m71_base(0.9, 1.0, vec![0.9]);
     assert_eq!(
         refine_reason(&base, &signal, &routing, policy),
@@ -3608,9 +3608,9 @@ fn unresolved_fraction_boundary_and_empty_signal() {
     );
     // Just above threshold (2/3 > 0.5) triggers UnresolvedPropn.
     signal.token_ids = vec![
-        InterlinguaId::from_u64(0),
-        InterlinguaId::from_u64(0),
-        InterlinguaId::from_u64(10),
+        InterlinguaId::from_stored_u64(0),
+        InterlinguaId::from_stored_u64(0),
+        InterlinguaId::from_stored_u64(10),
     ];
     assert_eq!(
         refine_reason(&base, &signal, &routing, policy),
@@ -3651,10 +3651,10 @@ fn poisoned_pipeline_state_returns_error_instead_of_panicking() {
 // trigger can fire).
 
 fn ids(resolved: usize, unresolved: usize) -> InterlinguaSignal {
-    let mut token_ids = vec![InterlinguaId::from_u64(0); unresolved];
-    token_ids.extend(std::iter::repeat_n(InterlinguaId::from_u64(7), resolved));
+    let mut token_ids = vec![InterlinguaId::from_stored_u64(0); unresolved];
+    token_ids.extend(std::iter::repeat_n(InterlinguaId::from_stored_u64(7), resolved));
     InterlinguaSignal {
-        predicate_id: Some(InterlinguaId::from_u64(7)),
+        predicate_id: Some(InterlinguaId::from_stored_u64(7)),
         subject_id: None,
         direct_object_id: None,
         indirect_object_id: None,

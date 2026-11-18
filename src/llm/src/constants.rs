@@ -6,8 +6,10 @@
 //! `DEFAULT_IDLE_TIMEOUT_MS`, `DEFAULT_RETRY_INTERVAL_S`) that every
 //! router serde default and dispatch call site reads. Generic caps
 //! (`MAX_VALUE_LEN`, `MAX_FILE_SIZE`, `MAX_JSON_DEPTH`,
-//! `MAX_KNN_CANDIDATES`, `MAX_MCP_REQUEST_SIZE`, `DEFAULT_HNSW_THRESHOLD`,
-//! `default_true`, `HnswParams`) stay in `common-core`; ONNX tuning
+//! `MAX_MCP_REQUEST_SIZE`, `default_true`) stay in `common-core`; the HNSW
+//! vocabulary (`MAX_KNN_CANDIDATES`, `DEFAULT_HNSW_THRESHOLD`, `HnswParams`)
+//! is canonically owned by `search_vector::hnsw` with value-identical
+//! `common_core::constants` shims. ONNX tuning
 //! (`DEFAULT_ONNX_LIMITER_CAP`, `DEFAULT_ONNX_THREADS`) lives in the router.
 //!
 //! The locked values in `tests/constants.rs` are the lasting contract.

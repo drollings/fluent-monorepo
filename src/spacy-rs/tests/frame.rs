@@ -426,7 +426,7 @@ fn unattached_doc_frame_has_fallback_predicate_and_no_roles() {
 }
 
 fn sense_id(v: u64) -> fluent_types::InterlinguaId {
-    fluent_types::InterlinguaId::from_u64(v)
+    fluent_types::InterlinguaId::from_stored_u64(v)
 }
 
 fn resolution_for(chosen: u64) -> Resolution {

@@ -7,7 +7,7 @@ use tempfile::TempDir;
 
 #[test]
 fn read_file_alloc_returns_none_for_nonexistent() {
-    assert!(read_file_alloc("/nonexistent/path/file.txt").is_none());
+    assert!(read_file_alloc_opt("/nonexistent/path/file.txt").is_none());
 }
 
 #[test]
@@ -16,9 +16,17 @@ fn read_file_alloc_reads_content() {
     let path = dir.path().join("test.txt");
     fs::write(&path, "hello").unwrap();
     assert_eq!(
-        read_file_alloc(&path.to_string_lossy()),
+        read_file_alloc_opt(&path.to_string_lossy()),
         Some("hello".into())
     );
+}
+
+/// The deprecated `_err`-less names keep resolving while the shim lives.
+#[test]
+#[allow(deprecated)]
+fn deprecated_read_file_alloc_aliases_still_resolve() {
+    assert!(read_file_alloc("/nonexistent/path/file.txt").is_none());
+    assert!(read_file_alloc_err("/nonexistent/path/file.txt").is_err());
 }
 
 #[test]
@@ -76,7 +84,7 @@ fn strip_path_prefix_basic() {
 
 #[test]
 fn read_file_alloc_err_missing() {
-    let result = read_file_alloc_err("/nonexistent/path/file.txt");
+    let result = read_file_alloc_result("/nonexistent/path/file.txt");
     assert!(result.is_err());
 }
 
@@ -328,9 +336,9 @@ fn system_time_ns_is_zero_for_pre_epoch_times() {
 
 #[test]
 fn now_ns_tracks_system_time_ns() {
-    let before = now_ns();
+    let before = common_core::time::now_ns();
     let sampled = system_time_ns(SystemTime::now());
-    let after = now_ns();
+    let after = common_core::time::now_ns();
     assert!(
         (before..=after).contains(&sampled),
         "sampled {sampled} outside {before}..={after}"

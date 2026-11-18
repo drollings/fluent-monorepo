@@ -89,7 +89,7 @@ fn apply_corrections_modifies_target_tokens() {
 fn review_prompt_lists_concepts_and_parse() {
     let p = parse();
     let concepts = vec![ConceptMetadata {
-        id: InterlinguaId::from_u64(1),
+        id: InterlinguaId::from_stored_u64(1),
         canonical_name: "schema:Cat".into(),
         namespace: InterlinguaNamespace::YagoClass,
         yago_iri: Some("iri".into()),

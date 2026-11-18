@@ -8,14 +8,11 @@ pub(crate) mod closure;
 pub mod dep_graph;
 pub mod error;
 pub mod hierarchy;
-pub mod middleware;
-pub(crate) mod narrowing;
 pub mod resolver;
+pub(crate) mod narrowing;
 pub mod target;
-pub mod target_work_unit;
 pub mod type_inference;
 pub mod version;
-pub mod work_unit;
 pub mod wvr;
 pub mod yamake_loader;
 

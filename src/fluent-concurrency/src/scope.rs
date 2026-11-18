@@ -24,9 +24,11 @@
 //!     });
 //! ```
 
+use std::any::Any;
 use std::future::Future;
+use std::time::Duration;
 
-use tokio::task::{AbortHandle, JoinSet};
+use tokio::task::{AbortHandle, JoinError, JoinSet};
 
 // The capability-gating task-local lives in `fluent-wvr` (the canonical home
 // of the capability model). Re-exported here so `Scope`/`SupervisedBatch` propagation and
@@ -34,6 +36,44 @@ use tokio::task::{AbortHandle, JoinSet};
 // `fluent-concurrency` and `fluent-db` read the same variable.
 pub use fluent_wvr::capability::CURRENT_CAPS;
 use fluent_wvr::CapabilitySet;
+
+/// Outcome of draining a `Scope`: tasks that ran to completion, tasks
+/// aborted by the close, and the payloads of tasks that panicked.
+#[derive(Debug, Default)]
+pub struct ScopeCloseReport {
+    /// Tasks that ran to completion before the drain finished.
+    pub completed: usize,
+    /// Tasks aborted by the close (never ran to completion, never panicked).
+    pub cancelled: usize,
+    /// Panic payloads of tasks that panicked, in drain order.
+    pub panicked: Vec<String>,
+}
+
+/// Render a panic payload as text: `&str`/`String` verbatim, anything
+/// else as a placeholder (the payload type is not observable).
+fn panic_payload(payload: &(dyn Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        return s.to_string();
+    }
+    if let Some(s) = payload.downcast_ref::<String>() {
+        return s.clone();
+    }
+    String::from("<non-string panic payload>")
+}
+
+/// Sort one joined task into its report bucket, logging panics with
+/// payload through `tracing::error!` so failures never vanish silently.
+fn record_outcome(result: Result<(), JoinError>, report: &mut ScopeCloseReport) {
+    match result {
+        Ok(()) => report.completed += 1,
+        Err(e) if e.is_panic() => {
+            let payload = panic_payload(&*e.into_panic());
+            tracing::error!(payload = %payload, "scoped task panicked during close");
+            report.panicked.push(payload);
+        }
+        Err(_) => report.cancelled += 1,
+    }
+}
 
 /// Install `caps` around one future and return its output.
 ///
@@ -65,7 +105,7 @@ where
 /// # async fn example2() {
 /// let mut scope = Scope::new();
 /// scope.spawn(async { /* work */ });
-/// let _guard = scope.defer(); // calls close().await on drop
+/// let _guard = scope.defer(); // calls close_sync() on drop
 /// # }
 /// ```
 pub struct Scope {
@@ -91,23 +131,28 @@ impl Scope {
         })
     }
 
-    /// Aborts all tasks, then drains their handles: every spawned task is
-    /// accounted for before this returns.
-    pub async fn close(&mut self) {
+    /// Aborts all tasks, then drains their handles into a report: every
+    /// spawned task is accounted for before this returns. Panicking
+    /// tasks land in `report.panicked` (also logged with payload).
+    pub async fn close(&mut self) -> ScopeCloseReport {
         self.closed = true;
         self.tasks.abort_all();
-        while self.tasks.join_next().await.is_some() {}
+        let mut report = ScopeCloseReport::default();
+        while let Some(result) = self.tasks.join_next().await {
+            record_outcome(result, &mut report);
+        }
+        report
     }
 
     /// Synchronous variant of `close()`: aborts all tasks, then drops the
     /// set so no task makes progress past its next yield point.
     ///
-    /// No waiting: a task mid-poll on another thread may still be running
-    /// when this returns; dropping the set only prevents further polls.
-    /// Use this when `Drop` must cancel spawned tasks without blocking,
-    /// e.g. in `ScopeGuard::drop` where the async `close().await` would
-    /// require a separate spawned task that itself could be aborted if
-    /// the runtime drops.
+    /// Panic-unobservable by construction: dropping the set never joins,
+    /// so child `JoinError`s (including panics) cannot be observed here.
+    /// Prefer `close().await` in all new code; use this when `Drop` must
+    /// cancel spawned tasks without blocking, e.g. in `ScopeGuard::drop`
+    /// where the async `close().await` would require a separate spawned
+    /// task that itself could be aborted if the runtime drops.
     ///
     /// We do not block on the active runtime to wait for the aborts to
     /// settle — `block_on` from within a runtime is undefined behavior,
@@ -124,25 +169,31 @@ impl Scope {
     }
 
     /// Gracefully shuts down: waits up to `timeout` for tasks to complete,
-    /// then aborts any remaining tasks.
-    pub async fn close_graceful(&mut self, timeout: std::time::Duration) {
+    /// then aborts any remaining tasks. Returns the same drain report as
+    /// `close`, covering both the graceful window and the abort sweep.
+    pub async fn close_graceful(&mut self, timeout: Duration) -> ScopeCloseReport {
         self.closed = true;
+        let mut report = ScopeCloseReport::default();
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
             if self.tasks.is_empty() {
                 break;
             }
             match tokio::time::timeout_at(deadline, self.tasks.join_next()).await {
-                Ok(Some(_)) => {}
+                Ok(Some(result)) => record_outcome(result, &mut report),
                 Ok(None) => break,
                 Err(_) => {
-                    // Timeout expired — abort remaining tasks
+                    // Timeout expired — abort remaining tasks, then drain
+                    // the sweep into the same report.
                     self.tasks.abort_all();
-                    while self.tasks.join_next().await.is_some() {}
+                    while let Some(result) = self.tasks.join_next().await {
+                        record_outcome(result, &mut report);
+                    }
                     break;
                 }
             }
         }
+        report
     }
 
     pub fn is_empty(&self) -> bool {
@@ -150,6 +201,9 @@ impl Scope {
     }
 
     /// Returns a `ScopeGuard` that will call `close_sync()` on drop.
+    ///
+    /// Prefer `close().await` in new code: the guard exists for scopes
+    /// that must be cleaned up from `Drop`, where awaiting is impossible.
     ///
     /// This is the ergonomic alternative to manually calling `close().await`.
     /// The guard calls `close_sync()` synchronously because spawning an async

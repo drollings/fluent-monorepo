@@ -1,7 +1,7 @@
-//! `KnowledgeCapability` implementation for coral-context's `Library`.
+//! `KnowledgeStore` implementation for coral-context's `Library`.
 //!
 //! This is the agreed cross-crate boundary: the router can read coral's Context
-//! through `fluent_types::KnowledgeCapability` without importing coral (and
+//! through `fluent_types::KnowledgeStore` without importing coral (and
 //! coral never imports the router). It is a thin adapter over the existing
 //! `insert_node` / store queries / `knn_brute_force` — no new storage logic.
 //!
@@ -10,12 +10,12 @@
 //! (`CoralKnowledgeCapability`) in the current task-local, mirroring
 //! `fluent_db::capability::check_db_capability`.
 
-use fluent_types::{ContentNode, KnnHit, KnowledgeCapability, KnowledgeError, NodeId};
+use fluent_types::{ContentNode, KnnHit, KnowledgeError, KnowledgeStore, NodeId};
 use fluent_wvr::capability::{check_capability, Capability};
 
 use crate::db::{Library, LibraryError};
 
-/// Coral-owned capability token gating the `KnowledgeCapability` surface.
+/// Coral-owned capability token gating the `KnowledgeStore` surface.
 pub struct CoralKnowledgeCapability;
 
 impl Capability for CoralKnowledgeCapability {
@@ -37,7 +37,7 @@ fn library_to_knowledge(e: LibraryError) -> KnowledgeError {
     }
 }
 
-impl KnowledgeCapability for Library {
+impl KnowledgeStore for Library {
     fn get_node(&self, node_id: NodeId) -> Option<ContentNode> {
         if check_capability(&CoralKnowledgeCapability).is_err() {
             return None;
@@ -89,15 +89,15 @@ mod tests {
     #[test]
     fn deny_without_token() {
         let lib = lib();
-        assert!(KnowledgeCapability::get_node(&lib, NodeId::from_int(1)).is_none());
-        assert!(KnowledgeCapability::get_session_nodes(&lib, "s", 10).is_empty());
+        assert!(KnowledgeStore::get_node(&lib, NodeId::from_int(1)).is_none());
+        assert!(KnowledgeStore::get_session_nodes(&lib, "s", 10).is_empty());
         let node = make_node("n", "test");
         assert!(matches!(
-            KnowledgeCapability::insert_node(&lib, &node),
+            KnowledgeStore::insert_node(&lib, &node),
             Err(KnowledgeError::Other(_))
         ));
         assert!(matches!(
-            KnowledgeCapability::knn_search(&lib, &[0.0; 4], 3),
+            KnowledgeStore::knn_search(&lib, &[0.0; 4], 3),
             Err(KnowledgeError::Other(_))
         ));
     }
@@ -112,11 +112,11 @@ mod tests {
                     embedding: Some(vec![1.0, 0.0, 0.0, 0.0]),
                     ..make_node("test-node", "test")
                 };
-                let id = KnowledgeCapability::insert_node(&lib, &node).unwrap();
-                let fetched = KnowledgeCapability::get_node(&lib, id).unwrap();
+                let id = KnowledgeStore::insert_node(&lib, &node).unwrap();
+                let fetched = KnowledgeStore::get_node(&lib, id).unwrap();
                 assert_eq!(fetched.name.as_str(), "test-node");
                 // Reuses the existing Library::knn_search (brute force / HNSW).
-                let hits = KnowledgeCapability::knn_search(&lib, &[1.0, 0.0, 0.0, 0.0], 3).unwrap();
+                let hits = KnowledgeStore::knn_search(&lib, &[1.0, 0.0, 0.0, 0.0], 3).unwrap();
                 assert_eq!(hits.len(), 1);
                 assert_eq!(hits[0].node_id, id);
             })
@@ -129,7 +129,7 @@ mod tests {
         CURRENT_CAPS
             .scope(CapabilitySet::new(), async {
                 assert!(
-                    KnowledgeCapability::get_node(&lib, NodeId::from_int(1)).is_none(),
+                    KnowledgeStore::get_node(&lib, NodeId::from_int(1)).is_none(),
                     "must deny without the coral token even inside a runtime"
                 );
             })

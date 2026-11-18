@@ -3,7 +3,7 @@
 //! plus stub-mention assertions.
 
 #[allow(unused_imports)]
-use fluent_db::cache::TtlCache;
+use fluent_db::cache::SqliteTtlCache;
 #[allow(unused_imports)]
 use fluent_db::capability::DbCapability;
 #[allow(unused_imports)]
@@ -23,7 +23,7 @@ fn stubs_name_only_real_public_items() {
         "SqliteStore",
         "DbCapability",
         "query_row",
-        "TtlCache",
+        "SqliteTtlCache",
     ] {
         assert!(
             VISION.contains(name) || ARCHITECTURE.contains(name),

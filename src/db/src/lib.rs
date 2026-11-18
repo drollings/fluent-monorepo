@@ -65,8 +65,6 @@ pub mod query;
 pub mod sqlite;
 #[cfg(feature = "sqlite")]
 pub mod store;
-#[cfg(feature = "sqlite")]
-pub mod wvr;
 
 #[cfg(feature = "sqlite")]
 pub use sqlite::{

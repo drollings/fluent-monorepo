@@ -205,7 +205,10 @@ impl From<crate::protocol::LlmError> for DecisionError {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ThresholdSet {
+    /// Act threshold: confidence-gated (producer self-doubt), never a
+    /// correctness verdict on its own.
     pub act: f64,
+    /// Review threshold: confidence-gated, like `act`.
     pub review: f64,
 }
 

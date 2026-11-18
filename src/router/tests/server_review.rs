@@ -520,8 +520,8 @@ async fn review_promotes_matching_entity_link_candidates() {
     let concepts = Arc::new(InMemoryConceptStore::new());
 
     // Seed an entity-link candidate that the review will link.
-    let linked_id = InterlinguaId::from_u64(0x0200_0000_0000_0001);
-    let other_id = InterlinguaId::from_u64(0x0200_0000_0000_0002);
+    let linked_id = InterlinguaId::from_stored_u64(0x0200_0000_0000_0001);
+    let other_id = InterlinguaId::from_stored_u64(0x0200_0000_0000_0002);
     let candidates = OverlayCandidateStore::new(shared.clone());
     candidates
         .write_candidate(&crate::ledger::overlay::OverlayCandidate::entity_link(

@@ -2,7 +2,8 @@
 
 use fluent_llm::client::LlmClient;
 use fluent_llm::decision::{
-    bulk_filter, bulk_rerank, bulk_route, decide_all, Decision, Question, QuestionSpec,
+    bulk_filter, bulk_rerank, bulk_route, decide_all, decide_all_with_pool, DecidePool, Decision,
+    Question, QuestionSpec,
 };
 
 fn spec(id: &str, options: &str) -> QuestionSpec {
@@ -105,6 +106,191 @@ async fn order_preserved_under_shuffled_completion() {
     assert_eq!(out.len(), 3);
     let labels: Vec<String> = out.into_iter().map(|r| r.expect("decide").label).collect();
     assert_eq!(labels, vec!["B", "D", "F"]);
+}
+
+/// A caller-owned pool preserves input order across consecutive calls:
+/// the same pool serves twice with no rebuild and identical ordering.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn borrowed_pool_preserves_order_across_calls() {
+    let server = httpmock::MockServer::start();
+    for (q, top, options, delay) in [
+        ("qq-0", "B", vec!["A", "B"], 150),
+        ("qq-1", "D", vec!["C", "D"], 50),
+        ("qq-2", "F", vec!["E", "F"], 0),
+    ] {
+        server.mock(|when, then| {
+            when.method("POST")
+                .path("/chat/completions")
+                .body_contains(q);
+            then.status(200)
+                .delay(std::time::Duration::from_millis(delay))
+                .json_body(choice_body(top, &options));
+        });
+    }
+    let client = LlmClient::new(&server.base_url(), "m");
+    let pool = DecidePool::new(fluent_concurrency::tokio_runtime(), &client, 4, 16);
+    assert_eq!(pool.worker_count(), 4);
+    let specs = [spec("q0", "A,B"), spec("q1", "C,D"), spec("q2", "E,F")];
+    for _ in 0..2 {
+        let questions = [
+            Question {
+                spec: &specs[0],
+                state: "shared state",
+                question: "qq-0?",
+            },
+            Question {
+                spec: &specs[1],
+                state: "shared state",
+                question: "qq-1?",
+            },
+            Question {
+                spec: &specs[2],
+                state: "shared state",
+                question: "qq-2?",
+            },
+        ];
+        let out = decide_all_with_pool(&client, &pool, &questions, None).await;
+        assert_eq!(out.len(), 3);
+        let labels: Vec<String> = out.into_iter().map(|r| r.expect("decide").label).collect();
+        assert_eq!(labels, vec!["B", "D", "F"]);
+        assert_eq!(pool.worker_count(), 4, "one pool serves every call");
+    }
+    pool.shutdown().await;
+}
+
+/// One pool serves many sequential calls: worker count stays stable and
+/// every call resolves, with no per-call pool construction.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn borrowed_pool_serves_many_calls_without_rebuild() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("POST").path("/chat/completions");
+        then.status(200).json_body(choice_body("B", &["A", "B"]));
+    });
+    let client = LlmClient::new(&server.base_url(), "m");
+    let pool = DecidePool::new(fluent_concurrency::tokio_runtime(), &client, 2, 8);
+    let specs = [spec("q0", "A,B")];
+    for _ in 0..5 {
+        let questions = [Question {
+            spec: &specs[0],
+            state: "st",
+            question: "q?",
+        }];
+        let out = decide_all_with_pool(&client, &pool, &questions, None).await;
+        assert_eq!(out.len(), 1);
+        assert_eq!(out.into_iter().next().unwrap().expect("decide").label, "B");
+        assert_eq!(pool.worker_count(), 2, "worker count stable across calls");
+    }
+    pool.shutdown().await;
+}
+
+/// An abort firing mid-flight through a borrowed pool surfaces as an
+/// unavailable verdict, freeing the worker slot like the ephemeral path.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn borrowed_pool_abort_propagates_canceled() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("POST").path("/chat/completions");
+        then.status(200)
+            .delay(std::time::Duration::from_millis(300))
+            .json_body(choice_body("B", &["A", "B"]));
+    });
+    let client = LlmClient::new(&server.base_url(), "m");
+    let pool = DecidePool::new(fluent_concurrency::tokio_runtime(), &client, 2, 8);
+    let specs = [spec("q0", "A,B")];
+    let questions = [Question {
+        spec: &specs[0],
+        state: "st",
+        question: "q?",
+    }];
+    let abort = fluent_concurrency::stream::StreamAbort::new();
+    let canceller = abort.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        canceller.cancel();
+    });
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        decide_all_with_pool(&client, &pool, &questions, Some(abort)),
+    )
+    .await
+    .expect("aborted fan-out must resolve");
+    assert_eq!(out.len(), 1);
+    let err = out.into_iter().next().unwrap().expect_err("canceled");
+    assert!(err.is_unavailable());
+    pool.shutdown().await;
+}
+
+/// Pool saturation is backpressure only: a contended pool (one worker
+/// for every job) returns the same ordered verdicts as an uncontended
+/// pool — only scheduling changes, never the decision.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn saturated_pool_matches_uncontended_verdicts() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("POST").path("/chat/completions");
+        then.status(200).json_body(choice_body("B", &["A", "B"]));
+    });
+    let client = LlmClient::new(&server.base_url(), "m");
+    let specs: Vec<_> = (0..8).map(|i| spec(&format!("q{i}"), "A,B")).collect();
+    let questions: Vec<_> = specs
+        .iter()
+        .enumerate()
+        .map(|(i, s)| Question {
+            spec: s,
+            state: "st",
+            question: if i % 2 == 0 { "qq-0?" } else { "qq-1?" },
+        })
+        .collect();
+    let labels = |out: Vec<Result<Decision, _>>| {
+        out.into_iter().map(|r| r.expect("decide").label).collect::<Vec<_>>()
+    };
+    let roomy = DecidePool::new(fluent_concurrency::tokio_runtime(), &client, 8, 16);
+    let calm = labels(decide_all_with_pool(&client, &roomy, &questions, None).await);
+    assert_eq!(calm, vec!["B"; 8]);
+    roomy.shutdown().await;
+    let tight = DecidePool::new(fluent_concurrency::tokio_runtime(), &client, 1, 8);
+    let loaded = labels(decide_all_with_pool(&client, &tight, &questions, None).await);
+    assert_eq!(loaded, calm, "saturation must not change verdicts");
+    tight.shutdown().await;
+}
+
+/// The ephemeral entry point keeps building, using, and shutting down
+/// its own pool, matching the borrowed pool outcome-for-outcome.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ephemeral_decide_all_matches_borrowed_pool() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("POST").path("/chat/completions");
+        then.status(200).json_body(choice_body("B", &["A", "B"]));
+    });
+    let client = LlmClient::new(&server.base_url(), "m");
+    let specs = [spec("q0", "A,B"), spec("q1", "A,B")];
+    let questions = [
+        Question {
+            spec: &specs[0],
+            state: "st",
+            question: "qq-0?",
+        },
+        Question {
+            spec: &specs[1],
+            state: "st",
+            question: "qq-1?",
+        },
+    ];
+    let expected: Vec<String> = decide_all(&client, &questions, 2, 8, None)
+        .await
+        .into_iter()
+        .map(|r| r.expect("decide").label)
+        .collect();
+    let pool = DecidePool::new(fluent_concurrency::tokio_runtime(), &client, 2, 8);
+    let got: Vec<String> = decide_all_with_pool(&client, &pool, &questions, None)
+        .await
+        .into_iter()
+        .map(|r| r.expect("decide").label)
+        .collect();
+    assert_eq!(got, expected);
+    pool.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

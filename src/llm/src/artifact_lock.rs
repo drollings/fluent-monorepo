@@ -16,7 +16,8 @@
 //! heartbeat concludes the owner is dead and takes the lock, leaving two
 //! writers on one artifact cache.
 
-use common_core::io::{mtime_ns, now_ns};
+use common_core::io::mtime_ns;
+use common_core::time::now_ns;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};

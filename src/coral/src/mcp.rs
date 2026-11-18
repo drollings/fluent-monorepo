@@ -221,7 +221,7 @@ impl JsonRpcHandler for McpServer {
             });
         }
         // Install coral's knowledge capability for the life of this
-        // request so `Library`'s gated `KnowledgeCapability` impl
+        // request so `Library`'s gated `KnowledgeStore` impl
         // (`crate::knowledge.rs`) is reachable on the serving path — the same
         // grant the router installs around its HTTP dispatch. This is a sync
         // handler, so the task-local grant uses `sync_scope`.
@@ -382,7 +382,7 @@ mod tests {
 
         // `handle_request` establishes exactly this grant for the life of each
         // MCP request, mirroring the router's HTTP handler. A gated
-        // `KnowledgeCapability` call therefore succeeds inside the scope.
+        // `KnowledgeStore` call therefore succeeds inside the scope.
         let granted = CURRENT_CAPS
             .sync_scope(CapabilitySet::new().with(CoralKnowledgeCapability), || {
                 check_capability(&CoralKnowledgeCapability).is_ok()

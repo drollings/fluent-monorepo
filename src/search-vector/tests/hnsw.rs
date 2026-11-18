@@ -99,9 +99,6 @@ fn poisoned_hnsw_rwlock_still_serves_insert_and_search() {
 
 #[test]
 fn adaptive_hnsw_boundary_is_strict() {
-    // M6: the one threshold source is `DEFAULT_HNSW_THRESHOLD`; the boundary
-    // is strict `>`: len == threshold stays brute-force, threshold+1 uses HNSW.
-    use common_core::constants::DEFAULT_HNSW_THRESHOLD;
     let policy = AdaptiveHnsw::default();
     assert_eq!(policy.threshold, DEFAULT_HNSW_THRESHOLD);
     assert!(!policy.should_use_built(DEFAULT_HNSW_THRESHOLD));
@@ -111,8 +108,6 @@ fn adaptive_hnsw_boundary_is_strict() {
 
 #[test]
 fn adaptive_hnsw_dispatch_needs_built_and_scale() {
-    // M6: query-time gate — unbuilt probes nothing at any scale; a built
-    // index below the threshold still routes to brute force.
     let policy = AdaptiveHnsw::default();
     let t = policy.threshold;
     assert!(
@@ -131,6 +126,27 @@ fn adaptive_hnsw_dispatch_needs_built_and_scale() {
     assert!(!custom.should_use_built(10));
     assert!(custom.should_use_built(11));
     assert!(custom.dispatch(true, 11));
+}
+
+/// The deprecated `common_core::constants` vocabulary stays identical to
+/// the canonical `crate::hnsw` home while the shim lives, so old and new
+/// import paths answer dispatch questions byte-identically.
+#[test]
+fn hnsw_vocabulary_matches_deprecated_shim() {
+    assert_eq!(
+        DEFAULT_HNSW_THRESHOLD,
+        common_core::constants::DEFAULT_HNSW_THRESHOLD
+    );
+    assert_eq!(
+        MAX_KNN_CANDIDATES,
+        common_core::constants::MAX_KNN_CANDIDATES
+    );
+    let canonical = HnswParams::default();
+    let shimmed = common_core::constants::HnswParams::default();
+    assert_eq!(canonical.max_nb_connection, shimmed.max_nb_connection);
+    assert_eq!(canonical.max_layer, shimmed.max_layer);
+    assert_eq!(canonical.ef_construction, shimmed.ef_construction);
+    assert_eq!(canonical.initial_capacity, shimmed.initial_capacity);
 }
 
 #[test]

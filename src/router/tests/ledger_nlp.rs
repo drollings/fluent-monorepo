@@ -17,14 +17,14 @@ fn signals() -> Vec<RoutingSignal> {
         deps: vec!["root".into(), "iobj".into()],
         heads: vec![0, -1],
         interlingua: Some(spacy_rs::InterlinguaSignal {
-            predicate_id: Some(InterlinguaId::from_u64(0x0300_0000_0000_0001)),
+            predicate_id: Some(InterlinguaId::from_stored_u64(0x0300_0000_0000_0001)),
             subject_id: None,
-            direct_object_id: Some(InterlinguaId::from_u64(0x0300_0000_0000_0002)),
-            indirect_object_id: Some(InterlinguaId::from_u64(0x0300_0000_0000_0003)),
-            concept_ids: vec![InterlinguaId::from_u64(0x0100_0000_0000_0001)],
+            direct_object_id: Some(InterlinguaId::from_stored_u64(0x0300_0000_0000_0002)),
+            indirect_object_id: Some(InterlinguaId::from_stored_u64(0x0300_0000_0000_0003)),
+            concept_ids: vec![InterlinguaId::from_stored_u64(0x0100_0000_0000_0001)],
             token_ids: vec![
-                InterlinguaId::from_u64(0x0300_0000_0000_0001),
-                InterlinguaId::from_u64(0x0300_0000_0000_0003),
+                InterlinguaId::from_stored_u64(0x0300_0000_0000_0001),
+                InterlinguaId::from_stored_u64(0x0300_0000_0000_0003),
             ],
             confidence: None,
         }),
@@ -196,8 +196,8 @@ fn review_node_shapes_and_is_recognized() {
         "the cat sat",
         "review prompt",
         r#"{"corrections":[]}"#,
-        InterlinguaId::from_u64(0x0300_0000_0000_0001),
-        Some(InterlinguaId::from_u64(0x0100_0000_0000_0001)),
+        InterlinguaId::from_stored_u64(0x0300_0000_0000_0001),
+        Some(InterlinguaId::from_stored_u64(0x0100_0000_0000_0001)),
         "review-model",
     );
     assert!(is_parse_review_node(&node));

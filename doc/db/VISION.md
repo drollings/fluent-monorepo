@@ -9,10 +9,11 @@
 
 `fluent-db` is the workspace's single database-access owner: connection
 lifecycle, statement execution, schema lifecycle, reusable store shapes
-(single-connection, pooled, TTL/LRU, HNSW-backed vector), embedding vector
-math, and the capability-gated async surface. Any code that opens a
-`Connection`, builds a SQL `IN` clause, or blocks on `rusqlite` belongs
-here — not in a domain crate.
+(single-connection, pooled, TTL/FIFO), and the capability-gated async
+surface. HNSW and vector math live in `search-vector` (and the
+`vector-math` leaf). Any code that opens a `Connection`, builds a SQL
+`IN` clause, or blocks on `rusqlite` belongs here — not in a domain
+crate.
 
 ## What belongs / what does not belong
 
@@ -20,10 +21,8 @@ Belongs: `SqlitePool` pooled store (`PooledConnection` RAII checkout),
 `SqliteStore` single-connection store, typed `query::query_row` /
 `query_rows` / `execute` / `transaction` helpers over `query::OwnedValue`,
 `sqlite` raw mechanics (`open_wal`, `quote_ident`, `in_clause`),
-`TtlCache`, `HnswIndex` (+ `AdaptiveHnsw` dispatch, `HnswIndexHandle`),
-`vector` embedding math (`PlainBruteForceIndex` generic + `BruteForceIndex`
-adapter, `knn_brute_force`, q8 quantized paths, `rrf_merge`),
-`DbWorkUnit`, `DbCapability` token (exactly `open` / `open_with_config` /
+`SqliteTtlCache` (TTL plus write-order FIFO, never LRU),
+`DbCapability` token (exactly `open` / `open_with_config` /
 `pool` — statement execution goes only through the typed helpers),
 `outbox` durable queue, `migrate` versioning, `embedding_cache` schema.
 
@@ -35,7 +34,7 @@ absent by `db/tests/capability_surface.rs`); imports from
 ## Consumers (verified `Cargo.toml` dependents)
 
 `fluent-router` (ledger, charts), `guidance-core` (`DB_POOL`),
-`coral-context`, `fluent-knowledge` (`QueryCache` → `TtlCache`),
+`coral-context`, `fluent-knowledge` (`QueryCache` → `SqliteTtlCache`),
 `search-vector`, `memory-plugin`, `fluent-llm`,
 `fluent-concurrency` (`db` feature re-export), `coral-router` binary.
 
@@ -43,9 +42,8 @@ absent by `db/tests/capability_surface.rs`); imports from
 
 A crate needing durable state gets the full path without touching
 `rusqlite` directly: versioned schema migrations, single-connection
-and pooled stores with RAII checkout, typed row queries, TTL/LRU
-caches, vector search with quantized and HNSW-backed indexes,
-durable outbox queues, and capability-gated async writes — one
+and pooled stores with RAII checkout, typed row queries, TTL/FIFO
+caches, durable outbox queues, and capability-gated async writes — one
 `DbError` taxonomy, no stringly queries, no second connection
 discipline.
 

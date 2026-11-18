@@ -6,7 +6,6 @@ autotests = false
 autobenches = false
 
 [dependencies]
-blake3 = { workspace = true }
 common-core = { path = "../common-core" }
 internment = { workspace = true, features = ["arc"] }
 serde = { workspace = true, features = ["derive"] }

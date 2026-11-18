@@ -57,6 +57,20 @@ fn heap_error_context_chain() {
     assert!(s.contains("inner error"));
 }
 
+/// Both context types behave as `std::error::Error` objects: usable
+/// behind `&dyn Error` with their cause visible through `source`.
+#[test]
+fn error_contexts_behave_as_std_error_objects() {
+    fn assert_error<T: std::error::Error + Send + Sync + 'static>(_: &T) {}
+    let leaf = std::io::Error::other("leaf");
+    let stacked = ErrorContext::simple("op", leaf);
+    assert_error(&stacked);
+    let heap = HeapErrorContext::new("op", None, None, std::io::Error::other("cause"));
+    assert_error(&heap);
+    let obj: &dyn std::error::Error = &heap;
+    assert!(obj.source().is_some(), "cause visible through source");
+}
+
 #[test]
 fn value_truncation() {
     let long = "a".repeat(200);

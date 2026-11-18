@@ -649,14 +649,10 @@ where
     };
     // N.wvr: observability wraps the concrete unit before type erasure.
     let instrumented = fluent_wvr::wrapper::Instrumented::with_metrics(unit, name, wave_histogram);
-    // Multi-thread runtime: shared provider seams (e.g. the embedding
-    // cache) may `block_in_place`; waves still run sequentially.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .map_err(|e| IndexError::Db(e.to_string()))?;
-    let summary = runtime.block_on(async {
+    // The process-wide shared runtime outlives the call and keeps waves
+    // sequential: provider seams that `block_in_place` get a multi-thread
+    // driver without a per-wave runtime build.
+    let summary = common_core::runtime::block_on_shared(async {
         let rt: Arc<dyn fluent_wvr::Runtime> = Arc::new(TokioRuntime);
         let caps = fluent_wvr::CapabilitySet::new();
         let ctx = WorkContext::for_unit_in_batch(&rt, &caps, |ctx| {
@@ -665,9 +661,9 @@ where
         let mut batch = SupervisedBatch::new(rt, caps);
         batch
             .register_with_context(Arc::new(instrumented), ctx)
-            .expect("wave unit registers");
-        batch.await
-    });
+            .map_err(|e| IndexError::Db(format!("wave {name} registration failed: {e}")))?;
+        Ok::<_, IndexError>(batch.await)
+    })?;
     // Fail-fast aborts surface from the typed outcomes (the unit records
     // the abort before failing); infrastructure failures surface from the
     // batch summary.

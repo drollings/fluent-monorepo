@@ -12,30 +12,24 @@ pub fn is_valid_instance_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum InstanceIdError {
+    /// The value has no `:` separator.
+    #[error("missing ':' separator")]
     MissingSeparator,
+    /// The value has more than one `:` separator.
+    #[error("extra ':' separator in instance name")]
     ExtraSeparator,
+    /// The model part is empty.
+    #[error("model id is empty")]
     EmptyModel,
+    /// The name part contains characters outside `[A-Za-z0-9._-]`.
+    #[error("invalid instance name '{0}' (allowed: [A-Za-z0-9._-])")]
     InvalidName(String),
+    /// The name part is empty.
+    #[error("instance name is empty")]
     EmptyName,
 }
-
-impl fmt::Display for InstanceIdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingSeparator => write!(f, "missing ':' separator"),
-            Self::ExtraSeparator => write!(f, "extra ':' separator in instance name"),
-            Self::EmptyModel => write!(f, "model id is empty"),
-            Self::InvalidName(n) => {
-                write!(f, "invalid instance name '{n}' (allowed: [A-Za-z0-9._-])")
-            }
-            Self::EmptyName => write!(f, "instance name is empty"),
-        }
-    }
-}
-
-impl std::error::Error for InstanceIdError {}
 
 /// Typed opaque pair `(model_key, instance_name)` with grammar validation.
 /// Backed by `ArcIntern<str>` per VISION §Shared Content Nodes.

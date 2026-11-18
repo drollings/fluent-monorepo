@@ -14,6 +14,26 @@ fn test_hash_iri_different() {
     );
 }
 
+/// Cross-crate parity: `interlingua`'s private `hash_iri` copy was
+/// deduplicated onto the same `common_core::hash::blake3_hash` kernel,
+/// so both homes must agree bit-for-bit (compared through the public
+/// 48-bit id surface, the only shared observable).
+#[test]
+fn test_hash_iri_matches_types_kernel() {
+    for iri in [
+        "http://schema.org/Person",
+        "http://example.org/foo",
+        "urn:blank:abc123",
+        "",
+    ] {
+        assert_eq!(
+            fluent_types::yago_class_id_for_iri(iri).local_id(),
+            fluent_types::local_id_of(hash_iri(iri)),
+            "kernel parity for {iri:?}"
+        );
+    }
+}
+
 #[test]
 fn test_hash_blank_node_deterministic() {
     assert_eq!(

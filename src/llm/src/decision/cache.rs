@@ -221,8 +221,13 @@ impl DecisionCache {
             };
             if let Some(shared) = shared {
                 // Waiter: when published, re-loop into the cache/election
-                // (leader failed or vanished); else await the publish.
+                // (leader failed or vanished); else await the publish. The
+                // wait registers before the published re-check, so a publish
+                // in the window wakes the registered waiter instead of
+                // slipping past it.
                 let notified = shared.notify.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
                 if shared.published.load(Ordering::Acquire) {
                     continue;
                 }

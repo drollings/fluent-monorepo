@@ -3,15 +3,9 @@
 //! The full chain walks the canonical async `first_accept_in_order` (no new
 //! walker): `Ok(Some)` wins, `Ok(None)` skips, `Err` continues unless the
 //! stop predicate says terminal. `Unavailable` is a skip-to-fallback signal,
-//! never a label; only `Rejected` is terminal. The pure prefix
-//! (`rule → cache`) is additionally exposed as a `ComponentCascade` for sync
-//! callers, composing the sync twin.
+//! never a label; only `Rejected` is terminal.
 
 use std::future::Future;
-use std::sync::Arc;
-
-use fluent_wvr::wrapper::ComponentCascade;
-use fluent_wvr::{Component, WorkContext, WorkError, WorkOutput, WorkUnit};
 
 use crate::decision::{Decision, DecisionBreaker, DecisionCache, DecisionError};
 
@@ -159,101 +153,4 @@ where
         Ok(None) => unreachable!("fallback rung always yields a decision"),
         Err(error) => Err(error),
     }
-}
-
-/// Fixed-decision sync unit for the pure prefix cascade.
-struct FixedDecisionUnit {
-    name: &'static str,
-    decision: Option<Decision>,
-}
-
-impl WorkUnit for FixedDecisionUnit {
-    fn name(&self) -> &str {
-        self.name
-    }
-    fn depends(&self) -> &[fluent_wvr::ArcIntern<str>] {
-        &[]
-    }
-    fn provides(&self) -> &[fluent_wvr::ArcIntern<str>] {
-        &[]
-    }
-    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        match &self.decision {
-            Some(d) => WorkOutput::typed("prefix", d),
-            None => Ok(WorkOutput::fail("prefix rung declined")),
-        }
-    }
-}
-
-fluent_wvr::impl_fieldless!(FixedDecisionUnit);
-
-impl fluent_wvr::Describable for FixedDecisionUnit {
-    fn describe(&self) -> serde_json::Value {
-        fluent_wvr::describe_work_unit(self.name(), self.depends(), self.provides(), Some("pure"))
-    }
-}
-
-fluent_wvr::impl_component!(FixedDecisionUnit);
-
-/// Pure `rule → cache` prefix as a `ComponentCascade` for sync callers.
-///
-/// Composition exemplar: no production callers today. Kept as the canonical
-/// sync-prefix shape so future sync call sites compose it instead of
-/// re-walking the rungs.
-///
-/// ```rust
-/// use fluent_llm::decision::{prefix_cascade, Decision};
-/// use fluent_wvr::{WorkContext, WorkOutput};
-///
-/// let rule = Decision::from_distribution(
-///     "RULE",
-///     vec![("RULE".to_string(), 1.0)],
-///     "m".to_string(),
-///     1,
-///     0,
-///     false,
-/// )
-/// .expect("rule");
-/// let out = prefix_cascade(Some(rule), None)
-///     .execute_first_ok(&WorkContext::default())
-///     .expect("prefix");
-/// let back: Decision = out.data_ref().expect("typed");
-/// assert_eq!(back.label, "RULE");
-/// ```
-#[must_use]
-/// Pure `rule → cache` prefix as a `ComponentCascade` for sync callers.
-///
-/// Composition exemplar: no production callers today. Kept as the canonical
-/// sync-prefix shape so future sync call sites compose it instead of
-/// re-walking the rungs.
-///
-/// ```rust
-/// use fluent_llm::decision::{prefix_cascade, Decision};
-/// use fluent_wvr::{WorkContext, WorkOutput};
-///
-/// let rule = Decision::from_distribution(
-/// "RULE",
-/// vec![("RULE".to_string(), 1.0)],
-/// "m".to_string(),
-/// 1,
-/// 0,
-/// false,
-/// )
-/// .expect("rule");
-/// let out = prefix_cascade(Some(rule), None)
-/// .execute_first_ok(&WorkContext::default())
-/// .expect("prefix");
-/// let back: Decision = out.data_ref().expect("typed");
-/// assert_eq!(back.label, "RULE");
-/// ```
-pub fn prefix_cascade(rule: Option<Decision>, cached: Option<Decision>) -> ComponentCascade {
-    let rule_unit: Arc<dyn Component> = Arc::new(FixedDecisionUnit {
-        name: "decision.prefix.rule",
-        decision: rule,
-    });
-    let cache_unit: Arc<dyn Component> = Arc::new(FixedDecisionUnit {
-        name: "decision.prefix.cache",
-        decision: cached,
-    });
-    ComponentCascade::with_units(vec![rule_unit, cache_unit])
 }

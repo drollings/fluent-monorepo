@@ -1,6 +1,6 @@
 //! Crate-typed test fixtures shared by fluent-db Tier-1 suites.
 //!
-//! Migrated homes of the former `wvr.rs` / `pool.rs` / `capability.rs` /
+//! Migrated homes of the former `pool.rs` / `capability.rs` /
 //! `query.rs` / `migrate.rs` duplicated helpers (see
 //! `ROADMAP_20260816_TESTS.md` §1.3). Never copy these into a new test
 //! module.
@@ -14,7 +14,6 @@ use rusqlite::Connection;
 
 use crate::capability::DbCapability;
 use crate::pool::{PoolConfig, SqlitePool};
-use crate::store::SqliteStore;
 
 /// A boxed `Send` future — lets the shared behavior assertions below accept
 /// per-store-layer closures that mix sync (`Connection`/`SqliteStore`) and
@@ -27,8 +26,8 @@ pub fn conn() -> Connection {
 }
 
 /// A `CapabilitySet` carrying a `DbCapability` token. The pool's `acquire`
-/// path (and every `DbWorkUnit` offload) is capability-gated, so tests that
-/// check out a connection must scope one of these into `CURRENT_CAPS`.
+/// path is capability-gated, so tests that check out a connection must
+/// scope one of these into `CURRENT_CAPS`.
 pub fn db_caps() -> CapabilitySet {
     CapabilitySet::new().with(DbCapability::open(":memory:").unwrap())
 }
@@ -36,22 +35,6 @@ pub fn db_caps() -> CapabilitySet {
 /// An empty in-memory `SqlitePool` (default config), wrapped in `Arc`.
 pub fn in_memory_pool() -> Arc<SqlitePool> {
     Arc::new(SqlitePool::open_in_memory(&PoolConfig::default()).unwrap())
-}
-
-/// An in-memory `SqliteStore` with a `t (id, name)` table seeded with
-/// `(1, 'hello')` — the store fixture used by the `wvr` unit tests.
-pub fn store_with_t() -> Arc<SqliteStore> {
-    let store = Arc::new(SqliteStore::open_in_memory().unwrap());
-    store
-        .init_schema("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
-        .unwrap();
-    store
-        .execute(
-            "INSERT INTO t (id, name) VALUES (?1, ?2)",
-            rusqlite::params![1, "hello"],
-        )
-        .unwrap();
-    store
 }
 
 // ── Shared behavior assertions (one assertion set per behavior) ────────────

@@ -27,7 +27,9 @@ pub use interlingua::{
     yago_entity_id_for_iri, ConceptMetadata, InterlinguaId, InterlinguaNamespace, LOCAL_BITS,
     LOCAL_MASK, NAMESPACE_BITS,
 };
-pub use knowledge::{KnowledgeCapability, KnowledgeError};
+pub use knowledge::{KnowledgeError, KnowledgeStore};
+#[allow(deprecated)]
+pub use knowledge::KnowledgeCapability;
 pub use openai_wire::{
     ContentPart, FunctionCall, FunctionDef, ImageUrl, RouterChoice, RouterMessage,
     RouterMessageContent, RouterRequest, RouterResponse, RouterTool, ToolCall, Usage,
@@ -866,65 +868,6 @@ pub struct Stage {
     pub source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryResult {
-    pub query: String,
-    pub stages: Vec<Stage>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncResult {
-    pub filepath: String,
-    pub members_added: usize,
-    pub members_updated: usize,
-    pub members_removed: usize,
-    pub has_changes: bool,
-    pub comments_generated: bool,
-    pub source_modified: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileMatch {
-    pub filename: SmolStr,
-    pub filepath: SmolStr,
-    #[serde(default)]
-    pub description: SmolStr,
-    #[serde(default)]
-    pub line_context: SmolStr,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ASTAnalysis {
-    pub filepath: SmolStr,
-    #[serde(default)]
-    pub functions: Vec<Member>,
-    #[serde(default)]
-    pub classes: Vec<Member>,
-    #[serde(default)]
-    pub imports: Vec<SmolStr>,
-    #[serde(default)]
-    pub patterns_detected: Vec<SmolStr>,
-    #[serde(default)]
-    pub token_count: usize,
-    #[serde(default)]
-    pub signature_preview: SmolStr,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GuidanceInfo {
-    pub path: SmolStr,
-    #[serde(default)]
-    pub comment: SmolStr,
-    #[serde(default)]
-    pub functions: Vec<Member>,
-    #[serde(default)]
-    pub classes: Vec<Member>,
-    #[serde(default)]
-    pub skills: Vec<SmolStr>,
-    #[serde(default)]
-    pub tags: Vec<SmolStr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

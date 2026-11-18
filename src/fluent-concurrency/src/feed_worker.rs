@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use common_core::capacity::nonzero_capacity;
 use common_core::sync::lock;
 use fluent_wvr::Runtime;
 use tokio::sync::mpsc;
@@ -53,6 +54,15 @@ pub struct FeedConfig {
     pub batch_size: usize,
     /// Poll interval (ms) before giving up on filling a batch. Default 100.
     pub poll_interval_ms: u64,
+}
+
+impl FeedConfig {
+    /// Refuse degenerate sizing before any channel is created: a zero
+    /// `queue_capacity` would build an `mpsc` channel that can never
+    /// carry an item.
+    pub fn validate(&self) -> Result<(), String> {
+        nonzero_capacity(self.queue_capacity, "feed").map(|_| ())
+    }
 }
 
 impl Default for FeedConfig {
@@ -107,12 +117,18 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
     /// drained from the feed, with at most `max_concurrent` handlers in
     /// flight (JoinSet window); its completion releases the producer's
     /// credit token (never before).
+    ///
+    /// Panics on a zero `queue_capacity`: the bounded channel would never
+    /// carry an item, stalling producers at creation time instead.
     #[allow(clippy::needless_pass_by_value)]
     pub fn new<F, Fut>(runtime: Arc<dyn Runtime>, config: FeedConfig, handler: F) -> Self
     where
         F: Fn(Item) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        config
+            .validate()
+            .unwrap_or_else(|refused| panic!("{refused}"));
         let handler: Handler<Item> = Arc::new(move |item| Box::pin(handler(item)));
         let (sender, receiver) = mpsc::channel(config.queue_capacity);
         let (credit, credit_receiver) = flow::new(CreditSpec {

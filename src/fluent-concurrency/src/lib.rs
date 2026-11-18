@@ -22,6 +22,11 @@ pub mod ladder;
 pub mod batch;
 pub mod pool;
 pub mod queue;
+/// Test-only reconnect/backfill sketch: no production consumer exists,
+/// and its `enqueue`-on-full-feed drop is lossy, so it must not ship as
+/// public API. Exercised by its own tests; wire a real consumer before
+/// promoting it back to a public module.
+#[cfg(test)]
 pub mod reconnect;
 pub mod retry;
 pub mod runtime;

@@ -31,7 +31,8 @@ pub use bridge::{
 };
 pub use bulk::{
     aggregate_rotations, bulk_filter, bulk_rerank, bulk_route, decide_aggregated, decide_all,
-    filter_noul, rank_score, rotation_agreement, route_choice, route_hierarchical,
+    decide_all_with_pool, filter_noul, rank_score, rotation_agreement, route_choice,
+    route_hierarchical, DecidePool,
 };
 pub use cache::{CacheKeyInput, DecisionCache};
 pub use canary::{canary_signature, canary_suite, verify_canary, CanaryCase, CanaryDrift};
@@ -43,7 +44,7 @@ pub use flow::{
     descend_tree, match_arm, rerank_items, semantic_if, DescentOutcome, FlowAsk, RerankItem,
     TreeLevel,
 };
-pub use ladder::{decide_with_ladder, prefix_cascade};
+pub use ladder::decide_with_ladder;
 pub use registry::{
     authorize, authorize_advisory, authorize_pinned, gate_for_point_with, CalibrationRegistry,
     CalibrationStatus, CaseOrigin, CaseProvenance, Corpus, CorpusProvenance, GateParams,

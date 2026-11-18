@@ -142,14 +142,14 @@ for node in graph.topo_sort()? {
 
 | Module | Purpose | Path |
 |--------|---------|------|
-| `executor` | ~~Sequential target executor~~ **pruned** — run plans under `SupervisedBatch` via the `TargetWorkUnit` bridge instead | (`deleted`; see `target_work_unit`) |
+| `executor` | ~~Sequential target executor~~ **pruned** — run plans under `SupervisedBatch` via `TargetWorkUnit` bridge (also pruned; see below) | (`deleted`) |
 | `resolver` | Resolves abstract dependencies to concrete targets; `ProviderSelection::{All, NarrowOne}` policy | `src/dag/src/resolver.rs` |
-| `target_work_unit` | `TargetWorkUnit` — `Target` → `WorkUnit` bridge (`from_target`), runnable under `SupervisedBatch` supervision | `src/dag/src/target_work_unit.rs` |
+| `target_work_unit` | ~~`TargetWorkUnit` bridge~~ **pruned** (no production caller; shell execution composes `common_core::shell` directly) | (`deleted`) |
 | `closure` | Shared transitive-closure primitive (DFS over depends edges) — `pub(crate)` | `src/dag/src/closure.rs` |
 | `narrowing` | Narrowing pipeline (essential/strict-sat/locality/no-dep) + error constructors — `pub(crate)` | `src/dag/src/narrowing.rs` |
-| `work_unit` | CommandUnit — shell command wrapper implementing `Component` | `src/dag/src/work_unit.rs` |
+| `work_unit` | ~~`CommandUnit` shell wrapper~~ **pruned** (no production caller; shell execution composes `common_core::shell` directly) | (`deleted`) |
 | `target` | Target + TargetRegistry + re-export of `CapabilityRegistry` from `common_core::interner` | `src/dag/src/target.rs` |
-| `middleware` | TimingMiddleware + MiddlewareChain (RetryMiddleware deleted — retry composes `common_core::retry`/`SupervisedBatch`) | `src/dag/src/middleware.rs` |
+| `middleware` | ~~`TimingMiddleware`~~ **pruned** (no production caller; timing composes `fluent_wvr::wrapper::Instrumented`) | (`deleted`) |
 | `type_inference` | Class hierarchy / subtyping for target resolution | `src/dag/src/type_inference.rs` |
 | `wvr` | Re-exports `fluent_wvr` core types for DAG integration | `src/dag/src/wvr.rs` |
 | `yamake_loader` | JSON loader for yamake-compatible target definitions with self-provision for File/Phony targets | `src/dag/src/yamake_loader.rs` |
@@ -213,9 +213,9 @@ different uncontested capability Y.
 
 `resolver::resolve(target_names)` returns `ExecutionPlan { order, target_names }`
 — a topologically-sorted list of target bit-indices and their human-readable
-names. Run the plan by mapping each target to a `TargetWorkUnit` via
-`TargetWorkUnit::from_target` and executing it (sequentially in `plan.order`,
-or as a supervision `SupervisedBatch` that runs independent waves concurrently).
+names. Run the plan in `plan.order` (sequentially, or as a supervision
+`SupervisedBatch` that runs independent waves concurrently with a
+caller-provided `WorkUnit` per target).
 
 ### Error Types (from `common_core::error::ResolverError`)
 

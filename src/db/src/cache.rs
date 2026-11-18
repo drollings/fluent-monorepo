@@ -1,10 +1,11 @@
-//! Generic TTL/LRU key-value cache store (D7).
+//! Generic TTL + write-order FIFO key-value cache store (D7).
 //!
-//! `TtlCache` is the canonical home for the TTL/LRU SQLite cache shape that
-//! `knowledge::QueryCache` hand-rolled (open, get-with-expiry, put,
-//! evict_expired, evict_oldest, stats). The `query_cache` table DDL and all
-//! eviction SQL move here verbatim so existing `.db` files keep working
-//! unchanged and behavior stays byte-identical.
+//! `SqliteTtlCache` is the canonical home for the TTL/FIFO SQLite cache
+//! shape that `knowledge::QueryCache` hand-rolled (open, get-with-expiry,
+//! put, evict_expired, evict_fifo, stats). Eviction is insertion-order
+//! FIFO, not LRU: reads never refresh recency. The `query_cache` table
+//! DDL and all eviction SQL move here verbatim so existing `.db` files
+//! keep working unchanged and behavior stays byte-identical.
 //!
 //! Key derivation is parameterized via `hash_key: fn(&str) -> String` so
 //! consumer-specific key schemes (e.g. knowledge's lowercase-`fnv1a64`)
@@ -45,17 +46,27 @@ fn identity_key(key: &str) -> String {
     key.to_string()
 }
 
-/// A TTL/LRU key-value cache over a single-connection SQLite store.
-pub struct TtlCache {
+/// A TTL + write-order FIFO key-value store over a single SQLite connection.
+///
+/// Reads never refresh recency: eviction is insertion-order FIFO, not
+/// LRU. The TTL half is task-value gated (a cache hit is outcome
+/// freshness, never a confidence endorsement).
+///
+/// Reads never refresh recency: eviction is insertion-order FIFO, not LRU.
+pub struct SqliteTtlCache {
     store: SqliteStore,
     default_ttl_seconds: u64,
     max_entries: usize,
     hash_key: fn(&str) -> String,
 }
 
-impl std::fmt::Debug for TtlCache {
+/// Deprecated alias: use [`SqliteTtlCache`] instead.
+#[deprecated(note = "use SqliteTtlCache instead")]
+pub type TtlCache = SqliteTtlCache;
+
+impl std::fmt::Debug for SqliteTtlCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TtlCache")
+        f.debug_struct("SqliteTtlCache")
             .field("default_ttl_seconds", &self.default_ttl_seconds)
             .field("max_entries", &self.max_entries)
             .finish_non_exhaustive()
@@ -65,10 +76,10 @@ impl std::fmt::Debug for TtlCache {
 /// Default entry cap when the caller does not set one explicitly.
 pub const DEFAULT_TTL_CACHE_CAP: usize = 4096;
 
-impl TtlCache {
+impl SqliteTtlCache {
     /// Open (or create) a cache at `path` with the default (identity) key
     /// derivation and the default entry cap. Expired entries are evicted
-    /// on open. Refine with [`TtlCache::with_key`]/[`TtlCache::with_cap`].
+    /// on open. Refine with [`SqliteTtlCache::with_key`]/[`SqliteTtlCache::with_cap`].
     pub fn open(path: &Path, default_ttl_seconds: u64) -> Result<Self, DbError> {
         Self::open_inner(SqliteStore::open(path)?, default_ttl_seconds)
     }
@@ -148,7 +159,7 @@ impl TtlCache {
              VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![hashed, result, now, self.default_ttl_seconds],
         )?;
-        self.evict_oldest()?;
+        self.evict_fifo()?;
         Ok(())
     }
 
@@ -162,10 +173,10 @@ impl TtlCache {
         )
     }
 
-    /// Evict the oldest entries (by write timestamp — FIFO, not true LRU:
-    /// reads do not refresh recency) when over capacity.
+    /// Evict the oldest entries (by write timestamp — insertion-order FIFO,
+    /// never recency: reads do not refresh) when over capacity.
     /// Returns the number of rows deleted.
-    pub fn evict_oldest(&self) -> Result<usize, DbError> {
+    pub fn evict_fifo(&self) -> Result<usize, DbError> {
         let count: usize = self
             .store
             .query_row("SELECT COUNT(*) FROM query_cache", &[], |row| row.get(0))?
@@ -181,6 +192,12 @@ impl TtlCache {
         } else {
             Ok(0)
         }
+    }
+
+    /// Deprecated alias: use [`SqliteTtlCache::evict_fifo`] instead.
+    #[deprecated(note = "use evict_fifo instead")]
+    pub fn evict_oldest(&self) -> Result<usize, DbError> {
+        self.evict_fifo()
     }
 
     /// Remove every entry. Returns the number of rows deleted.

@@ -124,8 +124,8 @@ fn hash_utf8(s: &str) -> u64 {
 }
 
 fn hash_iri(iri: &str) -> i64 {
-    let hash = blake3::hash(iri.as_bytes());
-    i64::from_le_bytes(hash.as_bytes()[0..8].try_into().unwrap())
+    let hash = common_core::hash::blake3_hash(iri.as_bytes());
+    i64::from_le_bytes(hash[0..8].try_into().unwrap())
 }
 
 // ─── Per-kind helpers (the primary public API) ─────────────────────────────
@@ -203,8 +203,16 @@ impl InterlinguaId {
     /// (RESERVED namespace) should be modeled as `Option::None` where possible.
     /// There is deliberately no second raw constructor.
     #[must_use]
-    pub const fn from_u64(v: u64) -> Self {
+    pub const fn from_stored_u64(v: u64) -> Self {
         Self(v)
+    }
+
+    /// Deprecated alias: use [`Self::from_stored_u64`] instead. The old
+    /// name hid the DB-round-trip-only contract.
+    #[must_use]
+    #[deprecated(note = "use from_stored_u64 instead")]
+    pub const fn from_u64(v: u64) -> Self {
+        Self::from_stored_u64(v)
     }
 
     pub fn as_i64(self) -> i64 {

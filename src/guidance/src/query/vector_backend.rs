@@ -21,6 +21,12 @@ pub struct VectorBackend<'a> {
 }
 
 impl SearchBackend for VectorBackend<'_> {
+    fn name(&self) -> &'static str {
+        "backend.vector"
+    }
+    fn kind(&self) -> &'static str {
+        "vector"
+    }
     fn matches(&self, _intent: QueryIntent) -> bool {
         true
     }

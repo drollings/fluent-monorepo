@@ -4,6 +4,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use common_core::capacity::nonzero_capacity;
+
 use crate::sync as sync_lock;
 
 use super::traits::PoolError;
@@ -31,7 +33,7 @@ struct QueueInner<T> {
 /// use fluent_concurrency::pool::Queue;
 ///
 /// # async fn example() {
-/// let q = Queue::new(10);
+/// let q = Queue::new(10).expect("example capacity is nonzero");
 /// q.push(42).unwrap();
 /// q.push(99).unwrap();
 /// q.close();
@@ -47,15 +49,18 @@ pub struct Queue<T> {
 
 impl<T: Send + 'static> Queue<T> {
     /// Creates a new bounded queue with the given capacity.
-    pub fn new(capacity: usize) -> Self {
-        debug_assert!(capacity > 0, "queue capacity must be >0");
-        Self {
+    ///
+    /// Refuses zero capacity: a zero-slot queue could never hand an item
+    /// from a blocked `push_wait` to a `pop`, hanging both sides.
+    pub fn new(capacity: usize) -> Result<Self, String> {
+        let capacity = nonzero_capacity(capacity, "queue")?;
+        Ok(Self {
             inner: Arc::new(QueueInner {
-                items: Mutex::new(VecDeque::with_capacity(capacity)),
-                capacity,
+                items: Mutex::new(VecDeque::with_capacity(capacity.get())),
+                capacity: capacity.get(),
                 waker: crate::close::CloseWaker::new(),
             }),
-        }
+        })
     }
 
     /// Pushes an item into the queue. Returns `Err(Full)` if at capacity.
@@ -82,7 +87,6 @@ impl<T: Send + 'static> Queue<T> {
             if self.inner.waker.is_closed() {
                 return Err(PoolError::Closed);
             }
-            let waited = self.inner.waker.space_available();
             {
                 let mut items = sync_lock::lock(&self.inner.items);
                 if items.len() < self.inner.capacity {
@@ -91,14 +95,21 @@ impl<T: Send + 'static> Queue<T> {
                     return Ok(());
                 }
             }
-            waited.await;
+            // Same full/closed verdicts, parked on the shared helper so a
+            // space wake in the check-then-park window still releases us.
+            let capacity = self.inner.capacity;
+            self.inner
+                .waker
+                .wait_while(crate::close::WaitChannel::Space, &self.inner.items, |items| {
+                    items.len() >= capacity && !self.inner.waker.is_closed()
+                })
+                .await;
         }
     }
 
     /// Pops an item from the queue, awaiting if empty. Returns `None` when closed.
     pub async fn pop(&self) -> Option<T> {
         loop {
-            let notified = self.inner.waker.items_available();
             {
                 let mut items = sync_lock::lock(&self.inner.items);
                 if let Some(item) = items.pop_front() {
@@ -109,7 +120,14 @@ impl<T: Send + 'static> Queue<T> {
                     return None;
                 }
             }
-            notified.await;
+            // Same empty/closed verdicts, parked on the shared helper so an
+            // item wake or close in the check-then-park window still wakes us.
+            self.inner
+                .waker
+                .wait_while(crate::close::WaitChannel::Items, &self.inner.items, |items| {
+                    items.is_empty() && !self.inner.waker.is_closed()
+                })
+                .await;
         }
     }
 

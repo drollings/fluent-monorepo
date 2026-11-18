@@ -454,7 +454,7 @@ fn parse_naive(reply: &str, len: usize) -> Vec<Resolution> {
     }
     vec![
         Resolution {
-            chosen_candidate_id: InterlinguaId::from_u64(0),
+            chosen_candidate_id: InterlinguaId::from_stored_u64(0),
             detail: "unparseable resolution".into(),
         };
         len

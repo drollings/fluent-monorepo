@@ -35,6 +35,10 @@ pub struct VectorDocStore {
     hnsw: HnswIndex,
 }
 
+/// Maximum ids per `WHERE id IN (...)` chunk: comfortably below the
+/// SQLite host-parameter limit however it was compiled.
+pub(crate) const HNSW_FETCH_CHUNK: usize = 500;
+
 impl VectorDocStore {
     pub fn open(path: &Path) -> Result<Self, VectorDbError> {
         let store = SqliteStore::open(path)?;
@@ -163,39 +167,71 @@ impl VectorDocStore {
     pub(crate) fn hnsw_search(&self, query_vec: &[f32], k: usize) -> Option<Vec<SearchResult>> {
         // Single adaptive-dispatch policy ([B] cost/recall only — never a
         // confidence/verification gate): probe HNSW iff built and above
-        // threshold. `None` takes the call-site brute-force fallback in
+        // threshold, decided on the in-memory index length instead of a
+        // SQL `COUNT(*)`. `None` takes the call-site brute-force fallback in
         // `vector_search`, whose fill-to-`k` top-up and tail are unchanged.
         // The connection is touched only after the index guard releases,
         // preserving the `index → map → conn` ordering.
-        let embedded = self.get_embedding_count().ok()? as usize;
-        if !AdaptiveHnsw::default().dispatch(self.hnsw.is_built(), embedded) {
+        if k == 0 {
             return None;
         }
-        // The shared lookup short-circuits malformed probes (empty query,
-        // `k == 0`) that would otherwise reach the distance kernel's dim
-        // assertion, and resolves hits against the traversed generation (a
-        // concurrent rebuild degrades to `None`, i.e. the brute-force path).
+        if !AdaptiveHnsw::default().dispatch(self.hnsw.is_built(), self.hnsw.len()) {
+            return None;
+        }
+        // The shared lookup short-circuits malformed probes (empty query)
+        // that would otherwise reach the distance kernel's dim assertion,
+        // and resolves hits against the traversed generation (a concurrent
+        // rebuild degrades to `None`, i.e. the brute-force path).
         let resolved = crate::hnsw::hnsw_lookup(&self.hnsw, query_vec, k)?;
+        if resolved.is_empty() {
+            return None;
+        }
+
+        // One chunked `IN` query per fetch window instead of one round
+        // trip per hit; the Rust-side map restores HNSW distance order
+        // afterwards, skipping ids deleted between probe and fetch.
+        use std::collections::HashMap;
+        let mut by_id: HashMap<i64, (String, String, Option<String>)> =
+            HashMap::with_capacity(resolved.len());
+        for chunk in resolved.chunks(HNSW_FETCH_CHUNK) {
+            let ids: Vec<i64> = chunk.iter().map(|(id, _)| *id).collect();
+            if ids.is_empty() {
+                continue;
+            }
+            let sql = format!(
+                "SELECT id, name, source, signature FROM nodes WHERE id IN ({})",
+                fluent_db::sqlite::in_clause(ids.len())
+            );
+            let rows = self
+                .store
+                .with_conn(|conn| {
+                    fluent_db::query::query_rows_from_iter(conn, &sql, ids, |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                        ))
+                    })
+                })
+                .ok()?;
+            for (id, name, source, signature) in rows {
+                by_id.insert(id, (name, source, signature));
+            }
+        }
 
         let mut results = Vec::with_capacity(resolved.len());
         for (node_id, distance) in resolved {
             // Convert cosine distance to similarity via the canonical kernel.
             let similarity = vector::distance_to_similarity(distance);
-
-            if let Ok(Some(row)) = self.store.query_row(
-                "SELECT name, source, signature FROM nodes WHERE id = ?1",
-                params![node_id],
-                |row| {
-                    Ok(SearchResult {
-                        id: node_id,
-                        name: row.get(0)?,
-                        source: row.get(1)?,
-                        signature: row.get(2)?,
-                        similarity,
-                    })
-                },
-            ) {
-                results.push(row);
+            if let Some((name, source, signature)) = by_id.remove(&node_id) {
+                results.push(SearchResult {
+                    id: node_id,
+                    name,
+                    source,
+                    signature,
+                    similarity,
+                });
             }
         }
 
