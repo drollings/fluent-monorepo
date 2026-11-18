@@ -18,7 +18,6 @@ use tokio::task::JoinSet;
 
 /// Events emitted by tasks running inside a `SupervisedBatch`.
 #[derive(Debug, Clone)]
-/// Events emitted by tasks running inside a `SupervisedBatch`.
 pub enum SupervisedBatchEvent {
     Completed {
         name: ArcIntern<str>,
@@ -51,7 +50,6 @@ fn panic_payload_message(payload: Box<dyn std::any::Any + Send + 'static>) -> St
 
 /// Reasons why a supervised-batch task was cancelled.
 #[derive(Debug, Clone)]
-/// Reasons why a supervised-batch task was cancelled.
 pub enum CancelReason {
     Timeout,
     DependencyFailed,
@@ -60,7 +58,6 @@ pub enum CancelReason {
 
 /// Configuration for a `SupervisedBatch`.
 #[derive(Debug, Clone, Copy)]
-/// Configuration for a `SupervisedBatch`.
 pub struct SupervisedBatchConfig {
     /// Maximum number of tasks to poll per `SupervisedBatch::poll` invocation.
     /// Prevents a single SupervisedBatch from starving the executor.
@@ -114,7 +111,6 @@ pub enum SupervisedBatchError {
 
 /// Summary of a SupervisedBatch.s execution result.
 #[derive(Debug, Default)]
-/// Summary of a SupervisedBatch.s execution result.
 pub struct SupervisedBatchSummary {
     pub completed: Vec<SupervisedBatchEvent>,
     pub panicked: Vec<SupervisedBatchEvent>,
@@ -469,3 +465,7 @@ async fn execute_with_timeout_and_retry(
         fut.await
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/timeout_contract.rs"]
+mod timeout_contract_tests;

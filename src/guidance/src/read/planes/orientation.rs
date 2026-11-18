@@ -9,7 +9,6 @@ use common_core::sort::sorted_by_vec;
 
 /// One card finding for the read engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One card finding for the read engine.
 pub struct CardFinding {
     /// Card key (`crate:guidance-core`).
     pub id: String,

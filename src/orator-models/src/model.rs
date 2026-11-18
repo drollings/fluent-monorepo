@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 
 /// Model families the assistant serves locally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Model families the assistant serves locally.
 pub enum ModelKind {
     /// Speech-to-text weights.
     Whisper,
@@ -23,7 +22,6 @@ pub enum ModelKind {
 
 /// One downloadable artifact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One downloadable artifact.
 pub struct ModelEntry {
     /// Short tag used in configuration (`tiny`, `base`, …).
     pub name: String,
@@ -50,7 +48,6 @@ impl ModelEntry {
 
 /// The checked-in catalog.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-/// The checked-in catalog.
 pub struct ModelManifest {
     /// All entries, in preference order per family.
     pub entries: Vec<ModelEntry>,
@@ -70,9 +67,6 @@ impl ModelManifest {
 /// at implementation time; entries that could not be verified stay
 /// explicitly unpinned instead of carrying stale hashes.
 #[must_use]
-/// Whisper catalog. Coordinates re-pinned against the upstream repository
-/// at implementation time; entries that could not be verified stay
-/// explicitly unpinned instead of carrying stale hashes.
 pub fn whisper_entries() -> Vec<ModelEntry> {
     vec![
         ModelEntry {
@@ -115,8 +109,6 @@ pub fn whisper_entries() -> Vec<ModelEntry> {
 /// Language-model catalog. The default chat model is pinned by
 /// measured bytes and SHA-256 of the installation file.
 #[must_use]
-/// Language-model catalog. The default chat model is pinned by
-/// measured bytes and SHA-256 of the installation file.
 pub fn llm_entries() -> Vec<ModelEntry> {
     vec![
         ModelEntry {
@@ -170,8 +162,6 @@ pub const AUDIO_BUNDLE_SHA256: &str =
 /// Speech-synthesis catalog. Voice packs ride with the model entry;
 /// nothing is hash-verified yet, so the entry stays explicitly unpinned.
 #[must_use]
-/// Speech-synthesis catalog. Voice packs ride with the model entry;
-/// nothing is hash-verified yet, so the entry stays explicitly unpinned.
 pub fn tts_entries() -> Vec<ModelEntry> {
     vec![ModelEntry {
         name: "kokoro-82m".to_string(),
@@ -189,11 +179,6 @@ pub fn tts_entries() -> Vec<ModelEntry> {
 /// per-component pins) instead of a single download. LFM3-Audio-2B is
 /// the default; LFM2.5-Audio-1.5B stays listed as the legacy fallback.
 #[must_use]
-/// Native speech-model catalog. The bundle (backbone plus the audio
-/// projector) lives in the shared installation layout, so the entry
-/// pins the bundle manifest ([`AUDIO_BUNDLE_SHA256`] over the
-/// per-component pins) instead of a single download. LFM3-Audio-2B is
-/// the default; LFM2.5-Audio-1.5B stays listed as the legacy fallback.
 pub fn audio_entries() -> Vec<ModelEntry> {
     vec![
         ModelEntry {
@@ -220,10 +205,6 @@ pub fn audio_entries() -> Vec<ModelEntry> {
 /// through an explicitly empty list so `list`/`find` remain total over
 /// `ModelKind`.
 #[must_use]
-/// Voice-activity catalog. No VAD weights are pinned in v1 (the
-/// energy gate ships in `orator-voice::vad`); the family stays reachable
-/// through an explicitly empty list so `list`/`find` remain total over
-/// `ModelKind`.
 pub fn vad_entries() -> Vec<ModelEntry> {
     Vec::new()
 }

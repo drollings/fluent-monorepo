@@ -19,7 +19,6 @@ use crate::venue::Venue;
 
 /// Opaque broker identifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-/// Opaque broker identifier.
 pub struct BrokerId(String);
 
 impl BrokerId {
@@ -51,8 +50,6 @@ impl std::fmt::Display for BrokerId {
 /// `false` means the route must refuse, never answer empty.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-/// Which broker surfaces exist. Each flag is a correctness statement:
-/// `false` means the route must refuse, never answer empty.
 pub struct BrokerCapabilities {
     /// Market-data streams.
     pub streams: bool,
@@ -91,7 +88,6 @@ impl BrokerCapabilities {
 
 /// Broker directory failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Broker directory failure.
 pub enum BrokerError {
     /// The id or bundle shape is invalid.
     #[error("invalid broker: {0}")]
@@ -127,7 +123,6 @@ impl BrokerError {
 
 /// One broker assembled from orthogonal optional handles.
 #[derive(Clone)]
-/// One broker assembled from orthogonal optional handles.
 pub struct BrokerBundle {
     /// Stable directory id.
     pub id: BrokerId,
@@ -232,9 +227,6 @@ impl BrokerBundle {
 /// `KeyedRegistry` is single-threaded, `ConcurrentRegistry` is hashed `Arc`
 /// values — neither fits shared `&self` + sorted `Result` reads).
 #[derive(Default)]
-/// Read/feed/auth directory. Sorted `BTreeMap` under `RwLock` (M4: stays;
-/// `KeyedRegistry` is single-threaded, `ConcurrentRegistry` is hashed `Arc`
-/// values — neither fits shared `&self` + sorted `Result` reads).
 pub struct BrokerRegistry {
     entries: RwLock<BTreeMap<BrokerId, BrokerBundle>>,
 }

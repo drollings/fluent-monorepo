@@ -24,8 +24,6 @@ use guidance_core::search_types::{
 /// Recall route selection. At most one non-default mode flag may be set
 /// (one-probe discipline: combined mode flags are rejected, never merged).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Recall route selection. At most one non-default mode flag may be set
-/// (one-probe discipline: combined mode flags are rejected, never merged).
 pub enum SearchMode {
     /// RRF fusion across FTS + vector + lemma routes.
     #[default]
@@ -83,14 +81,6 @@ pub fn parse_symbol_type(value: &str) -> Result<CodeSymbolType, String> {
 /// `file.relative_path`; this is the single boundary where the
 /// workspace-relative spelling is converted, never a second matcher.
 #[must_use]
-/// Normalize user-supplied selection globs to the indexed root-relative
-/// normal form for one workspace: a leading segment naming an indexing
-/// root (`src_dirs` entry) is stripped once via
-/// `query::glob::normalize_selection_glob`, so workspace-relative
-/// `src/<crate>/**` and index-relative `<crate>/**` select the same
-/// files. Matching itself (`matches_file_selection`) runs only against
-/// `file.relative_path`; this is the single boundary where the
-/// workspace-relative spelling is converted, never a second matcher.
 pub fn normalize_globs_for_workspace(globs: &[String], workspace: &str) -> Vec<String> {
     let cfg =
         guidance_core::config::load_config(std::path::Path::new(workspace)).unwrap_or_default();
@@ -196,14 +186,12 @@ pub const CLI_DEFAULT_LIMIT: usize = 10;
 
 /// Clamp a requested limit into `[1, MAX_LIMIT]`.
 #[must_use]
-/// Clamp a requested limit into `[1, MAX_LIMIT]`.
 pub fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
 /// L0 display options: context capture and mtime post-filter.
 #[derive(Debug, Clone, Default)]
-/// L0 display options: context capture and mtime post-filter.
 pub struct RgDisplayOptions {
     /// `-B` lines of leading context.
     pub before: usize,
@@ -220,10 +208,6 @@ pub struct RgDisplayOptions {
 /// `rg_truncated` when early-kill cut it at the limit). Context lines
 /// follow indented.
 #[must_use]
-/// Render standalone L0 hits in the shared `path:line:col` shape, headed by
-/// the coverage vocabulary (`rg_exhaustive` when the sweep completed,
-/// `rg_truncated` when early-kill cut it at the limit). Context lines
-/// follow indented.
 pub fn render_rg_hits(hits: &[RgHit], limit: usize) -> String {
     let coverage = if hits.len() < limit {
         crate::mcp::Coverage::RgExhaustive
@@ -261,11 +245,6 @@ pub fn render_rg_hits(hits: &[RgHit], limit: usize) -> String {
 /// millisecond-scale; an explicit `--limit` keeps the bounded contract),
 /// [`CLI_DEFAULT_LIMIT`] for recall modes.
 #[allow(clippy::too_many_arguments)]
-/// Run the `search` command: recall shell (fused/single-route) or L0 rg.
-/// Thin exit-wrapper over [`run_search`]. An absent limit (`None`) means
-/// the mode default: exhaustive for L0 (zg parity — the full sweep is
-/// millisecond-scale; an explicit `--limit` keeps the bounded contract),
-/// [`CLI_DEFAULT_LIMIT`] for recall modes.
 pub fn cmd_search(
     query: &str,
     workspace: &str,
@@ -335,8 +314,6 @@ pub fn cmd_search(
 /// Execute a search and return the rendered output (testable; no process exit
 /// except on conflicting mode flags, which is a CLI contract violation).
 #[allow(clippy::too_many_arguments)]
-/// Execute a search and return the rendered output (testable; no process exit
-/// except on conflicting mode flags, which is a CLI contract violation).
 pub fn run_search(
     query: &str,
     workspace: &str,
@@ -789,12 +766,6 @@ fn recall_on_index(
 /// report zero task-value confidence with an explicit shadow status —
 /// the axis names the measurement, never a settled verdict.
 #[must_use]
-/// Machine-readable envelope v2 for orchestrators: every v1 key
-/// plus the read-plane additions (coverage, claims, tokens,
-/// latency, degraded). v1 keys keep their names and meaning;
-/// `schema_version` 2 marks the additive set. Uncalibrated runs
-/// report zero task-value confidence with an explicit shadow status —
-/// the axis names the measurement, never a settled verdict.
 #[allow(clippy::too_many_arguments)]
 /// Machine-readable envelope v2 for orchestrators: every v1 key
 /// plus the read-plane additions (coverage, claims, tokens,
@@ -871,9 +842,6 @@ pub fn envelope_json_v2(
 /// intent, route, resolution, confidence with its axis, gaps, and
 /// citations. Additive — the human sections render unchanged beside it.
 #[must_use]
-/// Machine-readable envelope handoff for orchestrators: schema version,
-/// intent, route, resolution, confidence with its axis, gaps, and
-/// citations. Additive — the human sections render unchanged beside it.
 pub fn envelope_json(
     envelope: &guidance_core::query::envelope::AnswerEnvelope,
 ) -> serde_json::Value {
@@ -927,8 +895,6 @@ pub fn context_lines_for_hits(
 /// Top-N distinct fused files (hit order) seeding the closure.
 /// Pure; the cap is [`CLOSURE_ANCHOR_FILES`](guidance_core::graph_index::CLOSURE_ANCHOR_FILES).
 #[must_use]
-/// Top-N distinct fused files (hit order) seeding the closure.
-/// Pure; the cap is [`CLOSURE_ANCHOR_FILES`](guidance_core::graph_index::CLOSURE_ANCHOR_FILES).
 pub fn anchor_files(hits: &[SearchHit], count: usize) -> Vec<String> {
     let mut anchors = Vec::new();
     for hit in hits {
@@ -948,10 +914,6 @@ pub fn anchor_files(hits: &[SearchHit], count: usize) -> Vec<String> {
 /// the range cannot be read (never an invented hash). Whole-file
 /// fragments cite the whole file. Pure I/O over the hit's own path.
 #[must_use]
-/// Hash-verified citation for one fused hit: the cited range hashed
-/// over live bytes (`rel:Lstart-Lend @ b3:hash`), or `unverified` when
-/// the range cannot be read (never an invented hash). Whole-file
-/// fragments cite the whole file. Pure I/O over the hit's own path.
 pub fn cite_hit(hit: &SearchHit, workspace: &str) -> String {
     let range = hit
         .evidence
@@ -986,7 +948,6 @@ pub fn cite_hit(hit: &SearchHit, workspace: &str) -> String {
 
 /// Citations for a hit list, rank order. Length always matches `hits`.
 #[must_use]
-/// Citations for a hit list, rank order. Length always matches `hits`.
 pub fn cite_hits(hits: &[SearchHit], workspace: &str) -> Vec<String> {
     hits.iter().map(|hit| cite_hit(hit, workspace)).collect()
 }
@@ -1015,7 +976,6 @@ fn freshen_hit_files(workspace: &str, db_path: &str, hits: &[SearchHit]) -> Resu
 /// Test-only hit over a real file with one text evidence range.
 #[cfg(test)]
 #[must_use]
-/// Test-only hit over a real file with one text evidence range.
 pub fn hit_for_test(abs: &str, rel: &str, start_line: u32, end_line: u32) -> SearchHit {
     use guidance_core::search_types::{
         Entity, FileInfo, FragmentContent, FragmentSpan, RecallPath, SearchHitEvidence,
@@ -1081,10 +1041,6 @@ type ContextGroup<'a> = (
 /// "c"`) so provenance stays complete without doubling lines. Sorted
 /// edge order, capped at `cap` lines. Pure.
 #[must_use]
-/// Build ranked context lines from depth-1 expansion edges: one line
-/// per (file, anchor, direction), families merged (`import "s", call
-/// "c"`) so provenance stays complete without doubling lines. Sorted
-/// edge order, capped at `cap` lines. Pure.
 pub fn build_context_lines(edges: &[ContextEdge], cap: usize, workspace: &str) -> Vec<String> {
     // Group by (file, anchor, direction), merging families in sort order.
     let mut groups: Vec<ContextGroup<'_>> = Vec::new();

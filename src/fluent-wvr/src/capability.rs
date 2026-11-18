@@ -64,7 +64,6 @@ tokio::task_local! {
 
 /// Why a capability request was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Why a capability request was refused.
 pub enum CapabilityError {
     /// The capability was not present in the current task-local `CapabilitySet`.
     Missing { name: &'static str },
@@ -203,23 +202,7 @@ pub trait Capability: Send + Sync + 'static {
 /// let caps = CapabilitySet::new().with(FsCapability);
 /// assert!(caps.get::<FsCapability>().is_some());
 /// ```
-#[derive(Default, Debug)]
-/// A type-map of capability tokens, used to gate access to resources.
-///
-/// # Examples
-///
-/// ```
-/// use fluent_wvr::{Capability, CapabilitySet};
-///
-/// struct FsCapability;
-/// impl Capability for FsCapability {
-/// fn name(&self) -> &'static str { "fs" }
-/// }
-///
-/// let caps = CapabilitySet::new().with(FsCapability);
-/// assert!(caps.get::<FsCapability>().is_some());
-/// ```
-#[derive(Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct CapabilitySet {
     caps: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }

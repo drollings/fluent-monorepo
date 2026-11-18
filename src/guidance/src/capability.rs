@@ -83,9 +83,6 @@ pub type CapabilityCorpusBrief = CapabilityCard;
 /// it. Empty `relevant` with `control` marks out-of-corpus queries
 /// (must never promote).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One golden capability case: a query plus the brief ids that answer
-/// it. Empty `relevant` with `control` marks out-of-corpus queries
-/// (must never promote).
 pub struct CapabilityGoldCase {
     /// Natural-language orientation query.
     pub query: String,
@@ -260,10 +257,6 @@ pub fn load_capability_corpus(path: &std::path::Path) -> Result<CapabilityCorpus
 /// only when the bars pass — and even then only by an explicit human
 /// promotion (the command below always reports HELD).
 #[derive(Debug, Clone, PartialEq)]
-/// Outcome of one capability calibration run: SVO-rank recall@1 over
-/// the golden set plus out-of-corpus control fires. The entry stores
-/// only when the bars pass — and even then only by an explicit human
-/// promotion (the command below always reports HELD).
 pub struct CapabilityCalibration {
     /// Share of golden queries whose rank-1 brief is relevant.
     pub recall_at_1: f64,

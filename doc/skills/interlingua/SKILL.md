@@ -13,7 +13,7 @@ graphs.
 + `arc_eager.rs` (the annotation ladder — LLM/encoder rungs or the
 deterministic parser — that produces the lemma annotations),
 `src/fluent-onnx/src/encoder.rs` + `colbert.rs` (the trained-encoder rung and the
-entity-link index), `src/ontology/src/yago_loader.rs` + `yago.rs` (the YaGO 4.5
+entity-link index), `src/concept/src/loader.rs` + `yago.rs` (the YaGO 4.5
 schema), `src/router/src/concept_store_sqlite.rs` (the durable store),
 `src/coral/src/db/nodes.rs` (the content-addressed graph).
 
@@ -92,7 +92,7 @@ content hash** (bits 0–47).
 
 ## YaGO 4.5 → ids (the knowledge side)
 
-`guidance-ontology` provides the **one loader** (`YaGoLoader`) that feeds the
+`fluent-concept` provides the **one loader** (`YaGoLoader`) that feeds the
 **two durable homes**, and a boot reconciliation (C3/§11.7/§13.10) that fails
 loudly on drift:
 
@@ -212,9 +212,9 @@ knowledge: YaGO classes/entities (interlingua_concepts) ⇄ coral graph (node_id
   `CorrectionIndex`; `ledger/overlay.rs` the `overlay_candidates` plane.
 - `src/router/src/server/entity_link.rs`, `server/review.rs` — the async
   entity-link overlay and parse-review workers.
-- `src/ontology/src/yago_loader.rs`, `yago.rs` — the YaGO 4.5 loader + schema
+- `src/concept/src/loader.rs`, `yago.rs` — the YaGO 4.5 loader + schema
   ids + whitelist.
-- `src/ontology/src/yago_view.rs`, `plausibility.rs` — the runtime YaGO
+- `src/concept/src/yago_view.rs`, `plausibility.rs` — the runtime YaGO
   class-hierarchy view (CSR/memo, moved from spacy-rs in M5) + the
   triple-vs-taxonomy `score_plausibility` kernel over the shared
   `fluent-concept::PlausibilityTriple` input (spacy-rs keeps only

@@ -13,9 +13,6 @@ use crate::search_types::{SearchHit, SearchPlan, SearchPlanRoute, SearchPlanRout
 /// always on. Symbol preference rides along only for Symbol/Graph
 /// intents — the caller resolves the intent, the plane never guesses.
 #[must_use]
-/// Code-only recall plan: FTS plus vector routes over the query, lemma
-/// always on. Symbol preference rides along only for Symbol/Graph
-/// intents — the caller resolves the intent, the plane never guesses.
 pub fn code_plan(query: &str, limit: usize, prefer_symbol: bool) -> SearchPlan {
     SearchPlan {
         routes: vec![
@@ -42,12 +39,6 @@ pub fn code_plan(query: &str, limit: usize, prefer_symbol: bool) -> SearchPlan {
 /// fallback, never a live claim. Unresolvable symbols keep their
 /// stored slice — the assembly layer labels the drift.
 #[must_use]
-/// Normalize fused code hits into findings: rank order preserved,
-/// producer score kept as rank-only signal, provenance names the
-/// recall path. Excerpts resolve against live bytes by symbol
-/// identity (tree-sitter on the fly); stored evidence is the
-/// fallback, never a live claim. Unresolvable symbols keep their
-/// stored slice — the assembly layer labels the drift.
 pub fn search_hits_to_findings(hits: &[SearchHit]) -> Vec<crate::read::engine::Finding> {
     use crate::read::engine::{Finding, FindingKind, FindingProducer};
     use crate::search_types::FragmentContent;
@@ -157,15 +148,6 @@ fn member_type_for_symbol(
 /// Findings without line ranges (graph edges, ownership notes)
 /// pass through — they are relation facts, not excerpts.
 #[must_use]
-/// Re-resolve code findings against live bytes: the index stores
-/// ranges, but edits shift lines without re-syncing — and stored
-/// text is normalized (comment markers stripped), so verification
-/// compares normalized cores, never raw bytes. A finding whose
-/// normalized text still appears live is kept; a moved block is
-/// re-sliced to its live lines; a renamed block whose text is gone
-/// renders the live range text instead, marked stale at render time.
-/// Findings without line ranges (graph edges, ownership notes)
-/// pass through — they are relation facts, not excerpts.
 pub fn resolve_live_findings(
     _workspace: &std::path::Path,
     findings: Vec<crate::read::engine::Finding>,
@@ -281,9 +263,6 @@ fn normalize_line(line: &str) -> String {
 /// survive, then a windowed body with an explicit truncation marker.
 /// Citation ranges are untouched by the caller (full span kept).
 #[must_use]
-/// Clip an oversized excerpt to `max_chars`: signature plus doc lines
-/// survive, then a windowed body with an explicit truncation marker.
-/// Citation ranges are untouched by the caller (full span kept).
 pub fn clip_finding_text(text: &str, max_chars: usize) -> String {
     if text.len() <= max_chars {
         return text.to_string();
@@ -316,9 +295,6 @@ pub fn clip_finding_text(text: &str, max_chars: usize) -> String {
 /// the same `Finding` as every other producer, so one relevance judge
 /// covers it. Scores are rank-free (`0.0`) — exhaustion has no signal.
 #[must_use]
-/// Normalize ripgrep hits into findings: the exhaustive arm speaks
-/// the same `Finding` as every other producer, so one relevance judge
-/// covers it. Scores are rank-free (`0.0`) — exhaustion has no signal.
 pub fn rg_hits_to_findings(
     workspace: &std::path::Path,
     hits: &[crate::query::rg_backend::RgHit],

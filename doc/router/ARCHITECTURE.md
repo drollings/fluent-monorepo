@@ -340,14 +340,14 @@ vs `DispatchError::Http` (permanent), on both the buffered and streaming paths.
 `fluent-router` imports from `common-core`, `fluent-wvr`, `fluent-concurrency`,
 `fluent-llm` (`src/llm/`), `fluent-types`, `fluent-dag`, `fluent-concept`, `spacy-rs`,
 `fluent-onnx`, and std/`tokio`/`reqwest`. It does NOT import from `guidance`,
-`coral`, `wasm_ipc`, `knowledge`, `ontology`, or `rdf`. `knowledge.rs` gives
+`coral`, `wasm_ipc`, `knowledge`, or `rdf`. `knowledge.rs` gives
 coral's Context a reachable read path without the router importing coral.
 Dependency direction is preserved: `fluent-onnx`, `fluent-concept`, and `spacy-rs`
 never import the router (or each other's domain types); the router implements
 their `ConceptStore`/`CorrectionIndex`/`EmbeddingProvider`/`SessionLoader`/
 `LlmFetch` seams. The **binary** crate (`src/bin/coral-router/`) is the
 composition root and additionally depends on `coral-context` and
-`guidance-ontology` — its `boot.rs` runs the one-loader/two-homes YaGO load into
+`fluent-concept` — its `boot.rs` runs the one-loader/two-homes YaGO load into
 both the coral graph and the router's `SqliteConceptStore`.
 
 ## Pipeline data flow detail

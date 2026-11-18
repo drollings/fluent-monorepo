@@ -23,7 +23,7 @@ promote/extend the shared component instead.
 `fluent-db` may import `common-core`, `fluent-wvr`,
 `tokio`, `rusqlite`, `serde`, `thiserror`, `tracing`,
 `bon`, `internment`, `fluent-types`. It must NOT import `fluent-concurrency`, `guidance`,
-`coral`, `fluent-router`, `search-vector`, `knowledge`, `ontology`, `rdf`,
+`coral`, `fluent-router`, `search-vector`, `knowledge`, `fluent-concept`, `rdf`,
 or `wasm_ipc`. The capability-gating primitives
 (`CURRENT_CAPS`, `check_capability`, `CapabilityError`) live in `fluent-wvr`
 so both `fluent-db` and `fluent-concurrency` read the same task-local without

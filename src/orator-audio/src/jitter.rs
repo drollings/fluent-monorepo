@@ -12,7 +12,6 @@ use orator::Frame;
 
 /// Jitter buffer over whole frames.
 #[derive(Debug)]
-/// Jitter buffer over whole frames.
 pub struct JitterBuffer {
     /// Queued frames, oldest first.
     frames: VecDeque<Frame>,

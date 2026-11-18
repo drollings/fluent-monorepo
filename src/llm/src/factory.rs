@@ -118,7 +118,6 @@ pub struct EmbeddingIdentity {
 
 /// Which half of the identity moved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Which half of the identity moved.
 pub enum RebuildField {
     Model,
     Endpoint,
@@ -126,7 +125,6 @@ pub enum RebuildField {
 
 /// A required index rebuild, carrying both sides and the operator hint.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A required index rebuild, carrying both sides and the operator hint.
 pub struct RebuildMismatch {
     pub field: RebuildField,
     pub existing: String,

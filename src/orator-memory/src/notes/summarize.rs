@@ -16,7 +16,6 @@ pub const SEG_PREFIX: &str = "seg-";
 
 /// One transcript segment available for citation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One transcript segment available for citation.
 pub struct CitedSegment {
     /// Segment id (`seg-N`).
     pub id: String,
@@ -26,7 +25,6 @@ pub struct CitedSegment {
 
 /// Extract `[seg-N]` citations from `note`, in order.
 #[must_use]
-/// Extract `[seg-N]` citations from `note`, in order.
 pub fn extract_seg_citations(note: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = note;
@@ -47,9 +45,6 @@ pub fn extract_seg_citations(note: &str) -> Vec<String> {
 /// citation sets are valid (a note may cite nothing); dangling ids
 /// reject the note.
 #[must_use]
-/// Whether every citation in `note` resolves against `known`. Empty
-/// citation sets are valid (a note may cite nothing); dangling ids
-/// reject the note.
 pub fn citations_valid(note: &str, known: &[CitedSegment]) -> bool {
     extract_seg_citations(note)
         .iter()

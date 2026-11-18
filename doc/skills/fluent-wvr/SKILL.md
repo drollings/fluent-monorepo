@@ -314,7 +314,7 @@ Violations defeat the supervisor's timeout and retry invariants. This is why
 blocking rusqlite work is offloaded to a blocking thread instead of
 running inline in `execute`.
 
-**What a violation costs (the zombie).** The per-attempt timeout bounds the
+**What a violation costs (the zombie).** The whole-unit budget across all attempts (incl. backoff) bounds the
 supervisor's await/retry loop, never a blocking body: a body that sleeps or
 spins past its budget holds its worker, keeps running past the deadline, and
 the finished inner wins the race — the summary reports `completed`, late,
@@ -363,7 +363,7 @@ capability set; `SupervisedBatch` overrides both at registration time.
 pub struct WorkContext {
     pub dry_run: bool,                   // short-circuit mutating handlers
     pub max_retries: u32,                // 0 = no retry; >0 = SupervisedBatch retries this many times
-    pub timeout_ms: u64,                 // per-attempt wall-clock budget
+    pub timeout_ms: u64,                 // whole-unit budget across all attempts (incl. backoff)
     pub metadata: HashMap<String, MetadataValue>,
     pub outputs: OutputStore,            // typed inter-unit channel
     pub rt: Arc<dyn Runtime>,            // pluggable: TokioRuntime, TestRuntime, NoopRuntime
@@ -851,7 +851,7 @@ The wrapper also implements `FieldAccess` (delegating `set_field`/`get_field`/`f
 
 - **Async transport retry**: `common_core::retry::retry_async(max_attempts,
   base_ms, jitter_pct, is_retryable, op)` — used by `RetryBackend` and the
-  `SupervisedBatch` supervisor. `SupervisedBatch` drives per-attempt timeout, `WorkError::Timeout`
+  `SupervisedBatch` supervisor. `SupervisedBatch` drives whole-unit budget across all attempts (incl. backoff), `WorkError::Timeout`
   routing, and dependency cancellation on top of it.
 - **Sync free-function retry**: `retry_call(max_attempts, base_ms, f)` —
   the documented, explicitly-blocking counterpart for non-async contexts
@@ -1395,7 +1395,7 @@ let unit: Arc<dyn Component> = Arc::new(Instrumented::new(
 need to read `&WorkContext` or return arbitrary `WorkOutput`. Because the op
 runs on a blocking thread, the unit can be registered under a `SupervisedBatch` for
 timeout/retry/dependency-cancellation without violating the purity contract —
-the `SupervisedBatch`'s per-attempt budget applies to the offloaded task, and the
+the `SupervisedBatch`'s whole-unit budget across all attempts (incl. backoff) applies to the offloaded task, and the
 executor is never starved. `execute` scopes `ctx.caps` into the `CURRENT_CAPS`
 task-local on **both** offload paths (`block_in_place` and the scoped-thread
 path), so a pool-backed op that calls `SqlitePool::acquire`/`with_conn` (both

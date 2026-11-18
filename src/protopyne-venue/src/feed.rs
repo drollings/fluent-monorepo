@@ -27,7 +27,6 @@ use crate::stream::{StreamConfig, StreamOutcome};
 
 /// What one feed subscription asks for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// What one feed subscription asks for.
 pub struct FeedSubscription {
     /// Symbol to subscribe.
     pub symbol: String,
@@ -81,7 +80,6 @@ impl fluent_wvr::validate::Validate for FeedSubscription {
 /// Producer surfaces a feed implements.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-/// Producer surfaces a feed implements.
 pub struct FeedCapabilities {
     /// Top-of-book quotes.
     pub quotes: bool,
@@ -97,7 +95,6 @@ pub struct FeedCapabilities {
 
 /// Feed failure taxonomy.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Feed failure taxonomy.
 pub enum FeedError {
     /// The feed cannot serve this subscription.
     #[error("unsupported feed subscription: {0}")]
@@ -147,8 +144,6 @@ pub trait MarketDataFeed: Send + Sync {
 /// Observation counters for one session. Producer confidence only: counters
 /// never gate a trade by themselves.
 #[derive(Debug, Default)]
-/// Observation counters for one session. Producer confidence only: counters
-/// never gate a trade by themselves.
 pub struct FeedStats {
     received: AtomicU64,
     skipped: AtomicU64,
@@ -190,7 +185,6 @@ impl FeedStats {
 
 /// One immutable counter snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-/// One immutable counter snapshot.
 pub struct FeedStatsSnapshot {
     /// Events delivered.
     pub received: u64,
@@ -205,8 +199,6 @@ pub struct FeedStatsSnapshot {
 /// Producer-confidence health: is the feed keeping up, and how old is the
 /// last fact?
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// Producer-confidence health: is the feed keeping up, and how old is the
-/// last fact?
 pub struct FeedHealth {
     /// Whether any fact has arrived.
     pub live: bool,
@@ -292,8 +284,6 @@ fn now_ms() -> i64 {
 /// One trade-print-to-bar adapter: exact close boundaries, duplicate drops,
 /// and out-of-order refusal.
 #[derive(Debug)]
-/// One trade-print-to-bar adapter: exact close boundaries, duplicate drops,
-/// and out-of-order refusal.
 pub struct TradeBarAdapter {
     ring: BarRing,
     timeframe_ms: i64,
@@ -310,7 +300,6 @@ pub struct TradeBarAdapter {
 
 /// What one print produced.
 #[derive(Debug, Clone, PartialEq)]
-/// What one print produced.
 pub enum AdapterOutcome {
     /// A duplicate timestamp; counted, never folded.
     Duplicate,
@@ -466,7 +455,6 @@ impl TradeBarAdapter {
 
 /// Convert a forming/closing parts row into the chart event.
 #[must_use]
-/// Convert a forming/closing parts row into the chart event.
 pub fn bar_update(symbol: &str, bar: BarParts, closed: bool) -> BarUpdate {
     BarUpdate {
         underlying: symbol.to_owned(),
@@ -551,7 +539,6 @@ impl MarketDataFeed for ChannelFeed {
 
 /// Resolve a session timeout for consumers that poll rather than await.
 #[must_use]
-/// Resolve a session timeout for consumers that poll rather than await.
 pub fn poll_interval() -> Duration {
     Duration::from_millis(10)
 }

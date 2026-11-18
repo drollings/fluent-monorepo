@@ -10,7 +10,6 @@ use protopyne_types::Money;
 /// One broker's declared capability flags.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One broker's declared capability flags.
 pub struct BrokerCapabilityView {
     /// Broker id.
     pub venue: String,
@@ -30,7 +29,6 @@ pub struct BrokerCapabilityView {
 
 /// One broker account summary.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One broker account summary.
 pub struct BrokerAccountView {
     /// Broker id.
     pub venue: String,
@@ -50,7 +48,6 @@ pub struct BrokerAccountView {
 
 /// One order leg.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One order leg.
 pub struct BrokerLegView {
     /// Contract identifier.
     pub contract: String,
@@ -64,7 +61,6 @@ pub struct BrokerLegView {
 
 /// One broker order.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One broker order.
 pub struct BrokerOrderView {
     /// Broker id.
     pub venue: String,
@@ -102,7 +98,6 @@ pub struct BrokerOrderView {
 
 /// One broker execution.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One broker execution.
 pub struct BrokerDealView {
     /// Broker id.
     pub venue: String,
@@ -137,7 +132,6 @@ pub struct BrokerDealView {
 
 /// Response envelope for a broker read refusal.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Response envelope for a broker read refusal.
 pub struct BrokerRefusal {
     /// Refusal reason.
     pub error: String,
@@ -172,7 +166,6 @@ pub struct ProposalView {
 
 /// Net position in one underlying.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Net position in one underlying.
 pub struct PositionView {
     /// Underlying symbol.
     pub underlying: String,
@@ -190,7 +183,6 @@ pub const PORTFOLIO_SOURCE_REHEARSAL: &str = "rehearsal";
 
 /// Aggregate portfolio over one source: the venue book or a preview run.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Aggregate portfolio over one source: the venue book or a preview run.
 pub struct PortfolioView {
     /// Net positions by underlying.
     pub positions: Vec<PositionView>,
@@ -232,8 +224,6 @@ impl Default for PortfolioView {
 /// Last operator command the service observed: read-only echo of the
 /// journaled command plane.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Last operator command the service observed: read-only echo of the
-/// journaled command plane.
 pub struct CommandStatus {
     /// Command kind (`halt`, `resume`, `close_all`, `cancel_all`).
     pub kind: String,
@@ -257,19 +247,6 @@ pub struct CommandStatus {
 /// display-enum fields (`"NoTape"`, `"UnsupportedTimeframe"`,
 /// `"UnknownSymbol"`, `"Denied"`, `"Store"`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Liveness plus command-plane status, mirroring the health route payload.
-///
-/// Field order is alphabetical on purpose: the route historically
-/// serialized a `serde_json::Map` (sorted keys), and the DTO keeps that
-/// byte order so the server-side swap is invisible on the wire. The store
-/// fields stay in the same order, and each is `None`-skipped so a view with
-/// no store reading on record serialises byte-identically to the form
-/// without them. The tape fields follow the same rule: each is
-/// `None`-skipped and reports only once a tape read has been observed, so a
-/// server that never served through its tape keeps the pre-tape bytes. The
-/// last-miss tag rides the same stable-tag convention as the other
-/// display-enum fields (`"NoTape"`, `"UnsupportedTimeframe"`,
-/// `"UnknownSymbol"`, `"Denied"`, `"Store"`).
 pub struct HealthView {
     /// Whether new entries currently route.
     pub allows_entries: bool,
@@ -326,7 +303,6 @@ pub struct HealthView {
 
 /// Worst-case exposure of an armed grant, shown before confirmation.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Worst-case exposure of an armed grant, shown before confirmation.
 pub struct WorstCase {
     /// Maximum trades authorized.
     pub max_trades: u32,
@@ -346,7 +322,6 @@ pub struct WorstCase {
 
 /// Side of a manual ticket, in the vocabulary the ticket form picks from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Side of a manual ticket, in the vocabulary the ticket form picks from.
 pub enum TicketSide {
     /// Buy at a limit (or better).
     Buy,
@@ -361,12 +336,6 @@ pub enum TicketSide {
 /// the ticket identity and validating every value), so the intent schema —
 /// and the authority to submit one — never crosses into the paint edge.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One manual ticket draft: the four fields the terminal's form fills.
-///
-/// This is the neutral **shape** of a manual order, not the venue's intent.
-/// The terminal fills it and the core turns it into an `OrderIntent` (minting
-/// the ticket identity and validating every value), so the intent schema —
-/// and the authority to submit one — never crosses into the paint edge.
 pub struct TicketDraft {
     /// Buy or sell.
     pub side: TicketSide,
@@ -386,11 +355,6 @@ pub struct TicketDraft {
 /// refuses a shape it cannot price. The neutral crate never links the
 /// strategy enum, so this mirror is what crosses the read boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Structure a rehearsal is opened for, in the picker's vocabulary.
-///
-/// A **hint**, not a decision: the core maps it to its own structure kind and
-/// refuses a shape it cannot price. The neutral crate never links the
-/// strategy enum, so this mirror is what crosses the read boundary.
 pub enum StructureKindHint {
     /// Single stock or single option leg.
     Single,
@@ -427,12 +391,6 @@ impl StructureKindHint {
 /// of authoring its own. Money rides decimal text (the neutral crate keeps
 /// exactness without narrowing the scale at the boundary).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// The economics the core books on every rehearsal proposal for one
-/// underlying and structure.
-///
-/// The core owns these numbers: a replay start takes them from here instead
-/// of authoring its own. Money rides decimal text (the neutral crate keeps
-/// exactness without narrowing the scale at the boundary).
 pub struct RehearsalEconomics {
     /// Strategy name carried on every proposal for attribution.
     pub strategy: String,
@@ -449,7 +407,6 @@ pub struct RehearsalEconomics {
 
 /// Response to a successful arming.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Response to a successful arming.
 pub struct ArmResponse {
     /// Grant identifier armed.
     pub grant_id: String,
@@ -461,7 +418,6 @@ pub struct ArmResponse {
 
 /// One deny reason and how many bars it kept out of the venue.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One deny reason and how many bars it kept out of the venue.
 pub struct DenyCount {
     /// The reason, as recorded on the decision.
     pub reason: String,
@@ -478,14 +434,6 @@ pub struct DenyCount {
 /// neutral wire projection of the server's typed preview response, which
 /// serves the same shape with the run tree attached.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Preview outcome: the run plus why bars did not trade.
-///
-/// `run` stays an opaque JSON value on this side of the boundary: the typed
-/// run tree (manifest, per-bar verdicts, report) is core-owned, and the
-/// terminal reads the typed deny histogram, not the run. The value
-/// round-trips byte-stable, so route payloads stay identical. This is the
-/// neutral wire projection of the server's typed preview response, which
-/// serves the same shape with the run tree attached.
 pub struct PreviewResponse {
     /// The backtest run, opaque here, byte-stable on the wire.
     pub run: serde_json::Value,
@@ -495,7 +443,6 @@ pub struct PreviewResponse {
 
 /// One journaled lifecycle event, read-only.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One journaled lifecycle event, read-only.
 pub struct JournalRowView {
     /// Monotonic sequence number.
     pub seq: i64,
@@ -511,7 +458,6 @@ pub struct JournalRowView {
 
 /// One chartable bar row, mirroring the bars route payload.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One chartable bar row, mirroring the bars route payload.
 pub struct ChartBar {
     /// Bar close time as epoch seconds.
     pub time: i64,
@@ -529,7 +475,6 @@ pub struct ChartBar {
 
 /// Chart bars payload: rows plus how many bars never made it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Chart bars payload: rows plus how many bars never made it.
 pub struct ChartBars {
     /// Chartable bars in history order.
     pub rows: Vec<ChartBar>,
@@ -545,11 +490,6 @@ pub struct ChartBars {
 /// `Crypto`): the terminal groups and filters the Symbol Selection Modal by
 /// it, and the view crate never links a market-data taxonomy to do so.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One selectable instrument in a symbol catalog.
-///
-/// `asset_class` is a stable display tag (`Stocks`, `Funds`, `Futures`,
-/// `Crypto`): the terminal groups and filters the Symbol Selection Modal by
-/// it, and the view crate never links a market-data taxonomy to do so.
 pub struct SymbolInfoView {
     /// Ticker symbol (e.g. `GLD`).
     pub symbol: String,
@@ -561,7 +501,6 @@ pub struct SymbolInfoView {
 
 /// One overlay series (indicator values aligned with chart bars).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One overlay series (indicator values aligned with chart bars).
 pub struct OverlaySeries {
     /// Kernel id (`sma`, `ema`, `bb`, or `trima`).
     pub kind: String,
@@ -584,12 +523,6 @@ pub struct OverlaySeries {
 /// pane, a graph key, or a run type. Which panes a step touches is the
 /// terminal's own plan, so no core replay type crosses this boundary.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One replayable step: a bar the core can re-run to, and how far the
-/// recorded run got.
-///
-/// Neutral vocabulary only: a step names a bar and a timestamp, never a
-/// pane, a graph key, or a run type. Which panes a step touches is the
-/// terminal's own plan, so no core replay type crosses this boundary.
 pub struct ReplayStepView {
     /// Absolute bar index into the replayed history.
     pub bar_index: u64,
@@ -612,14 +545,6 @@ pub struct ReplayStepView {
 /// revision bookkeeping a terminal uses to decide which panes to recompute
 /// never crosses this boundary: it is the terminal's own bookkeeping.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Replay read model: where the scrub stands, and the ordered steps it may
-/// stand at.
-///
-/// `cursor` is the task-value answer to "what did the strategy see at this
-/// bar" — an exact index the core supplies. `total_bars` is the window the
-/// steps span; `cursor == total_bars` is the head (nothing rewound). The
-/// revision bookkeeping a terminal uses to decide which panes to recompute
-/// never crosses this boundary: it is the terminal's own bookkeeping.
 pub struct ReplayView {
     /// Bar index on screen (0-based, at most `total_bars`).
     pub cursor: u64,
@@ -637,13 +562,6 @@ pub struct ReplayView {
 /// first bar the session decides; earlier bars feed indicator context only
 /// (signal inputs match a batch run from that bar, with fresh budgets).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Parameters for opening an interactive replay session.
-///
-/// Neutral data only: the core builds the strategy, risk engine, and grant
-/// from these knobs (a supplied grant document, else its fixed rehearsal
-/// grant), so the terminal never links the trading path. `start_bar` is the
-/// first bar the session decides; earlier bars feed indicator context only
-/// (signal inputs match a batch run from that bar, with fresh budgets).
 pub struct ReplayStartParams {
     /// Registry slot the session occupies; replaces any session already there.
     pub session_id: String,
@@ -686,14 +604,6 @@ fn default_replay_structure() -> String {
 /// executed spread leg, read off the venue's own executions (empty for
 /// singles, refusals, and verdicts recorded before leg rows existed).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One replayed bar's verdict, in display vocabulary.
-///
-/// Direction and structure ride the same stable tags as [`ProposalView`]
-/// (`"Long"`, `"Vertical"`, …); both are `None` when no proposal was
-/// emitted. `state` is the last journaled lifecycle target, or the skip
-/// reason verbatim when nothing was proposed. `legs` carries one row per
-/// executed spread leg, read off the venue's own executions (empty for
-/// singles, refusals, and verdicts recorded before leg rows existed).
 pub struct ReplayDecisionView {
     /// Absolute bar index into the replayed history.
     pub bar_index: u64,
@@ -733,9 +643,6 @@ pub struct ReplayDecisionView {
 /// fill side (`"buy"`/`"sell"`), contracts filled, slipped price, and
 /// commission.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One executed spread leg, in display vocabulary: the OCC contract, the
-/// fill side (`"buy"`/`"sell"`), contracts filled, slipped price, and
-/// commission.
 pub struct ReplayLegView {
     /// Contract filled, as its OCC symbol.
     pub contract: String,
@@ -751,7 +658,6 @@ pub struct ReplayLegView {
 
 /// Net position in one underlying, folded from the session's fills.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Net position in one underlying, folded from the session's fills.
 pub struct ReplayPositionView {
     /// Underlying symbol.
     pub underlying: String,
@@ -768,12 +674,6 @@ pub struct ReplayPositionView {
 /// stop shape (a live session always reports true); the gateway refuses a
 /// stopped or unknown session instead of serving an empty one.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Interactive replay state: cursor, verdicts so far, fills, and journal.
-///
-/// Decisions and journal rows cover decided bars only — the session never
-/// reports a bar it has not stepped. `active` is false only on the terminal
-/// stop shape (a live session always reports true); the gateway refuses a
-/// stopped or unknown session instead of serving an empty one.
 pub struct ReplayStateView {
     /// Registry slot this state belongs to.
     pub session_id: String,
@@ -800,10 +700,6 @@ pub struct ReplayStateView {
 /// echoes back. Display vocabulary only — the core alone parses intents
 /// (the crate never links `venue` enums; side rides a stable string tag).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One manual ticket awaiting the human's fill report: the exact ticket text
-/// the operator places by hand, plus the structured fields the confirm form
-/// echoes back. Display vocabulary only — the core alone parses intents
-/// (the crate never links `venue` enums; side rides a stable string tag).
 pub struct TicketView {
     /// Ticket identifier (the intent's client id).
     pub ticket_id: String,
@@ -825,10 +721,6 @@ pub struct TicketView {
 /// rides the core's variant name verbatim (`"QuantityMismatch"`,
 /// `"PriceOutsideLimit"`, `"ImportMismatch"`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One flagged disagreement between tickets, fills, and the read-only
-/// import: which ticket (or underlying) disagrees, how, and why. The kind
-/// rides the core's variant name verbatim (`"QuantityMismatch"`,
-/// `"PriceOutsideLimit"`, `"ImportMismatch"`).
 pub struct TicketDriftView {
     /// Ticket (or underlying, for import drift) that disagrees.
     pub ticket_id: String,
@@ -853,7 +745,6 @@ pub const CONCENTRATION_NO_EXPIRY: &str = "no-expiry";
 
 /// One concentration bucket: open notional and its fraction of the total.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// One concentration bucket: open notional and its fraction of the total.
 pub struct ConcentrationShare {
     /// Bucket label: underlying symbol, `YYYY-MM-DD` expiry (or
     /// [`CONCENTRATION_NO_EXPIRY`]), or event label.
@@ -869,10 +760,6 @@ pub struct ConcentrationShare {
 /// projection, never a gate: every share is a fraction of what the books
 /// hold, and an empty book yields empty partitions.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Concentration over the fold's open books: three partitions of the same
-/// open notional — by underlying, by expiry, and by event window. A
-/// projection, never a gate: every share is a fraction of what the books
-/// hold, and an empty book yields empty partitions.
 pub struct ConcentrationReport {
     /// Open-notional shares by underlying symbol.
     #[serde(default)]
@@ -909,9 +796,6 @@ mod tests;
 /// enumerations a form picker must offer. The schema is data: the terminal
 /// renders it without naming any strategy type.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// A backtest schema: the composition description plus the registry
-/// enumerations a form picker must offer. The schema is data: the terminal
-/// renders it without naming any strategy type.
 pub struct BacktestSchemaView {
     /// The composition description (nested spec shape).
     pub schema: serde_json::Value,
@@ -921,9 +805,6 @@ pub struct BacktestSchemaView {
 /// number); the time window is RFC3339; the grant is an optional explicit
 /// document, defaulting to a permissive single-structure rehearsal grant.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Parameters for one backtest run. Money rides decimal text (never a JSON
-/// number); the time window is RFC3339; the grant is an optional explicit
-/// document, defaulting to a permissive single-structure rehearsal grant.
 pub struct BacktestRunParams {
     /// The nested composition document the run binds.
     pub spec: serde_json::Value,
@@ -942,8 +823,6 @@ pub struct BacktestRunParams {
 /// One labelled metric; the value rides text so an absent metric reads
 /// `None` instead of an invented zero.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One labelled metric; the value rides text so an absent metric reads
-/// `None` instead of an invented zero.
 pub struct BacktestMetricView {
     /// Metric label.
     pub label: String,
@@ -953,7 +832,6 @@ pub struct BacktestMetricView {
 
 /// One closed trade; every price rides decimal text.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One closed trade; every price rides decimal text.
 pub struct BacktestTradeView {
     /// Signal side that opened the trade.
     pub long: bool,
@@ -977,7 +855,6 @@ pub struct BacktestTradeView {
 
 /// One equity-curve point; equity rides decimal text.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One equity-curve point; equity rides decimal text.
 pub struct EquityPointView {
     /// Bar timestamp (RFC3339).
     pub at: String,
@@ -988,8 +865,6 @@ pub struct EquityPointView {
 /// One chart marker; the kind is a stable tag (`entry`, `exit`, `stop`,
 /// `target`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One chart marker; the kind is a stable tag (`entry`, `exit`, `stop`,
-/// `target`).
 pub struct BacktestMarkerView {
     /// Bar timestamp (RFC3339).
     pub at: String,
@@ -1003,9 +878,6 @@ pub struct BacktestMarkerView {
 /// trades today, loss streak, cooldown, halt line, win rate, net P&L. Formatted
 /// text mirrors the reference table exactly; the terminal paints it directly.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// The reference status table's eight rows at one bar: position, day P&L,
-/// trades today, loss streak, cooldown, halt line, win rate, net P&L. Formatted
-/// text mirrors the reference table exactly; the terminal paints it directly.
 pub struct BacktestStatusView {
     /// Bar timestamp (RFC3339).
     pub at: String,
@@ -1029,7 +901,6 @@ pub struct BacktestStatusView {
 
 /// A handle to one stored backtest run.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// A handle to one stored backtest run.
 pub struct BacktestRunRef {
     /// Registry id the run is stored under.
     pub run_id: String,
@@ -1038,8 +909,6 @@ pub struct BacktestRunRef {
 /// One stored backtest run, fully projected: metrics, equity curve, trades,
 /// markers, the final status row, and the declared warnings.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One stored backtest run, fully projected: metrics, equity curve, trades,
-/// markers, the final status row, and the declared warnings.
 pub struct BacktestRunView {
     /// Registry id.
     pub run_id: String,

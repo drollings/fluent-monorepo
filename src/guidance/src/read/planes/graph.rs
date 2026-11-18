@@ -12,7 +12,6 @@ use crate::graph_index::{CallEdge, GraphIndex, ResolutionMethod};
 
 /// One call site on the graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One call site on the graph.
 pub struct CallSite {
     /// Calling file (absolute path as stored).
     pub file: String,
@@ -24,7 +23,6 @@ pub struct CallSite {
 
 /// One callee of a definition site.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One callee of a definition site.
 pub struct Callee {
     /// Defining file of the caller.
     pub file: String,
@@ -34,7 +32,6 @@ pub struct Callee {
 
 /// File ownership through the component gate.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// File ownership through the component gate.
 pub struct OwnerInfo {
     /// Owning Cargo package (`unknown` fallback, never a guess).
     pub package: String,
@@ -44,10 +41,7 @@ pub struct OwnerInfo {
 
 /// Caller selection policy: product callers by default; tests and
 /// fixtures are diagnostics, never product dependents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Caller selection policy: product callers by default; tests and
-/// fixtures are diagnostics, never product dependents.
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Caller selection policy: product callers by default; tests and
 /// fixtures are diagnostics, never product dependents.
 /// Caller selection policy: product callers by default; tests and

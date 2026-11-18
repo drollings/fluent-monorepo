@@ -347,7 +347,10 @@ fn filter_node_parses_match_interlingua() {
         m.predicate_id,
         Some(InterlinguaId::from_stored_u64(2251799813685260))
     );
-    assert_eq!(m.object_id, Some(InterlinguaId::from_stored_u64(2251799813685262)));
+    assert_eq!(
+        m.object_id,
+        Some(InterlinguaId::from_stored_u64(2251799813685262))
+    );
     assert_eq!(m.confidence_min, Some(0.5));
     assert!(m.subject_id.is_none());
 }

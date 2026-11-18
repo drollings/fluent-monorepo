@@ -22,8 +22,6 @@ const FRAME_SAMPLES: usize = 320;
 /// Whether 16 kHz mono `samples` carry committable speech: the energy
 /// fraction holds and no stationary pure tone owns the span.
 #[must_use]
-/// Whether 16 kHz mono `samples` carry committable speech: the energy
-/// fraction holds and no stationary pure tone owns the span.
 pub fn speech_present_16k(samples: &[f32]) -> bool {
     speech_present_16k_with_config(samples, &orator::VadConfig::default())
 }
@@ -32,9 +30,6 @@ pub fn speech_present_16k(samples: &[f32]) -> bool {
 /// configured VAD tunables. All gating paths compose this so live
 /// and offline gating never disagree under operator tuning.
 #[must_use]
-/// Whether 16 kHz mono `samples` carry committable speech under the
-/// configured VAD tunables. All gating paths compose this so live
-/// and offline gating never disagree under operator tuning.
 pub fn speech_present_16k_with_config(samples: &[f32], config: &orator::VadConfig) -> bool {
     if !energy_gate_with_config(samples, config) {
         return false;
@@ -47,17 +42,12 @@ pub fn speech_present_16k_with_config(samples: &[f32], config: &orator::VadConfi
 /// never a level) and limiter-invariant (limiting keeps crossing
 /// times); silence and sparse clicks defer (too few intervals).
 #[must_use]
-/// Whether `samples` are a stationary pure tone: enough zero-crossing
-/// intervals with near-zero variation. Amplitude-invariant (a ratio,
-/// never a level) and limiter-invariant (limiting keeps crossing
-/// times); silence and sparse clicks defer (too few intervals).
 pub fn stationary_tone_present(samples: &[f32]) -> bool {
     stationary_tone_present_with_config(samples, &orator::VadConfig::default())
 }
 
 /// Tonal verdict under the configured intervals and ceiling.
 #[must_use]
-/// Tonal verdict under the configured intervals and ceiling.
 pub fn stationary_tone_present_with_config(samples: &[f32], config: &orator::VadConfig) -> bool {
     if samples.len() < 2 {
         return false;

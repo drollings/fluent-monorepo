@@ -31,9 +31,6 @@ pub const DEFAULT_MAX_MARKETS: usize = 4_096;
 /// materialization rather than defaulted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// What kind of instrument a market row names. Stored as lowercase text;
-/// anything else in the column is a corrupt row, refused at
-/// materialization rather than defaulted.
 pub enum AssetClass {
     /// Equities and equity ETFs.
     Stock,
@@ -152,7 +149,6 @@ impl Validate for PriceScale {
 
 /// One registered instrument: the durable row behind a [`SymbolId`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One registered instrument: the durable row behind a [`SymbolId`].
 pub struct Market {
     /// The durable identity allocated at registration.
     pub symbol_id: SymbolId,

@@ -224,7 +224,6 @@ impl InferenceBackend for CountingStubBackend {
 
 /// A canned-handle session loader: every load succeeds without touching `ort`.
 #[derive(Debug, Clone, Default)]
-/// A canned-handle session loader: every load succeeds without touching `ort`.
 pub struct StubSessionLoader;
 
 impl SessionLoader for StubSessionLoader {

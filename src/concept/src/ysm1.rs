@@ -52,7 +52,6 @@ pub fn taxonomy_version() -> u32 {
 
 /// A decoded YSM1 payload: the sorted class table plus hierarchy edges.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A decoded YSM1 payload: the sorted class table plus hierarchy edges.
 pub struct Ysm1File {
     /// `(curie, id)` records in curie-sorted order.
     pub classes: Vec<(String, InterlinguaId)>,

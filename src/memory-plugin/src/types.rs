@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 /// Initialization context passed to `MemoryOps::initialize`.
 #[derive(Debug, Clone)]
-/// Initialization context passed to `MemoryOps::initialize`.
 pub struct MemoryInitContext {
     /// Current session identifier.
     pub session_id: SessionId,
@@ -21,7 +20,6 @@ pub struct MemoryInitContext {
 
 /// Per-query context. Carries session identity and capability tokens.
 #[derive(Clone)]
-/// Per-query context. Carries session identity and capability tokens.
 pub struct MemoryQueryContext {
     /// Current session identifier.
     pub session_id: SessionId,
@@ -33,7 +31,6 @@ pub struct MemoryQueryContext {
 
 /// Search request envelope.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Search request envelope.
 pub struct MemorySearchRequest {
     /// Free-text query.
     pub query: String,
@@ -52,10 +49,6 @@ pub struct MemorySearchRequest {
 /// Flat enum dispatch — no `dyn Trait` in the hot path. The plugin
 /// matches on this enum to select the retrieval pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Retrieval strategy discriminator.
-///
-/// Flat enum dispatch — no `dyn Trait` in the hot path. The plugin
-/// matches on this enum to select the retrieval pipeline.
 pub enum SearchStrategy {
     /// FTS5 keyword search (holographic default).
     FtsKeyword,
@@ -75,7 +68,6 @@ pub enum SearchStrategy {
 
 /// Scored retrieval result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Scored retrieval result.
 pub struct MemoryResult {
     /// The fact or entity content.
     pub content: String,
@@ -91,7 +83,6 @@ pub struct MemoryResult {
 
 /// A single turn message for session-end extraction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A single turn message for session-end extraction.
 pub struct TurnMessage {
     /// Role: `"user"`, `"assistant"`, or `"system"`.
     pub role: String,
@@ -103,7 +94,6 @@ pub struct TurnMessage {
 
 /// Tool schema in OpenAI function-calling format.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Tool schema in OpenAI function-calling format.
 pub struct ToolSchema {
     /// Tool name.
     pub name: String,
@@ -115,7 +105,6 @@ pub struct ToolSchema {
 
 /// Memory-specific errors.
 #[derive(Debug, thiserror::Error)]
-/// Memory-specific errors.
 pub enum MemoryError {
     /// Plugin is not available (missing config, deps, etc.).
     #[error("not available: {0}")]

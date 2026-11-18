@@ -21,7 +21,6 @@ use crate::error::ServerError;
 
 /// HIR node subset for the spike.
 #[derive(Debug, Clone, PartialEq)]
-/// HIR node subset for the spike.
 pub enum Hair {
     /// Numeric literal.
     Const(f64),
@@ -55,7 +54,6 @@ pub enum Hair {
 
 /// Averaging length: literal or input-bound name resolved at evaluation.
 #[derive(Debug, Clone, PartialEq)]
-/// Averaging length: literal or input-bound name resolved at evaluation.
 pub enum Length {
     /// Integer literal from the script.
     Literal(i64),
@@ -65,7 +63,6 @@ pub enum Length {
 
 /// One lowered assignment: `name = <hir>`.
 #[derive(Debug, Clone, PartialEq)]
-/// One lowered assignment: `name = <hir>`.
 pub struct Binding {
     /// Assignment target.
     pub name: String,
@@ -75,7 +72,6 @@ pub struct Binding {
 
 /// Lowered script: bindings plus plotted names.
 #[derive(Debug, Clone, PartialEq)]
-/// Lowered script: bindings plus plotted names.
 pub struct Lowered {
     /// Assignments in source order.
     pub bindings: Vec<Binding>,
@@ -85,7 +81,6 @@ pub struct Lowered {
 
 /// Refusal with every reason collected, never just the first.
 #[derive(Debug, Clone, PartialEq)]
-/// Refusal with every reason collected, never just the first.
 pub struct Refusal {
     /// Every failed check, in evaluation order.
     pub reasons: Vec<String>,
@@ -93,7 +88,6 @@ pub struct Refusal {
 
 /// Outcome of spike compilation: lowered HIR plus emitted Rust, or refusal.
 #[derive(Debug, Clone, PartialEq)]
-/// Outcome of spike compilation: lowered HIR plus emitted Rust, or refusal.
 pub enum SpikeOutcome {
     /// The script is inside the subset; this is its HIR and Rust.
     Accepted {
@@ -355,18 +349,6 @@ fn parse_plot(line: &str) -> Option<String> {
 /// compiling the emitted code against the real kernels in a sandbox, which is
 /// explicitly out of scope for this spike.
 #[must_use]
-/// Compile `source`: accept-or-refuse, never miscompile.
-///
-/// Acceptance bar **(task-value: grammar coverage, not confidence)**: scripts
-/// inside the `sma`/`ema`/`trima`/`midpoint` subset lower to HIR and schematic
-/// Rust; everything else is refused with reasons. "Compiles" here means the emission
-/// syn-parses plus accepted scripts match kernel goldens numerically —
-/// `rustc` compilation is never attempted, because tests stay hermetic (no
-/// toolchain dependency) and the emission is schematic by design
-/// (non-rolling bindings are comments; input accessors name their kernel and
-/// input). Promoting the bar to `rustc`-verified emission would mean
-/// compiling the emitted code against the real kernels in a sandbox, which is
-/// explicitly out of scope for this spike.
 pub fn compile_spike(source: &str) -> SpikeOutcome {
     let mut reasons: Vec<String> = Vec::new();
     let mut bindings: Vec<Binding> = Vec::new();
@@ -622,11 +604,6 @@ pub fn evaluate_lowered(
 /// grammar coverage against control sets (task-value), and acceptance itself
 /// is parse-plus-numeric, never `rustc` (see `compile_spike`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Calibration tally: accept rate on the must-transpile set and reject rate
-/// on the must-REJECT set. Both must be `1.0` before spike output is cached
-/// or persisted anywhere; nothing here caches or persists. The rates measure
-/// grammar coverage against control sets (task-value), and acceptance itself
-/// is parse-plus-numeric, never `rustc` (see `compile_spike`).
 pub struct CalibrationTally {
     /// Must-transpile scripts presented.
     pub must_transpile: usize,
@@ -668,7 +645,6 @@ impl CalibrationTally {
 
 /// Tally `compile_spike` over the two calibration sets.
 #[must_use]
-/// Tally `compile_spike` over the two calibration sets.
 pub fn calibrate(must_transpile: &[&str], must_reject: &[&str]) -> CalibrationTally {
     let mut tally = CalibrationTally {
         must_transpile: must_transpile.len(),

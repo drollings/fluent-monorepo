@@ -34,7 +34,6 @@ pub enum Support {
 
 /// One extracted sentence plus its citation binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One extracted sentence plus its citation binding.
 pub struct Claim {
     /// Sentence text.
     pub text: String,
@@ -48,9 +47,6 @@ pub struct Claim {
 /// or end. Deterministic; abbreviations may over-split — binding is
 /// per-sentence, so a split never invents support.
 #[must_use]
-/// Split prose into sentences on `.`/`!`/`?` followed by whitespace
-/// or end. Deterministic; abbreviations may over-split — binding is
-/// per-sentence, so a split never invents support.
 pub fn extract_sentences(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut start = 0usize;
@@ -86,11 +82,6 @@ pub fn extract_sentences(text: &str) -> Vec<String> {
 /// Sentences with no resolvable citation bind to nothing; the gate
 /// drops them, so uncited prose never renders.
 #[must_use]
-/// Bind each sentence to the evidence manifest: a `[Cn]`/`[Dn]`
-/// token resolves to its canonical citation, otherwise a raw
-/// `file:start-end` range binds when it names shown evidence.
-/// Sentences with no resolvable citation bind to nothing; the gate
-/// drops them, so uncited prose never renders.
 pub fn bind_claims(answer: &str, manifest: &[(String, String)]) -> Vec<Claim> {
     extract_sentences(answer)
         .into_iter()
@@ -209,11 +200,6 @@ fn evidence_tokens(sentence: &str) -> Vec<String> {
 /// support verdict has not run. An empty result means evidence-only —
 /// the caller renders sections without an answer.
 #[must_use]
-/// Gate an answer on claim support: claims with no resolved
-/// citation drop, contradicted and insufficient sentences drop, and
-/// the rest render verbatim when verified or `[unverified]` when the
-/// support verdict has not run. An empty result means evidence-only —
-/// the caller renders sections without an answer.
 pub fn gate_answer(claims: &[Claim]) -> Option<String> {
     let kept: Vec<String> = claims
         .iter()
@@ -240,13 +226,6 @@ pub fn gate_answer(claims: &[Claim]) -> Option<String> {
 /// Citation-free prose passes through: with no extractable claim the
 /// model's own "say so" stands.
 #[must_use]
-/// Constrain a model answer to the displayed evidence: every
-/// `path:line` citation must name a shown snippet file with the line
-/// inside a shown range. Violations (unknown file, line outside every
-/// shown range) fall back to an abstain-with-evidence template that
-/// lists the shown ranges instead of echoing unverified claims.
-/// Citation-free prose passes through: with no extractable claim the
-/// model's own "say so" stands.
 pub fn constrain_answer_to_evidence(
     answer: &str,
     snippets: &[(String, String, u32, u32, String)],
@@ -259,10 +238,6 @@ pub fn constrain_answer_to_evidence(
 /// binds, with no line range to check. Snippet spans rule code.
 /// Capability briefs stay snippet-side: `considered` until calibrated.
 #[must_use]
-/// Card-aware constrain: citations naming a shown card (verified
-/// doc or project card) are whole-card citations — the path alone
-/// binds, with no line range to check. Snippet spans rule code.
-/// Capability briefs stay snippet-side: `considered` until calibrated.
 pub fn constrain_answer_to_evidence_with_cards(
     answer: &str,
     snippets: &[(String, String, u32, u32, String)],

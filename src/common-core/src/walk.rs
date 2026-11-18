@@ -115,7 +115,6 @@ pub const BINARY_CONTROL_CHAR_RATIO: f64 = 0.3;
 
 /// A discovered file with its stat metadata (single `stat` per file).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A discovered file with its stat metadata (single `stat` per file).
 pub struct WalkEntry {
     /// Absolute path.
     pub path: PathBuf,
@@ -127,7 +126,6 @@ pub struct WalkEntry {
 
 /// Why a file was excluded from a filtered walk (scan diagnostics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Why a file was excluded from a filtered walk (scan diagnostics).
 pub enum SkipReason {
     /// Extension not in the filter set.
     Extension,

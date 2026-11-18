@@ -17,7 +17,6 @@ use thiserror::Error;
 
 /// Graph build failure.
 #[derive(Debug, Error)]
-/// Graph build failure.
 pub enum GraphIndexError {
     /// Dependency graph bookkeeping failed.
     #[error("graph error: {0}")]
@@ -35,7 +34,6 @@ impl From<GraphError> for GraphIndexError {
 
 /// One file's harvest inputs (bytes owned by the caller).
 #[derive(Debug, Clone)]
-/// One file's harvest inputs (bytes owned by the caller).
 pub struct HarvestInput {
     /// Normalized absolute path.
     pub path: String,
@@ -47,7 +45,6 @@ pub struct HarvestInput {
 
 /// A resolved symbol definition site.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A resolved symbol definition site.
 pub struct SymbolDef {
     /// Defining file (normalized absolute path).
     pub file: String,
@@ -60,10 +57,6 @@ pub struct SymbolDef {
 /// relation was established. Only the syntactic tier exists today;
 /// resolved edges (exact references) land as a second producer later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-/// Resolution tier of a graph edge: which machinery produced it.
-/// Every edge carries its tier, so an answer never overstates how a
-/// relation was established. Only the syntactic tier exists today;
-/// resolved edges (exact references) land as a second producer later.
 pub enum EdgeTier {
     /// Name-based edges, always available and error-tolerant.
     Syntactic,
@@ -92,7 +85,6 @@ impl EdgeTier {
 
 /// A caller → callee-name edge (callee resolved at build).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A caller → callee-name edge (callee resolved at build).
 pub struct CallEdge {
     /// Calling file.
     pub caller_file: String,
@@ -113,10 +105,6 @@ pub struct CallEdge {
 /// verdict, and never alone a reason to delete or rewrite. Delete-adjacent
 /// consumers expand on `Homonym`/`Unresolved`, never narrow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-/// How a bare name resolved to definition sites. Producer-confidence
-/// only (how sure the indexer is about identity) — never a correctness
-/// verdict, and never alone a reason to delete or rewrite. Delete-adjacent
-/// consumers expand on `Homonym`/`Unresolved`, never narrow.
 pub enum ResolutionMethod {
     /// Exactly one definition site in the workspace.
     Unique,
@@ -147,7 +135,6 @@ impl ResolutionMethod {
 
 /// An importer → specifier edge.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// An importer → specifier edge.
 pub struct ImportEdge {
     /// Importing file.
     pub importer: String,
@@ -167,7 +154,6 @@ pub const CLOSURE_ANCHOR_FILES: usize = 3;
 
 /// Direction of a context edge toward its anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-/// Direction of a context edge toward its anchor.
 pub enum ContextDirection {
     /// The file depends on the anchor (importer/caller of the anchor).
     Dependent,
@@ -177,7 +163,6 @@ pub enum ContextDirection {
 
 /// Family of the edge carrying a context relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-/// Family of the edge carrying a context relation.
 pub enum ContextFamily {
     /// Import/specifier edge.
     Import,
@@ -189,9 +174,6 @@ pub enum ContextFamily {
 /// (which anchor, which direction, which edge). Ordered for
 /// deterministic rendering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// One depth-1 context edge: an anchor's graph neighbor with provenance
-/// (which anchor, which direction, which edge). Ordered for
-/// deterministic rendering.
 pub struct ContextEdge {
     /// Neighbor file.
     pub file: String,
@@ -213,8 +195,6 @@ pub struct ContextEdge {
 /// Query-side graph signals: routing-signal lemmas (predicate + roles),
 /// lowercased. Built from `extract_routing_signals` — no new NLP.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Query-side graph signals: routing-signal lemmas (predicate + roles),
-/// lowercased. Built from `extract_routing_signals` — no new NLP.
 pub struct GraphQuerySignals {
     /// Predicate lemmas.
     pub predicate: Vec<String>,
@@ -224,7 +204,6 @@ pub struct GraphQuerySignals {
 
 /// Build query signals from routing signals (predicate + role lemmas).
 #[must_use]
-/// Build query signals from routing signals (predicate + role lemmas).
 pub fn signals_from_routing(signals: &[RoutingSignal]) -> GraphQuerySignals {
     let mut predicate = Vec::new();
     let mut roles = Vec::new();

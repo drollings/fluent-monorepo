@@ -47,19 +47,6 @@ pub fn sha256_hex(data: &[u8]) -> String {
 /// );
 /// ```
 #[must_use]
-/// sha256 hex of a string's bytes (file-id domain: ids hash path strings,
-/// not file contents).
-///
-/// # Examples
-///
-/// ```
-/// use common_core::hash::sha256_str;
-///
-/// assert_eq!(
-/// sha256_str("hello"),
-/// "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-/// );
-/// ```
 pub fn sha256_str(data: &str) -> String {
     sha256_hex(data.as_bytes())
 }
@@ -240,7 +227,6 @@ pub fn hash_file(path: &Path, algorithm: HashAlgorithm) -> std::io::Result<Strin
 
 /// Outcome of a size-then-SHA-256 file verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Outcome of a size-then-SHA-256 file verification.
 pub enum FileVerification {
     /// Both the pinned size (when supplied) and the digest agree.
     Match,

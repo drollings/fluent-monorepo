@@ -239,7 +239,6 @@ fn fragment_filter(filter: &StorageFilter) -> FragmentFilter {
 
 /// Convert a P0 `FileInfo` into a file row for ingestion.
 #[must_use]
-/// Convert a P0 `FileInfo` into a file row for ingestion.
 pub fn file_record(file: &FileInfo) -> FileRecord {
     FileRecord {
         id: file.id.clone(),
@@ -260,8 +259,6 @@ pub fn file_record(file: &FileInfo) -> FileRecord {
 /// Convert a P0 `EntityFragment` into a fragment row (`cjk_text` and
 /// `embedding` filled by the ingestion helper, not here).
 #[must_use]
-/// Convert a P0 `EntityFragment` into a fragment row (`cjk_text` and
-/// `embedding` filled by the ingestion helper, not here).
 pub fn fragment_record(fragment: &EntityFragment) -> FragmentRecord {
     let (symbol_type, symbol_name, scope, signature, doc, modifiers, heading, heading_level) =
         match &fragment.metadata {
@@ -337,7 +334,6 @@ pub fn fragment_record(fragment: &EntityFragment) -> FragmentRecord {
 
 /// Build a lemma row for the L2 table.
 #[must_use]
-/// Build a lemma row for the L2 table.
 pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> FragmentLemma {
     FragmentLemma {
         fragment_id: fragment_id.to_string(),
@@ -350,9 +346,6 @@ pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> Fragme
 /// positional chunk index. Reorder and window-count edits keep it;
 /// only renames, moves, and scope changes move it.
 #[must_use]
-/// Content-stable symbol identity: file plus symbol path, never the
-/// positional chunk index. Reorder and window-count edits keep it;
-/// only renames, moves, and scope changes move it.
 pub fn stable_symbol_id(file_id: &str, name: Option<&str>, scope: Option<&str>) -> String {
     let mut id = String::with_capacity(file_id.len() + 3);
     id.push_str(file_id);
@@ -368,8 +361,6 @@ pub fn stable_symbol_id(file_id: &str, name: Option<&str>, scope: Option<&str>) 
 /// Interface fingerprint: name, type, scope, and normalized signature.
 /// Body text never enters this hash, so a body-only edit keeps it stable.
 #[must_use]
-/// Interface fingerprint: name, type, scope, and normalized signature.
-/// Body text never enters this hash, so a body-only edit keeps it stable.
 pub fn interface_hash_for_entity(fragment: &EntityFragment) -> String {
     let parts = match &fragment.metadata {
         Some(EntityMetadata::Code {
@@ -412,7 +403,6 @@ pub fn interface_hash_for_entity(fragment: &EntityFragment) -> String {
 
 /// Content fingerprint: the full fragment text as stored.
 #[must_use]
-/// Content fingerprint: the full fragment text as stored.
 pub fn content_hash_for_entity(fragment: &EntityFragment) -> String {
     let text = match &fragment.content {
         FragmentContent::Text { text } => text.as_str(),
@@ -428,12 +418,6 @@ pub fn content_hash_for_entity(fragment: &EntityFragment) -> String {
 /// fragments from the same harvest pass; reads stay on fragments
 /// this milestone.
 #[must_use]
-/// Identity row for one definition; `None` for chunks without metadata.
-/// One row per (file, symbol, scope) under the content-stable id —
-/// window chunks of one entity share the row, so chunk-count edits
-/// never churn identity. Callers persist the returned rows alongside
-/// fragments from the same harvest pass; reads stay on fragments
-/// this milestone.
 pub fn symbol_record(fragment: &EntityFragment) -> Option<SymbolRecord> {
     let (name, scope) = match &fragment.metadata {
         Some(EntityMetadata::Code {

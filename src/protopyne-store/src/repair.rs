@@ -48,8 +48,6 @@ use crate::tape::MarketTape;
 /// Why a repair pass fills. Mirrors the classifier's repair verdicts: the
 /// worker consumes the verdict and never re-derives which spans to fill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-/// Why a repair pass fills. Mirrors the classifier's repair verdicts: the
-/// worker consumes the verdict and never re-derives which spans to fill.
 pub enum RepairReason {
     /// The store holds no rows at all.
     Empty,
@@ -78,10 +76,6 @@ impl RepairReason {
 /// un-backfillable symbol therefore reports and releases the pass instead
 /// of pinning it in a long sleep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-/// What one symbol repair did. `Unavailable` is terminal — the provider has
-/// no data for the span — while `Deferred` is retryable under backoff. One
-/// un-backfillable symbol therefore reports and releases the pass instead
-/// of pinning it in a long sleep.
 pub enum RepairStatus {
     /// Bars were fetched and stored.
     Repaired,
@@ -105,13 +99,6 @@ pub enum RepairStatus {
 /// partial fill is visible here rather than silently truncated. `detail`
 /// names the reason in words; statuses alone never carry the explanation.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-/// One symbol's repair: what was wanted, what was attempted, what happened.
-///
-/// `wanted` is the window the caller needed; `spans` is what the pass
-/// actually attempted — the servable subset after horizon and width bounds.
-/// The two diverge exactly when a bound refused part of the want, so a
-/// partial fill is visible here rather than silently truncated. `detail`
-/// names the reason in words; statuses alone never carry the explanation.
 pub struct SymbolRepair {
     /// The tape under repair, at its stored spacing.
     pub key: TapeKey,
@@ -139,8 +126,6 @@ pub struct SymbolRepair {
 /// One pass's work: the symbol repairs to attempt, in caller order. Results
 /// come back re-sorted by `SymbolId` regardless of completion order.
 #[derive(Debug, Clone, serde::Serialize)]
-/// One pass's work: the symbol repairs to attempt, in caller order. Results
-/// come back re-sorted by `SymbolId` regardless of completion order.
 pub struct RecoveryPlan {
     /// The symbol repairs to attempt.
     pub repairs: Vec<SymbolRepair>,
@@ -166,10 +151,6 @@ impl RecoveryPlan {
 /// config in this crate.
 #[derive(Debug, Clone, bon::Builder, FieldAccess, Describable)]
 #[builder(start_fn = new)]
-/// Bounds a repair pass is held to. Schema-configurable through the derived
-/// `FieldAccess + Describable`, fail-closed through `Validate`, and
-/// schedulable as a supervised unit through `WorkUnit`, like every other
-/// config in this crate.
 pub struct RepairConfig {
     /// Widest span one repair attempt fills, in milliseconds. A wider span
     /// is refused with its width named, never clipped into a servable
@@ -249,9 +230,6 @@ impl_component!(RepairConfig);
 /// terminal: unusable provider bytes never heal across a backoff, so they
 /// report instead of retrying.
 #[must_use]
-/// Map a provider failure to its repair verdict. Terminal shapes stay
-/// terminal: unusable provider bytes never heal across a backoff, so they
-/// report instead of retrying.
 pub fn classify_history_error(err: &HistoryError) -> RepairStatus {
     if err.is_retryable() {
         RepairStatus::Deferred
@@ -264,9 +242,6 @@ pub fn classify_history_error(err: &HistoryError) -> RepairStatus {
 /// taxonomy: only contention is transient, everything else is a fact about
 /// the world that a retry reproduces exactly.
 #[must_use]
-/// Map a store failure to its repair verdict through the store's own retry
-/// taxonomy: only contention is transient, everything else is a fact about
-/// the world that a retry reproduces exactly.
 pub fn classify_store_error(err: &StoreError) -> RepairStatus {
     if err.is_retryable() {
         RepairStatus::Deferred
@@ -280,10 +255,6 @@ pub fn classify_store_error(err: &StoreError) -> RepairStatus {
 /// `failures` is 0-based — the first failure waits exactly the base —
 /// matching the schedule's own convention.
 #[must_use]
-/// The backoff sleep after `failures` consecutive failures: the shared
-/// capped exponential schedule, saturated at the configured ceiling.
-/// `failures` is 0-based — the first failure waits exactly the base —
-/// matching the schedule's own convention.
 pub fn retry_delay_ms(config: &RepairConfig, failures: u32) -> u64 {
     capped_exp_backoff_ms(config.backoff_base_ms, failures, config.backoff_max_shift)
         .min(config.backoff_ceiling_ms)
@@ -295,11 +266,6 @@ pub fn retry_delay_ms(config: &RepairConfig, failures: u32) -> u64 {
 /// before the tape does: seeding headroom the tape never held is a fill,
 /// not a repair verdict, and the on-demand path serves it without one.
 #[must_use]
-/// The spans of `want` a repair pass should fill, plus the verdict that
-/// asked for them. `Fresh` carries no verdict — the pass skips the item —
-/// but still names a leading headroom span when the wanted window starts
-/// before the tape does: seeding headroom the tape never held is a fill,
-/// not a repair verdict, and the on-demand path serves it without one.
 pub fn spans_for_want(
     class: &GapClass,
     coverage: Option<&Coverage>,
@@ -388,7 +354,6 @@ struct FillOutcome {
 
 /// Why a fetch-and-append failed, by layer.
 #[derive(Debug)]
-/// Why a fetch-and-append failed, by layer.
 enum FillError {
     /// The provider failed.
     History(HistoryError),
@@ -586,16 +551,6 @@ pub(crate) async fn repair_spans(
 /// applies through the `WorkUnit` boundary unchanged. The retry loop lives
 /// in the coordinator, where sleeping belongs.
 #[derive(Debug, Clone)]
-/// One symbol's repair as a supervised unit: synchronous `execute`, one
-/// attempt, never inline sleeps.
-///
-/// `execute` validates the repair bounds through `check_for_execute`,
-/// gates on the root-bound permit before consulting the task-local set,
-/// and then blocks on one fetch-and-append: the store is synchronous and
-/// in-memory, so there is no blocking I/O to offload and no pool between
-/// the worker and the tape. Supervision (timeout, retry, cancellation)
-/// applies through the `WorkUnit` boundary unchanged. The retry loop lives
-/// in the coordinator, where sleeping belongs.
 pub struct RepairWorker {
     store: Arc<MarketTape>,
     provider: Arc<dyn HistoryProvider>,
@@ -713,14 +668,6 @@ impl_component!(RepairWorker);
 /// by `SymbolId` before returning. `Unavailable` terminates its symbol
 /// without backing off; [`cancel`](Self::cancel) releases the whole pass.
 #[derive(Clone)]
-/// Owns repair passes: planning, bounded fan-out, retry, and cancellation.
-///
-/// The coordinator holds the store, one provider per symbol, and the
-/// repair bounds. A pass plans coverage into spans, repairs symbols through
-/// a bounded pool, retries `Deferred` outcomes under capped backoff with a
-/// connectivity re-check at the top of every iteration, and re-sorts results
-/// by `SymbolId` before returning. `Unavailable` terminates its symbol
-/// without backing off; [`cancel`](Self::cancel) releases the whole pass.
 pub struct RecoveryCoordinator {
     store: Arc<MarketTape>,
     providers: HashMap<SymbolId, Arc<dyn HistoryProvider>>,

@@ -22,9 +22,6 @@ pub const SCAFFOLDING_STOPWORDS: &[&str] = &[
 /// more, minus scaffolding stopwords. Same rule as the relevance
 /// gate (which delegates here).
 #[must_use]
-/// Significant query tokens: lowercase word tokens of length 3 or
-/// more, minus scaffolding stopwords. Same rule as the relevance
-/// gate (which delegates here).
 pub fn significant_terms(query: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     for token in crate::query::tokens::split_tokens(query) {
@@ -40,9 +37,6 @@ pub fn significant_terms(query: &str) -> Vec<String> {
 /// curies, and whether any curie resolves in the store. Unknown
 /// stays (kept, marked) — never filtered.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One expanded term's concept normalization: the term, its variant
-/// curies, and whether any curie resolves in the store. Unknown
-/// stays (kept, marked) — never filtered.
 pub struct FunneledConcept {
     /// Expanded term (lowercased).
     pub term: String,
@@ -56,7 +50,6 @@ pub struct FunneledConcept {
 
 /// The four funnel stages for one query, in pipeline order.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-/// The four funnel stages for one query, in pipeline order.
 pub struct FunneledTerms {
     /// Significant tokens (gate rule).
     pub significant: Vec<String>,
@@ -75,9 +68,6 @@ pub struct FunneledTerms {
 /// panics. A missing store reads everything as unknown (fail-open);
 /// an empty query funnels to empty.
 #[must_use]
-/// Build the funnel for one query. Pure: no I/O, no model, never
-/// panics. A missing store reads everything as unknown (fail-open);
-/// an empty query funnels to empty.
 pub fn funnel_terms(
     query: &str,
     aliases: &SemanticAliases,

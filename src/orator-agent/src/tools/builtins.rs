@@ -575,8 +575,6 @@ async fn fetch(url: &str) -> Result<String, ToolError> {
 /// The v1 catalog. `guarded` backs the effectful tools; `notify_sink`
 /// receives notification text.
 #[must_use]
-/// The v1 catalog. `guarded` backs the effectful tools; `notify_sink`
-/// receives notification text.
 pub fn default_registry(
     guarded: &Arc<Guarded>,
     notify_sink: Arc<dyn Fn(String) + Send + Sync>,

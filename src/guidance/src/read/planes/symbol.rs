@@ -6,7 +6,6 @@ use crate::query::search_db::{GuidanceSearchDb, SymbolRecord};
 
 /// One exact definition site.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One exact definition site.
 pub struct SymbolSite {
     /// Declared name.
     pub name: String,
@@ -34,10 +33,6 @@ impl From<SymbolRecord> for SymbolSite {
 /// both spellings). Single names yield one form. Resolution tiers
 /// travel on the matched rows/edges, never on this list.
 #[must_use]
-/// Candidate query forms for one symbol reference: the full dotted
-/// form plus the terminal identifier (`engine.gen_scoped` matches
-/// both spellings). Single names yield one form. Resolution tiers
-/// travel on the matched rows/edges, never on this list.
 pub fn normalize_symbol_query(name: &str) -> Vec<String> {
     let trimmed = name.trim().trim_matches('"').trim_matches('\'').trim();
     if trimmed.is_empty() {

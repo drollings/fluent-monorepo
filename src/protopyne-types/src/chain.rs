@@ -28,11 +28,6 @@ use crate::money::Money;
 /// let _: ContractId = PortfolioId::new("x"); // fails to compile
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Opaque handle for one option contract. No arithmetic by construction:
-///
-/// ```text
-/// let _: ContractId = PortfolioId::new("x"); // fails to compile
-/// ```
 pub struct ContractId(String);
 
 impl ContractId {
@@ -58,8 +53,6 @@ impl fmt::Display for ContractId {
 /// Opaque handle for one named portfolio. Never interchangeable with
 /// [`ContractId`]: the compiler rejects any mixing at every call site.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Opaque handle for one named portfolio. Never interchangeable with
-/// [`ContractId`]: the compiler rejects any mixing at every call site.
 pub struct PortfolioId(String);
 
 impl PortfolioId {
@@ -84,7 +77,6 @@ impl fmt::Display for PortfolioId {
 
 /// Call or put.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Call or put.
 pub enum OptionKind {
     /// Right to buy the underlying at the strike.
     Call,
@@ -113,7 +105,6 @@ const fn default_contract_multiplier() -> u32 {
 /// One listed option contract: underlying, expiry, strike, call-or-put.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// One listed option contract: underlying, expiry, strike, call-or-put.
 pub struct OptionContract {
     /// Underlying symbol (1–6 characters, e.g. `SPY`).
     pub underlying: String,
@@ -264,8 +255,6 @@ impl OptionContract {
 /// Plain `f64` by design — greeks never enter money math directly.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// Model greeks for one contract: instantaneous sensitivities, not money.
-/// Plain `f64` by design — greeks never enter money math directly.
 pub struct Greeks {
     /// Change in contract value per $1 move in the underlying.
     #[builder(default)]
@@ -286,9 +275,6 @@ pub struct Greeks {
 /// never money math.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// One point of an implied-volatility curve: the strike, its expiry, and the
-/// fitted sensitivities there. Plain `f64` like [`Greeks`] — a report shape,
-/// never money math.
 pub struct GreeksPoint {
     /// Strike price per share.
     pub strike: Money,
@@ -307,9 +293,6 @@ pub struct GreeksPoint {
 /// feed is configured — `None` until then, never an invented curve.
 #[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// An implied-volatility curve over one underlying: fitted points ascending
-/// by strike. A report shape carried on the portfolio report when a surface
-/// feed is configured — `None` until then, never an invented curve.
 pub struct GreeksCurve {
     /// Underlying symbol this curve describes.
     pub underlying: String,
@@ -321,7 +304,6 @@ pub struct GreeksCurve {
 /// One point-in-time quote for one option contract.
 #[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// One point-in-time quote for one option contract.
 pub struct ChainQuote {
     /// Contract this quote is for.
     pub contract: OptionContract,
@@ -404,7 +386,6 @@ impl ChainQuote {
 
 /// Which side of a spread one leg sits on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Which side of a spread one leg sits on.
 pub enum LegSide {
     /// Long this contract.
     Long,
@@ -424,7 +405,6 @@ impl fmt::Display for LegSide {
 /// One leg of a spread: a contract, a side, and a share ratio.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// One leg of a spread: a contract, a side, and a share ratio.
 pub struct SpreadLeg {
     /// Contract for this leg.
     pub contract: OptionContract,
@@ -464,8 +444,6 @@ pub const MAX_SPREAD_LEGS: usize = 4;
 /// One atomic spread: 1–4 legs that submit as a single multi-leg order,
 /// never leg by leg. Construction is validated — see [`try_new`](Self::try_new).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One atomic spread: 1–4 legs that submit as a single multi-leg order,
-/// never leg by leg. Construction is validated — see [`try_new`](Self::try_new).
 pub struct SpreadLegs {
     legs: Vec<SpreadLeg>,
 }

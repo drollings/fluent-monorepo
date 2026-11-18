@@ -21,10 +21,6 @@ use super::funnel::FunneledTerms;
 /// an empty funnel yields empty signals (the route falls back to
 /// text matching), never invented lemmas.
 #[must_use]
-/// Query-side SVO signals for the capability route, extracted from
-/// the funnel's expanded terms. Total and fail-open: no pipeline or
-/// an empty funnel yields empty signals (the route falls back to
-/// text matching), never invented lemmas.
 pub fn funneled_query_signals(
     funneled: &FunneledTerms,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
@@ -50,10 +46,6 @@ pub fn funneled_query_signals(
 /// query's predicate and role lemmas. Both sides must already be
 /// lowercase-normalized through the same lemmatizer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-/// SVO overlap between query signals and one brief's stored SVO
-/// tuple: head-to-head predicate hits plus role coverage over the
-/// query's predicate and role lemmas. Both sides must already be
-/// lowercase-normalized through the same lemmatizer.
 pub struct CapabilityOverlap {
     /// Query predicate lemmas found in the brief's predicate.
     pub predicate: usize,
@@ -78,7 +70,6 @@ impl CapabilityOverlap {
 
 /// Score one brief's SVO tuple against the query signals. Pure.
 #[must_use]
-/// Score one brief's SVO tuple against the query signals. Pure.
 pub fn capability_overlap(
     query: &GraphQuerySignals,
     brief_predicate: &[String],
@@ -104,9 +95,6 @@ pub fn capability_overlap(
 /// optional FTS score. Plain data; ranking lives here so the brief
 /// route and traversal share one order.
 #[derive(Debug, Clone)]
-/// One branch-1 candidate before ranking: a stored brief plus its
-/// optional FTS score. Plain data; ranking lives here so the brief
-/// route and traversal share one order.
 pub struct BriefCandidate {
     /// Capability id (`source_path#anchor`).
     pub id: String,
@@ -131,8 +119,6 @@ pub struct BriefCandidate {
 /// One SVO-ranked brief: the branch-1 candidate with its deterministic
 /// rank (rank-only, never filtered).
 #[derive(Debug, Clone)]
-/// One SVO-ranked brief: the branch-1 candidate with its deterministic
-/// rank (rank-only, never filtered).
 pub struct RankedBrief {
     /// Capability id (`source_path#anchor`).
     pub id: String,
@@ -165,9 +151,6 @@ pub const CAPABILITY_TOP_BRIEFS: usize = 3;
 /// signals, then FTS score, then id. Deterministic; rank-only, never
 /// filtered. Capped at [`CAPABILITY_TOP_BRIEFS`].
 #[must_use]
-/// Rank brief candidates by SVO overlap over the funneled query
-/// signals, then FTS score, then id. Deterministic; rank-only, never
-/// filtered. Capped at [`CAPABILITY_TOP_BRIEFS`].
 pub fn rank_briefs(signals: &GraphQuerySignals, candidates: &[BriefCandidate]) -> Vec<RankedBrief> {
     let scored: Vec<(RankedBrief, (usize, usize), f64)> = candidates
         .iter()

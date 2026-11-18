@@ -15,8 +15,6 @@ use crate::summary::SummaryGap;
 /// One doc section: a markdown section (or manifest description) with
 /// its deterministic decomposition. Nothing here is model-written.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One doc section: a markdown section (or manifest description) with
-/// its deterministic decomposition. Nothing here is model-written.
 pub struct DocChunk {
     /// Stable chunk id (`source_path#anchor`).
     pub id: String,
@@ -82,8 +80,6 @@ fn split_chunk_text(text: &str) -> Vec<String> {
 /// Split one doc into addressed sections. Empty sections become gaps,
 /// never chunks: there is nothing to cite and nothing to verify.
 #[must_use]
-/// Split one doc into addressed sections. Empty sections become gaps,
-/// never chunks: there is nothing to cite and nothing to verify.
 pub fn chunk_markdown_sections(source_path: &str, text: &str) -> (Vec<DocChunk>, Vec<SummaryGap>) {
     let lines: Vec<&str> = text.lines().collect();
     let headings = crate::extractor::markdown::scan_headings(&lines);
@@ -187,11 +183,6 @@ pub fn chunk_markdown_sections(source_path: &str, text: &str) -> (Vec<DocChunk>,
 /// or the crate name for crate-owned files, `meta` for workspace
 /// roots. Fallbacks are `unknown`, never a guess.
 #[must_use]
-/// Deterministic path decomposition: crate from the longest
-/// boundary-matching table prefix (`doc/<name>/` maps through the
-/// same table as `src/<name>`), domain from the first `doc/` segment
-/// or the crate name for crate-owned files, `meta` for workspace
-/// roots. Fallbacks are `unknown`, never a guess.
 pub fn decompose_chunk_source(path: &str) -> (String, String) {
     let normalized = path.trim().trim_start_matches("./");
     let probe = normalized
@@ -221,8 +212,6 @@ pub fn decompose_chunk_source(path: &str) -> (String, String) {
 /// The `[package] name` of a manifest: same basic-string rule as
 /// the description reader. Anything else reads as absent.
 #[must_use]
-/// The `[package] name` of a manifest: same basic-string rule as
-/// the description reader. Anything else reads as absent.
 pub fn manifest_package_name(manifest: &str) -> Option<String> {
     package_basic_string(manifest, "name")
 }
@@ -230,8 +219,6 @@ pub fn manifest_package_name(manifest: &str) -> Option<String> {
 /// The `[package] description` of a manifest: basic single-line
 /// strings with `\"`/`\\` unescaped. Anything else reads as absent.
 #[must_use]
-/// The `[package] description` of a manifest: basic single-line
-/// strings with `\"`/`\\` unescaped. Anything else reads as absent.
 pub fn manifest_description(manifest: &str) -> Option<String> {
     package_basic_string(manifest, "description")
 }
@@ -279,8 +266,6 @@ fn package_basic_string(manifest: &str, key: &str) -> Option<String> {
 /// Resolve one live section by anchor through the shared chunker.
 /// Returns the live text when the anchor exists now.
 #[must_use]
-/// Resolve one live section by anchor through the shared chunker.
-/// Returns the live text when the anchor exists now.
 pub fn resolve_live_section(source_path: &str, anchor: &str, live_text: &str) -> Option<String> {
     let (chunks, _) = chunk_markdown_sections(source_path, live_text);
     chunks
@@ -291,7 +276,6 @@ pub fn resolve_live_section(source_path: &str, anchor: &str, live_text: &str) ->
 
 /// Totals for one external-corpus import (stored data, never thrown).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Totals for one external-corpus import (stored data, never thrown).
 pub struct CapabilityImportReport {
     /// Cards present in the manifest.
     pub cards: usize,

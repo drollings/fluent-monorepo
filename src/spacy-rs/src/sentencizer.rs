@@ -17,7 +17,6 @@ pub const DEFAULT_PUNCT_CHARS: &str = "!.?։؟۔܀܁܂߹।॥၊။።፧፨᙮
 
 /// The deterministic sentence segmenter.
 #[derive(Debug, Clone)]
-/// The deterministic sentence segmenter.
 pub struct Sentencizer {
     punct_chars: HashSet<char>,
     overwrite: bool,

@@ -158,7 +158,6 @@ pub enum NormalizeError {
 
 /// OpenAI-compatible chat completion request shape (inbound normalization).
 #[derive(Debug, Deserialize)]
-/// OpenAI-compatible chat completion request shape (inbound normalization).
 struct OpenAiChatRequest {
     pub model: String,
     pub messages: Vec<OpenAiMessage>,

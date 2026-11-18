@@ -12,7 +12,6 @@ use std::fmt;
 
 /// How one position mismatched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// How one position mismatched.
 pub enum MismatchKind {
     /// Both sides present but farther apart than `eps` (or either side
     /// non-finite).
@@ -25,7 +24,6 @@ pub enum MismatchKind {
 
 /// One mismatched position.
 #[derive(Debug, Clone, PartialEq)]
-/// One mismatched position.
 pub struct Mismatch {
     /// Element index.
     pub index: usize,
@@ -51,7 +49,6 @@ impl fmt::Display for Mismatch {
 
 /// Outcome of [`compare_series`].
 #[derive(Debug, Clone, PartialEq)]
-/// Outcome of [`compare_series`].
 pub struct CompareReport {
     /// `true` when every compared position matched within `eps`.
     pub matches: bool,

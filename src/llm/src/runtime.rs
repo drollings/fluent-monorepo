@@ -122,7 +122,6 @@ pub enum LlmRuntimeError {
 /// Lifecycle state of a residency row. Serialized as today's wire strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Lifecycle state of a residency row. Serialized as today's wire strings.
 pub enum ResidencyState {
     Loaded,
     Sleeping,
@@ -132,7 +131,6 @@ pub enum ResidencyState {
 /// Refusal for residency input outside the closed vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("unknown residency state: {0}")]
-/// Refusal for residency input outside the closed vocabulary.
 pub struct ResidencyStateParseError(pub String);
 
 impl ResidencyState {

@@ -24,10 +24,6 @@ use crate::pine::source::{parse_pine_source, SUPPORTED_PINE_VERSION};
 /// information (the engine cannot vouch for this script), never a fitness
 /// claim.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Parity standing of one manifest row: structural agreement proven, or
-/// listed with the reason it must not run. Unverified is availability
-/// information (the engine cannot vouch for this script), never a fitness
-/// claim.
 pub enum ManifestParity {
     /// Structure resolves and a harness covers this script.
     Verified,
@@ -41,8 +37,6 @@ pub enum ManifestParity {
 /// One discovered indicator: its catalog identity, display title, version,
 /// import-closure hash, and parity standing.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One discovered indicator: its catalog identity, display title, version,
-/// import-closure hash, and parity standing.
 pub struct IndicatorManifestEntry {
     /// Catalog id (`pine:<stem>`), namespaced so scripts never collide with
     /// kernel ids.
@@ -62,8 +56,6 @@ pub struct IndicatorManifestEntry {
 /// One Pine file as data: its root-relative path plus byte-identical text.
 /// An empty text reads as an empty source (listed, refused).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One Pine file as data: its root-relative path plus byte-identical text.
-/// An empty text reads as an empty source (listed, refused).
 pub struct ManifestFile {
     /// Path relative to the Pine root (`indicators/_Foo.pine`).
     pub relpath: String,
@@ -73,7 +65,6 @@ pub struct ManifestFile {
 
 /// The catalog id for an indicator stem.
 #[must_use]
-/// The catalog id for an indicator stem.
 pub fn manifest_id(stem: &str) -> String {
     format!("pine:{stem}")
 }
@@ -160,8 +151,6 @@ fn unverified(
 /// Build manifest rows over caller-supplied files, sorted by id. Pure: no
 /// I/O, a rerun over the same files is identical.
 #[must_use]
-/// Build manifest rows over caller-supplied files, sorted by id. Pure: no
-/// I/O, a rerun over the same files is identical.
 pub fn build_manifest(
     indicators: &[ManifestFile],
     libraries: &[ManifestFile],

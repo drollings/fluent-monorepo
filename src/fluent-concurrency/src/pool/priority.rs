@@ -81,9 +81,10 @@ where
         let cap = nonzero_capacity(cap, "priority result pool worker")
             .unwrap_or_else(|refused| panic!("{refused}"))
             .get();
-        let queue: Arc<crate::queue::BoundedPriorityQueue<WrappedJob<T, R, E>>> =
-            Arc::new(crate::queue::BoundedPriorityQueue::new(queue_capacity)
-                .unwrap_or_else(|refused| panic!("{refused}")));
+        let queue: Arc<crate::queue::BoundedPriorityQueue<WrappedJob<T, R, E>>> = Arc::new(
+            crate::queue::BoundedPriorityQueue::new(queue_capacity)
+                .unwrap_or_else(|refused| panic!("{refused}")),
+        );
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let handler = Arc::new(handler);
         let workers = spawn_priority_workers(runtime, cap, &queue, &shutdown_rx, {

@@ -16,9 +16,6 @@ use fluent_wvr::ladder::first_some_in_order_sync;
 /// (`read_desktop_env`); every walk below is a pure function of it,
 /// so the headless matrix pins without a compositor, bus, or daemon.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Observed session facts. Read once at the edge
-/// (`read_desktop_env`); every walk below is a pure function of it,
-/// so the headless matrix pins without a compositor, bus, or daemon.
 pub struct DesktopEnv {
     /// `XDG_CURRENT_DESKTOP` (e.g. `KDE`, `COSMIC`, `GNOME`).
     pub current_desktop: Option<String>,
@@ -33,8 +30,6 @@ pub struct DesktopEnv {
 /// Read the live session facts. Impure edge (env plus two stats);
 /// calls nothing, binds nothing.
 #[must_use]
-/// Read the live session facts. Impure edge (env plus two stats);
-/// calls nothing, binds nothing.
 pub fn read_desktop_env() -> DesktopEnv {
     let current_desktop = std::env::var("XDG_CURRENT_DESKTOP")
         .ok()
@@ -60,7 +55,6 @@ fn user_bus_socket_exists() -> bool {
 
 /// Where global hotkeys bind.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Where global hotkeys bind.
 pub enum HotkeyRoute {
     /// Portal GlobalShortcuts candidate: bus plus a desktop session
     /// (binds when the portal backend lands).
@@ -74,8 +68,6 @@ pub enum HotkeyRoute {
 /// Probe hotkeys: portal, then compositor instructions, then the
 /// always-available CLI fallback.
 #[must_use]
-/// Probe hotkeys: portal, then compositor instructions, then the
-/// always-available CLI fallback.
 pub fn probe_hotkeys(env: &DesktopEnv) -> HotkeyRoute {
     #[derive(Clone, Copy)]
     enum Rung {
@@ -118,7 +110,6 @@ fn compositor_instructions(desktop: &str) -> String {
 
 /// Where the tray indicator lives.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Where the tray indicator lives.
 pub enum TrayRoute {
     /// Tray host candidate: a desktop session is present (binds when
     /// the host backend lands; the headless render stays available).
@@ -130,8 +121,6 @@ pub enum TrayRoute {
 /// Probe the tray: host candidate on a desktop session, else the
 /// headless render (which is also what the candidate falls back to).
 #[must_use]
-/// Probe the tray: host candidate on a desktop session, else the
-/// headless render (which is also what the candidate falls back to).
 pub fn probe_tray(env: &DesktopEnv) -> TrayRoute {
     #[derive(Clone, Copy)]
     enum Rung {
@@ -150,7 +139,6 @@ pub fn probe_tray(env: &DesktopEnv) -> TrayRoute {
 
 /// Where approval/recording notifications go.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Where approval/recording notifications go.
 pub enum NotifyRoute {
     /// Daemon emit candidate: the socket exists (emits when the emit
     /// path lands; failures fall through to the CLI verbs).
@@ -161,7 +149,6 @@ pub enum NotifyRoute {
 
 /// Probe notifications: daemon emit on a present socket, else CLI verbs.
 #[must_use]
-/// Probe notifications: daemon emit on a present socket, else CLI verbs.
 pub fn probe_notify(env: &DesktopEnv) -> NotifyRoute {
     #[derive(Clone, Copy)]
     enum Rung {
@@ -177,7 +164,6 @@ pub fn probe_notify(env: &DesktopEnv) -> NotifyRoute {
 
 /// Where the control API serves.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Where the control API serves.
 pub enum DbusRoute {
     /// Service candidate: the session bus is addressable (serves when
     /// the service backend lands; ambient callers still never approve).
@@ -188,7 +174,6 @@ pub enum DbusRoute {
 
 /// Probe D-Bus: service candidate on a bus, else absent.
 #[must_use]
-/// Probe D-Bus: service candidate on a bus, else absent.
 pub fn probe_dbus(env: &DesktopEnv) -> DbusRoute {
     #[derive(Clone, Copy)]
     enum Rung {
@@ -204,7 +189,6 @@ pub fn probe_dbus(env: &DesktopEnv) -> DbusRoute {
 
 /// Where the launcher integration lives.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Where the launcher integration lives.
 pub enum KrunnerRoute {
     /// Plugin candidate: KDE session (registers when the plugin
     /// backend lands; the parser answers today).
@@ -215,7 +199,6 @@ pub enum KrunnerRoute {
 
 /// Probe KRunner: plugin candidate on KDE, else the parser.
 #[must_use]
-/// Probe KRunner: plugin candidate on KDE, else the parser.
 pub fn probe_krunner(env: &DesktopEnv) -> KrunnerRoute {
     #[derive(Clone, Copy)]
     enum Rung {

@@ -94,15 +94,6 @@ pub fn nlp_encoder_fetch(
 /// Returns `Err` on any `None`-aligned token or unknown label, so the ladder
 /// falls through to ArcEager — never a partial mix, never a wrong enum.
 #[cfg(feature = "onnx")]
-/// Map `OrtAnnotationWorker` output onto an [`spacy_rs::AnnotationSet`] for
-/// `doc`, aligned **by construction** (record `text` = spacy orth). Pure — no
-/// session. `pos`/`dep` are the label strings; `head` is the F8 relative
-/// offset (`head_abs − i`); a `None` head (special / outside every spacy span)
-/// is decoded as ROOT (`dep="root"`, `head=0`); the lemma comes from the
-/// deterministic rule [`spacy_rs::Lemmatizer`].
-///
-/// Returns `Err` on any `None`-aligned token or unknown label, so the ladder
-/// falls through to ArcEager — never a partial mix, never a wrong enum.
 pub(crate) fn map_annotations(
     doc: &spacy_rs::Doc,
     lemmatizer: &spacy_rs::Lemmatizer,
@@ -346,10 +337,6 @@ pub fn colbert_entity_scorer(
 /// store. Pure (no session) — the encode step is the only model-dependent part
 /// of the entity-link scorer, so the mapping is hermetically testable.
 #[cfg(feature = "onnx")]
-/// Score already-encoded query tokens against a baked [`fluent_onnx::EntitySimilarityIndex`]
-/// and map each above-threshold hit's canonical → `InterlinguaId` through the
-/// store. Pure (no session) — the encode step is the only model-dependent part
-/// of the entity-link scorer, so the mapping is hermetically testable.
 pub(crate) fn score_span(
     query_tokens: &[Vec<f32>],
     index: &fluent_onnx::EntitySimilarityIndex,

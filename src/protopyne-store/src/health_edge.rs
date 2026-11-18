@@ -46,13 +46,6 @@ pub enum HealthEdge {
 /// [`HealthEdge::Up`], whose next connected sample resolves to
 /// [`HealthEdge::Steady`] silently.
 #[must_use]
-/// Step the machine on one connectivity sample.
-///
-/// Returns the next state and whether this transition is a recovery edge —
-/// the only signal that should wake a repair pass. `Down → Up` fires exactly
-/// once per outage: the step after a firing recovery lands in
-/// [`HealthEdge::Up`], whose next connected sample resolves to
-/// [`HealthEdge::Steady`] silently.
 pub fn health_edge(previous: HealthEdge, connected: bool) -> (HealthEdge, bool) {
     // Silence is the rule: only a recovery wakes a repair pass.
     let fires = connected && previous == HealthEdge::Down;
@@ -61,7 +54,6 @@ pub fn health_edge(previous: HealthEdge, connected: bool) -> (HealthEdge, bool) 
 
 /// The state half of [`health_edge`], for callers that track edges themselves.
 #[must_use]
-/// The state half of [`health_edge`], for callers that track edges themselves.
 pub fn next_health(previous: HealthEdge, connected: bool) -> HealthEdge {
     if !connected {
         return HealthEdge::Down;

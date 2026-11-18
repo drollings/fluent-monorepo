@@ -69,13 +69,6 @@ fn spec(
 /// fit the single-token distribution cap; an eleventh label would
 /// force hierarchical routing.
 #[must_use]
-/// Intent Choice over the `QueryIntent` labels (single tokens only).
-/// The options cover the ambiguous intents a model may ever see:
-/// exact symbol/path evidence short-circuits before any backend
-/// exists, so `SingleIdentifier` and `FilePath` are not options (the
-/// mapping below still decodes them for log readers). Nine options
-/// fit the single-token distribution cap; an eleventh label would
-/// force hierarchical routing.
 pub fn intent_spec() -> QuestionSpec {
     spec(
         INTENT_POINT,
@@ -91,7 +84,6 @@ pub fn intent_spec() -> QuestionSpec {
 
 /// Sufficiency route: answer, synthesize, or stay silent.
 #[must_use]
-/// Sufficiency route: answer, synthesize, or stay silent.
 pub fn sufficiency_spec() -> QuestionSpec {
     spec(
         SUFFICIENCY_POINT,
@@ -107,7 +99,6 @@ pub fn sufficiency_spec() -> QuestionSpec {
 
 /// Excerpt relevance as ordinal score rungs (rank order, not magnitude).
 #[must_use]
-/// Excerpt relevance as ordinal score rungs (rank order, not magnitude).
 pub fn excerpt_spec() -> QuestionSpec {
     spec(
         EXCERPT_POINT,
@@ -123,7 +114,6 @@ pub fn excerpt_spec() -> QuestionSpec {
 
 /// Commentary staleness: does the diff alter the described behavior.
 #[must_use]
-/// Commentary staleness: does the diff alter the described behavior.
 pub fn staleness_spec() -> QuestionSpec {
     spec(
         STALENESS_POINT,
@@ -141,9 +131,6 @@ pub fn staleness_spec() -> QuestionSpec {
 /// candidates. Authorization only, never a model verdict: the route reads
 /// a derived table and cites source ranges.
 #[must_use]
-/// Summary index route: may generated-comment recall contribute
-/// candidates. Authorization only, never a model verdict: the route reads
-/// a derived table and cites source ranges.
 pub fn summary_index_spec() -> QuestionSpec {
     spec(
         SUMMARY_INDEX_POINT,
@@ -171,10 +158,6 @@ pub fn summary_index_fingerprint(model: &str) -> String {
 /// the generative role contributes only term lists that fill the
 /// state as data, never as instruction text.
 #[must_use]
-/// Scope hypothesis: bounded choice over candidate crates/domains.
-/// Options are caller-shaped crate names (max 10, single tokens);
-/// the generative role contributes only term lists that fill the
-/// state as data, never as instruction text.
 pub fn scope_spec(crates: &[String]) -> QuestionSpec {
     let mut options: Vec<String> = crates.iter().take(10).cloned().collect();
     if options.is_empty() {
@@ -196,9 +179,6 @@ pub fn scope_spec(crates: &[String]) -> QuestionSpec {
 /// Repo text never enters instruction slots (template, options,
 /// question are caller-shaped); state is the only untrusted slot.
 #[must_use]
-/// Scope state payload: funnel terms plus crate cards as data.
-/// Repo text never enters instruction slots (template, options,
-/// question are caller-shaped); state is the only untrusted slot.
 pub fn scope_state(query: &str, funnel_terms: &[String], crates: &[String]) -> String {
     format!(
         "Query: {query}\nTerms: {}\nCrates: {}",
@@ -212,10 +192,6 @@ pub fn scope_state(query: &str, funnel_terms: &[String], crates: &[String]) -> S
 /// construction); the scope payload fills state, never options or
 /// template (repo text stays out of instruction slots).
 #[must_use]
-/// Rerank relevance choice: the pinned rubric over one candidate.
-/// Options are the fixed three-label verdict set (bounded by
-/// construction); the scope payload fills state, never options or
-/// template (repo text stays out of instruction slots).
 pub fn rerank_spec() -> QuestionSpec {
     spec(
         RERANK_POINT,
@@ -232,8 +208,6 @@ pub fn rerank_spec() -> QuestionSpec {
 /// Rerank state payload: query plus scope plus excerpt as data.
 /// The scope crate is one bounded token; excerpts stay verbatim.
 #[must_use]
-/// Rerank state payload: query plus scope plus excerpt as data.
-/// The scope crate is one bounded token; excerpts stay verbatim.
 pub fn rerank_state(query: &str, scope_crate: &str, excerpt: &str) -> String {
     format!("Query: {query}\nScope: {scope_crate}\nFinding: {excerpt}")
 }
@@ -241,8 +215,6 @@ pub fn rerank_state(query: &str, scope_crate: &str, excerpt: &str) -> String {
 /// Fail-closed rerank authorization: hard drops wait for a passing
 /// entry on all three keys; anything else stays rank-only.
 #[must_use]
-/// Fail-closed rerank authorization: hard drops wait for a passing
-/// entry on all three keys; anything else stays rank-only.
 pub fn rerank_authorized(registry: &CalibrationRegistry, fingerprint: &str) -> CalibrationStatus {
     authorize_point_with(registry, RERANK_POINT, fingerprint, RERANK_VERSION)
 }
@@ -251,9 +223,6 @@ pub fn rerank_authorized(registry: &CalibrationRegistry, fingerprint: &str) -> C
 /// calibrates, anything else (including the seed-empty registry) is
 /// shadow-only with the reason named.
 #[must_use]
-/// Fail-closed authorization: a passing entry on all three keys
-/// calibrates, anything else (including the seed-empty registry) is
-/// shadow-only with the reason named.
 pub fn authorize_point(point: &str, fingerprint: &str, version: u64) -> CalibrationStatus {
     authorize_point_with(&CalibrationRegistry::empty(), point, fingerprint, version)
 }
@@ -262,9 +231,6 @@ pub fn authorize_point(point: &str, fingerprint: &str, version: u64) -> Calibrat
 /// once and consults it here; the empty-registry call above is the
 /// cold-start form with identical fail-closed semantics.
 #[must_use]
-/// Registry-taking companion: the loop loads `state/calibration.json`
-/// once and consults it here; the empty-registry call above is the
-/// cold-start form with identical fail-closed semantics.
 pub fn authorize_point_with(
     registry: &CalibrationRegistry,
     point: &str,
@@ -277,15 +243,12 @@ pub fn authorize_point_with(
 /// Advisory authorization: ordering and priority only, never side
 /// effects. Same evidence bar as `authorize_point`, narrower grant.
 #[must_use]
-/// Advisory authorization: ordering and priority only, never side
-/// effects. Same evidence bar as `authorize_point`, narrower grant.
 pub fn authorize_point_advisory(point: &str, fingerprint: &str, version: u64) -> CalibrationStatus {
     authorize_point_advisory_with(&CalibrationRegistry::empty(), point, fingerprint, version)
 }
 
 /// Registry-taking companion to `authorize_point_advisory`.
 #[must_use]
-/// Registry-taking companion to `authorize_point_advisory`.
 pub fn authorize_point_advisory_with(
     registry: &CalibrationRegistry,
     point: &str,
@@ -298,8 +261,6 @@ pub fn authorize_point_advisory_with(
 /// Dataset-pinned authorization: the entry must record the expected
 /// dataset hash or the point stays measuring.
 #[must_use]
-/// Dataset-pinned authorization: the entry must record the expected
-/// dataset hash or the point stays measuring.
 pub fn authorize_point_pinned(
     point: &str,
     fingerprint: &str,
@@ -317,7 +278,6 @@ pub fn authorize_point_pinned(
 
 /// Registry-taking companion to `authorize_point_pinned`.
 #[must_use]
-/// Registry-taking companion to `authorize_point_pinned`.
 pub fn authorize_point_pinned_with(
     registry: &CalibrationRegistry,
     point: &str,
@@ -331,8 +291,6 @@ pub fn authorize_point_pinned_with(
 /// Fail-closed scope authorization: hard filters wait for a passing
 /// entry on all three keys; anything else stays rank-prior only.
 #[must_use]
-/// Fail-closed scope authorization: hard filters wait for a passing
-/// entry on all three keys; anything else stays rank-prior only.
 pub fn scope_authorized(registry: &CalibrationRegistry, fingerprint: &str) -> CalibrationStatus {
     authorize_point_with(registry, SCOPE_POINT, fingerprint, SCOPE_VERSION)
 }
@@ -340,7 +298,6 @@ pub fn scope_authorized(registry: &CalibrationRegistry, fingerprint: &str) -> Ca
 /// Fingerprint-scoped cache key for one decision evaluation.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
-/// Fingerprint-scoped cache key for one decision evaluation.
 pub fn decision_key(
     point: &str,
     state: &str,
@@ -366,14 +323,12 @@ pub fn decision_key(
 
 /// Thresholds a shadow record is logged against for one spec.
 #[must_use]
-/// Thresholds a shadow record is logged against for one spec.
 pub fn shadow_thresholds(spec: &QuestionSpec) -> ThresholdSet {
     spec.thresholds()
 }
 
 /// Map an intent-spec label back to its `QueryIntent`, if it names one.
 #[must_use]
-/// Map an intent-spec label back to its `QueryIntent`, if it names one.
 pub fn intent_label_to_intent(label: &str) -> Option<super::strategy::QueryIntent> {
     use super::strategy::QueryIntent;
     match label {
@@ -398,11 +353,6 @@ pub fn intent_label_to_intent(label: &str) -> Option<super::strategy::QueryInten
 /// (today's behavior); a verdict routes three ways, and an unknown
 /// label can never silence grounded evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Sufficiency route for one evidence set. The hard gate runs first:
-/// ungrounded evidence routes `Unanswerable` no matter what the model
-/// says. Grounded evidence without a verdict answers from excerpts
-/// (today's behavior); a verdict routes three ways, and an unknown
-/// label can never silence grounded evidence.
 pub enum Sufficiency {
     Answer,
     Synthesize,
@@ -412,8 +362,6 @@ pub enum Sufficiency {
 /// Route one evidence set, logging the shadow record when a verdict
 /// was consulted. Pure: no I/O, no cache, no side effects.
 #[must_use]
-/// Route one evidence set, logging the shadow record when a verdict
-/// was consulted. Pure: no I/O, no cache, no side effects.
 pub fn route_sufficiency(
     evidence_count: usize,
     grounded: bool,
@@ -439,9 +387,6 @@ pub fn route_sufficiency(
 /// above `threshold`, preserving input order. A filter, never a rerank —
 /// the legacy 0.5 operating point passes through byte-identically.
 #[must_use]
-/// Relevance gate over scored candidates: keep every candidate at or
-/// above `threshold`, preserving input order. A filter, never a rerank —
-/// the legacy 0.5 operating point passes through byte-identically.
 pub fn relevance_gate(candidates: &[(&str, f64)], threshold: f64) -> Vec<String> {
     candidates
         .iter()
@@ -453,8 +398,6 @@ pub fn relevance_gate(candidates: &[(&str, f64)], threshold: f64) -> Vec<String>
 /// Whitespace-stripped signature: the cheap exact comparison behind
 /// eligibility. Cosmetic-only diffs never reach a verdict.
 #[must_use]
-/// Whitespace-stripped signature: the cheap exact comparison behind
-/// eligibility. Cosmetic-only diffs never reach a verdict.
 pub fn normalize_signature(signature: &str) -> String {
     signature.split_whitespace().collect::<String>()
 }
@@ -464,10 +407,6 @@ pub fn normalize_signature(signature: &str) -> String {
 /// generated comments are not nominated; everything else generated with
 /// changed bytes is model-eligible (shadow-only until authorized).
 #[must_use]
-/// Whether a member's commentary is eligible for a staleness verdict.
-/// Human-written comments are never nominated; whitespace-only diffs on
-/// generated comments are not nominated; everything else generated with
-/// changed bytes is model-eligible (shadow-only until authorized).
 pub fn staleness_eligible(comment_generated: bool, old_sig: &str, new_sig: &str) -> bool {
     comment_generated && normalize_signature(old_sig) != normalize_signature(new_sig)
 }
@@ -475,8 +414,6 @@ pub fn staleness_eligible(comment_generated: bool, old_sig: &str, new_sig: &str)
 /// Which rung answered one ladder evaluation. Efficiency accounting
 /// only: the deterministic result stays authoritative regardless.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Which rung answered one ladder evaluation. Efficiency accounting
-/// only: the deterministic result stays authoritative regardless.
 pub enum LadderOutcome {
     /// Deterministic rule decided; no model call made.
     Rule,
@@ -585,11 +522,6 @@ impl Default for DecisionMetrics {
 /// cache-hit marking, degraded flag, factory outcome) — never a
 /// second walk, and the shared ladder stays untouched.
 #[allow(clippy::too_many_arguments)]
-/// Run one ladder evaluation with metrics attached: exactly one
-/// `record` plus one latency sample per call, shadow optional.
-/// The rung is read off the ladder's own result (rule presence,
-/// cache-hit marking, degraded flag, factory outcome) — never a
-/// second walk, and the shared ladder stays untouched.
 pub async fn evaluate_with_metrics<MF, Fut>(
     metrics: &DecisionMetrics,
     rule: Option<Decision>,
@@ -665,7 +597,6 @@ where
 
 /// Serializable counters for health/benchmark output (additive key).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Serializable counters for health/benchmark output (additive key).
 pub struct DecisionMetricsSnapshot {
     pub rule_wins: u64,
     pub cache_hits: u64,

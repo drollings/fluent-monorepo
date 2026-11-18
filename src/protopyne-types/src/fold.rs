@@ -50,12 +50,6 @@ pub enum FoldEdges {
 /// any uniform tiling of the bucket counts as complete, whatever the source
 /// spacing was.
 #[derive(Debug, Clone, Copy)]
-/// O(1) completeness state for one bucket under construction: the bucket
-/// start, the first and last child stamps, the child count, and the uniform
-/// child gap (or a diverged flag once two gaps disagree). The gap is read
-/// off the children, never assumed from a spacing the fold does not take:
-/// any uniform tiling of the bucket counts as complete, whatever the source
-/// spacing was.
 pub struct BucketAccum {
     start_ms: i64,
     count: u64,

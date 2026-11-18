@@ -192,13 +192,21 @@ fn entries_store_only_on_pass() {
 
     let registry =
         fluent_llm::decision::CalibrationRegistry::load(&registry_path).expect("registry loads");
-    assert!(
-        registry
-            .lookup_pinned(SPAN_CAP_POINT, "unprobed", 1, &dataset("span_cap_cases.jsonl"))
-            .is_some()
-    );
+    assert!(registry
+        .lookup_pinned(
+            SPAN_CAP_POINT,
+            "unprobed",
+            1,
+            &dataset("span_cap_cases.jsonl")
+        )
+        .is_some());
     let entry = registry
-        .lookup_pinned(ANSWER_FLOOR_POINT, "unprobed", 1, &dataset("answer_floor_cases.jsonl"))
+        .lookup_pinned(
+            ANSWER_FLOOR_POINT,
+            "unprobed",
+            1,
+            &dataset("answer_floor_cases.jsonl"),
+        )
         .expect("floor entry");
     assert!(
         (entry.gate.threshold - crate::read::vocabulary::ANSWER_FLOOR_COVERAGE).abs()

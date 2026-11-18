@@ -16,7 +16,6 @@ use crate::history_root::HistoryRoot;
 
 /// One ticker's Parquet history exposed as a repair provider.
 #[derive(Debug, Clone)]
-/// One ticker's Parquet history exposed as a repair provider.
 pub struct ParquetHistoryProvider {
     symbol: String,
     key: TapeKey,

@@ -142,7 +142,7 @@ impl EntityPromotion {
 ///
 /// M7.2 disposition: stays — not the generic n-gram/token part: walks a
 /// spacy `Doc` and gates on `Upos::Propn` (linguistic). M9.2 owns any future
-/// `ontology::normalize` move (only if ontology gains the `Doc` shape).
+/// `fluent_concept::normalize` move (only if fluent-concept gains the `Doc` shape).
 ///
 /// `pub(crate)` for the M9.1 characterization tests (span-mapping boundaries).
 pub(crate) fn token_for_span(

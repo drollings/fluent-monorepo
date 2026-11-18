@@ -2,7 +2,7 @@
 
 `forbid(unsafe_code)`. Crate `fluent-llm` (`src/llm/`). Boundary guard:
 `tests/no_domain_imports.rs` forbids imports of router/coral/guidance/types/
-dag/db/ontology/rdf/spacy/wasm_ipc. Live-AI tests are `#[ignore]` +
+dag/db/concept/rdf/spacy/wasm_ipc. Live-AI tests are `#[ignore]` +
 `live-ai`-gated (`tests/live.rs`); hermetic suite never dials real endpoints.
 
 Consumers: `router`, `coral`, `knowledge`, `guidance`, `orator-*`,

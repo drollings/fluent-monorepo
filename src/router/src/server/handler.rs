@@ -37,10 +37,6 @@ use fluent_types::openai_wire::RouterRequest;
 /// (`ladders`, `context_cache`) and future concerns thread through one
 /// struct instead of a growing signature.
 #[derive(Clone)]
-/// The request-context dependency bundle handed to every HTTP handler.
-/// Collapses the former 12-`Option` parameter list so escalation
-/// (`ladders`, `context_cache`) and future concerns thread through one
-/// struct instead of a growing signature.
 pub struct ServerDeps {
     pub pipelines: Arc<HashMap<String, Arc<PipelineOrchestrator>>>,
     pub routes: Arc<HashMap<String, RouteRef>>,

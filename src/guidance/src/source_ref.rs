@@ -10,7 +10,6 @@ use crate::search_types::FileInfo;
 
 /// A source file with its three path views.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-/// A source file with its three path views.
 pub struct SourceRef {
     /// Workspace-relative path: citation, display, and glob identity.
     pub workspace_path: String,
@@ -90,7 +89,6 @@ impl std::fmt::Display for SourceRef {
 
 /// A displayed citation with its verification state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A displayed citation with its verification state.
 pub struct Citation {
     /// Source identity.
     pub source: SourceRef,

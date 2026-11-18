@@ -19,11 +19,6 @@ use crate::error::VenueError;
 /// (different ubiquitous language — resync vs reconciliation); only the
 /// banking drains through here.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Shared alert bank for entry gates (M9.2): the one `Vec<String>` +
-/// take-drain behind `BackfillGate` and `ReconcileGate`. The gates keep
-/// their own halt/suspend state, report types, and refusal vocabulary
-/// (different ubiquitous language — resync vs reconciliation); only the
-/// banking drains through here.
 pub struct AlertBuffer {
     alerts: Vec<String>,
 }
@@ -63,9 +58,6 @@ impl AlertBuffer {
 /// feed, the clock, the connection supervisor, and the store's coverage
 /// probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-/// Observed health facts. State, not opinion: callers fill these from the
-/// feed, the clock, the connection supervisor, and the store's coverage
-/// probe.
 pub struct HealthState {
     /// Age of the newest quote in seconds.
     pub quote_age_secs: u64,
@@ -108,7 +100,6 @@ fn backfilled_when_absent() -> bool {
 /// Health bounds. All five are **(correctness)** gates.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// Health bounds. All five are **(correctness)** gates.
 pub struct HealthLimits {
     /// Maximum quote age in seconds **(correctness)**.
     #[builder(default = 60)]
@@ -131,7 +122,6 @@ pub struct HealthLimits {
 
 /// Whether the platform may trade right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Whether the platform may trade right now.
 pub enum HealthVerdict {
     /// All gates pass.
     Trade,
@@ -156,11 +146,6 @@ impl HealthVerdict {
 /// enforced for entries and silently bypassed for exits without its class
 /// stating the decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// One named health gate: a single check the verdict builder evaluates.
-/// There is exactly one variant per `may_trade` gate, so a gate added to
-/// the evaluation is classified here by construction — no gate is ever
-/// enforced for entries and silently bypassed for exits without its class
-/// stating the decision.
 pub enum HealthGate {
     /// Quote age above the limit.
     QuoteAge,
@@ -205,9 +190,6 @@ impl HealthGate {
 /// Entries refuse on both classes; exits route past both until the
 /// exit-annotation question is decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// What a gate's refusal is about: standing to act versus input integrity.
-/// Entries refuse on both classes; exits route past both until the
-/// exit-annotation question is decided.
 pub enum GateClass {
     /// The platform lacks standing to act.
     Authority,
@@ -218,8 +200,6 @@ pub enum GateClass {
 /// One failed gate with its reason. The reason strings are the verdict's
 /// vocabulary, shared verbatim so reports and refusals name gates alike.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One failed gate with its reason. The reason strings are the verdict's
-/// vocabulary, shared verbatim so reports and refusals name gates alike.
 pub struct GateFailure {
     /// The gate that failed.
     pub gate: HealthGate,
@@ -231,9 +211,6 @@ pub struct GateFailure {
 /// Reports never gate behavior on their own; the route functions read the
 /// verdict and the submit path reads the refusal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// The classified verdict: the outcome plus every failure behind it.
-/// Reports never gate behavior on their own; the route functions read the
-/// verdict and the submit path reads the refusal.
 pub struct GateReport {
     /// The evaluated outcome.
     pub verdict: HealthVerdict,
@@ -264,8 +241,6 @@ impl GateReport {
 /// What the order wants to do. Entries need every gate; exits always route
 /// so a halted book stays manageable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// What the order wants to do. Entries need every gate; exits always route
-/// so a halted book stays manageable.
 pub enum RouteIntent {
     /// A new entry: every gate applies.
     Entry,
@@ -350,7 +325,6 @@ fn evaluate_gates(state: &HealthState, limits: &HealthLimits) -> Vec<GateFailure
 
 /// Evaluate the health gate. Pure function: same facts, same verdict.
 #[must_use]
-/// Evaluate the health gate. Pure function: same facts, same verdict.
 pub fn may_trade(state: &HealthState, limits: &HealthLimits) -> HealthVerdict {
     GateReport::evaluate(state, limits).verdict
 }
@@ -409,12 +383,6 @@ pub fn check_trade(
 /// shutdown and preview paths share this one verdict, so a store outage
 /// refuses both identically.
 #[must_use]
-/// The health gate evaluated over the one fact a serving path observes —
-/// the store reading — with quote age, clock skew, and stream state supplied
-/// as the no-objection values the pruning means. The serving path never sees
-/// quotes, clocks, or stream state; those are the live feed's facts. The
-/// shutdown and preview paths share this one verdict, so a store outage
-/// refuses both identically.
 pub fn serving_verdict(reading: StoreHealth) -> HealthVerdict {
     let state = HealthState {
         quote_age_secs: 0,
@@ -434,12 +402,6 @@ pub fn serving_verdict(reading: StoreHealth) -> HealthVerdict {
 /// stay the command plane's answer, which routes exits through and never
 /// strands a position.
 #[must_use]
-/// Whether entries are allowed on a serving path right now: the command
-/// plane's verdict AND the serving verdict. A default store reading is
-/// inert, so a server that never observed the store evaluates exactly as it
-/// did before the gate existed; a store outage halts entries while exits
-/// stay the command plane's answer, which routes exits through and never
-/// strands a position.
 pub fn serving_allows_entries(trading: crate::command::TradingState, reading: StoreHealth) -> bool {
     trading.allows(false) && serving_verdict(reading).may_trade()
 }

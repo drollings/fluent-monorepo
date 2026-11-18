@@ -54,7 +54,6 @@ pub fn canary_suite() -> Vec<CanaryCase> {
 
 /// Typed drift condition (`CanaryDrift`): the weights moved (or never measured).
 #[derive(Debug, Clone, PartialEq)]
-/// Typed drift condition (`CanaryDrift`): the weights moved (or never measured).
 pub struct CanaryDrift {
     pub case_id: String,
     pub detail: String,
@@ -134,27 +133,6 @@ pub fn verify_canary(decision: &Decision, case: &CanaryCase) -> Result<(), Canar
 /// assert_ne!(canary_signature(&[mk(0.97)]), canary_signature(&[mk(0.60)]));
 /// ```
 #[must_use]
-/// Fingerprint a verified canary set: blake3 over framed (label, mass to
-/// two decimals) pairs. Same response bytes fingerprint identically;
-/// weight changes move masses and the fingerprint follows.
-///
-/// ```rust
-/// use fluent_llm::decision::{canary_signature, Decision};
-///
-/// let mk = |mass: f64| {
-/// Decision::from_distribution(
-/// "A",
-/// vec![("A".to_string(), mass), ("B".to_string(), 1.0 - mass)],
-/// "m".to_string(),
-/// 1,
-/// 0,
-/// false,
-/// )
-/// .expect("decision")
-/// };
-/// assert_eq!(canary_signature(&[mk(0.97)]), canary_signature(&[mk(0.97)]));
-/// assert_ne!(canary_signature(&[mk(0.97)]), canary_signature(&[mk(0.60)]));
-/// ```
 pub fn canary_signature(decisions: &[Decision]) -> String {
     let mut bytes = Vec::new();
     for decision in decisions {

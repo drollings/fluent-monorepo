@@ -21,7 +21,6 @@ use base64::prelude::*;
 
 /// Integer wire scale for 16-bit PCM samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Integer wire scale for 16-bit PCM samples.
 pub enum Scale16 {
     /// Divide/multiply by 32767 (`i16::MAX`): `1.0` ⇄ `32767` exactly.
     Symmetric32767,
@@ -31,7 +30,6 @@ pub enum Scale16 {
 
 /// Rounding applied when quantizing `f32` to `i16`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Rounding applied when quantizing `f32` to `i16`.
 pub enum Rounding {
     /// `f32::round` (half away from zero) before the cast.
     Nearest,
@@ -41,7 +39,6 @@ pub enum Rounding {
 
 /// Divisor for a wire scale.
 #[must_use]
-/// Divisor for a wire scale.
 pub fn scale_divisor(scale: Scale16) -> f32 {
     match scale {
         Scale16::Symmetric32767 => 32767.0,
@@ -64,14 +61,12 @@ pub fn f32_to_i16_sample(sample: f32, scale: Scale16, rounding: Rounding) -> i16
 
 /// Dequantize one sample under a wire scale.
 #[must_use]
-/// Dequantize one sample under a wire scale.
 pub fn i16_to_f32_sample(sample: i16, scale: Scale16) -> f32 {
     f32::from(sample) / scale_divisor(scale)
 }
 
 /// Encode samples as little-endian `i16` bytes, one sample per pair.
 #[must_use]
-/// Encode samples as little-endian `i16` bytes, one sample per pair.
 pub fn encode_i16_le(samples: &[f32], scale: Scale16, rounding: Rounding) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 2);
     for sample in samples {
@@ -93,7 +88,6 @@ pub fn decode_i16_le(bytes: &[u8], scale: Scale16) -> Vec<f32> {
 
 /// Encode samples as little-endian `f32` bytes, one sample per quad.
 #[must_use]
-/// Encode samples as little-endian `f32` bytes, one sample per quad.
 pub fn encode_f32_le(samples: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 4);
     for sample in samples {
@@ -115,7 +109,6 @@ pub fn decode_f32_le(bytes: &[u8]) -> Vec<f32> {
 
 /// Standard-base64 encode bytes for a message part.
 #[must_use]
-/// Standard-base64 encode bytes for a message part.
 pub fn encode_base64(bytes: &[u8]) -> String {
     BASE64_STANDARD.encode(bytes)
 }

@@ -29,7 +29,6 @@ use std::cmp::Ordering;
 
 /// Sort an owned vector in ascending order and return it.
 #[must_use]
-/// Sort an owned vector in ascending order and return it.
 pub fn sorted_vec<T: Ord>(mut values: Vec<T>) -> Vec<T> {
     values.sort();
     values
@@ -45,7 +44,6 @@ pub fn sorted_by_vec<T>(mut values: Vec<T>, compare: impl FnMut(&T, &T) -> Order
 
 /// Sort an owned vector, drop duplicates, and return it.
 #[must_use]
-/// Sort an owned vector, drop duplicates, and return it.
 pub fn dedup_sorted<T: Ord>(mut values: Vec<T>) -> Vec<T> {
     values.sort();
     values.dedup();

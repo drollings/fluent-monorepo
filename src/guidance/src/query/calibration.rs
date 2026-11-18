@@ -15,7 +15,6 @@ fn provenance() -> CaseProvenance {
 
 /// Homonym trap: same symbol name in two files must not resolve unique.
 #[must_use]
-/// Homonym trap: same symbol name in two files must not resolve unique.
 pub fn homonym_corpus() -> Vec<ScoredCase> {
     let provenance = provenance();
     vec![
@@ -48,7 +47,6 @@ pub fn homonym_corpus() -> Vec<ScoredCase> {
 
 /// Cosmetic diff: whitespace-only change must not nominate commentary.
 #[must_use]
-/// Cosmetic diff: whitespace-only change must not nominate commentary.
 pub fn cosmetic_corpus() -> Vec<ScoredCase> {
     let provenance = provenance();
     vec![
@@ -75,7 +73,6 @@ pub fn cosmetic_corpus() -> Vec<ScoredCase> {
 
 /// Keyword-only query: must not route to the vector rung alone.
 #[must_use]
-/// Keyword-only query: must not route to the vector rung alone.
 pub fn keyword_only_corpus() -> Vec<ScoredCase> {
     let provenance = provenance();
     vec![
@@ -102,7 +99,6 @@ pub fn keyword_only_corpus() -> Vec<ScoredCase> {
 
 /// Sweep one corpus over thresholds, composing the shared harness.
 #[must_use]
-/// Sweep one corpus over thresholds, composing the shared harness.
 pub fn sweep(
     cases: &[ScoredCase],
     thresholds: &[f64],
@@ -112,14 +108,12 @@ pub fn sweep(
 
 /// Promotion gate: shared gate plus zero control fires plus nonzero recall.
 #[must_use]
-/// Promotion gate: shared gate plus zero control fires plus nonzero recall.
 pub fn passes_gate(cases: &[ScoredCase], threshold: f64) -> bool {
     gate_for_point(cases, threshold)
 }
 
 /// Control fires at a threshold: must be zero for promotion.
 #[must_use]
-/// Control fires at a threshold: must be zero for promotion.
 pub fn control_fire_count(cases: &[ScoredCase], threshold: f64) -> usize {
     control_fires(cases, threshold)
 }

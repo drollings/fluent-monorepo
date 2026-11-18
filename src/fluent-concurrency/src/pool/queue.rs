@@ -100,9 +100,11 @@ impl<T: Send + 'static> Queue<T> {
             let capacity = self.inner.capacity;
             self.inner
                 .waker
-                .wait_while(crate::close::WaitChannel::Space, &self.inner.items, |items| {
-                    items.len() >= capacity && !self.inner.waker.is_closed()
-                })
+                .wait_while(
+                    crate::close::WaitChannel::Space,
+                    &self.inner.items,
+                    |items| items.len() >= capacity && !self.inner.waker.is_closed(),
+                )
                 .await;
         }
     }
@@ -124,9 +126,11 @@ impl<T: Send + 'static> Queue<T> {
             // item wake or close in the check-then-park window still wakes us.
             self.inner
                 .waker
-                .wait_while(crate::close::WaitChannel::Items, &self.inner.items, |items| {
-                    items.is_empty() && !self.inner.waker.is_closed()
-                })
+                .wait_while(
+                    crate::close::WaitChannel::Items,
+                    &self.inner.items,
+                    |items| items.is_empty() && !self.inner.waker.is_closed(),
+                )
                 .await;
         }
     }

@@ -45,19 +45,6 @@ pub struct ScoredCase {
 /// assert_eq!(reports.len(), 1);
 /// ```
 #[must_use]
-/// Sweep `thresholds` over `cases`, composing the shared harness.
-///
-/// ```rust
-/// use fluent_llm::decision::{evaluate_point, CaseProvenance, ScoredCase};
-///
-/// let provenance = CaseProvenance::human("example", "2026-11-08");
-/// let cases = vec![
-/// ScoredCase { score: 0.9, expected: true, control: false, provenance: provenance.clone() },
-/// ScoredCase { score: 0.1, expected: false, control: false, provenance },
-/// ];
-/// let reports = evaluate_point(&cases, &[0.5]);
-/// assert_eq!(reports.len(), 1);
-/// ```
 pub fn evaluate_point(
     cases: &[ScoredCase],
     thresholds: &[f64],
@@ -77,17 +64,6 @@ pub fn evaluate_point(
 /// assert_eq!(control_fires(&cases, 0.9), 1);
 /// ```
 #[must_use]
-/// Control fires at `threshold`: control cases scoring at or above it.
-///
-/// ```rust
-/// use fluent_llm::decision::{control_fires, CaseProvenance, ScoredCase};
-///
-/// let provenance = CaseProvenance::human("example", "2026-11-08");
-/// let cases = vec![
-/// ScoredCase { score: 0.95, expected: false, control: true, provenance },
-/// ];
-/// assert_eq!(control_fires(&cases, 0.9), 1);
-/// ```
 pub fn control_fires(cases: &[ScoredCase], threshold: f64) -> usize {
     cases
         .iter()
@@ -112,22 +88,6 @@ pub fn control_fires(cases: &[ScoredCase], threshold: f64) -> usize {
 /// assert!(gate_for_point(&cases, 0.5));
 /// ```
 #[must_use]
-/// Promotion gate: the shared `passes_gate` at `threshold` AND zero control
-/// fires AND nonzero recall. A confident-but-wrong control blocks trust even
-/// when the sweep is clean — confidence never stands in for correctness —
-/// and a never-firing threshold (vacuous precision, zero recall) proves
-/// nothing, so it cannot pass either.
-///
-/// ```rust
-/// use fluent_llm::decision::{gate_for_point, CaseProvenance, ScoredCase};
-///
-/// let provenance = CaseProvenance::human("example", "2026-11-08");
-/// let cases = vec![
-/// ScoredCase { score: 0.9, expected: true, control: false, provenance: provenance.clone() },
-/// ScoredCase { score: 0.1, expected: false, control: false, provenance },
-/// ];
-/// assert!(gate_for_point(&cases, 0.5));
-/// ```
 pub fn gate_for_point(cases: &[ScoredCase], threshold: f64) -> bool {
     let report = common_core::calibration::calibrate_threshold(
         cases,
@@ -140,7 +100,6 @@ pub fn gate_for_point(cases: &[ScoredCase], threshold: f64) -> bool {
 
 /// `render_point_table`: render the sweep as the shared markdown table.
 #[must_use]
-/// `render_point_table`: render the sweep as the shared markdown table.
 pub fn render_point_table(
     reports: &[(f64, common_core::calibration::CalibrationReport)],
 ) -> String {

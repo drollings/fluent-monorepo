@@ -19,8 +19,6 @@ use crate::proposal::StructureKind;
 /// Which side of the package an order takes. Debit packages buy, credit
 /// packages sell; the runner maps this to the venue's order side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-/// Which side of the package an order takes. Debit packages buy, credit
-/// packages sell; the runner maps this to the venue's order side.
 pub enum PackageSide {
     /// Pay the package (a debit).
     Buy,
@@ -40,8 +38,6 @@ impl std::fmt::Display for PackageSide {
 /// Why a package could not be priced. Structural refusals carry the shared
 /// [`protopyne_types::TypesError`] rather than a second taxonomy.
 #[derive(Debug, Error)]
-/// Why a package could not be priced. Structural refusals carry the shared
-/// [`protopyne_types::TypesError`] rather than a second taxonomy.
 pub enum EconRefusal {
     /// The leg set failed the shared defined-risk validation.
     #[error("{0}")]
@@ -69,7 +65,6 @@ pub enum EconRefusal {
 
 /// Priced economics for one package, per spread unit unless noted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Priced economics for one package, per spread unit unless noted.
 pub struct SpreadEconomics {
     /// Signed package price per unit: positive is a debit, negative a credit.
     pub net_per_unit: Money,
@@ -113,11 +108,6 @@ impl SpreadEconomics {
 /// the one pricer at a single unit, so sizing never sees a quantity-scaled
 /// number it could mistake for a per-unit one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One unit's economics: the per-unit price, loss, width, and side a
-/// sizing policy and the containment caps read. A share's unit is its price
-/// and the caller's stated per-trade worst case; a package's unit comes from
-/// the one pricer at a single unit, so sizing never sees a quantity-scaled
-/// number it could mistake for a per-unit one.
 pub struct UnitEconomics {
     /// Signed price per unit: a package's net debit/credit, a share's price.
     pub price_per_unit: Money,
@@ -133,9 +123,6 @@ pub struct UnitEconomics {
 /// The sizing policy and the containment caps read the unit; the proposal
 /// carries the capital the sized quantity commits.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One selected instrument: its shape, legs, expiry, and unit economics.
-/// The sizing policy and the containment caps read the unit; the proposal
-/// carries the capital the sized quantity commits.
 pub struct UnitSelection {
     /// Structure to propose.
     pub kind: StructureKind,

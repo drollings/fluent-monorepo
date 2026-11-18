@@ -186,7 +186,6 @@ impl RepetitionWatchdog {
 
 /// Events emitted by the three watchdogs.
 #[derive(Debug, Clone)]
-/// Events emitted by the three watchdogs.
 pub enum WatchdogEvent {
     BudgetExceeded {
         limit: u32,

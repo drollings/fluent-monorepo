@@ -56,7 +56,6 @@ fn lite_normalize(raw: &[Option<f64>], kind: OscillatorKind) -> Vec<Option<f64>>
 
 /// One Lite leg selector: the panel resolves each leg independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// One Lite leg selector: the panel resolves each leg independently.
 enum LiteLeg {
     Fast,
     Slow,
@@ -159,8 +158,6 @@ const LITE_SLOW_KIND: OscillatorKind = OscillatorKind::Cci;
 /// Native kernel series behind one pane: raw oscillators plus the
 /// smoothing pair, all over the same converted rows.
 #[derive(Debug, Clone)]
-/// Native kernel series behind one pane: raw oscillators plus the
-/// smoothing pair, all over the same converted rows.
 pub struct LiteNative {
     /// Raw RSI readings (unsquashed).
     pub fast_raw: Vec<Option<f64>>,
@@ -259,8 +256,6 @@ pub fn lite_native_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNativ
 /// Headless IntegrationLite pane: normalized oscillators, ribbon band, and
 /// pivots at `threshold` over the fast leg.
 #[derive(Debug, Clone)]
-/// Headless IntegrationLite pane: normalized oscillators, ribbon band, and
-/// pivots at `threshold` over the fast leg.
 pub struct IntegrationLiteView {
     /// Normalized fast oscillator (RSI arm).
     pub fast: Vec<Option<f64>>,
@@ -314,10 +309,6 @@ pub const VOLUME_TRANSPARENCY: f64 = 60.0;
 /// plateau near half opacity. Total: clamps into `[0, 100]`; non-finite
 /// strengths paint nothing rather than an undefined shade.
 #[must_use]
-/// Ribbon fill transparency for a fill strength, mirroring the reference
-/// `95 - (60 * alpha)` shading: weak legs run nearly invisible, strong legs
-/// plateau near half opacity. Total: clamps into `[0, 100]`; non-finite
-/// strengths paint nothing rather than an undefined shade.
 pub fn ribbon_fill_transparency(fill_alpha: f64) -> f64 {
     if !fill_alpha.is_finite() {
         return 100.0;
@@ -328,8 +319,6 @@ pub fn ribbon_fill_transparency(fill_alpha: f64) -> f64 {
 /// Oscillator leg transparency for a brightness input, mirroring the
 /// reference `90 - brightness` dimming. Total: clamps into `[0, 100]`.
 #[must_use]
-/// Oscillator leg transparency for a brightness input, mirroring the
-/// reference `90 - brightness` dimming. Total: clamps into `[0, 100]`.
 pub fn oscillator_transparency(brightness: u32) -> f64 {
     f64::from(90_u32.saturating_sub(brightness))
 }
@@ -339,10 +328,6 @@ pub fn oscillator_transparency(brightness: u32) -> f64 {
 /// path derives per-column keys from the same borrowed trend slice instead
 /// of materializing a fresh window `Vec`.
 #[must_use]
-/// One bar's momentum tint key from its direction crossed with the ribbon
-/// trend: the single-bar core behind [`candle_momentum_keys`], so the frame
-/// path derives per-column keys from the same borrowed trend slice instead
-/// of materializing a fresh window `Vec`.
 pub fn momentum_key_for(open: f64, close: f64, bullish: bool) -> &'static str {
     match (close >= open, bullish) {
         (true, true) => "bull",
@@ -391,10 +376,6 @@ pub const RIBBON_HEALTH_K: f64 = protopyne_kernels::lite::RIBBON_HEALTH_K;
 /// resolved from the theme at the call site so the port itself stays
 /// headless RGB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Four tint corners at the reference `barcolor` call
-/// (`i_color_bull`, `i_color_bear`, `i_color_bull_down`, `i_color_bear_up`),
-/// resolved from the theme at the call site so the port itself stays
-/// headless RGB.
 pub struct MomentumPalette {
     /// Bullish candle in a bullish trend.
     pub bull_up: [u8; 3],
@@ -427,10 +408,6 @@ impl MomentumPalette {
 /// The shell turns `transparency` into byte opacity through
 /// `opacity_from_transparency` and paints it beside the candle geometry.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// One ported candle tint: momentum-gradient RGB plus Pine transparency.
-///
-/// The shell turns `transparency` into byte opacity through
-/// `opacity_from_transparency` and paints it beside the candle geometry.
 pub struct MomentumTint {
     /// Gradient red channel.
     pub red: u8,
@@ -458,21 +435,6 @@ pub struct MomentumTint {
 /// Non-finite inputs yield `None`, mirroring Pine `na` propagation (an `na`
 /// gradient paints no tint, so the shell falls back to the discrete key).
 #[must_use]
-/// Port of `libApex.getColorMomentumAlpha` (`_libApex.pine`): candle color
-/// from price momentum and volume conviction with smooth gradients and
-/// per-bar transparency.
-///
-/// Mirrors the reference line for line — `fast_tanh` conviction scaling,
-/// `int()` truncation toward zero, momentum clamped to ±100, gradient
-/// corner picks on candle direction (`close > open` is bullish; flat reads
-/// bearish through the `else`), and the momentum leg scaled by conviction
-/// before the gradient map. The one substitution is documented at
-/// [`candle_momentum_series`]: `alpha` is the pane's fixed EIT smoothing
-/// because the adaptive per-bar alpha needs LTF tick data the fixture
-/// history never carries.
-///
-/// Non-finite inputs yield `None`, mirroring Pine `na` propagation (an `na`
-/// gradient paints no tint, so the shell falls back to the discrete key).
 pub fn momentum_tint(
     open: f64,
     close: f64,
@@ -517,7 +479,6 @@ pub fn momentum_tint(
 
 /// Per-bar momentum inputs behind the tint port, over one row window.
 #[derive(Debug, Clone, PartialEq)]
-/// Per-bar momentum inputs behind the tint port, over one row window.
 pub struct CandleMomentum {
     /// Ribbon health (`getHealthMAs` over ATR/adaptive/signal/mean, gained);
     /// holes where any leg is still warming.
@@ -674,7 +635,6 @@ pub fn momentum_tints(
 
 /// Frozen Pine-comparable series: squashed oscillators plus the adaptive leg.
 #[derive(Debug, Clone)]
-/// Frozen Pine-comparable series: squashed oscillators plus the adaptive leg.
 pub struct LiteFrozen {
     /// Normalized fast oscillator.
     pub fast: Vec<Option<f64>>,
@@ -700,9 +660,6 @@ impl LiteFrozen {
 /// compared; presence mismatches and non-finite pairs diverge infinitely so
 /// the pin fails loudly instead of silently skipping.
 #[must_use]
-/// Max-diff over one paired series: bars where both sides read count as
-/// compared; presence mismatches and non-finite pairs diverge infinitely so
-/// the pin fails loudly instead of silently skipping.
 pub fn series_max_diff(native: &[Option<f64>], pine: &[Option<f64>]) -> (f64, usize) {
     let mut diff = 0.0_f64;
     let mut compared = 0_usize;
@@ -723,7 +680,6 @@ pub fn series_max_diff(native: &[Option<f64>], pine: &[Option<f64>]) -> (f64, us
 
 /// Per-series freeze comparison between native and Pine panes.
 #[derive(Debug, Clone, Copy)]
-/// Per-series freeze comparison between native and Pine panes.
 pub struct FreezePair {
     /// Maximum absolute difference over compared bars.
     pub max_abs_diff: f64,
@@ -733,7 +689,6 @@ pub struct FreezePair {
 
 /// Native-vs-Pine freeze report over the three pinned series.
 #[derive(Debug, Clone, Copy)]
-/// Native-vs-Pine freeze report over the three pinned series.
 pub struct FreezeReport {
     /// Fast oscillator agreement.
     pub fast: FreezePair,
@@ -745,7 +700,6 @@ pub struct FreezeReport {
 
 /// Compare native and Pine frozen panes series-by-series.
 #[must_use]
-/// Compare native and Pine frozen panes series-by-series.
 pub fn compare_freeze(native: &LiteFrozen, pine: &LiteFrozen) -> FreezeReport {
     let pair = |left: &[Option<f64>], right: &[Option<f64>]| {
         let (max_abs_diff, compared) = series_max_diff(left, right);
@@ -872,9 +826,6 @@ fn default_source() -> String {
 /// chart/multi-timeframe vocabulary the LTF/fetch/HTF and MTF dials read.
 /// Display-only until the multi-timeframe milestone wires them.
 #[must_use]
-/// Pine `UTIL.Timeframes` members in native lowercase spelling: the full
-/// chart/multi-timeframe vocabulary the LTF/fetch/HTF and MTF dials read.
-/// Display-only until the multi-timeframe milestone wires them.
 pub fn lite_timeframe_ids() -> Vec<String> {
     [
         "c", "s5", "s10", "s15", "s30", "m1", "m3", "m5", "m10", "m15", "m30", "h1", "h2", "h4",
@@ -887,7 +838,6 @@ pub fn lite_timeframe_ids() -> Vec<String> {
 
 /// Pine `UTIL.Positions` members in native lowercase spelling.
 #[must_use]
-/// Pine `UTIL.Positions` members in native lowercase spelling.
 pub fn lite_position_ids() -> Vec<String> {
     [
         "top_left",
@@ -910,7 +860,6 @@ pub fn lite_position_ids() -> Vec<String> {
 
 /// Pine `UTIL.Sizes` members in native lowercase spelling.
 #[must_use]
-/// Pine `UTIL.Sizes` members in native lowercase spelling.
 pub fn lite_size_ids() -> Vec<String> {
     ["auto", "tiny", "small", "normal", "large", "huge"]
         .iter()
@@ -1971,8 +1920,6 @@ impl_component!(IntegrationLiteConfig);
 /// Headless IntegrationLite sub-pane: four bounded oscillators, the centered
 /// delta-volume histogram, its split confidence, and the swing pivots.
 #[derive(Debug, Clone)]
-/// Headless IntegrationLite sub-pane: four bounded oscillators, the centered
-/// delta-volume histogram, its split confidence, and the swing pivots.
 pub struct IntegrationLiteSubPane {
     /// Bounded fast oscillator (RSI arm) on `[-100, +100]`.
     pub fast_bounded: Vec<Option<f64>>,

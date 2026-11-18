@@ -131,9 +131,6 @@ struct CenterState {
 /// expiry. Clone shares the list; every method locks briefly and never
 /// across an await.
 #[derive(Clone)]
-/// A bounded notice center: deduped intake, per-notice aborts, owner-ticked
-/// expiry. Clone shares the list; every method locks briefly and never
-/// across an await.
 pub struct NoticeCenter {
     state: Arc<Mutex<CenterState>>,
 }
@@ -253,9 +250,6 @@ impl NoticeCenter {
 /// sits at `i * (row_height + gap)`. Degenerate heights read as zero so a
 /// malformed metric collapses the stride instead of flipping the stack.
 #[must_use]
-/// Stacked row offsets for `count` notices from a stack origin: row `i`
-/// sits at `i * (row_height + gap)`. Degenerate heights read as zero so a
-/// malformed metric collapses the stride instead of flipping the stack.
 pub fn offsets(count: usize, row_height: f32, gap: f32) -> Vec<f32> {
     let row_height = if row_height.is_finite() && row_height > 0.0 {
         row_height

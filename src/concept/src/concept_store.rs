@@ -2,7 +2,7 @@
 //! `fluent-concept` — moved here from `spacy-rs`).
 //!
 //! [`InterlinguaResolver`](https://docs.rs/spacy-rs) (in `spacy-rs`) consumes
-//! it; `YaGoLoader` (in `guidance-ontology`) feeds it; the router implements
+//! it; `YaGoLoader` (in `fluent-concept`) feeds it; the router implements
 //! the SQLite backend; [`InMemoryConceptStore`](crate::concept_store_mem::InMemoryConceptStore)
 //! is the hermetic test double. **No second registry anywhere.**
 //!
@@ -15,7 +15,6 @@ use fluent_types::{ConceptMetadata, InterlinguaId};
 
 /// Store readiness — `Loading` until batched WAL completes, `Ready` thereafter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Store readiness — `Loading` until batched WAL completes, `Ready` thereafter.
 pub enum ConceptStoreState {
     #[default]
     Ready,
@@ -24,7 +23,6 @@ pub enum ConceptStoreState {
 
 /// Errors surfaced by a [`ConceptStore`].
 #[derive(Debug, thiserror::Error)]
-/// Errors surfaced by a [`ConceptStore`].
 pub enum ConceptStoreError {
     #[error("concept not found: {0}")]
     NotFound(String),

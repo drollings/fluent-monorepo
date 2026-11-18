@@ -67,8 +67,6 @@ fn looks_like_identifier(token: &str) -> bool {
 /// Classify one query through the deterministic rule table. Pure:
 /// no I/O, no model.
 #[must_use]
-/// Classify one query through the deterministic rule table. Pure:
-/// no I/O, no model.
 pub fn classify(query: &str) -> QueryIntent {
     let trimmed = query.trim();
     if trimmed.is_empty() {
@@ -191,9 +189,6 @@ pub fn classify(query: &str) -> QueryIntent {
 /// `Graph` carry identifier scope. Every other intent treats
 /// identifier-shaped tokens as plain vocabulary.
 #[must_use]
-/// Whether symbol extraction runs for this intent: only `Symbol` and
-/// `Graph` carry identifier scope. Every other intent treats
-/// identifier-shaped tokens as plain vocabulary.
 pub fn extracts_symbols(intent: QueryIntent) -> bool {
     matches!(intent, QueryIntent::SingleIdentifier | QueryIntent::Graph)
 }
@@ -203,10 +198,6 @@ pub fn extracts_symbols(intent: QueryIntent) -> bool {
 /// `classify` and the calibration eligibility check, so the two can
 /// never drift: exact queries never reach a decision model.
 #[must_use]
-/// Exact-evidence check: empty queries, file paths, and single
-/// identifiers resolve deterministically. Single rule behind both
-/// `classify` and the calibration eligibility check, so the two can
-/// never drift: exact queries never reach a decision model.
 pub fn is_exact(query: &str) -> bool {
     if query.trim().is_empty() {
         return true;

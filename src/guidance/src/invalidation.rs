@@ -9,8 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Symbol interfaces that changed between stored rows and a fresh
 /// harvest: new, deleted, or rehashed symbol ids.
 #[must_use]
-/// Symbol interfaces that changed between stored rows and a fresh
-/// harvest: new, deleted, or rehashed symbol ids.
 pub fn interface_changes(stored: &[(String, String)], fresh: &[(String, String)]) -> Vec<String> {
     let old: BTreeMap<&str, &str> = stored
         .iter()
@@ -38,9 +36,6 @@ pub fn interface_changes(stored: &[(String, String)], fresh: &[(String, String)]
 /// rehashed symbol). Body-only edits keep every interface hash stable,
 /// so dependents are never invalidated by them.
 #[must_use]
-/// Whether one file's interface set moved (any new, deleted, or
-/// rehashed symbol). Body-only edits keep every interface hash stable,
-/// so dependents are never invalidated by them.
 pub fn file_sig_changed(stored: &[(String, String)], fresh: &[(String, String)]) -> bool {
     !interface_changes(stored, fresh).is_empty()
 }
@@ -66,13 +61,6 @@ fn stem_of(path: &str) -> &str {
 /// chars, where segmentation alone would miss. Over-approximate
 /// otherwise: extra work, never missed work.
 #[must_use]
-/// Importers that may observe a changed file: any edge whose specifier
-/// names the file's stem as a path segment, an exact resolved target,
-/// or a glob (globs defeat name analysis, so they widen). Segments, not
-/// substrings: stem `a` must not match specifier `unrelated`. A raw
-/// substring fallback covers odd specifier formats for stems over two
-/// chars, where segmentation alone would miss. Over-approximate
-/// otherwise: extra work, never missed work.
 pub fn dependents_of(
     edges: &[(String, String, Option<String>)],
     changed_paths: &[String],
@@ -104,8 +92,6 @@ pub fn dependents_of(
 /// Whether file text defines macros: a `macro_rules!` definition makes
 /// syntactic edges unreliable, so the whole package re-harvests.
 #[must_use]
-/// Whether file text defines macros: a `macro_rules!` definition makes
-/// syntactic edges unreliable, so the whole package re-harvests.
 pub fn defines_macros(text: &str) -> bool {
     text.contains("macro_rules!")
 }
@@ -113,8 +99,6 @@ pub fn defines_macros(text: &str) -> bool {
 /// Conservative expansion for macro-defining changes: every scanned file
 /// under the same root re-harvests, since macro uses hide from edges.
 #[must_use]
-/// Conservative expansion for macro-defining changes: every scanned file
-/// under the same root re-harvests, since macro uses hide from edges.
 pub fn macro_expansion(scanned_roots: &[(String, String)], changed: &[String]) -> Vec<String> {
     let mut out = BTreeSet::new();
     for changed_path in changed {

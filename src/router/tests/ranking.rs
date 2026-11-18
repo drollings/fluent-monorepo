@@ -26,7 +26,9 @@ fn parse_signal(predicate_id: i64) -> RoutingSignal {
         deps: vec!["root".into(), "iobj".into()],
         heads: vec![0, -1],
         interlingua: Some(spacy_rs::InterlinguaSignal {
-            predicate_id: Some(fluent_types::InterlinguaId::from_stored_u64(predicate_id as u64)),
+            predicate_id: Some(fluent_types::InterlinguaId::from_stored_u64(
+                predicate_id as u64,
+            )),
             subject_id: None,
             direct_object_id: Some(fluent_types::InterlinguaId::from_stored_u64(
                 predicate_id as u64 + 1,

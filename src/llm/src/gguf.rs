@@ -30,7 +30,6 @@ use crate::embeddings::{
 
 /// Compute device selection for local embedding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Compute device selection for local embedding.
 pub enum Device {
     Auto,
     #[default]
@@ -87,7 +86,6 @@ pub enum EmbedPurpose {
 
 /// One embedding context's sizing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One embedding context's sizing.
 pub struct GgufContextOptions {
     pub context_size: usize,
     pub threads: u32,
@@ -95,7 +93,6 @@ pub struct GgufContextOptions {
 
 /// Catalog `format` values with distinct text shaping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Catalog `format` values with distinct text shaping.
 pub enum GgufFormat {
     EmbeddingGemma,
     Qwen3,
@@ -103,7 +100,6 @@ pub enum GgufFormat {
 
 /// Validated GGUF catalog entry view.
 #[derive(Debug, Clone)]
-/// Validated GGUF catalog entry view.
 pub struct GgufModelSpec {
     pub reference: &'static str,
     pub model: &'static str,
@@ -181,7 +177,6 @@ pub trait GgufEmbeddingContext: Send {
 
 /// A loaded GGUF model: tokenizer access plus context creation.
 #[async_trait]
-/// A loaded GGUF model: tokenizer access plus context creation.
 pub trait GgufModel: Send + Sync {
     fn train_context_size(&self) -> Option<usize>;
     fn tokenize(&self, text: &str) -> Option<Vec<String>>;
@@ -195,7 +190,6 @@ pub trait GgufModel: Send + Sync {
 
 /// A llama.cpp runtime instance bound to one GPU mode.
 #[async_trait]
-/// A llama.cpp runtime instance bound to one GPU mode.
 pub trait GgufLlamaInstance: Send {
     fn uses_gpu(&self) -> bool;
     fn cpu_math_cores(&self) -> u32;
@@ -211,7 +205,6 @@ pub trait GgufLlamaInstance: Send {
 
 /// The importable runtime module (`getLlama` entry point).
 #[async_trait]
-/// The importable runtime module (`getLlama` entry point).
 pub trait GgufRuntimeModule: Send + Sync {
     async fn get_llama(
         &self,
@@ -221,7 +214,6 @@ pub trait GgufRuntimeModule: Send + Sync {
 
 /// Loads the runtime module (cached after first use).
 #[async_trait]
-/// Loads the runtime module (cached after first use).
 pub trait GgufRuntimeLoader: Send + Sync {
     async fn load_module(&self) -> Result<Box<dyn GgufRuntimeModule>, EmbeddingError>;
 }
@@ -327,7 +319,6 @@ pub struct GgufModelOptions {
 
 /// Batch result with per-input truncation indexes.
 #[derive(Debug)]
-/// Batch result with per-input truncation indexes.
 pub struct GgufEmbedResult {
     pub vectors: Vec<Vec<f32>>,
     pub truncated: Vec<usize>,

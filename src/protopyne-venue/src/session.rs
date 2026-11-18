@@ -607,9 +607,6 @@ impl TradingSession {
 /// `execute` (sync, non-blocking, no hidden I/O) and its failure cancels
 /// dependent units through the batch graph.
 #[must_use]
-/// Wrap a synchronous check as a supervised bar unit: `check` runs inside
-/// `execute` (sync, non-blocking, no hidden I/O) and its failure cancels
-/// dependent units through the batch graph.
 pub fn check_unit(
     inner: Arc<dyn Component>,
     name: &str,

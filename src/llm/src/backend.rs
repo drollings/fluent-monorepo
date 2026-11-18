@@ -66,7 +66,6 @@ impl BackendCaps {
 
 /// Load state of one model key on a backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Load state of one model key on a backend.
 pub enum Readiness {
     /// Resident and serving.
     Loaded,
@@ -134,7 +133,6 @@ pub enum WellKnownBackend {
 /// Refusal for backend identifiers outside the well-known set.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("unknown backend: {0}")]
-/// Refusal for backend identifiers outside the well-known set.
 pub struct WellKnownBackendParseError(pub String);
 
 impl WellKnownBackend {
@@ -180,7 +178,6 @@ pub trait BackendLoader: Send + Sync {
 
 /// A backend load failure.
 #[derive(Debug, thiserror::Error)]
-/// A backend load failure.
 pub enum BackendError {
     /// Transport or spawn failure before serving.
     #[error("backend load failed: {0}")]
@@ -533,7 +530,6 @@ impl PiiSpanDetector for RegexPiiDetector {
 /// What kind of parse residual a sentence (or span) carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// What kind of parse residual a sentence (or span) carries.
 pub enum ResidualKind {
     /// A sentence whose parse was uncertain below the confidence floor.
     Disambiguation,
@@ -576,7 +572,6 @@ impl Residual {
 
 /// The result of running an overlay over a residual.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// The result of running an overlay over a residual.
 pub struct OverlayContribution {
     pub kind: ResidualKind,
     /// The overlay's primary score, when the contribution is score-shaped.

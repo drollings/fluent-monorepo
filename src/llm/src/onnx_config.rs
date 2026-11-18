@@ -641,7 +641,6 @@ impl OnnxConfig {
 
 /// The subset of a model `config.json` the boot sanity-check reads.
 #[derive(Debug, Deserialize)]
-/// The subset of a model `config.json` the boot sanity-check reads.
 struct ModelConfigJson {
     #[serde(default)]
     architectures: Option<Vec<String>>,

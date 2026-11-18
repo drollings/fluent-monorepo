@@ -10,7 +10,6 @@ use crate::Cli;
 
 /// Shells with generated integration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Shells with generated integration.
 pub enum Shell {
     /// Bourne-again shell.
     Bash,
@@ -36,8 +35,6 @@ impl Shell {
 /// Readline-style integration script: binds `Ctrl-X v` to dictation fill
 /// without leaving the prompt. Fish uses its own bind syntax.
 #[must_use]
-/// Readline-style integration script: binds `Ctrl-X v` to dictation fill
-/// without leaving the prompt. Fish uses its own bind syntax.
 pub fn init_script(shell: Shell) -> String {
     match shell {
         Shell::Bash => r#"# orator shell integration: Ctrl-X v fills the line from dictation.

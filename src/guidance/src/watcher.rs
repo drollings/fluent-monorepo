@@ -36,7 +36,6 @@ use tokio::sync::{mpsc, oneshot};
 
 /// File event kind (maps notify event kinds + test script lines).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// File event kind (maps notify event kinds + test script lines).
 pub enum FileEventKind {
     /// Created / renamed-to.
     Created,
@@ -50,7 +49,6 @@ pub enum FileEventKind {
 
 /// Backend event delivered to the manager.
 #[derive(Debug, Clone)]
-/// Backend event delivered to the manager.
 pub enum WatcherEvent {
     /// A file event (path already joined/absolute).
     File {
@@ -91,7 +89,6 @@ pub trait WatchBackend: Send + Sync {
 
 /// Batch drain reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Batch drain reason.
 pub enum WatchReason {
     /// Watcher events.
     Watch,
@@ -103,9 +100,6 @@ pub enum WatchReason {
 /// watchers — Node's recursive watcher ignores exclusions and exhausts
 /// the inotify quota).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Platform watch strategy (zvec: Linux always uses per-directory
-/// watchers — Node's recursive watcher ignores exclusions and exhausts
-/// the inotify quota).
 pub enum WatchPlatform {
     /// Per-directory non-recursive watches.
     Linux,
@@ -137,7 +131,6 @@ impl WatchPlatform {
 
 /// A configured watch root (mirrors zvec `RootPath` selection flags).
 #[derive(Debug, Clone)]
-/// A configured watch root (mirrors zvec `RootPath` selection flags).
 pub struct WatchRoot {
     /// Absolute root path.
     pub path: PathBuf,
@@ -170,7 +163,6 @@ pub type ChangesSink = Arc<dyn Fn(ChangeSetSnapshot, WatchReason) -> BoxFuture<(
 
 /// Watch manager options.
 #[derive(Clone)]
-/// Watch manager options.
 pub struct WatchOptions {
     /// Workspace root.
     pub root: PathBuf,
@@ -202,7 +194,6 @@ pub struct WatchOptions {
 
 /// Per-watch error-recovery state (zvec `WatchRecoveryState`).
 #[derive(Debug, Clone, Default)]
-/// Per-watch error-recovery state (zvec `WatchRecoveryState`).
 struct RecoveryState {
     consecutive_errors: u32,
     reconciliation_pending: bool,
@@ -262,7 +253,6 @@ struct LoopState {
 
 /// Loop lifecycle (replaces separate started/closed flags).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Loop lifecycle (replaces separate started/closed flags).
 enum Lifecycle {
     /// Constructed, not yet started.
     #[default]
@@ -465,7 +455,6 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
 
 /// Watch manager handle (cheap clone; the loop task owns the state).
 #[derive(Clone)]
-/// Watch manager handle (cheap clone; the loop task owns the state).
 pub struct WatchManager {
     shared: Arc<Shared>,
 }
@@ -1170,8 +1159,6 @@ impl WatchBackend for NotifyBackend {
 /// replays events and errors on demand.
 #[cfg(test)]
 #[derive(Clone)]
-/// Scripted backend for tests (the `watchFactory` role): records watches,
-/// replays events and errors on demand.
 pub struct ManualBackend {
     inner: Arc<std::sync::Mutex<ManualInner>>,
 }

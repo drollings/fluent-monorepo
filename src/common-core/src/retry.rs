@@ -171,7 +171,6 @@ pub fn capped_exp_backoff_ms(base_ms: u64, failures: u32, max_shift: u32) -> u64
 
 /// Outcome of a [`PollWithBackoff`] run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Outcome of a [`PollWithBackoff`] run.
 pub enum PollResult {
     /// `tick()` returned `true` before exhausting the failure budget.
     Ready,

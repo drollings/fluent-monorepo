@@ -286,33 +286,6 @@ pub fn ensure_dir_or_panic(path: impl AsRef<Path>) {
 /// retrying. Unix-only (`#[cfg(unix)]`); no unsafe code.
 #[cfg(unix)]
 #[derive(thiserror::Error, Debug)]
-/// Bounded stale-Unix-socket reclaim: probe → unlink → bind retry.
-///
-/// A `UnixListener::bind` that fails with `AddrInUse` either means a
-/// live holder (a `connect` succeeds — stop with the original error)
-/// or a stale socket file (no listener — unlink and retry, bounded by
-/// `max_reclaims`). The only loop in the tree; both callers compose it
-/// instead of hand-rolling their own.
-///
-/// ```no_run
-/// use std::path::Path;
-/// use common_core::io::bind_unix_listener_with_stale_reclaim;
-///
-/// let listener = bind_unix_listener_with_stale_reclaim(
-/// Path::new("/run/orator/orator.sock"),
-/// 3,
-/// || Ok(()),
-/// )?;
-/// # Ok::<(), common_core::io::ReclaimBindError>(())
-/// ```
-///
-/// OS calls run through a small private operations seam
-/// (`ReclaimOps`/`reclaim_with_ops`) so the walk is unit-testable
-/// without a race; the public function uses the real std operations.
-/// Post-unlink validation stays with the caller (it owns the path
-/// policy and error wording): return `Err` from
-/// `validate_after_unlink` to refuse a reappeared path instead of
-/// retrying. Unix-only (`#[cfg(unix)]`); no unsafe code.
 pub enum ReclaimBindError {
     /// A live holder answers: the original bind error, unwrapped.
     #[error("{0}")]

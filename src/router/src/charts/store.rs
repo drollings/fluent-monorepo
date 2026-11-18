@@ -35,10 +35,6 @@ pub(crate) const CHART_SUBSUME_THRESHOLD: f32 = 0.9;
 /// Kept *out* of the persisted `ChartDef` content model: a chart's health is
 /// a runtime property of the store, not a declarative fact about the DAG.
 #[derive(Debug, Clone, Default)]
-/// Per-chart runtime health — the staleness/demotion policy.
-///
-/// Kept *out* of the persisted `ChartDef` content model: a chart's health is
-/// a runtime property of the store, not a declarative fact about the DAG.
 pub struct ChartHealth {
     /// Auto-extracted and not yet rubric-validated: excluded from
     /// selection until a rubric-validated run clears the flag.
@@ -53,7 +49,6 @@ pub struct ChartHealth {
 
 /// Outcome of an idempotent chart upsert.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-/// Outcome of an idempotent chart upsert.
 pub enum UpsertOutcome {
     /// No near neighbor — the chart was stored under its own name (as a
     /// draft; selectable only after a rubric-validated run).

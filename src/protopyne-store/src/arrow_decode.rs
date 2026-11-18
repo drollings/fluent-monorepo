@@ -28,8 +28,6 @@ use rust_decimal::Decimal;
 /// What went wrong resolving an Arrow column. Structured facts, not words:
 /// the readers format these into their own taxonomies.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// What went wrong resolving an Arrow column. Structured facts, not words:
-/// the readers format these into their own taxonomies.
 pub(crate) enum DecodeError {
     /// A column resolved by position or name has an unexpected Arrow type.
     UnexpectedType {
@@ -164,8 +162,6 @@ impl VolumeColumn<'_> {
 /// The row's string column: 32- or 64-bit offsets (polars emits
 /// `LargeUtf8`), resolved once.
 #[derive(Clone, Copy)]
-/// The row's string column: 32- or 64-bit offsets (polars emits
-/// `LargeUtf8`), resolved once.
 pub(crate) enum StringColumn<'a> {
     Utf8(&'a StringArray),
     Large(&'a LargeStringArray),
@@ -193,7 +189,6 @@ impl StringColumn<'_> {
 
 /// Find one column by any of its accepted spellings, case-insensitively.
 #[must_use]
-/// Find one column by any of its accepted spellings, case-insensitively.
 pub(crate) fn find(schema: &Schema, names: &[&str]) -> Option<usize> {
     schema.fields().iter().position(|field| {
         let lowered = field.name().to_lowercase();

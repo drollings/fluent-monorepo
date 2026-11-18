@@ -66,12 +66,6 @@ fn has_render_node() -> bool {
 /// the CUDA execution provider without NVIDIA hardware can never
 /// succeed, and failing actionably beats a doomed probe.
 #[must_use]
-/// Whether an NVIDIA device node is visible to this process.
-///
-/// `device_present` also fires on AMD render nodes (ROCm); several
-/// backends only speak CUDA, so they need the narrower gate: requesting
-/// the CUDA execution provider without NVIDIA hardware can never
-/// succeed, and failing actionably beats a doomed probe.
 pub fn nvidia_present() -> bool {
     #[cfg(target_os = "macos")]
     {

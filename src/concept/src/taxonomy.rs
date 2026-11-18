@@ -1,5 +1,5 @@
 //! YaGO TTL → JSON taxonomy pipeline — Rust owner of the conversion the
-//! deprecated `src/ontology/tools/*.py` shims used to perform.
+//! deprecated Python shims used to perform.
 //!
 //! Converts a pruned YaGO taxonomy TTL into a JSON mapping of each `yago:`
 //! class to its direct parents + transitive ancestors (multiple inheritance
@@ -40,7 +40,6 @@ use crate::normalize::{normalize_extracted_name, normalize_yago_name};
 
 /// One taxonomy entry: direct parents + all transitive ancestors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One taxonomy entry: direct parents + all transitive ancestors.
 pub struct TaxonomyEntry {
     /// Direct `rdfs:subClassOf` parents (normalized, sorted).
     pub parents: Vec<String>,
@@ -50,7 +49,6 @@ pub struct TaxonomyEntry {
 
 /// Expand a CURIE to a full IRI; `<...>` IRIs are returned stripped.
 #[must_use]
-/// Expand a CURIE to a full IRI; `<...>` IRIs are returned stripped.
 pub fn expand_curie(curie: &str, prefixes: &BTreeMap<String, String>) -> String {
     let curie = curie.strip_suffix([',', '.', ';']).unwrap_or(curie);
     let curie = curie.trim();
@@ -68,7 +66,6 @@ pub fn expand_curie(curie: &str, prefixes: &BTreeMap<String, String>) -> String 
 
 /// Compress a full IRI back to a CURIE via longest-prefix match.
 #[must_use]
-/// Compress a full IRI back to a CURIE via longest-prefix match.
 pub fn curie_for_iri(iri: &str, prefixes: &BTreeMap<String, String>) -> String {
     let mut best: Option<(&String, &String)> = None;
     for (pfx, ns) in prefixes {
@@ -234,7 +231,6 @@ pub fn build_json(
 
 /// Convert TTL text to the taxonomy map in one call.
 #[must_use]
-/// Convert TTL text to the taxonomy map in one call.
 pub fn taxonomy_from_ttl(
     ttl: &str,
     yago_only: bool,
@@ -256,7 +252,6 @@ pub fn to_json_string(map: &BTreeMap<String, TaxonomyEntry>) -> String {
 
 /// Flat mapping: class → ancestors list.
 #[must_use]
-/// Flat mapping: class → ancestors list.
 pub fn to_flat(map: &BTreeMap<String, TaxonomyEntry>) -> BTreeMap<String, Vec<String>> {
     map.iter()
         .map(|(k, v)| (k.clone(), v.ancestors.clone()))
@@ -398,7 +393,6 @@ fn first_subject_iri(line: &str, prefixes: &BTreeMap<String, String>) -> Option<
 
 /// Prune TTL text to the top `num_tiers` tiers, preserving prefix headers.
 #[must_use]
-/// Prune TTL text to the top `num_tiers` tiers, preserving prefix headers.
 pub fn prune_ttl(ttl: &str, num_tiers: usize) -> String {
     let (prefixes, edges) = collect_edges(ttl);
     let kept = compute_kept_iris(&edges, num_tiers);

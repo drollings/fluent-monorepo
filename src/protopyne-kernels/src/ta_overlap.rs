@@ -664,8 +664,6 @@ pub struct PsarIndicator {
 /// One Wilder trail frame: the stop level, its trend sign, the extreme
 /// point, and the current acceleration factor.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// One Wilder trail frame: the stop level, its trend sign, the extreme
-/// point, and the current acceleration factor.
 struct PsarFrame {
     sar: f64,
     trend: f64,

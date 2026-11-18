@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 /// Stale-cited files under the workspace. Missing files stay listed:
 /// convergence fails loudly instead of silently dropping the citation.
 #[must_use]
-/// Stale-cited files under the workspace. Missing files stay listed:
-/// convergence fails loudly instead of silently dropping the citation.
 pub fn stale_citation_files(
     answer: &guidance_core::read::engine::ReadAnswer,
     workspace: &Path,

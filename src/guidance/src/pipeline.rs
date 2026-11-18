@@ -23,9 +23,6 @@ use std::path::{Path, PathBuf};
 /// navigation stays available while the toolchain works. Marked
 /// pending by the caller until the full receipt lands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One file's early syntactic snapshot: parsed without any build, so
-/// navigation stays available while the toolchain works. Marked
-/// pending by the caller until the full receipt lands.
 pub struct LiteItem {
     /// Source path, as passed in.
     pub path: PathBuf,
@@ -39,9 +36,6 @@ pub struct LiteItem {
 /// Order matches the input; failures count as zero-member rows rather
 /// than aborting the batch.
 #[must_use]
-/// Early index over dirty files: parse plus hash, never compile.
-/// Order matches the input; failures count as zero-member rows rather
-/// than aborting the batch.
 pub fn lite_index(paths: &[PathBuf], parser: &mut crate::ast_parser::AstParser) -> Vec<LiteItem> {
     paths
         .iter()
@@ -66,12 +60,6 @@ pub fn lite_index(paths: &[PathBuf], parser: &mut crate::ast_parser::AstParser) 
 /// value — smaller rework for the run — never producer confidence
 /// about any single patch.
 #[must_use]
-/// Order files for waves: dependency depth first (leaves before the
-/// dependents that observe them), then ascending blast radius (fewer
-/// transitive dependents first, so a failure bisects against the
-/// smallest scope), then path for determinism. Both axes are task
-/// value — smaller rework for the run — never producer confidence
-/// about any single patch.
 pub fn order_for_waves(
     files: &[PathBuf],
     dependencies_of: &dyn Fn(&Path) -> Vec<PathBuf>,
@@ -137,10 +125,6 @@ pub fn order_for_waves(
 /// moved under the verifier; an unowned remainder means the loop must
 /// say why and stop instead of declaring done.
 #[must_use]
-/// Whether the final wave counts as a witness: nothing was kept and
-/// nothing remains that lacks an owner. A kept edit means the tree
-/// moved under the verifier; an unowned remainder means the loop must
-/// say why and stop instead of declaring done.
 pub fn witness_clean(kept_in_final_wave: bool, unowned_remaining: usize, stopped: bool) -> bool {
     !kept_in_final_wave && unowned_remaining == 0 && !stopped
 }

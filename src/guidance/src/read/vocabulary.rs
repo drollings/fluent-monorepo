@@ -25,8 +25,6 @@ pub const LIGHT_VERBS: &[&str] = &[
 /// Significant query terms: the shared funnel rule (lowercase
 /// word tokens of length 3+, minus scaffolding stopwords).
 #[must_use]
-/// Significant query terms: the shared funnel rule (lowercase
-/// word tokens of length 3+, minus scaffolding stopwords).
 pub fn query_terms(query: &str) -> Vec<String> {
     crate::query::funnel::significant_terms(query)
 }
@@ -35,9 +33,6 @@ pub fn query_terms(query: &str) -> Vec<String> {
 /// nothing else remains (then the verbs stay — dropping everything
 /// would answer nothing).
 #[must_use]
-/// Content terms: significant terms minus light verbs, unless
-/// nothing else remains (then the verbs stay — dropping everything
-/// would answer nothing).
 pub fn content_terms(query: &str) -> Vec<String> {
     let terms = query_terms(query);
     let kept: Vec<String> = terms
@@ -55,8 +50,6 @@ pub fn content_terms(query: &str) -> Vec<String> {
 /// Alias expansion over content terms in first-seen order (per-token
 /// union, never cartesian phrase products).
 #[must_use]
-/// Alias expansion over content terms in first-seen order (per-token
-/// union, never cartesian phrase products).
 pub fn expand_terms(query: &str, aliases: &SemanticAliases) -> Vec<String> {
     let mut expanded = Vec::new();
     for token in content_terms(query) {
@@ -74,10 +67,6 @@ pub fn expand_terms(query: &str, aliases: &SemanticAliases) -> Vec<String> {
 /// Scaffolding never reaches this set: it runs over significant
 /// terms, not raw query text.
 #[must_use]
-/// Identifier-shaped terms for symbol-scoped intents only
-/// (`Symbol`/`Graph` — see `read::intent::extracts_symbols`).
-/// Scaffolding never reaches this set: it runs over significant
-/// terms, not raw query text.
 pub fn symbol_terms(query: &str) -> Vec<String> {
     crate::query::tokens::symbol_names(&query_terms(query).join(" "))
 }
@@ -102,9 +91,6 @@ pub const SUBJECT_STOPLIST: &[&str] = &[
 /// a free identifier-shaped term. Crate anchors filter; free terms
 /// stay shadow until measured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Where one subject anchor came from: an exact known crate name or
-/// a free identifier-shaped term. Crate anchors filter; free terms
-/// stay shadow until measured.
 pub enum AnchorSource {
     Crate,
     Identifier,
@@ -112,7 +98,6 @@ pub enum AnchorSource {
 
 /// The query subject: canonical terms plus their provenance.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// The query subject: canonical terms plus their provenance.
 pub struct SubjectAnchor {
     /// Canonical package for a crate anchor; content terms otherwise.
     pub terms: Vec<String>,
@@ -125,11 +110,6 @@ pub struct SubjectAnchor {
 /// else none. First exact hit in query order wins; hyphenated names
 /// stay whole.
 #[must_use]
-/// Resolve the query subject: an exact known crate/component/package
-/// name wins (canonical package plus the matched name, `Crate`), else
-/// the content terms minus the scaffolding stoplist (`Identifier`),
-/// else none. First exact hit in query order wins; hyphenated names
-/// stay whole.
 pub fn subject_anchor(query: &str, known_crates: &[String]) -> Option<SubjectAnchor> {
     for raw in query.split_whitespace() {
         let chunk = raw
@@ -198,10 +178,6 @@ fn match_crate(name: &str, known_crates: &[String]) -> Option<String> {
 /// crate is selective by construction. The caller fails open on
 /// `false`; counting rides `--trace`.
 #[must_use]
-/// Whether a free-term anchor discriminates: it must mention fewer
-/// than half of the card bodies. Crate anchors skip this — an exact
-/// crate is selective by construction. The caller fails open on
-/// `false`; counting rides `--trace`.
 pub fn anchor_selective(anchor: &SubjectAnchor, card_bodies: &[&str]) -> bool {
     if anchor.source == AnchorSource::Crate || card_bodies.is_empty() {
         return true;

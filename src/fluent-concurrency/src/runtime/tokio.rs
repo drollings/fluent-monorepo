@@ -9,7 +9,6 @@ use tokio::task::JoinHandle;
 
 /// Production runtime that delegates to `tokio::spawn`, `tokio::time::sleep`, and `Instant::now()`.
 #[derive(Clone)]
-/// Production runtime that delegates to `tokio::spawn`, `tokio::time::sleep`, and `Instant::now()`.
 pub struct TokioRuntime;
 
 impl TokioRuntime {

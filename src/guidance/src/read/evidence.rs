@@ -8,10 +8,6 @@ use crate::read::engine::Finding;
 /// duplicates drop. Location is `(workspace path, start, end)`; ids
 /// dedupe exactly to keep distinct findings at one location.
 #[derive(Debug, Default, Clone)]
-/// Deduplicated findings before budget capping. Rank order is
-/// first-seen: the first producer to surface a location wins, later
-/// duplicates drop. Location is `(workspace path, start, end)`; ids
-/// dedupe exactly to keep distinct findings at one location.
 pub struct EvidenceSet {
     findings: Vec<Finding>,
 }

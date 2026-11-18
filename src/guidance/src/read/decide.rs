@@ -28,7 +28,6 @@ pub trait CandidateLabel: Copy + Clone + PartialEq + Eq + std::fmt::Debug {
 
 /// One judged candidate (generic verdict).
 #[derive(Debug, Clone, PartialEq)]
-/// One judged candidate (generic verdict).
 pub struct CandidateVerdict<L> {
     /// Candidate id.
     pub id: String,
@@ -40,7 +39,6 @@ pub struct CandidateVerdict<L> {
 
 /// Judge verdict for one candidate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Judge verdict for one candidate.
 pub enum DocLabel {
     /// Directly answers the query from its excerpt.
     Strong,
@@ -192,8 +190,6 @@ impl<'a, L: CandidateLabel> CandidateJudge<'a, L> {
 /// Finding relevance verdict: relevant, irrelevant, or insufficient.
 /// `Insufficient` renders as a gap, never as evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Finding relevance verdict: relevant, irrelevant, or insufficient.
-/// `Insufficient` renders as a gap, never as evidence.
 pub enum FindingLabel {
     Relevant,
     Irrelevant,
@@ -271,10 +267,6 @@ pub type FindingJudge<'a> = CandidateJudge<'a, FindingLabel>;
 /// gap, never as evidence; `Contradicted` drops only when the
 /// support point calibrates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Claim-entailment verdict: the cited excerpt states the claim,
-/// contradicts it, or cannot settle it. `Insufficient` renders as a
-/// gap, never as evidence; `Contradicted` drops only when the
-/// support point calibrates.
 pub enum SupportLabel {
     Supported,
     Contradicted,

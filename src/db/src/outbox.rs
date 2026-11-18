@@ -49,7 +49,6 @@ pub fn is_claim_retryable(error: &DbError) -> bool {
 
 /// One claimed outbox row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One claimed outbox row.
 pub struct OutboxEntry {
     /// Row id (FIFO order; pass back to `ack`).
     pub id: i64,

@@ -12,8 +12,6 @@ use crate::fidelity::{run_clippy_matrix, MatrixRunner};
 /// Process exit codes for the maintenance surface: done, work
 /// remaining, stuck with escalations, tool error, or breaker halt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Process exit codes for the maintenance surface: done, work
-/// remaining, stuck with escalations, tool error, or breaker halt.
 pub enum ExitCode {
     /// Fixpoint reached; nothing queued, nothing blocked.
     Done,
@@ -63,7 +61,6 @@ pub mod budgets {
 
 /// Full-build verdict for one package (past check-level).
 #[derive(Debug, Clone)]
-/// Full-build verdict for one package (past check-level).
 pub struct BuildVerdict {
     /// Package directory.
     pub package: String,
@@ -99,7 +96,6 @@ pub struct SealCtx {
 
 /// Seal outcome for the run report.
 #[derive(Debug, Clone)]
-/// Seal outcome for the run report.
 pub struct SealReport {
     /// Packages sealed, sorted.
     pub packages: Vec<String>,
@@ -122,8 +118,6 @@ pub struct SealReport {
 /// Discover cargo packages under a root: directories holding
 /// `Cargo.toml`, sorted. Pure I/O walk, no build graph involved.
 #[must_use]
-/// Discover cargo packages under a root: directories holding
-/// `Cargo.toml`, sorted. Pure I/O walk, no build graph involved.
 pub fn discover_packages(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     crate::walk::walk_files(root, &["toml"], |path| {

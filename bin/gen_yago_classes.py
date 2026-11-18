@@ -2,7 +2,7 @@
 """ROADMAP_20260826_INTERLINGUA_V2 M11.2 — YaGO taxonomy TSV → yago_classes.json.
 
 Parses a YaGO taxonomy export and emits the class registry consumed by
-`YaGoLoader` (ontology/src/yago_loader.rs). Input format (TSV, one line per
+`YaGoLoader` (src/concept/src/loader.rs). Input format (TSV, one line per
 class):
 
     <class-iri>\t<label>\t[<superclass-iri>]

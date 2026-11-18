@@ -27,13 +27,11 @@ use crate::NodeId;
 
 /// The 64-bit cross-system identifier: 16-bit namespace, 48-bit local id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-/// The 64-bit cross-system identifier: 16-bit namespace, 48-bit local id.
 pub struct InterlinguaId(u64);
 
 /// The 16-bit namespace of an [`InterlinguaId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u16)]
-/// The 16-bit namespace of an [`InterlinguaId`].
 pub enum InterlinguaNamespace {
     Reserved = 0x0000,
     YagoClass = 0x0100,
@@ -148,21 +146,18 @@ pub fn lemma_id_for_str(s: &str) -> InterlinguaId {
 
 /// `YagoClass` id for a class IRI (BLAKE3, 48-bit truncation).
 #[must_use]
-/// `YagoClass` id for a class IRI (BLAKE3, 48-bit truncation).
 pub fn yago_class_id_for_iri(iri: &str) -> InterlinguaId {
     id_for_namespace(hash_iri(iri), InterlinguaNamespace::YagoClass)
 }
 
 /// `YagoEntity` id for an entity IRI (BLAKE3, 48-bit truncation).
 #[must_use]
-/// `YagoEntity` id for an entity IRI (BLAKE3, 48-bit truncation).
 pub fn yago_entity_id_for_iri(iri: &str) -> InterlinguaId {
     id_for_namespace(hash_iri(iri), InterlinguaNamespace::YagoEntity)
 }
 
 /// `RdfProperty` id for a property IRI (BLAKE3, 48-bit truncation).
 #[must_use]
-/// `RdfProperty` id for a property IRI (BLAKE3, 48-bit truncation).
 pub fn property_id_for_iri(iri: &str) -> InterlinguaId {
     id_for_namespace(hash_iri(iri), InterlinguaNamespace::RdfProperty)
 }

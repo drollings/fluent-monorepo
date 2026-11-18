@@ -109,7 +109,6 @@ pub struct PostProcessConfig {
 
 /// Extraction scope for the learning loop (see `PostProcessConfig`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-/// Extraction scope for the learning loop (see `PostProcessConfig`).
 pub enum WorkflowExtractionMode {
     /// Only frontier-assisted dispatches (an index > 0 in the primary +
     /// fallback chain) are distilled into draft charts.

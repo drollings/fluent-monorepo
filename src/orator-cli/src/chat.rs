@@ -6,7 +6,6 @@ use crate::tui::MicMode;
 
 /// Voice output mode for one assistant reply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Voice output mode for one assistant reply.
 pub enum ChatVoiceMode {
     /// No synthesis: text only.
     Off,
@@ -32,7 +31,6 @@ pub fn parse_voice_mode(raw: &str) -> Result<ChatVoiceMode, String> {
 
 /// Text output mode for one assistant reply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Text output mode for one assistant reply.
 pub enum ChatTextMode {
     /// Concise summary plus the full answer printed once.
     Short,
@@ -56,8 +54,6 @@ pub fn parse_text_mode(raw: &str) -> Result<ChatTextMode, String> {
 /// One parsed chat slash. Unknown slashes are not commands: like the
 /// TUI rule, they are spoken text, never a dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One parsed chat slash. Unknown slashes are not commands: like the
-/// TUI rule, they are spoken text, never a dispatch.
 pub enum ChatSlash {
     /// Release and exit.
     Quit,
@@ -94,7 +90,6 @@ pub enum ChatSlash {
 
 /// One parsed chat line: a slash command or spoken text.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One parsed chat line: a slash command or spoken text.
 pub enum ChatLine {
     /// Slash command.
     Slash(ChatSlash),
@@ -228,9 +223,6 @@ fn parse_set_command(rest: &str, input: &str) -> ChatLine {
 /// concise form for short, the complete reply for full (voiced
 /// chunk-streamed by the caller).
 #[must_use]
-/// Spoken form of `reply` under `mode`: `None` for off, the shared
-/// concise form for short, the complete reply for full (voiced
-/// chunk-streamed by the caller).
 pub fn spoken_for_voice(reply: &str, mode: ChatVoiceMode) -> Option<String> {
     match mode {
         ChatVoiceMode::Off => None,
@@ -243,9 +235,6 @@ pub fn spoken_for_voice(reply: &str, mode: ChatVoiceMode) -> Option<String> {
 /// verbatim (previous behavior); short prints the concise summary
 /// plus the full answer once (a single line when they agree).
 #[must_use]
-/// Printed lines for `reply` under `mode`: full prints the reply
-/// verbatim (previous behavior); short prints the concise summary
-/// plus the full answer once (a single line when they agree).
 pub fn display_for_text(reply: &str, mode: ChatTextMode) -> Vec<String> {
     match mode {
         ChatTextMode::Full => vec![reply.to_string()],
@@ -266,25 +255,18 @@ pub fn display_for_text(reply: &str, mode: ChatTextMode) -> Vec<String> {
 /// the bad value when it falls back, so config garbage is loud at the
 /// session start instead of refusing the session or voicing silently.
 #[must_use]
-/// Chat session starts from the `chat.*` leaves: valid spellings map
-/// to their modes, anything else falls back to the previous hardcoded
-/// starts (short voice, full text, auto mic, barge on). The loop names
-/// the bad value when it falls back, so config garbage is loud at the
-/// session start instead of refusing the session or voicing silently.
 pub fn initial_voice_mode(config: &orator::OratorConfig) -> ChatVoiceMode {
     parse_voice_mode(config.chat.voice.trim()).unwrap_or_default()
 }
 
 /// See [`initial_voice_mode`]: text starts, same fallback rule.
 #[must_use]
-/// See [`initial_voice_mode`]: text starts, same fallback rule.
 pub fn initial_text_mode(config: &orator::OratorConfig) -> ChatTextMode {
     parse_text_mode(config.chat.text.trim()).unwrap_or_default()
 }
 
 /// See [`initial_voice_mode`]: mic starts, same fallback rule.
 #[must_use]
-/// See [`initial_voice_mode`]: mic starts, same fallback rule.
 pub fn initial_mic_mode(config: &orator::OratorConfig) -> MicMode {
     match config.chat.mic.trim() {
         "auto" => MicMode::Auto,
@@ -295,7 +277,6 @@ pub fn initial_mic_mode(config: &orator::OratorConfig) -> MicMode {
 
 /// See [`initial_voice_mode`]: barge-in starts straight off the leaf.
 #[must_use]
-/// See [`initial_voice_mode`]: barge-in starts straight off the leaf.
 pub fn initial_barge_on(config: &orator::OratorConfig) -> bool {
     config.chat.barge
 }
@@ -303,8 +284,6 @@ pub fn initial_barge_on(config: &orator::OratorConfig) -> bool {
 /// See [`initial_voice_mode`]: push-to-talk starts, same fallback rule.
 /// Single source lives in `ptt`; this re-exports it for the loop.
 #[must_use]
-/// See [`initial_voice_mode`]: push-to-talk starts, same fallback rule.
-/// Single source lives in `ptt`; this re-exports it for the loop.
 pub fn initial_ptt_mode(config: &orator::OratorConfig) -> crate::ptt::PttMode {
     crate::ptt::initial_ptt_mode(config)
 }
@@ -312,8 +291,6 @@ pub fn initial_ptt_mode(config: &orator::OratorConfig) -> crate::ptt::PttMode {
 /// PTT mode onto the legacy mic vocabulary: off listens always, on
 /// waits for the latch. One mapping, used everywhere both meet.
 #[must_use]
-/// PTT mode onto the legacy mic vocabulary: off listens always, on
-/// waits for the latch. One mapping, used everywhere both meet.
 pub fn mic_for_ptt(mode: crate::ptt::PttMode) -> MicMode {
     match mode {
         crate::ptt::PttMode::Off => MicMode::Auto,
@@ -323,7 +300,6 @@ pub fn mic_for_ptt(mode: crate::ptt::PttMode) -> MicMode {
 
 /// Legacy mic mode onto PTT states: the `/mic` alias tracks `ptt`.
 #[must_use]
-/// Legacy mic mode onto PTT states: the `/mic` alias tracks `ptt`.
 pub fn ptt_for_mic(mode: MicMode) -> crate::ptt::PttMode {
     match mode {
         MicMode::Auto => crate::ptt::PttMode::Off,
@@ -334,8 +310,6 @@ pub fn ptt_for_mic(mode: MicMode) -> crate::ptt::PttMode {
 /// See [`initial_voice_mode`]: narration starts, same fallback rule.
 /// Single source lives in `narration`; this re-exports it for the loop.
 #[must_use]
-/// See [`initial_voice_mode`]: narration starts, same fallback rule.
-/// Single source lives in `narration`; this re-exports it for the loop.
 pub fn initial_narration_mode(config: &orator::OratorConfig) -> crate::narration::NarrationLevel {
     crate::narration::initial_narration_mode(config)
 }
@@ -344,9 +318,6 @@ pub fn initial_narration_mode(config: &orator::OratorConfig) -> crate::narration
 /// over the daemon-first endpoint (head wins, `llm.model` leaf as
 /// fallback — defaults seed them equal).
 #[must_use]
-/// Model+backend label logged for one LLM turn: the chat role head
-/// over the daemon-first endpoint (head wins, `llm.model` leaf as
-/// fallback — defaults seed them equal).
 pub fn llm_serving(config: &orator::OratorConfig) -> (String, String) {
     (
         crate::ask::resolve_ask_model(config),
@@ -360,11 +331,6 @@ pub fn llm_serving(config: &orator::OratorConfig) -> (String, String) {
 /// declared backend. This names the LOCAL leg only — daemon-served
 /// turns log [`daemon_asr_serving`] instead (see `transcribe_leg`).
 #[must_use]
-/// Model+backend label logged for one ASR turn: the locally served
-/// weights when present (whisper or moonshine through the unified
-/// role walk), else the first listed asr role entry with its
-/// declared backend. This names the LOCAL leg only — daemon-served
-/// turns log [`daemon_asr_serving`] instead (see `transcribe_leg`).
 pub fn asr_serving(config: &orator::OratorConfig) -> (String, String) {
     if let Ok(found) = crate::fallback::resolve_local_asr(config) {
         return (found.tag, found.backend.name().to_string());
@@ -385,10 +351,6 @@ pub fn asr_serving(config: &orator::OratorConfig) -> (String, String) {
 /// assures this tag before serving it, so the loop names the served
 /// model — never the local leg's fallback pick.
 #[must_use]
-/// Model+backend label logged for a daemon-served ASR turn: the
-/// configured voice model over the audio-server protocol. The daemon
-/// assures this tag before serving it, so the loop names the served
-/// model — never the local leg's fallback pick.
 pub fn daemon_asr_serving(config: &orator::OratorConfig) -> (String, String) {
     (config.s2s.model.clone(), "audio-server".to_string())
 }
@@ -396,8 +358,6 @@ pub fn daemon_asr_serving(config: &orator::OratorConfig) -> (String, String) {
 /// Model+backend label logged for one TTS turn: the first listed tts
 /// role entry with its declared backend (kokoro default).
 #[must_use]
-/// Model+backend label logged for one TTS turn: the first listed tts
-/// role entry with its declared backend (kokoro default).
 pub fn tts_serving(config: &orator::OratorConfig) -> (String, String) {
     let model = orator::resolve_role_model(&config.roles, "tts")
         .unwrap_or_else(|| config.tts.voice.clone());
@@ -415,10 +375,6 @@ pub fn tts_serving(config: &orator::OratorConfig) -> (String, String) {
 /// instead of a bare mystery — the operator sees capture failure,
 /// not a model failure.
 #[must_use]
-/// Signal stats for an empty decode: peak and RMS over the exact
-/// buffer the STT backend heard. A silent mic reports zeros here
-/// instead of a bare mystery — the operator sees capture failure,
-/// not a model failure.
 pub fn decode_signal_stats(samples: &[f32]) -> (f32, f32) {
     let mut peak = 0.0f32;
     let mut sum = 0.0f64;
@@ -471,9 +427,6 @@ pub const ECHO_TAIL_HOLD_MS: u64 = 1000;
 /// deadline in the future mutes endpointing (the VAD still runs, so
 /// hot speech is seen but not committed until the room is quiet).
 #[must_use]
-/// Whether capture stays suppressed for the playout tail: a hold
-/// deadline in the future mutes endpointing (the VAD still runs, so
-/// hot speech is seen but not committed until the room is quiet).
 pub fn tail_hold_active(quiet_until: Option<std::time::Instant>, now: std::time::Instant) -> bool {
     quiet_until.is_some_and(|until| now < until)
 }
@@ -485,12 +438,6 @@ pub fn tail_hold_active(quiet_until: Option<std::time::Instant>, now: std::time:
 /// prevent overlap (overlap is structurally impossible: one queue,
 /// one player).
 #[must_use]
-/// Whether a queued reply voices now: the player is idle and the
-/// room is quiet (no hot mic, nothing buffered). Turns may run and
-/// input may wait — the FIFO keeps every reply ordered behind the
-/// live one, so holding for them would only stall the queue, never
-/// prevent overlap (overlap is structurally impossible: one queue,
-/// one player).
 pub fn should_voice_now(state: VoiceNow) -> bool {
     !state.mic_speaking && !state.utterance_buffered && !state.playout_live
 }
@@ -525,13 +472,6 @@ pub struct BargeCutInput {
 /// trusts the VAD span: a brief blip is present but not sustained
 /// and holds; only continuous speech cuts.
 #[must_use]
-/// Voice-barge cut: speech present (confidence, VAD endpoint) AND
-/// sustained past the temporal bound (task-value, the same
-/// `turn.barge_in_ms` leaf the turn driver reads — the loop's
-/// endpoint model has no hops, so only the bound is shared, not the
-/// machine). Echo control lives in the OS audio path, so the gate
-/// trusts the VAD span: a brief blip is present but not sustained
-/// and holds; only continuous speech cuts.
 pub fn should_cut_for_barge(input: &BargeCutInput) -> bool {
     input.turn_live && input.barge_on && input.gate_quiet && input.sustained_past_bound
 }
@@ -542,11 +482,6 @@ pub fn should_cut_for_barge(input: &BargeCutInput) -> bool {
 /// (never a leading or doubled space); nothing is reworded, so
 /// the cut turn's words survive exactly as transcribed.
 #[must_use]
-/// Merge the cut turn's preserved words with the interrupting
-/// utterance's fresh transcription: verbatim prepend, one space
-/// between. Either side empty leaves the other standing alone
-/// (never a leading or doubled space); nothing is reworded, so
-/// the cut turn's words survive exactly as transcribed.
 pub fn merge_preserved_question(preserved: Option<&str>, transcribed: &str) -> String {
     let Some(kept) = preserved.map(str::trim).filter(|kept| !kept.is_empty()) else {
         return transcribed.to_string();
@@ -617,9 +552,6 @@ impl BargeSustain {
 /// was assured, else the daemon-first cascade. Pure so the dispatch
 /// decision pins without hardware.
 #[must_use]
-/// One turn's inference path: the native interleaved session when it
-/// was assured, else the daemon-first cascade. Pure so the dispatch
-/// decision pins without hardware.
 pub fn resolve_turn_path(prefer_s2s: bool, s2s_assured: bool) -> TurnPath {
     if prefer_s2s && s2s_assured {
         TurnPath::Native
@@ -630,7 +562,6 @@ pub fn resolve_turn_path(prefer_s2s: bool, s2s_assured: bool) -> TurnPath {
 
 /// One turn's inference path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// One turn's inference path.
 pub enum TurnPath {
     /// Native interleaved speech-to-speech session.
     Native,
@@ -645,12 +576,6 @@ pub enum TurnPath {
 /// through the signal watch and Ctrl+D ends input, so neither
 /// reaches this path.
 #[must_use]
-/// Map a lone control-character line to its TUI action through the
-/// single chord table (`tui::map_key` — never a second table).
-/// Returns `None` for ordinary lines. Line discipline means a chord
-/// arrives as its control character followed by Enter; Ctrl+C aborts
-/// through the signal watch and Ctrl+D ends input, so neither
-/// reaches this path.
 pub fn parse_control_line(line: &str) -> Option<crate::tui::TuiAction> {
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let mut chars = line.chars();
@@ -672,7 +597,6 @@ pub fn parse_control_line(line: &str) -> Option<crate::tui::TuiAction> {
 
 /// Why a file turn sheds before any inference runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Why a file turn sheds before any inference runs.
 pub enum FileGate {
     /// PTT latch off: names the shed sample count.
     PttOff {

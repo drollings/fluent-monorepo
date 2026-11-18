@@ -79,7 +79,6 @@ pub enum GraphEntity {
 
 /// A directed edge in the knowledge graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A directed edge in the knowledge graph.
 pub struct GraphEdge {
     /// Source entity name.
     pub from: String,
@@ -91,7 +90,6 @@ pub struct GraphEdge {
 
 /// Relation type for knowledge graph edges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Relation type for knowledge graph edges.
 pub enum Relation {
     /// Parent contains child (module → function).
     Contains,
@@ -109,7 +107,6 @@ pub enum Relation {
 
 /// The full knowledge graph.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-/// The full knowledge graph.
 pub struct KnowledgeGraph {
     /// Named entities keyed by unique name.
     pub entities: BTreeMap<String, GraphEntity>,
@@ -121,7 +118,6 @@ pub struct KnowledgeGraph {
 
 /// Configuration for the hindsight plugin.
 #[derive(Debug, Clone)]
-/// Configuration for the hindsight plugin.
 pub struct HindsightConfig {
     /// Maximum graph traversal depth.
     pub max_depth: usize,

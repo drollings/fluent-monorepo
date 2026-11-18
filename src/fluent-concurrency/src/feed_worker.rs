@@ -80,7 +80,6 @@ impl Default for FeedConfig {
 
 /// Errors produced by a [`CreditedFeedWorker`].
 #[derive(Debug, thiserror::Error)]
-/// Errors produced by a [`CreditedFeedWorker`].
 pub enum FeedError {
     /// The feed is closed (drained) and no longer accepts items.
     #[error("feed closed")]

@@ -67,7 +67,6 @@ const INDEX_ROLES: &[&str] = &[
 
 /// The normalized `[0,1]` salience components for one candidate node.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// The normalized `[0,1]` salience components for one candidate node.
 pub struct SalienceSignal {
     pub frame_frequency: f64,
     pub interlingua_centrality: f64,
@@ -93,12 +92,6 @@ impl Default for SalienceSignal {
 /// here is policy — the [`WEIGHTS`] vector and the ledger-named signal shape
 /// — not movable math.
 #[derive(Debug, Clone, Copy)]
-/// The weighted salience scorer — a pure function of a [`SalienceSignal`].
-///
-/// M7.2 disposition: stays router-local. The accumulation already delegates
-/// to `common_core::score::weighted_dot` (the shared kernel); what remains
-/// here is policy — the [`WEIGHTS`] vector and the ledger-named signal shape
-/// — not movable math.
 pub struct SalienceScorer {
     weights: [f64; 4],
 }
@@ -408,7 +401,6 @@ fn add_undirected(graph: &mut NodeGraph, a: i64, b: i64) {
 
 /// One candidate after the ranking pass.
 #[derive(Debug, Clone, PartialEq)]
-/// One candidate after the ranking pass.
 pub struct RankedCandidate {
     pub node_id: NodeId,
     /// The deterministic salience score (the prefilter).

@@ -12,10 +12,6 @@ use crate::read::planes::symbol::StructureStore as _;
 /// exhaustive L0 arm, and `cards` is project/capability/doc metadata.
 /// Every producer emits the same `Finding` through the same filter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Which producer surfaced a finding. `database` is FTS/vector/lemma
-/// recall, `ast` is symbol/edge extraction, `ripgrep` is the
-/// exhaustive L0 arm, and `cards` is project/capability/doc metadata.
-/// Every producer emits the same `Finding` through the same filter.
 pub enum FindingProducer {
     Cards,
     Database,
@@ -25,7 +21,6 @@ pub enum FindingProducer {
 
 /// What a finding is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// What a finding is.
 pub enum FindingKind {
     Project,
     Capability,
@@ -39,9 +34,6 @@ pub enum FindingKind {
 /// never selects retrieval, so every producer funnels through this
 /// one shape.
 #[derive(Debug, Clone, PartialEq)]
-/// One candidate from any producer: the model judges findings, it
-/// never selects retrieval, so every producer funnels through this
-/// one shape.
 pub struct Finding {
     /// Stable finding id.
     pub id: String,
@@ -79,7 +71,6 @@ impl Finding {
 
 /// One rendered answer section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One rendered answer section.
 pub struct ReadSection {
     /// Section title (`From the project map`, `Top matches`, …).
     pub title: String,
@@ -89,7 +80,6 @@ pub struct ReadSection {
 
 /// One read request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One read request.
 pub struct ReadRequest {
     /// Natural-language question, run verbatim.
     pub query: String,
@@ -99,7 +89,6 @@ pub struct ReadRequest {
 
 /// One explain request: evidence assembly over one workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One explain request: evidence assembly over one workspace.
 pub struct ExplainRequest {
     /// Natural-language question, run verbatim.
     pub query: String,
@@ -119,8 +108,6 @@ pub struct ExplainRequest {
 /// Answer assembly policy: extractive for factual intents,
 /// evidence-only, or the legacy generative prose path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Answer assembly policy: extractive for factual intents,
-/// evidence-only, or the legacy generative prose path.
 pub enum AnswerMode {
     /// Factual intents render top admitted rows verbatim;
     /// explanatory intents with enough admitted docs synthesize;
@@ -195,8 +182,6 @@ fn finding_cache() -> &'static fluent_llm::decision::DecisionCache {
 /// The execution plan for one request: intent plus the producers and
 /// budgets each plane gets. Pure and testable without any retrieval.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// The execution plan for one request: intent plus the producers and
-/// budgets each plane gets. Pure and testable without any retrieval.
 #[allow(clippy::struct_excessive_bools)]
 pub struct ReadPlan {
     /// Routed intent (after measured demotion — the safe route).
@@ -226,7 +211,6 @@ pub struct ReadPlan {
 
 /// Primary plane route for one intent.
 #[must_use]
-/// Primary plane route for one intent.
 pub fn route_for(intent: QueryIntent) -> String {
     match intent {
         QueryIntent::SingleIdentifier => "symbol",
@@ -248,10 +232,6 @@ pub fn route_for(intent: QueryIntent) -> String {
 /// collected on every run and rendered only under `--trace` — the
 /// trace mechanism never triggers a model call itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One per-candidate trace row: how a doc or code candidate fared
-/// through anchor, judge, admission, and budget. Deterministic data,
-/// collected on every run and rendered only under `--trace` — the
-/// trace mechanism never triggers a model call itself.
 pub struct TraceRow {
     /// Which plane produced the candidate (`docs`, `code`).
     pub plane: String,
@@ -269,7 +249,6 @@ pub struct TraceRow {
 
 /// One read answer: intent, budgeted sections, and coverage.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One read answer: intent, budgeted sections, and coverage.
 pub struct ReadAnswer {
     /// The asked query.
     pub query: String,
@@ -2247,11 +2226,6 @@ fn subject_anchor_for(
 /// findings, never mid-fence, so every citation names a rendered
 /// row. Pure and budget-exact for the perf tests to pin.
 #[must_use]
-/// Cap findings by token estimate, whole findings only: the first
-/// finding always renders (an empty Top matches answers nothing),
-/// then each further finding while it fits. Truncation cuts between
-/// findings, never mid-fence, so every citation names a rendered
-/// row. Pure and budget-exact for the perf tests to pin.
 pub fn cap_findings_by_budget(
     findings: &[crate::read::engine::Finding],
     budget_tokens: usize,

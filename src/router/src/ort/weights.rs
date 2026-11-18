@@ -59,12 +59,6 @@ fn map_ort_err(e: &OrtError) -> fluent_llm::runtime::LlmRuntimeError {
 /// footprint. Non-generative roles render no context rows (today's
 /// invisibility — their weights still count toward the RAM working set).
 #[cfg(feature = "onnx")]
-/// The `LlmWeights` implementor for one onnx role. Wraps the
-/// role's `OnnxContextPool` (generative roles) + the registry entry. A loaded
-/// generative role with no materialized contexts synthesizes the single
-/// `default` context row — the onnx analogue of a plain llama model's
-/// footprint. Non-generative roles render no context rows (today's
-/// invisibility — their weights still count toward the RAM working set).
 pub struct OnnxWeights {
     model_key: String,
     registry: Arc<OrtSessionRegistry>,
@@ -148,10 +142,6 @@ impl OnnxWeights {
 /// profile inheriting the role's global `max_ctx` and pin. Shared by
 /// `OnnxWeights::ensure_context` and the context-bound `OnnxChatBackend`.
 #[cfg(feature = "onnx")]
-/// Resolve an onnx role's named-context profile: the role's
-/// `instances` block (name-or-key match, `max_ctx` applied), else a default
-/// profile inheriting the role's global `max_ctx` and pin. Shared by
-/// `OnnxWeights::ensure_context` and the context-bound `OnnxChatBackend`.
 pub(crate) fn onnx_role_profile_for(
     role: &fluent_llm::onnx_config::OnnxRoleConfig,
     name: &str,

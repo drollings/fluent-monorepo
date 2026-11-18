@@ -9,9 +9,6 @@ use std::collections::BTreeMap;
 /// test that must pass for the item to count as verified. Evaluated
 /// through the seal runners, never by the plan itself.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Acceptance gate for one plan item: the package check plus the named
-/// test that must pass for the item to count as verified. Evaluated
-/// through the seal runners, never by the plan itself.
 pub struct AcceptanceGate {
     /// Package directory the check covers.
     pub package: String,
@@ -22,8 +19,6 @@ pub struct AcceptanceGate {
 /// Lifecycle of one plan item. Scheduler states are never reused here:
 /// a plan records author intent, not queue position.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Lifecycle of one plan item. Scheduler states are never reused here:
-/// a plan records author intent, not queue position.
 pub enum PlanItemState {
     /// Awaiting its acceptance gate.
     #[default]
@@ -34,7 +29,6 @@ pub enum PlanItemState {
 
 /// One planned unit of non-mechanical work.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One planned unit of non-mechanical work.
 pub struct PlanItem {
     /// Stable identity across revisions.
     pub id: String,
@@ -49,8 +43,6 @@ pub struct PlanItem {
 /// A reviewable plan: ordered items plus the changelog that tells the
 /// loop what a revision added or changed.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// A reviewable plan: ordered items plus the changelog that tells the
-/// loop what a revision added or changed.
 pub struct WorkPlan {
     /// Plan identity.
     pub id: String,
@@ -185,7 +177,6 @@ impl WorkPlan {
 
 /// Plan import failure: duplicate stable IDs.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Plan import failure: duplicate stable IDs.
 pub enum PlanError {
     /// Two items share one stable ID.
     #[error("duplicate plan item: {0}")]

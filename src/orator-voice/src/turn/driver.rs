@@ -29,8 +29,6 @@ pub use orator_audio::envelope::DUCK_RAMP_MS;
 /// Pipeline hops that check the epoch. Every hop drops items from a
 /// fired or superseded epoch; drops count per hop for metrics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Pipeline hops that check the epoch. Every hop drops items from a
-/// fired or superseded epoch; drops count per hop for metrics.
 pub enum Hop {
     /// After STT commit, before the turn commits.
     PostStt,
@@ -99,7 +97,6 @@ impl HopGate {
 
 /// What the microphone brought while the assistant spoke.
 #[derive(Debug, Clone, PartialEq)]
-/// What the microphone brought while the assistant spoke.
 pub struct BargeInEvidence {
     /// Sustained VAD in ms.
     pub sustained_ms: u16,
@@ -114,7 +111,6 @@ pub struct BargeInEvidence {
 
 /// Barge-in decision after detect or confirm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Barge-in decision after detect or confirm.
 pub enum BargeInOutcome {
     /// Below threshold or filtered: keep speaking, no gain change.
     Ignored,
@@ -128,9 +124,6 @@ pub enum BargeInOutcome {
 /// never reach the LLM. The lexicon is data (`lang` + `extra`), never a
 /// hard-coded list at the call site.
 #[derive(Debug, Clone)]
-/// Backchannel filter: short lexicon-only utterances never interrupt and
-/// never reach the LLM. The lexicon is data (`lang` + `extra`), never a
-/// hard-coded list at the call site.
 pub struct BackchannelFilter {
     lang: String,
     extra: Vec<String>,
@@ -175,7 +168,6 @@ impl BackchannelFilter {
 
 /// Per-language backchannel lexicon.
 #[must_use]
-/// Per-language backchannel lexicon.
 pub fn lexicon(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => &[
@@ -192,8 +184,6 @@ pub fn lexicon(lang: &str) -> &'static [&'static str] {
 /// One conversation turn as the user heard it: DAC-confirmed words only,
 /// plus whether barge-in cut it short.
 #[derive(Debug, Clone, PartialEq)]
-/// One conversation turn as the user heard it: DAC-confirmed words only,
-/// plus whether barge-in cut it short.
 pub struct HistoryTurn {
     /// Reply epoch.
     pub epoch: Epoch,
@@ -207,9 +197,6 @@ pub struct HistoryTurn {
 /// marker the model can see. The unspoken remainder is dropped here —
 /// never summarized, never stored.
 #[derive(Debug, Clone, Default)]
-/// DAC history: only spoken words persist, followed by an interruption
-/// marker the model can see. The unspoken remainder is dropped here —
-/// never summarized, never stored.
 pub struct History {
     turns: Vec<HistoryTurn>,
 }
@@ -263,9 +250,6 @@ impl History {
 /// discarded when the user resumes. The resume returns the armed prefix
 /// so the next request re-sends exactly it — the server reuses its cache.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Speculative prefill state: armed at the short threshold on stable text,
-/// discarded when the user resumes. The resume returns the armed prefix
-/// so the next request re-sends exactly it — the server reuses its cache.
 pub enum SpecState {
     /// Nothing speculated.
     #[default]
@@ -305,7 +289,6 @@ pub use orator::types::SessionKind;
 
 /// Degraded serving shape after a stage failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Degraded serving shape after a stage failure.
 pub enum SessionMode {
     /// Everything serves.
     Full,
@@ -324,10 +307,6 @@ pub enum SessionMode {
 /// (non-fatal) rows that stay `Full` — `aec` (half-duplex gate), `vad`
 /// (energy detector), background stages — fall through to the default.
 #[must_use]
-/// Stage failure → serving shape, per the failure table. Archive failure
-/// is fatal and loud; the record path never degrades silently. Degraded
-/// (non-fatal) rows that stay `Full` — `aec` (half-duplex gate), `vad`
-/// (energy detector), background stages — fall through to the default.
 pub fn degrade_on(failed: &str, session: SessionKind) -> SessionMode {
     match failed {
         "archive" | "capture.mic" => SessionMode::Paused,

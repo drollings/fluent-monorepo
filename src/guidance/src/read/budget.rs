@@ -10,7 +10,6 @@ use crate::query::strategy::QueryIntent;
 
 /// Per-section token allocation for one intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Per-section token allocation for one intent.
 pub struct SectionBudgets {
     /// Project-map cards.
     pub project: usize,
@@ -34,9 +33,6 @@ impl SectionBudgets {
 /// cards, mechanism spends on code. Totals stay within the human
 /// (4000) and orchestrator (2000) envelopes.
 #[must_use]
-/// Allocation table: symbol queries are tiny, orientation spends on
-/// cards, mechanism spends on code. Totals stay within the human
-/// (4000) and orchestrator (2000) envelopes.
 pub fn budgets_for(intent: QueryIntent) -> SectionBudgets {
     match intent {
         QueryIntent::SingleIdentifier => SectionBudgets {
@@ -91,8 +87,6 @@ pub fn budgets_for(intent: QueryIntent) -> SectionBudgets {
 /// Truncate rendered text to a section budget, estimating with the
 /// shared token counter.
 #[must_use]
-/// Truncate rendered text to a section budget, estimating with the
-/// shared token counter.
 pub fn enforce_budget(text: &str, budget_tokens: usize) -> String {
     let budget = TokenBudget(budget_tokens);
     budget.truncate_to_budget(text)
@@ -100,7 +94,6 @@ pub fn enforce_budget(text: &str, budget_tokens: usize) -> String {
 
 /// Estimated tokens for rendered text (accounting input).
 #[must_use]
-/// Estimated tokens for rendered text (accounting input).
 pub fn tokens_for(text: &str) -> u64 {
     estimate_tokens(text)
 }

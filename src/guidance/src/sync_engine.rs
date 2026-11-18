@@ -569,14 +569,6 @@ fn header_source_hash(json_path: &Path) -> Option<String> {
 /// returning it unchanged when absolutization fails. Shared path-key
 /// normalization for stored-hash lookups (DB keys are absolute).
 #[must_use]
-/// Lexical absolutization (no I/O, no symlink resolution): relative
-/// roots compare equal with the absolute paths discovery yields, so
-/// `strip_prefix` relativization and `meta` derivation agree no matter
-/// how the caller spelled the workspace. Falls back to the input when
-/// the working directory is unreadable — never a construction failure.
-/// Lexically absolutize `path` against the process working directory,
-/// returning it unchanged when absolutization fails. Shared path-key
-/// normalization for stored-hash lookups (DB keys are absolute).
 pub fn absolute_or(path: PathBuf) -> PathBuf {
     // Single shared cwd-join; unreadable directory falls back to input.
     common_core::io::make_path_absolute(&path.to_string_lossy())
@@ -618,9 +610,6 @@ pub struct SyncStatus {
 /// `Fresh` alone; `Revalidated` spends exactly one content hash;
 /// `Stale` regenerates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Freshness verdict for one source file: the stat sweep proves
-/// `Fresh` alone; `Revalidated` spends exactly one content hash;
-/// `Stale` regenerates.
 pub enum StalenessVerdict {
     Fresh,
     Revalidated,
@@ -646,8 +635,6 @@ impl FreshnessProbe for HashProbe {
 /// Test probe: counts content hashes through interior mutability so
 /// the no-op sweep can assert zero-hash budgets.
 #[derive(Default)]
-/// Test probe: counts content hashes through interior mutability so
-/// the no-op sweep can assert zero-hash budgets.
 pub struct CountingProbe {
     calls: std::cell::Cell<usize>,
 }

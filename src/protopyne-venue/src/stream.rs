@@ -54,10 +54,6 @@ use crate::venue::AccountEvent;
 /// and the set grows only with a stated reason per code (the calibration
 /// pins terminal-zero retries per code).
 #[must_use]
-/// Boundary classifier: envelope error code → terminal reason, or `None`
-/// for transient. The terminal set is closed; every arm states its reason,
-/// and the set grows only with a stated reason per code (the calibration
-/// pins terminal-zero retries per code).
 pub fn terminal_reason(code: &str) -> Option<&'static str> {
     match code {
         "unauthorized" | "forbidden" => Some("terminal credentials failure: retrying cannot authenticate"),
@@ -196,11 +192,6 @@ pub const STREAM_HEALTH_ASSET: &str = "stream.health";
 /// through [`StreamHealthUnit`]. There is deliberately no `reset`: recovery
 /// re-arms only through a fresh instance (a new run), never automatically.
 #[derive(Debug)]
-/// Producer-confidence breaker over one stream: consecutive connect-error
-/// and restart-rate counters with a sticky trip. Trips merge into
-/// [`BreakerState`] (entries disarm, exits flow) and into bar batches
-/// through [`StreamHealthUnit`]. There is deliberately no `reset`: recovery
-/// re-arms only through a fresh instance (a new run), never automatically.
 pub struct StreamBreaker {
     config: StreamConfig,
     consecutive_errors: AtomicU32,
@@ -320,8 +311,6 @@ impl StreamBreaker {
 /// How a supervised-stream run ended. Every variant is a stop, never a
 /// repair: the run reports; the caller (or a fresh run) decides.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// How a supervised-stream run ended. Every variant is a stop, never a
-/// repair: the run reports; the caller (or a fresh run) decides.
 pub enum StreamOutcome {
     /// The consumer's [`StreamAbort`] fired: no error counted.
     Aborted,
@@ -346,9 +335,6 @@ pub enum StreamOutcome {
 /// connect/pump/backoff loop. Both the account-event stream and the market
 /// feed use this one core.
 #[derive(Debug, Clone)]
-/// One generic reconnect policy: schedule, breaker, and the abortable
-/// connect/pump/backoff loop. Both the account-event stream and the market
-/// feed use this one core.
 pub struct ReconnectPolicy {
     config: StreamConfig,
     breaker: Arc<StreamBreaker>,
@@ -456,9 +442,6 @@ impl ReconnectPolicy {
 /// The type parameter names the connected generation (an inbox, a feed
 /// connection, …); the loop itself is [`ReconnectPolicy`].
 #[derive(Debug, Clone)]
-/// One supervised source of `T`: the generic form of the reconnect core.
-/// The type parameter names the connected generation (an inbox, a feed
-/// connection, …); the loop itself is [`ReconnectPolicy`].
 pub struct SupervisedSource<T> {
     policy: ReconnectPolicy,
     _source: std::marker::PhantomData<fn() -> T>,
@@ -501,9 +484,6 @@ impl<T> SupervisedSource<T> {
 /// cheap (config plus one `Arc` bump) so the driver task and the consumer
 /// observe the same trip.
 #[derive(Debug, Clone)]
-/// One supervised stream: configuration plus its shared breaker. Clone is
-/// cheap (config plus one `Arc` bump) so the driver task and the consumer
-/// observe the same trip.
 pub struct SupervisedStream {
     policy: ReconnectPolicy,
 }

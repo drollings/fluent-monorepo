@@ -150,14 +150,12 @@ fn fractional_kelly_factory(params: &serde_json::Value) -> Result<Arc<dyn Sizing
 
 /// The sizer catalog.
 #[must_use]
-/// The sizer catalog.
 pub fn sizers() -> &'static SlotRegistry<Arc<dyn Sizing>> {
     sizing_registry()
 }
 
 /// The catalog ids, in schema order.
 #[must_use]
-/// The catalog ids, in schema order.
 pub fn sizing_ids() -> Vec<&'static str> {
     sizers().ids()
 }

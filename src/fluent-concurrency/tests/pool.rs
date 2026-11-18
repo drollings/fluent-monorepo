@@ -299,7 +299,10 @@ async fn close_wakes_pop() {
     // A broadcast fired after creation is observed on first poll; this is
     // the guarantee `Queue::pop` relies on via `CloseWaker::items_available`.
     let observed = tokio::time::timeout(Duration::from_secs(5), pending).await;
-    assert!(observed.is_ok(), "close after creation must wake the waiter");
+    assert!(
+        observed.is_ok(),
+        "close after creation must wake the waiter"
+    );
 }
 
 /// Zero capacity is refused at construction: leaf queues return `Err`
@@ -361,23 +364,19 @@ async fn worker_pool_refuses_zero_capacity() {
 #[tokio::test]
 async fn priority_pool_refuses_zero_capacity() {
     let rt = || crate::tokio_runtime();
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            PriorityResultPool::<i32, i32, String>::new(rt(), 0, |job: i32| async move { Ok(job) })
-        }))
-        .is_err()
-    );
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            PriorityResultPool::<i32, i32, String>::with_queue_capacity(
-                rt(),
-                1,
-                0,
-                |job: i32| async move { Ok(job) },
-            )
-        }))
-        .is_err()
-    );
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        PriorityResultPool::<i32, i32, String>::new(rt(), 0, |job: i32| async move { Ok(job) })
+    }))
+    .is_err());
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        PriorityResultPool::<i32, i32, String>::with_queue_capacity(
+            rt(),
+            1,
+            0,
+            |job: i32| async move { Ok(job) },
+        )
+    }))
+    .is_err());
     PriorityResultPool::<i32, i32, String>::with_queue_capacity(
         rt(),
         1,
@@ -431,7 +430,9 @@ async fn close_storm_wakes_pushers_and_poppers() {
 /// `push_wait` and `pop` tasks all terminate once closed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn bounded_priority_close_storm_wakes_pushers_and_poppers() {
-    let q = Arc::new(crate::queue::BoundedPriorityQueue::<i32>::new(4).expect("test capacity is nonzero"));
+    let q = Arc::new(
+        crate::queue::BoundedPriorityQueue::<i32>::new(4).expect("test capacity is nonzero"),
+    );
     for i in 0..4 {
         q.push(i, 0).expect("fill");
     }

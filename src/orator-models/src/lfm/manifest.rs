@@ -29,7 +29,6 @@ pub struct LfmWeights {
 
 /// The two upstream weight homes plus the GGUF conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// The two upstream weight homes plus the GGUF conversion.
 pub struct LfmLayout {
     /// HuggingFace text+audio bundle files (`model.safetensors`,
     /// tokenizer, configs, audio tokenizer).
@@ -43,8 +42,6 @@ pub struct LfmLayout {
 /// The expected layout, transcribed from the reference repo and the
 /// `/app` model tree.
 #[must_use]
-/// The expected layout, transcribed from the reference repo and the
-/// `/app` model tree.
 pub fn expected_layout() -> LfmLayout {
     LfmLayout {
         hf_bundle: vec![
@@ -68,7 +65,6 @@ fn file(name: &str, arch: Option<String>) -> LfmWeights {
 
 /// One missing or unreadable weight file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One missing or unreadable weight file.
 pub struct MissingWeights {
     /// Home directory checked.
     pub dir: std::path::PathBuf,

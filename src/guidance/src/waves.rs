@@ -27,11 +27,6 @@ pub type ClippyRunner = Arc<dyn Fn(&Path) -> std::io::Result<ClippyReport> + Sen
 /// degrades to an owned `model: unavailable` escalation, never a
 /// silent hold or a burned attempt.
 #[derive(Debug, Clone)]
-/// Decision-endpoint identity for the triage rung: where the judgment
-/// call goes and whether it may go at all. Disabled (the default)
-/// means static-table-only classification; an unreachable endpoint
-/// degrades to an owned `model: unavailable` escalation, never a
-/// silent hold or a burned attempt.
 pub struct DecisionEndpoint {
     /// Endpoint base URL (e.g. the decision role's address).
     pub base_url: String,
@@ -93,7 +88,6 @@ impl Default for GenerativeEndpoint {
 
 /// Outcome of one model-draft sweep over escalated files.
 #[derive(Debug, Clone, Default)]
-/// Outcome of one model-draft sweep over escalated files.
 pub struct ModelDraftReport {
     /// Model calls attempted (bounded by files times the draft budget).
     pub attempted: usize,
@@ -130,10 +124,6 @@ pub fn draft_prompt(source: &str, reason: &str) -> String {
 /// Shared contract via `fluent_llm::parse::extract_fence`
 /// (M4.1/M4.2 tables pin the edges).
 #[must_use]
-/// First rust fence in a draft response, trimmed. No fence parses to
-/// nothing: the rung asks for a fresh draft instead of guessing.
-/// Shared contract via `fluent_llm::parse::extract_fence`
-/// (M4.1/M4.2 tables pin the edges).
 pub fn parse_draft_fence(response: &str) -> Option<String> {
     fluent_llm::parse::extract_fence(response, "rust")
 }
@@ -252,14 +242,12 @@ fn capped_gate_output(output: &str) -> String {
 
 /// Build the live runner over one clippy context.
 #[must_use]
-/// Build the live runner over one clippy context.
 pub fn live_runner(ctx: crate::clippy::ClippyCtx) -> ClippyRunner {
     Arc::new(move |package: &Path| crate::clippy::run_clippy(package, &ctx))
 }
 
 /// One escalated file with its requeue fingerprint.
 #[derive(Debug, Clone, Default)]
-/// One escalated file with its requeue fingerprint.
 pub struct Escalation {
     /// File path, as passed in.
     pub file: String,
@@ -274,7 +262,6 @@ pub struct Escalation {
 
 /// Per-file residual diagnostics after the last fix attempt.
 #[derive(Debug, Clone, Default)]
-/// Per-file residual diagnostics after the last fix attempt.
 pub struct FileFeedback {
     /// File path, as passed in.
     pub file: String,
@@ -286,7 +273,6 @@ pub struct FileFeedback {
 
 /// Package-level failure that could not be attributed to one file.
 #[derive(Debug, Clone, Default)]
-/// Package-level failure that could not be attributed to one file.
 pub struct PackageFailure {
     /// Package directory.
     pub package: String,
@@ -332,7 +318,6 @@ pub struct WaveCtx<'a> {
 
 /// Wave-loop outcome for the run report.
 #[derive(Debug, Clone, Default)]
-/// Wave-loop outcome for the run report.
 pub struct WaveReport {
     /// Waves executed.
     pub waves_run: usize,
@@ -825,11 +810,6 @@ fn escalate_detail(
 /// fallback holds. Every outcome escalates with a named reason instead
 /// of burning attempts: unclassified work is a hold, not a retry.
 #[allow(clippy::too_many_arguments)]
-/// T1 triage rung for one file's residual diagnostics: the static
-/// table decides first (free), then the configured decision endpoint
-/// judges what the tools could not fix, then the deterministic
-/// fallback holds. Every outcome escalates with a named reason instead
-/// of burning attempts: unclassified work is a hold, not a retry.
 fn triage_hold(
     report: &mut WaveReport,
     path: &Path,

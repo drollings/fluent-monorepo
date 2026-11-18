@@ -23,7 +23,6 @@ pub enum CaseOrigin {
 
 /// Provenance of one labelled case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// Provenance of one labelled case.
 pub struct CaseProvenance {
     pub origin: CaseOrigin,
     pub labeller: String,
@@ -85,19 +84,6 @@ impl Default for GateParams {
 /// assert!(gate_for_point_with(&cases, 0.5, &GateParams::default()));
 /// ```
 #[must_use]
-/// Gate a threshold with explicit floors (recall strictly above the floor —
-/// a never-firing threshold proves nothing).
-///
-/// ```rust
-/// use fluent_llm::decision::{gate_for_point_with, GateParams, CaseProvenance, ScoredCase};
-///
-/// let provenance = CaseProvenance::human("example", "2026-11-08");
-/// let cases = vec![
-/// ScoredCase { score: 0.9, expected: true, control: false, provenance: provenance.clone() },
-/// ScoredCase { score: 0.1, expected: false, control: false, provenance },
-/// ];
-/// assert!(gate_for_point_with(&cases, 0.5, &GateParams::default()));
-/// ```
 pub fn gate_for_point_with(
     cases: &[crate::decision::ScoredCase],
     threshold: f64,
@@ -129,19 +115,6 @@ pub fn gate_for_point_with(
 /// assert_eq!(provenance.labeller, "team");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// Corpus-level provenance (`CorpusProvenance`) for a labelled set.
-///
-/// ```rust
-/// use fluent_llm::decision::CorpusProvenance;
-///
-/// let provenance = CorpusProvenance {
-/// source: "hand labels".to_string(),
-/// labeller: "team".to_string(),
-/// date: "2026-11-08".to_string(),
-/// dataset: String::new(),
-/// };
-/// assert_eq!(provenance.labeller, "team");
-/// ```
 pub struct CorpusProvenance {
     pub source: String,
     pub labeller: String,
@@ -154,7 +127,6 @@ pub struct CorpusProvenance {
 
 /// A labelled corpus on disk: the unit the registry calibrates from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// A labelled corpus on disk: the unit the registry calibrates from.
 pub struct Corpus {
     pub point: String,
     pub model_fingerprint: String,
@@ -165,7 +137,6 @@ pub struct Corpus {
 
 /// One gate measurement (`GateReport`), persisted with the thresholds it earned.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// One gate measurement (`GateReport`), persisted with the thresholds it earned.
 pub struct GateReport {
     pub threshold: f64,
     pub precision: f64,
@@ -263,7 +234,6 @@ impl RegistryEntry {
 
 /// Fail-closed authorization (`CalibrationStatus`): calibrated thresholds or shadow-only.
 #[derive(Debug, Clone, PartialEq)]
-/// Fail-closed authorization (`CalibrationStatus`): calibrated thresholds or shadow-only.
 pub enum CalibrationStatus {
     /// Authorized: may steer behavior (side effects gated elsewhere).
     Calibrated(ThresholdSet),

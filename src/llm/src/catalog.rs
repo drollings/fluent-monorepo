@@ -25,12 +25,10 @@ pub enum EmbeddingBackend {
 
 /// Pinned `(repo, revision)` mirror coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Pinned `(repo, revision)` mirror coordinates.
 pub struct ArtifactMirror(pub &'static str, pub &'static str);
 
 /// Hugging Face + ModelScope mirrors for one entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Hugging Face + ModelScope mirrors for one entry.
 pub struct ArtifactSources {
     pub hugging_face: ArtifactMirror,
     pub model_scope: ArtifactMirror,
@@ -38,7 +36,6 @@ pub struct ArtifactSources {
 
 /// One pinned file inside a model snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// One pinned file inside a model snapshot.
 pub struct PinnedArtifact {
     pub path: &'static str,
     pub size: u64,
@@ -783,14 +780,12 @@ pub static EMBEDDING_MODEL_CATALOG: &[CatalogEntry] = &[
 
 /// All pinned entries, in catalog order.
 #[must_use]
-/// All pinned entries, in catalog order.
 pub fn list_embedding_models() -> &'static [CatalogEntry] {
     EMBEDDING_MODEL_CATALOG
 }
 
 /// Look up one entry by `provider/model` reference.
 #[must_use]
-/// Look up one entry by `provider/model` reference.
 pub fn get_embedding_model_catalog_entry(reference: &str) -> Option<&'static CatalogEntry> {
     EMBEDDING_MODEL_CATALOG
         .iter()

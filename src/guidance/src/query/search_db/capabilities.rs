@@ -89,7 +89,6 @@ impl CapabilityRecord {
 
 /// One ranked capability hit (rank assignment stays with the recall loop).
 #[derive(Debug, Clone, PartialEq)]
-/// One ranked capability hit (rank assignment stays with the recall loop).
 pub struct ScoredCapability {
     /// Capability id.
     pub id: String,
@@ -99,7 +98,6 @@ pub struct ScoredCapability {
 
 /// Lemma row for the `capability_lemmas` L2 table.
 #[derive(Debug, Clone, PartialEq)]
-/// Lemma row for the `capability_lemmas` L2 table.
 pub struct CapabilityLemma {
     /// Owning capability id.
     pub capability_id: String,

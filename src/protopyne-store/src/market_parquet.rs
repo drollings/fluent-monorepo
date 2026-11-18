@@ -44,9 +44,6 @@ use crate::error::StoreError;
 /// interpret them. Both counts are observations about the source file, never
 /// confidence readings about the bars.
 #[derive(Debug, Clone, PartialEq, Default)]
-/// One market Parquet read: the committed bars plus the ingest facts that
-/// interpret them. Both counts are observations about the source file, never
-/// confidence readings about the bars.
 pub struct OhlcvRead {
     /// Bars ascending by `ts`, adjacent pairs `validate_new_bar`-clean, with
     /// equal-stamp restatements merged.
@@ -60,8 +57,6 @@ pub struct OhlcvRead {
 /// One row the lenient read excluded: the file-relative row index and the
 /// refusal that excluded it. Counted observation, never a silent drop.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One row the lenient read excluded: the file-relative row index and the
-/// refusal that excluded it. Counted observation, never a silent drop.
 pub struct SkippedRow {
     /// File-relative row index (0-based, across record batches in order).
     pub row: usize,
@@ -75,11 +70,6 @@ pub struct SkippedRow {
 /// ambiguity about what the file is — while per-row value faults (a null, a
 /// NaN, a fractional volume, an inverted bar) exclude that row and count it.
 #[derive(Debug, Clone, PartialEq, Default)]
-/// One lenient market Parquet read: the committed bars plus every excluded
-/// row, named. Structural faults (a missing column, a mixed-ticker file read
-/// without a filter) still refuse the whole file — skipping cannot resolve
-/// ambiguity about what the file is — while per-row value faults (a null, a
-/// NaN, a fractional volume, an inverted bar) exclude that row and count it.
 pub struct LenientRead {
     /// The committed bars and merge/filter counts, as in the strict read.
     pub read: OhlcvRead,

@@ -11,7 +11,6 @@ use protopyne_view::BacktestRunView;
 
 /// One stored run: the id it is filed under and its projected view.
 #[derive(Clone)]
-/// One stored run: the id it is filed under and its projected view.
 pub struct BacktestEntry {
     /// Registry id (deterministic over the request).
     pub run_id: String,
@@ -21,7 +20,6 @@ pub struct BacktestEntry {
 
 /// Stored backtest runs by run id.
 #[derive(Default)]
-/// Stored backtest runs by run id.
 pub struct BacktestRegistry {
     runs: KeyedRegistry<String, BacktestEntry>,
 }

@@ -12,7 +12,6 @@ use crate::error::IoError;
 
 /// JSON-RPC 2.0 request object.
 #[derive(Debug, Deserialize)]
-/// JSON-RPC 2.0 request object.
 pub struct JsonRpcRequest {
     #[allow(dead_code)]
     pub jsonrpc: String,
@@ -23,7 +22,6 @@ pub struct JsonRpcRequest {
 
 /// JSON-RPC 2.0 response object.
 #[derive(Debug, Serialize, Deserialize)]
-/// JSON-RPC 2.0 response object.
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
     pub id: Option<serde_json::Value>,
@@ -35,7 +33,6 @@ pub struct JsonRpcResponse {
 
 /// JSON-RPC 2.0 error object.
 #[derive(Debug, Serialize, Deserialize)]
-/// JSON-RPC 2.0 error object.
 pub struct JsonRpcError {
     pub code: i32,
     pub message: String,

@@ -18,7 +18,6 @@ fn matrix_prefixes_resolve_to_component_smoke_gates() {
     for (path, component) in [
         ("src/guidance/src/lib.rs", "guidance"),
         ("src/bin/guidance/src/main.rs", "guidance"),
-        ("src/ontology/src/lib.rs", "guidance"),
         ("src/common-core/src/lib.rs", "common-core"),
         ("src/fluent-wvr/src/lib.rs", "fluent-wvr"),
         ("src/fluent-wvr-macros/src/lib.rs", "fluent-wvr"),

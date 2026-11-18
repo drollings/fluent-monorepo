@@ -10,7 +10,6 @@ use super::result::ResultPoolError;
 
 /// Errors returned by `Queue` and `WorkerPool` operations.
 #[derive(Error, Debug, Clone, PartialEq)]
-/// Errors returned by `Queue` and `WorkerPool` operations.
 pub enum PoolError {
     #[error("queue is full")]
     Full,
@@ -56,7 +55,6 @@ pub trait SinkPool {
 
 /// Request/response pool — `ResultPool` (one `oneshot` per submit).
 #[allow(async_fn_in_trait)]
-/// Request/response pool — `ResultPool` (one `oneshot` per submit).
 pub trait RequestPool {
     type Job: Send + Sync + 'static;
     type Output: Send + 'static;
@@ -73,7 +71,6 @@ pub trait RequestPool {
 
 /// Priority-ordered request/response pool — `PriorityResultPool`.
 #[allow(async_fn_in_trait)]
-/// Priority-ordered request/response pool — `PriorityResultPool`.
 pub trait PriorityRequestPool {
     type Job: Send + Sync + 'static;
     type Output: Send + 'static;

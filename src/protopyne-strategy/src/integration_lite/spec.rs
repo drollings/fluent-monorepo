@@ -16,7 +16,6 @@ use crate::error::StrategyError;
 
 /// Direction options for the strategy direction dial (script spelling).
 #[must_use]
-/// Direction options for the strategy direction dial (script spelling).
 pub fn direction_options() -> Vec<String> {
     ["Both", "Long Only", "Short Only"]
         .iter()
@@ -26,7 +25,6 @@ pub fn direction_options() -> Vec<String> {
 
 /// Sizing-mode options (script spelling).
 #[must_use]
-/// Sizing-mode options (script spelling).
 pub fn size_mode_options() -> Vec<String> {
     ["Risk Percent", "Percent of Equity", "Fixed Quantity"]
         .iter()
@@ -36,7 +34,6 @@ pub fn size_mode_options() -> Vec<String> {
 
 /// Initial-stop options (script spelling).
 #[must_use]
-/// Initial-stop options (script spelling).
 pub fn stop_type_options() -> Vec<String> {
     ["ATR", "Swing", "Percent"]
         .iter()
@@ -46,7 +43,6 @@ pub fn stop_type_options() -> Vec<String> {
 
 /// Take-profit distance-unit options (script spelling).
 #[must_use]
-/// Take-profit distance-unit options (script spelling).
 pub fn tp_basis_options() -> Vec<String> {
     ["R Multiple", "ATR"]
         .iter()
@@ -56,7 +52,6 @@ pub fn tp_basis_options() -> Vec<String> {
 
 /// Trailing-stop options (script spelling).
 #[must_use]
-/// Trailing-stop options (script spelling).
 pub fn trail_type_options() -> Vec<String> {
     ["Chandelier ATR", "Ribbon Edge", "Percent"]
         .iter()
@@ -66,7 +61,6 @@ pub fn trail_type_options() -> Vec<String> {
 
 /// Exhaustion-response options (script spelling).
 #[must_use]
-/// Exhaustion-response options (script spelling).
 pub fn exit_action_options() -> Vec<String> {
     [
         "Off",
@@ -85,10 +79,6 @@ pub fn exit_action_options() -> Vec<String> {
 /// must not import each other, and the Pine enum stays the authority both
 /// transcribe; a single shared home is a filed follow-up.
 #[must_use]
-/// Table-location options (Pine `Positions` spelling, lowercased member
-/// names). Duplicates the paint-edge position list by value: the two crates
-/// must not import each other, and the Pine enum stays the authority both
-/// transcribe; a single shared home is a filed follow-up.
 pub fn table_position_options() -> Vec<String> {
     [
         "top_left",

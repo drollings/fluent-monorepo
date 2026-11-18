@@ -17,10 +17,6 @@ use crate::jumps::JumpIndex;
 /// unparseable reads as no members — the map falls back to crate
 /// directories, never fails.
 #[must_use]
-/// Workspace member paths from the root manifest's `[workspace]`
-/// members array (minimal scan, no new parser dependency). Anything
-/// unparseable reads as no members — the map falls back to crate
-/// directories, never fails.
 pub fn workspace_members(workspace_root: &Path) -> Vec<String> {
     let Ok(text) = std::fs::read_to_string(workspace_root.join("Cargo.toml")) else {
         return Vec::new();
@@ -94,8 +90,6 @@ pub fn workspace_members(workspace_root: &Path) -> Vec<String> {
 /// Default source roots when the config omits `src_dirs`: workspace
 /// members (or the conventional `src/` tree), never the whole workspace.
 #[must_use]
-/// Default source roots when the config omits `src_dirs`: workspace
-/// members (or the conventional `src/` tree), never the whole workspace.
 pub fn default_source_roots(workspace: &Path) -> Vec<PathBuf> {
     let members: Vec<PathBuf> = workspace_members(workspace)
         .into_iter()
@@ -186,8 +180,6 @@ fn doc_title_and_anchor(text: &str, source_path: &str) -> (Option<String>, Strin
 /// Verbatim doc-section cards: one project card per non-empty markdown
 /// section, with the live hash and the package paths it points at.
 #[must_use]
-/// Verbatim doc-section cards: one project card per non-empty markdown
-/// section, with the live hash and the package paths it points at.
 pub fn build_doc_cards(
     workspace: &Path,
     cfg: &ProjectConfig,
@@ -246,9 +238,6 @@ pub fn build_doc_cards(
 /// one per owning component. Sorted by key; content hashes cover the
 /// body so edits reconverge incrementally.
 #[must_use]
-/// Build every card: one workspace card, one per discovered crate,
-/// one per owning component. Sorted by key; content hashes cover the
-/// body so edits reconverge incrementally.
 pub fn build_project_cards(
     workspace: &Path,
     project: &str,
@@ -405,7 +394,6 @@ pub fn build_project_cards(
 
 /// Totals for one project-card build (stored data, never thrown).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Totals for one project-card build (stored data, never thrown).
 pub struct ProjectMapReport {
     /// Cards stored this run (all layers).
     pub cards: usize,

@@ -18,7 +18,6 @@ use crate::decision::{Decision, DecisionError, DecisionKind};
 
 /// Native systemone decision backend.
 #[derive(Clone)]
-/// Native systemone decision backend.
 pub struct SystemOneBackend {
     base_url: String,
     transport: DecisionTransport,
@@ -199,7 +198,6 @@ impl SystemOneBackend {
 
 /// Build the batched wire body. Pure and testable.
 #[must_use]
-/// Build the batched wire body. Pure and testable.
 pub fn batch_body(state: &str, requests: &[DecideRequest]) -> Value {
     let questions: serde_json::Map<String, Value> = requests
         .iter()

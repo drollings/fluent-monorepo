@@ -21,7 +21,6 @@ pub fn index_dir_for_db(db_path: &Path) -> std::path::PathBuf {
 
 /// Verdict of a generation check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Verdict of a generation check.
 pub enum GenerationVerdict {
     /// Marker matches the sidecar manifest: reads may proceed.
     Current,
@@ -33,9 +32,6 @@ pub enum GenerationVerdict {
 /// first-line headers plus the fragment and sidecar schema versions.
 /// Header-only: bodies never enter the value.
 #[must_use]
-/// Compute the generation over one sidecar directory: sorted
-/// first-line headers plus the fragment and sidecar schema versions.
-/// Header-only: bodies never enter the value.
 pub fn generation_of(sidecar_dir: &Path) -> String {
     format!(
         "{}:{}",
@@ -48,9 +44,6 @@ pub fn generation_of(sidecar_dir: &Path) -> String {
 /// A schema mismatch means stored rows may misread: rebuild fully.
 /// Content drift alone needs only the incremental ingest.
 #[must_use]
-/// Schema half of the marker: index and sidecar versions only.
-/// A schema mismatch means stored rows may misread: rebuild fully.
-/// Content drift alone needs only the incremental ingest.
 pub fn schema_generation() -> String {
     let mut framed = String::new();
     framed.push_str("index-schema\0");
@@ -65,8 +58,6 @@ pub fn schema_generation() -> String {
 /// Content half of the marker: sorted sidecar header lines.
 /// Drifts on every edit; the incremental ingest reconverges it.
 #[must_use]
-/// Content half of the marker: sorted sidecar header lines.
-/// Drifts on every edit; the incremental ingest reconverges it.
 pub fn content_generation(sidecar_dir: &Path) -> String {
     let mut sidecars = Vec::new();
     crate::walk::walk_files(sidecar_dir, &["json"], |path| {
@@ -87,9 +78,6 @@ pub fn content_generation(sidecar_dir: &Path) -> String {
 /// Missing, empty, or unstructured markers read as unknown (rebuild),
 /// never as a schema.
 #[must_use]
-/// Schema half recorded in a marker, if the marker parses.
-/// Missing, empty, or unstructured markers read as unknown (rebuild),
-/// never as a schema.
 pub fn stored_schema(index_dir: &Path) -> Option<String> {
     let text = common_core::io::read_to_string_err(&index_dir.join(GENERATION_FILE)).ok()?;
     let trimmed = text.trim();
@@ -106,8 +94,6 @@ pub fn stored_schema(index_dir: &Path) -> Option<String> {
 /// Read the stored marker, if any. Empty or whitespace-only counts as
 /// absent: a half-committed write refuses like a missing one.
 #[must_use]
-/// Read the stored marker, if any. Empty or whitespace-only counts as
-/// absent: a half-committed write refuses like a missing one.
 pub fn read_generation(index_dir: &Path) -> Option<String> {
     let text = common_core::io::read_to_string_err(&index_dir.join(GENERATION_FILE)).ok()?;
     let trimmed = text.trim().to_string();

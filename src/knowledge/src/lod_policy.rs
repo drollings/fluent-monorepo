@@ -10,8 +10,6 @@ use crate::lod::{Lod, LOD5_LABEL};
 /// The fidelity band a worker accepts. Intermediate nodes render between
 /// `max` (coarsest, e.g. `Lod::LOD5`) and `min` (finest, e.g. `Lod::LOD1`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The fidelity band a worker accepts. Intermediate nodes render between
-/// `max` (coarsest, e.g. `Lod::LOD5`) and `min` (finest, e.g. `Lod::LOD1`).
 pub struct LodSpec {
     /// The finest fidelity an intermediate node may render at.
     pub min: Lod,
@@ -63,12 +61,6 @@ impl LodSpec {
 /// regardless — even overrunning the reserve). Intermediates compete for the
 /// remaining budget.
 #[derive(Debug, Clone, Copy)]
-/// A worker's context-window budget.
-///
-/// `max_chars` is the total character ceiling; `reserve_head_tail` is the
-/// amount guaranteed to the first/last LOD0 anchors (they are included
-/// regardless — even overrunning the reserve). Intermediates compete for the
-/// remaining budget.
 pub struct PromptBudget {
     pub max_chars: usize,
     pub reserve_head_tail: usize,
@@ -119,7 +111,6 @@ impl PromptBudget {
 
 /// A worker's system instructions: its speciality and explicit instructions.
 #[derive(Debug, Clone, Default)]
-/// A worker's system instructions: its speciality and explicit instructions.
 pub struct WorkerContext {
     /// The worker's speciality (e.g. `"code reviewer"`), used to focus the
     /// system prompt.
@@ -157,8 +148,6 @@ impl WorkerContext {
 /// The relevance signal for fidelity selection: `None` (uniform fidelity) or a
 /// query/task embedding `Vec<f32>`.
 #[derive(Debug, Clone)]
-/// The relevance signal for fidelity selection: `None` (uniform fidelity) or a
-/// query/task embedding `Vec<f32>`.
 pub enum RelevanceSignal {
     /// Uniform fidelity — every intermediate renders at the band midpoint.
     None,

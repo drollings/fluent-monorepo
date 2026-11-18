@@ -20,7 +20,6 @@ const SIGNING_KEY_BYTES: usize = 32;
 
 /// A remote embedding target: one provider/model/endpoint for workspace roots.
 #[derive(Debug, Clone)]
-/// A remote embedding target: one provider/model/endpoint for workspace roots.
 pub struct RemoteEmbeddingTarget {
     pub workspace_roots: Vec<PathBuf>,
     pub workspace_fingerprint: String,
@@ -90,7 +89,6 @@ pub enum GrantError {
 
 /// One persisted workspace grant.
 #[derive(Debug, Clone)]
-/// One persisted workspace grant.
 pub struct RemoteEmbeddingWorkspaceGrant {
     pub id: String,
     pub capability: String,
@@ -485,7 +483,6 @@ pub enum RemoteAuthorization {
 
 /// A user-facing authorization question for hosts that support elicitation.
 #[derive(Debug, Clone)]
-/// A user-facing authorization question for hosts that support elicitation.
 pub struct ElicitationRequest<'a> {
     pub target: &'a RemoteEmbeddingTarget,
     pub grant_path: PathBuf,
@@ -494,7 +491,6 @@ pub struct ElicitationRequest<'a> {
 
 /// The host's answer. Anything but `Allow` denies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The host's answer. Anything but `Allow` denies.
 pub enum ElicitationDecision {
     Allow,
     Deny,

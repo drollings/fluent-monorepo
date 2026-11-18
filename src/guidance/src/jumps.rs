@@ -22,7 +22,6 @@ pub const JUMP_MAX_FILE_BYTES: u64 = 100_000;
 
 /// One jump: a doc chunk, its owning crate, and its funnel terms.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One jump: a doc chunk, its owning crate, and its funnel terms.
 pub struct JumpRecord {
     /// Chunk identity (`source_path#anchor`).
     pub chunk_id: String,
@@ -40,7 +39,6 @@ pub struct JumpRecord {
 
 /// One manifest source row: content hash behind the ambiguity window.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One manifest source row: content hash behind the ambiguity window.
 pub struct JumpSource {
     /// Workspace-relative doc path.
     pub path: String,
@@ -50,7 +48,6 @@ pub struct JumpSource {
 
 /// Derived manifest: jumps plus the source hashes that gate freshness.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Derived manifest: jumps plus the source hashes that gate freshness.
 pub struct JumpManifest {
     /// Schema version (`JUMPS_MANIFEST_VERSION`).
     pub version: u32,
@@ -62,7 +59,6 @@ pub struct JumpManifest {
 
 /// Outcome of one jumps sync.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Outcome of one jumps sync.
 pub struct JumpSyncReport {
     /// Whether the manifest was rewritten.
     pub rederived: bool,
@@ -72,7 +68,6 @@ pub struct JumpSyncReport {
 
 /// Query-side index: crate → sorted deduped funnel terms.
 #[derive(Debug, Clone, Default)]
-/// Query-side index: crate → sorted deduped funnel terms.
 pub struct JumpIndex {
     by_crate: HashMap<String, Vec<String>>,
 }
@@ -88,8 +83,6 @@ impl JumpIndex {
 /// Derive jump records for one doc: shared chunker, shared
 /// attribution, shared funnel terms. Pure.
 #[must_use]
-/// Derive jump records for one doc: shared chunker, shared
-/// attribution, shared funnel terms. Pure.
 pub fn derive_jumps_for_doc(source_path: &str, text: &str) -> Vec<JumpRecord> {
     let (chunks, _gaps) = crate::read::doc_cards::chunk_markdown_sections(source_path, text);
     chunks
@@ -111,8 +104,6 @@ pub fn derive_jumps_for_doc(source_path: &str, text: &str) -> Vec<JumpRecord> {
 /// Doc tree behind the jumps: `doc/**/*.md` plus the two workspace
 /// root orientation files, sorted, size-capped per file.
 #[must_use]
-/// Doc tree behind the jumps: `doc/**/*.md` plus the two workspace
-/// root orientation files, sorted, size-capped per file.
 pub fn doc_tree_files(workspace: &Path) -> Vec<PathBuf> {
     doc_tree_files_with(workspace, Path::new("doc"), true, &[])
 }
@@ -120,8 +111,6 @@ pub fn doc_tree_files(workspace: &Path) -> Vec<PathBuf> {
 /// Doc tree with explicit config: docs dir, root docs, and source-root
 /// markdown (non-test/non-fixture). Shared by jumps and doc cards.
 #[must_use]
-/// Doc tree with explicit config: docs dir, root docs, and source-root
-/// markdown (non-test/non-fixture). Shared by jumps and doc cards.
 pub fn doc_tree_files_with(
     workspace: &Path,
     docs_dir: &Path,
@@ -201,7 +190,6 @@ pub fn doc_tree_files_with(
 
 /// Manifest path inside the guidance dir.
 #[must_use]
-/// Manifest path inside the guidance dir.
 pub fn manifest_path(guidance_dir: &Path) -> PathBuf {
     guidance_dir.join(JUMPS_FILE)
 }
@@ -223,10 +211,6 @@ fn workspace_rel(workspace: &Path, path: &Path) -> Option<String> {
 /// restales, an ambiguity-window doc restales only when its content
 /// hash moved. Single home: `mtime_skew` plus `hash_decides_fresh`.
 #[must_use]
-/// Manifest staleness: missing/unparseable/version-skewed reads stale;
-/// otherwise a stat sweep — a doc strictly newer than the manifest
-/// restales, an ambiguity-window doc restales only when its content
-/// hash moved. Single home: `mtime_skew` plus `hash_decides_fresh`.
 pub fn manifest_stale(workspace: &Path, guidance_dir: &Path) -> bool {
     let Some(manifest) = read_manifest(guidance_dir) else {
         return true;
@@ -322,8 +306,6 @@ pub fn sync_jumps(workspace: &Path, guidance_dir: &Path) -> Result<JumpSyncRepor
 /// Load the query-side index: `None` when absent or stale (fail-open —
 /// recall works without jumps, never from them).
 #[must_use]
-/// Load the query-side index: `None` when absent or stale (fail-open —
-/// recall works without jumps, never from them).
 pub fn load_jump_index(workspace: &Path, guidance_dir: &Path) -> Option<JumpIndex> {
     if manifest_stale(workspace, guidance_dir) {
         return None;

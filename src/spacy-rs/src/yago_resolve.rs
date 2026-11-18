@@ -5,7 +5,7 @@
 //! Tenancy (M5): the stage shell lives here (it is pipeline/`Language`
 //! machinery over [`PipelineState`](crate::pipeline::PipelineState)), but the
 //! knowledge-half scoring is **injected** from the knowledge owner
-//! (`guidance-ontology` `plausibility::score_plausibility`) through the
+//! (`fluent-concept` `plausibility::score_plausibility`) through the
 //! dependency-free [`PlausibilityFetch`](crate::triple::PlausibilityFetch)
 //! seam — same pattern as the router injecting `LlmFetch`. The stage is
 //! never constructed in-crate with knowledge; `new` builds the default-off
@@ -57,10 +57,6 @@ impl Clone for YagoResolveStage {
 /// (replacing the telescoping `new`/`with_enabled`/`with_fetch` chain);
 /// `enabled` without `fetch` stays fail-closed (`None`).
 #[derive(Clone, Default)]
-/// Construction config for [`YagoResolveStage`]: the guarded-spike flag plus
-/// the owner-provided knowledge-half fetch. The canonical construction site
-/// (replacing the telescoping `new`/`with_enabled`/`with_fetch` chain);
-/// `enabled` without `fetch` stays fail-closed (`None`).
 pub struct YagoResolveConfig {
     /// Whether the guarded semantic-plausibility spike runs.
     pub enabled: bool,
@@ -78,7 +74,7 @@ impl YagoResolveStage {
 
     /// A stage over `store` with an explicit [`YagoResolveConfig`]: the
     /// canonical constructor. The owner adapts its kernel (e.g.
-    /// `guidance-ontology` `plausibility::score_plausibility`) into the
+    /// `fluent-concept` `plausibility::score_plausibility`) into the
     /// [`PlausibilityFetch`](crate::triple::PlausibilityFetch) closure at the
     /// wiring site.
     #[must_use]

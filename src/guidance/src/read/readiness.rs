@@ -12,7 +12,6 @@ use crate::sync_engine::SyncEngine;
 /// Mirror freshness partition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
-/// Mirror freshness partition.
 pub enum MirrorState {
     /// Every indexed source has a current sidecar.
     Fresh { total: usize },
@@ -25,7 +24,6 @@ pub enum MirrorState {
 /// Derived-index state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
-/// Derived-index state.
 pub enum IndexState {
     /// Database exists and its schema generation matches this binary.
     Ready,
@@ -37,7 +35,6 @@ pub enum IndexState {
 
 /// Embedded semantic-unit coverage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-/// Embedded semantic-unit coverage.
 pub struct EmbeddingCoverage {
     pub ready: i64,
     pub total: i64,
@@ -46,8 +43,6 @@ pub struct EmbeddingCoverage {
 /// Imported capability-card coverage. `total` is `None` until the external
 /// corpus import can count rows; readiness must not invent a denominator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-/// Imported capability-card coverage. `total` is `None` until the external
-/// corpus import can count rows; readiness must not invent a denominator.
 pub struct CapabilityCoverage {
     pub ready: i64,
     pub total: Option<i64>,
@@ -57,8 +52,6 @@ pub struct CapabilityCoverage {
 /// state is unknown and never treated as a failure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-/// Decision transport capability, discovered by the endpoint probe. Until then the
-/// state is unknown and never treated as a failure.
 pub enum DecisionSupport {
     Unknown,
     Supported,
@@ -67,7 +60,6 @@ pub enum DecisionSupport {
 
 /// Full coverage snapshot. Fields are additive so status consumers can grow.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-/// Full coverage snapshot. Fields are additive so status consumers can grow.
 pub struct Coverage {
     pub mirror: MirrorState,
     pub index: IndexState,
@@ -111,7 +103,6 @@ impl Coverage {
 /// One degraded plane with a task-value reason.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-/// One degraded plane with a task-value reason.
 pub enum Degradation {
     Stale { stale: usize, total: usize },
     EmbeddingsMissing { total: i64 },
@@ -123,7 +114,6 @@ pub enum Degradation {
 /// One repair action for a blocked read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-/// One repair action for a blocked read.
 pub enum RepairAction {
     RunSync,
     RebuildIndex,
@@ -144,7 +134,6 @@ impl RepairAction {
 /// Readiness verdict.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
-/// Readiness verdict.
 pub enum Readiness {
     Ready {
         coverage: Coverage,
@@ -205,8 +194,6 @@ impl Readiness {
 /// Classify one coverage snapshot. Blocking is reserved for states where a
 /// read cannot be trusted at all; partial planes degrade and are labelled.
 #[must_use]
-/// Classify one coverage snapshot. Blocking is reserved for states where a
-/// read cannot be trusted at all; partial planes degrade and are labelled.
 pub fn classify(coverage: Coverage) -> Readiness {
     let mut repairs = Vec::new();
     let mut reasons = Vec::new();
@@ -257,8 +244,6 @@ pub fn classify(coverage: Coverage) -> Readiness {
 /// Inspect the workspace. I/O failures are reported as missing state rather
 /// than propagated, because readiness is a state, not an error.
 #[must_use]
-/// Inspect the workspace. I/O failures are reported as missing state rather
-/// than propagated, because readiness is a state, not an error.
 pub fn inspect(
     workspace: &Path,
     guidance_dir: &Path,

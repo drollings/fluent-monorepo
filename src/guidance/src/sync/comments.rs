@@ -21,11 +21,6 @@ common_core::impl_from_io_error!(SyncError);
 /// token budget. Human prose never passes through here; curated comments
 /// keep their byte-identical path in `sync_comments`.
 #[must_use]
-/// Certified write gate for generated prose: the prose lands only when
-/// every deterministic check passes — the target line resolves in the
-/// source, every backticked symbol it names exists, and it fits the
-/// token budget. Human prose never passes through here; curated comments
-/// keep their byte-identical path in `sync_comments`.
 pub fn certified_write(
     source: &str,
     prose: &str,

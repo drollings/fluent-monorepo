@@ -59,7 +59,6 @@ impl ExecutionPlan {
 
 /// Provider-selection policy for the resolver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Provider-selection policy for the resolver.
 pub enum ProviderSelection {
     /// Classic include-all semantics: every provider produces a distinct
     /// artifact. Correct for build graphs where multiple providers for the

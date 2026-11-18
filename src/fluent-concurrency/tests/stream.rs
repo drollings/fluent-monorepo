@@ -118,5 +118,8 @@ async fn cancel_wakes_stream_abort() {
     // A broadcast fired after creation is observed on first poll; this is
     // the guarantee `StreamAbort::cancelled` relies on for the close path.
     let observed = tokio::time::timeout(std::time::Duration::from_secs(5), pending).await;
-    assert!(observed.is_ok(), "cancel after creation must wake the waiter");
+    assert!(
+        observed.is_ok(),
+        "cancel after creation must wake the waiter"
+    );
 }

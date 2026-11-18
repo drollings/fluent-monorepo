@@ -15,7 +15,6 @@ use crate::stream::StreamBreaker;
 
 /// One gate's entry/exit answer with the reason that refused it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One gate's entry/exit answer with the reason that refused it.
 pub struct GateVerdict {
     /// Whether new entries may flow.
     pub allows_entry: bool,
@@ -51,8 +50,6 @@ impl GateVerdict {
 /// One bar's producer-confidence reading: the trading state plus every
 /// attached sensor gate, each with its own entry/exit answer and reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One bar's producer-confidence reading: the trading state plus every
-/// attached sensor gate, each with its own entry/exit answer and reason.
 pub struct GateReading {
     /// The operator's trading state (always attached).
     pub trading: GateVerdict,

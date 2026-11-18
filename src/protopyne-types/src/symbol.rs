@@ -25,9 +25,6 @@ pub const DEFAULT_MAX_SYMBOLS: usize = 4_096;
 /// no arithmetic by construction (there is no `Add`/`Sub`/`From<usize>`
 /// impl, and the inner value is private).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Opaque handle for one interned symbol. `Copy` for hot-path map keys;
-/// no arithmetic by construction (there is no `Add`/`Sub`/`From<usize>`
-/// impl, and the inner value is private).
 pub struct SymKey(u32);
 
 impl SymKey {
@@ -41,8 +38,6 @@ impl SymKey {
 /// Scoped string interner: `underlying`/`strategy`/portfolio names in,
 /// [`SymKey`] out, resolved back only through the owning index.
 #[derive(Debug)]
-/// Scoped string interner: `underlying`/`strategy`/portfolio names in,
-/// [`SymKey`] out, resolved back only through the owning index.
 pub struct SymbolIndex {
     names: Vec<String>,
     lookup: HashMap<String, SymKey>,

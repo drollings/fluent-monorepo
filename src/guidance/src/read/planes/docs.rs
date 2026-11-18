@@ -15,7 +15,6 @@ use crate::query::capability_match::{rank_briefs, BriefCandidate, RankedBrief};
 
 /// One retrieved card with its live proof.
 #[derive(Debug, Clone, PartialEq)]
-/// One retrieved card with its live proof.
 pub struct DocCardHit {
     /// Card id (`source_path#anchor`).
     pub id: String,
@@ -59,10 +58,6 @@ pub const DOC_CANDIDATE_LIMIT: usize = 20;
 /// filtered. `judge` labels verdicts when present; `None` leaves
 /// everything unjudged (`considered` downstream).
 #[must_use]
-/// Retrieve capability cards for one query: FTS plus lemma recall,
-/// SVO-ranked, live sections resolved and verified. Rank-only, never
-/// filtered. `judge` labels verdicts when present; `None` leaves
-/// everything unjudged (`considered` downstream).
 pub fn retrieve_cards(
     query: &str,
     workspace: Option<&Path>,
@@ -174,14 +169,12 @@ fn json_list(raw: &str) -> Vec<String> {
 
 /// Provenance tag for branch-2 pulls (rendered beside merged code).
 #[must_use]
-/// Provenance tag for branch-2 pulls (rendered beside merged code).
 pub fn branch_provenance(card: &DocCardHit) -> String {
     format!("via capability: {}", card.crate_name)
 }
 
 /// One verified documentation section from the project-card doc plane.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One verified documentation section from the project-card doc plane.
 pub struct DocHit {
     /// Card key (`doc:<path>#<anchor>`).
     pub key: String,
@@ -202,8 +195,6 @@ pub struct DocHit {
 /// Resolve a live doc section and compare its hash with the stored one.
 /// The one verifier shared by capability cards and doc cards.
 #[must_use]
-/// Resolve a live doc section and compare its hash with the stored one.
-/// The one verifier shared by capability cards and doc cards.
 pub fn resolve_and_verify_section(
     workspace: Option<&Path>,
     source_path: &str,
@@ -230,9 +221,6 @@ pub fn resolve_and_verify_section(
 /// never filtered: callers decide whether an unverified section renders
 /// with a label.
 #[must_use]
-/// Rank corroborated documentation sections for the docs plane. Ranked,
-/// never filtered: callers decide whether an unverified section renders
-/// with a label.
 pub fn retrieve_doc_sections(
     query: &str,
     workspace: Option<&Path>,
@@ -249,12 +237,6 @@ pub fn retrieve_doc_sections(
 /// pass through unchanged; only exact-crate anchors filter before
 /// their calibration. The count rides `--trace`.
 #[must_use]
-/// Anchor-scoped doc sections plus the exclusion count: keeps the
-/// candidates mentioning any anchor term (path, anchor, title, body,
-/// or code scope), fail-open to the full set when the anchor would
-/// remove everything. `None` anchors and shadow identifier anchors
-/// pass through unchanged; only exact-crate anchors filter before
-/// their calibration. The count rides `--trace`.
 pub fn retrieve_doc_sections_anchored(
     query: &str,
     workspace: Option<&Path>,
@@ -325,8 +307,6 @@ fn retrieve_doc_sections_unscoped(
 /// Render capability cards as evidence entries. External cards stay
 /// `[considered]` until their own point calibrates.
 #[must_use]
-/// Render capability cards as evidence entries. External cards stay
-/// `[considered]` until their own point calibrates.
 pub fn capability_entries(hits: &[DocCardHit]) -> Vec<(String, String)> {
     hits.iter()
         .map(|hit| {
@@ -355,10 +335,6 @@ pub fn capability_entries(hits: &[DocCardHit]) -> Vec<(String, String)> {
 /// the card's provenance. No cross-source RRF — the card picks the
 /// scope, code recall ranks inside it.
 #[must_use]
-/// Branch-2 scoped code pull: the rank-1 card scopes an FTS pull by
-/// its `code_paths`; hits merge under the normal code section with
-/// the card's provenance. No cross-source RRF — the card picks the
-/// scope, code recall ranks inside it.
 pub fn branch2_pulls(
     card: &DocCardHit,
     db: &GuidanceSearchDb,
@@ -427,9 +403,6 @@ pub fn branch2_pulls(
 /// shipping path renders byte-identically while the plane owns the
 /// one retrieval implementation.
 #[must_use]
-/// Ranked briefs for the legacy shape: lossless back-mapping so the
-/// shipping path renders byte-identically while the plane owns the
-/// one retrieval implementation.
 pub fn ranked_briefs_for_legacy(hits: &[DocCardHit]) -> Vec<RankedBrief> {
     hits.iter()
         .enumerate()

@@ -529,7 +529,6 @@ pub struct EntitySimilarityIndex {
 
 /// A pre-encoded concept label with its namespace and canonical name.
 #[derive(Debug, Clone)]
-/// A pre-encoded concept label with its namespace and canonical name.
 pub struct ConceptEncoding {
     /// The interlingua namespace (e.g., `YagoEntity`, `YagoClass`).
     pub namespace: String,
@@ -541,7 +540,6 @@ pub struct ConceptEncoding {
 
 /// The result of an entity-similarity lookup.
 #[derive(Debug, Clone)]
-/// The result of an entity-similarity lookup.
 pub struct EntitySimilarityHit {
     pub namespace: String,
     pub canonical: String,

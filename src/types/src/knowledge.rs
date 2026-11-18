@@ -22,7 +22,6 @@ use crate::{ContentNode, KnnHit, NodeId};
 
 /// Errors from a `KnowledgeStore` implementation.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Errors from a `KnowledgeStore` implementation.
 pub enum KnowledgeError {
     /// A node with the given id was not found.
     #[error("node not found: {0:?}")]

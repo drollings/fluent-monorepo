@@ -127,7 +127,7 @@ which shares imperatives), re-pin floors, full gate green.
 - Touching `tests/data/parse_bench.json` item texts to dodge drift — drift
   means the tokenizer changed; treat it as a signal, not an inconvenience.
 - New `spacy-rs` dependencies, or imports from `guidance`/`router`/`coral`/
-  `wasm_ipc`/`ontology`/`rdf`. The crate's hermeticity is load-bearing;
+  `wasm_ipc`/`rdf`. The crate's hermeticity is load-bearing;
   `cargo check -p spacy-rs` must show no such edge.
 
 ## 8. Command reference

@@ -33,8 +33,6 @@ pub enum MemberGroundedness {
 /// Whether a member name resolves to a registered concept: any token hit
 /// grounds the member. Total over inputs (never errors, never panics).
 #[must_use]
-/// Whether a member name resolves to a registered concept: any token hit
-/// grounds the member. Total over inputs (never errors, never panics).
 pub fn member_groundedness(
     name: &str,
     store: &dyn fluent_concept::ConceptStore,
@@ -56,10 +54,6 @@ pub fn member_groundedness(
 /// behind. Membership always preserved (reorder, never filter) — the only
 /// composition the uncalibrated axis is trusted with.
 #[must_use]
-/// Stable grounded-first partition of gate-passing member names: grounded
-/// members keep their relative order up front, unknown members keep theirs
-/// behind. Membership always preserved (reorder, never filter) — the only
-/// composition the uncalibrated axis is trusted with.
 pub fn grounded_first(names: Vec<String>, store: &dyn fluent_concept::ConceptStore) -> Vec<String> {
     let mut grounded = Vec::new();
     let mut unknown = Vec::new();
@@ -86,17 +80,6 @@ pub fn grounded_first(names: Vec<String>, store: &dyn fluent_concept::ConceptSto
 /// resolver live in the pipeline owner, the store in the router); this
 /// function introduces no seam and no second scorer.
 #[must_use]
-/// Query-triple plausibility evidence: the taxonomy groundedness of what the
-/// query *says* (subject/predicate/object lemmas via the existing
-/// `extract_triples` → `build_plausibility_inputs` → `score_plausibility`
-/// chain). Pure evidence — NOT wired into any backend here; any gating use
-/// needs its own calibration first.
-///
-/// Fail-open contract: `None` NLP, NLP error, zero triples, and `Loading`
-/// store all yield `None` (today's behavior preserved — absence of evidence
-/// is not evidence). All three inputs are caller-owned parameters (NLP +
-/// resolver live in the pipeline owner, the store in the router); this
-/// function introduces no seam and no second scorer.
 pub fn query_plausibility(
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
     resolver: &spacy_rs::interlingua::InterlinguaResolver,

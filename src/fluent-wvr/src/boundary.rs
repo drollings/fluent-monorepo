@@ -129,7 +129,6 @@ pub struct BoundaryRepair {
 
 /// Errors produced by member extraction / typed decode.
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-/// Errors produced by member extraction / typed decode.
 pub enum BoundaryError {
     /// No `{`/`[` and no schema-recognised `key = value` members found.
     #[error("no JSON value or schema members found in boundary text")]

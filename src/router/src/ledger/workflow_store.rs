@@ -21,7 +21,6 @@ use search_vector::math::cosine_similarity_f32;
 
 /// A workflow entry — one prior `query → local_attempts → escalation → frontier → assembly` chain.
 #[derive(Debug, Clone)]
-/// A workflow entry — one prior `query → local_attempts → escalation → frontier → assembly` chain.
 pub struct WorkflowEntry {
     pub query_embedding: Vec<f32>,
     pub dag: Vec<Target>,
@@ -31,7 +30,6 @@ pub struct WorkflowEntry {
 
 /// Errors surfaced by the workflow store.
 #[derive(Debug, thiserror::Error)]
-/// Errors surfaced by the workflow store.
 pub enum StoreError {
     #[error("storage error: {0}")]
     Storage(String),

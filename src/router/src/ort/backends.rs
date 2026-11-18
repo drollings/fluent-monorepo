@@ -24,10 +24,6 @@ use super::weights::{onnx_role_profile_for, OnnxWeights};
 /// inside fluent-onnx). `Ok(None)` when the model is not registered as a
 /// `FillMask` encoder.
 #[cfg(feature = "onnx")]
-/// Build the ort encoder for a model and wrap it in a `CachedEmbeddingProvider`
-/// (the router is the composition root; caching is deliberately not done
-/// inside fluent-onnx). `Ok(None)` when the model is not registered as a
-/// `FillMask` encoder.
 pub fn onnx_chart_embedder(
     registry: &OrtRegistry,
     model_key: &str,
@@ -76,11 +72,6 @@ pub fn onnx_colbert_reranker(
 /// chat call: chat-template render → tokenize → prefill → (optionally
 /// grammar-constrained) decode to text.
 #[cfg(feature = "onnx")]
-/// The decode seam behind the onnx `ChatBackend`. Decouples the
-/// backend's grammar-wiring + limiter from the concrete `OrtLlmSession` decode
-/// so hermetic tests inject a fake decoder (no real model). `complete` runs one
-/// chat call: chat-template render → tokenize → prefill → (optionally
-/// grammar-constrained) decode to text.
 pub(crate) trait OnnxLlmRunner: Send + Sync {
     fn complete(
         &self,
@@ -107,7 +98,6 @@ pub(crate) trait OnnxLlmRunner: Send + Sync {
 
 /// The real runner over an `OrtLlmSession` (wraps [`fluent_onnx::OnnxChatCompletion`]).
 #[cfg(feature = "onnx")]
-/// The real runner over an `OrtLlmSession` (wraps [`fluent_onnx::OnnxChatCompletion`]).
 struct RealOnnxRunner {
     session: Arc<fluent_onnx::OrtLlmSession>,
 }
@@ -155,20 +145,6 @@ impl OnnxLlmRunner for RealOnnxRunner {
 /// Every decode is bounded by a [`fluent_concurrency::pool::Limiter`] (the
 /// router's thread-budget rule): a CPU decode never starves a GPU dispatch.
 #[cfg(feature = "onnx")]
-/// The onnx generative `ChatBackend`: a `CausalLm` session
-/// served behind the `fluent_llm::client::ChatBackend` seam, with optional
-/// grammar-constrained structured decoding.
-///
-/// - `chat_complete` → free text (no grammar — summarization / free generation).
-/// - `chat_complete_with_extras` reads `extras["response_format"]["schema"]` and
-/// builds a [`fluent_onnx::JsonObjectGrammar`] / [`fluent_onnx::JsonArrayGrammar`]
-/// from it (the llama-fork `response_format` vocabulary), so a constrained
-/// caller's output is structurally valid by construction. An unrepresentable
-/// schema degrades to free text (the caller's post-hoc validator is the
-/// backstop — the grammar is a strictness improvement, never a gate).
-///
-/// Every decode is bounded by a [`fluent_concurrency::pool::Limiter`] (the
-/// router's thread-budget rule): a CPU decode never starves a GPU dispatch.
 pub(crate) struct OnnxChatBackend {
     runner: Arc<dyn OnnxLlmRunner>,
     vocab: Arc<dyn fluent_onnx::TokenVocab>,
@@ -425,13 +401,6 @@ pub fn onnx_chat_backend(
 /// role's default dispatch point; `local_backend_for_instance` targets any
 /// declared context.
 #[cfg(feature = "onnx")]
-/// Build a **context-bound** onnx `ChatBackend` for `weights`' named context
-/// `name`. Loads the role's context pool on first use (the onnx
-/// lazy-residency load point — `ensure_pool` calls `build_llm_session`, which
-/// loads the session through the registry) and binds the backend to that
-/// context, so decodes persist their KV there. `name == pool_context` for the
-/// role's default dispatch point; `local_backend_for_instance` targets any
-/// declared context.
 pub fn onnx_context_backend(
     weights: &OnnxWeights,
     name: &str,
@@ -541,8 +510,6 @@ pub fn onnx_chat_backend(
 /// ColBERT-based chart candidate reranker: uses MaxSim late-interaction
 /// scoring to re-rank HNSW candidates by fine-grained token-level relevance.
 #[cfg(feature = "onnx")]
-/// ColBERT-based chart candidate reranker: uses MaxSim late-interaction
-/// scoring to re-rank HNSW candidates by fine-grained token-level relevance.
 pub struct ColbertChartReranker {
     retriever: fluent_onnx::ColbertRetriever,
     cache: Arc<fluent_onnx::colbert::CachedColbert>,

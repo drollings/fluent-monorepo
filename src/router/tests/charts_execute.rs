@@ -709,7 +709,11 @@ async fn gated_stage_succeeds_only_with_inherited_caps() {
     let mut ctx = make_ctx("run gated");
     ctx.caps = CapabilitySet::new().with(fluent_wvr::FsCapability::new());
     let summary = plan.execute(&ctx, &default_opts()).await.expect("runs");
-    assert_eq!(summary.completed.len(), 1, "gated stage ran with caller caps");
+    assert_eq!(
+        summary.completed.len(),
+        1,
+        "gated stage ran with caller caps"
+    );
     assert!(summary.failed.is_empty());
 }
 
@@ -723,6 +727,9 @@ async fn unprivileged_opt_out_denies_gated_stage() {
     let mut opts = default_opts();
     opts.unprivileged = true;
     let summary = plan.execute(&ctx, &opts).await.expect("runs");
-    assert!(summary.completed.is_empty(), "unprivileged chart runs nothing gated");
+    assert!(
+        summary.completed.is_empty(),
+        "unprivileged chart runs nothing gated"
+    );
     assert_eq!(summary.failed.len(), 1);
 }

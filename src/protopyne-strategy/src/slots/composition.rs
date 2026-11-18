@@ -87,14 +87,12 @@ fn momentum_factory(_: &serde_json::Value) -> Result<Arc<Strategy>, SlotError> {
 
 /// The composition catalog.
 #[must_use]
-/// The composition catalog.
 pub fn strategies() -> &'static SlotRegistry<Arc<Strategy>> {
     composition_registry()
 }
 
 /// The catalog ids, in schema order.
 #[must_use]
-/// The catalog ids, in schema order.
 pub fn strategy_ids() -> Vec<&'static str> {
     strategies().ids()
 }

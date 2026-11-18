@@ -15,9 +15,6 @@ use fluent_types::StageKind;
 /// become `Code` stages (source + line + fenced text) and the one
 /// code renderer owns the shape.
 #[must_use]
-/// Render code findings through the shared stage formatter: findings
-/// become `Code` stages (source + line + fenced text) and the one
-/// code renderer owns the shape.
 pub fn render_code_findings(findings: &[crate::read::engine::Finding]) -> String {
     let stages: Vec<Stage> = findings
         .iter()
@@ -49,8 +46,6 @@ pub fn render_code_findings(findings: &[crate::read::engine::Finding]) -> String
 /// Render one card section: title plus budget-truncated cards. The
 /// title is structural and always renders; the budget caps entries.
 #[must_use]
-/// Render one card section: title plus budget-truncated cards. The
-/// title is structural and always renders; the budget caps entries.
 pub fn render_card_section(
     title: &str,
     cards: &[(String, String)],
@@ -67,8 +62,6 @@ pub fn render_card_section(
 /// Render one evidence section: source-anchored excerpts. The title
 /// is structural and always renders; the budget caps entries.
 #[must_use]
-/// Render one evidence section: source-anchored excerpts. The title
-/// is structural and always renders; the budget caps entries.
 pub fn render_evidence_section(
     title: &str,
     entries: &[(String, String)],
@@ -136,10 +129,6 @@ pub fn markdown_envelope(mut envelope: serde_json::Value) -> serde_json::Value {
 /// and control characters are stripped. Deterministic sections are
 /// already fence-safe; only the `Answer` body passes through here.
 #[must_use]
-/// Sanitize model-derived text for markdown rendering: embedded
-/// fences are neutralized so they can never open or close a block,
-/// and control characters are stripped. Deterministic sections are
-/// already fence-safe; only the `Answer` body passes through here.
 pub fn sanitize_for_markdown(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -156,10 +145,6 @@ pub fn sanitize_for_markdown(text: &str) -> String {
 /// rows are collected deterministically during `explain`; this only
 /// formats them, so rendering never triggers a model call.
 #[must_use]
-/// Render the `--trace` block: one line per candidate with its
-/// anchor decision, judge label, and admission/budget outcome. The
-/// rows are collected deterministically during `explain`; this only
-/// formats them, so rendering never triggers a model call.
 pub fn render_trace(rows: &[crate::read::engine::TraceRow]) -> String {
     use std::fmt::Write as _;
     let mut out = String::from("### Trace\n");
@@ -180,8 +165,6 @@ pub fn render_trace(rows: &[crate::read::engine::TraceRow]) -> String {
 /// Assemble the markdown answer in section order: project map, docs,
 /// capabilities, top matches, citations, gaps.
 #[must_use]
-/// Assemble the markdown answer in section order: project map, docs,
-/// capabilities, top matches, citations, gaps.
 pub fn render_answer(answer: &crate::read::engine::ReadAnswer) -> String {
     let mut out = format!("## Explain: {}\n", answer.query);
     for section in &answer.sections {

@@ -60,7 +60,6 @@ pub fn model_name(model_ref: &str) -> &str {
 
 /// Resolve a model reference to its `(provider, model)` halves.
 #[must_use]
-/// Resolve a model reference to its `(provider, model)` halves.
 pub fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
     ModelRef::split(model_ref)
 }

@@ -35,7 +35,6 @@ use crate::stages::common::{coerce_string, coerce_u8};
 
 /// A single target's self-assessment of the request's complexity.
 #[derive(Debug, Clone, serde::Deserialize)]
-/// A single target's self-assessment of the request's complexity.
 pub struct SelfAssessment {
     #[serde(default = "default_five")]
     pub complexity: u8,
@@ -74,10 +73,6 @@ pub fn parse_self_assessment(response: &str) -> Result<SelfAssessment, WorkError
 /// `model_key` is the config key (`models`/role `models`), `model_name` the
 /// resolved display name (`ModelEntry.name` or the key when absent).
 #[derive(Debug, Clone)]
-/// One ordered member of a role the matcher climbs over.
-///
-/// `model_key` is the config key (`models`/role `models`), `model_name` the
-/// resolved display name (`ModelEntry.name` or the key when absent).
 pub struct TargetCandidate {
     pub model_key: String,
     pub model_name: String,
@@ -239,9 +234,6 @@ impl RoleRecency {
 /// currently running. `None` (mock mode, no managed fleet) probes as
 /// all-down, so `Any` degrades to config order.
 #[derive(Clone, Default)]
-/// The supervisor liveness view a request carries: which managed models are
-/// currently running. `None` (mock mode, no managed fleet) probes as
-/// all-down, so `Any` degrades to config order.
 pub struct LivenessProbe {
     supervisor: Option<Arc<crate::supervisor::LlamaServerSupervisor>>,
 }
@@ -266,11 +258,6 @@ impl LivenessProbe {
 /// no session, and an all-down fleet, so expansion is identity for
 /// sentinel-free roles.
 #[derive(Clone, Default)]
-/// Request-scoped availability view for sentinel expansion, assembled from
-/// the per-request context channels the handler populates. Absent channels
-/// (unit tests, paths that bypass the handler) degrade gracefully: no recency,
-/// no session, and an all-down fleet, so expansion is identity for
-/// sentinel-free roles.
 pub struct RoleExpansion {
     recency: Option<Arc<RoleRecency>>,
     liveness: LivenessProbe,
@@ -607,7 +594,6 @@ pub fn expanded_candidates_for_role(
 
 /// One assessed step of the climb — the audit/observability payload.
 #[derive(Debug, Clone, serde::Serialize)]
-/// One assessed step of the climb — the audit/observability payload.
 pub struct AssessmentRecord {
     pub model_key: String,
     pub model_name: String,
@@ -621,7 +607,6 @@ pub struct AssessmentRecord {
 
 /// The outcome of a ladder run: the matched primary target plus the full walk.
 #[derive(Debug)]
-/// The outcome of a ladder run: the matched primary target plus the full walk.
 pub struct TargetMatch {
     pub primary: RoutingTarget,
     pub assessments: Vec<AssessmentRecord>,
@@ -662,14 +647,6 @@ pub fn is_match(candidate: &TargetCandidate, assessed: u8) -> bool {
 /// key), or a defense-in-depth real client in real mode — mirroring the
 /// classification-tree engine's `default_client` fallback.
 #[derive(Clone)]
-/// The ladder's per-candidate backend set, built once by `config::builder`
-/// (the single `LlmClient` factory — DIP) and shared by every pipeline.
-///
-/// `by_key` holds one `ChatBackend` per model key referenced by any
-/// role `models` member. `default` serves any candidate key absent from
-/// `by_key`: the injected mock/transcript backend in mock runs (covering every
-/// key), or a defense-in-depth real client in real mode — mirroring the
-/// classification-tree engine's `default_client` fallback.
 pub struct TargetBackends {
     by_key: ConcurrentRegistry<String, Arc<dyn ChatBackend>>,
     default: Arc<dyn ChatBackend>,
@@ -721,14 +698,6 @@ impl TargetBackends {
 /// can be shared between the flat classifier stage and the classification-tree
 /// engine without re-provisioning backends.
 #[derive(Clone)]
-/// The I/O-bound half of the ladder: holds the per-candidate backend set (one
-/// `ChatBackend` per candidate model key plus the `default` fallback — the
-/// injected mock/transcript backend or a real client) and runs the climb under
-/// a shared `Limiter`, exactly like the classifier stage's sync LLM call.
-///
-/// `Clone` is cheap (three `Arc`-ish fields + a `u64`), so the same matcher
-/// can be shared between the flat classifier stage and the classification-tree
-/// engine without re-provisioning backends.
 pub struct TargetMatcher {
     /// Per-model-key backends + the default for keys absent from the map
     /// (real mode: one `LlmClient` per group member, built by `config::builder`

@@ -28,7 +28,6 @@ fn default_timeframe() -> String {
 
 /// The terminal's default ticker symbol.
 #[must_use]
-/// The terminal's default ticker symbol.
 pub fn default_symbol() -> String {
     DEFAULT_SYMBOL.to_owned()
 }
@@ -49,13 +48,6 @@ pub const DEFAULT_RANGE: DateRange = DateRange::Month2;
 /// the `M15` slot upward in the shell when no native slot was seeded — the
 /// kernels always see plain closed bars, never a timeframe concept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-/// Intraday-to-daily bar timeframe key behind the terminal toolbar.
-///
-/// Display-only selector: each key maps to bar spacing (for range-window
-/// math), to the store's [`Timeframe`](protopyne_types::Timeframe) grid, and
-/// to a history slot in the shell. Higher keys (`H1`, `H4`, `D1`) resample
-/// the `M15` slot upward in the shell when no native slot was seeded — the
-/// kernels always see plain closed bars, never a timeframe concept.
 pub enum TimeframeKey {
     /// One-minute bars.
     M1,
@@ -150,12 +142,6 @@ pub const PREFOLD_ENABLED: bool = false;
 /// cannot disagree about which levels exist. The base always leads — even a
 /// daily base with no coarser level yields its native singleton.
 #[must_use]
-/// Levels a base timeframe can pre-fold into: toolbar keys at or coarser
-/// than `base` that tile it whole, finest first. The ladder comes from the
-/// one toolbar-label bridge (`Timeframe::from_chart_label`) and the shared
-/// whole-multiple check, so the terminal, the store fold, and the kernels
-/// cannot disagree about which levels exist. The base always leads — even a
-/// daily base with no coarser level yields its native singleton.
 pub fn prefold_levels(base: TimeframeKey) -> Vec<TimeframeKey> {
     TimeframeKey::all()
         .into_iter()
@@ -177,10 +163,6 @@ fn prefold_multiple(base: TimeframeKey, level: TimeframeKey) -> f64 {
 /// coarsest when nothing reaches it. A non-positive or non-finite spacing
 /// holds the base — the same fail-safe as the column dispatcher this feeds.
 #[must_use]
-/// Stateless pick: the finest level whose folded bars still span
-/// [`PREFOLD_TARGET_PX_PER_BAR`] pixels at `native_px_per_bar`, or the
-/// coarsest when nothing reaches it. A non-positive or non-finite spacing
-/// holds the base — the same fail-safe as the column dispatcher this feeds.
 pub fn prefold_pick(native_px_per_bar: f64, base: TimeframeKey) -> TimeframeKey {
     if !native_px_per_bar.is_finite() || native_px_per_bar <= 0.0 {
         return base;
@@ -203,13 +185,6 @@ pub fn prefold_pick(native_px_per_bar: f64, base: TimeframeKey) -> TimeframeKey 
 /// several levels at once. A level outside the base ladder (or a non-positive
 /// spacing) holds its level rather than guessing.
 #[must_use]
-/// Stateful pick with hysteresis around each switch point: zooming out steps
-/// coarser only below the low edge (target minus band, measured in folded-bar
-/// pixels over the current level), zooming in steps finer only once a finer
-/// level clears the high edge. Between the edges the current level holds from
-/// either direction, so a hover stutters without strobing. Large jumps cross
-/// several levels at once. A level outside the base ladder (or a non-positive
-/// spacing) holds its level rather than guessing.
 pub fn prefold_pick_hysteretic(
     current: TimeframeKey,
     native_px_per_bar: f64,
@@ -254,11 +229,6 @@ pub fn prefold_pick_hysteretic(
 /// levels emit whole buckets only (`CompleteOnly`), so a partially complete
 /// trailing bucket never sources a level.
 #[must_use]
-/// Flag gate for the picker: off answers the base at every zoom (the column
-/// dispatcher below runs exactly its native path); on delegates to the
-/// hysteretic picker. The live edge always renders from native bars — folded
-/// levels emit whole buckets only (`CompleteOnly`), so a partially complete
-/// trailing bucket never sources a level.
 pub fn resolve_prefold_level(
     enabled: bool,
     current: TimeframeKey,
@@ -521,9 +491,6 @@ impl_component!(ChartConfig);
 /// builds the pane plan on `execute`, and records the observed duration
 /// into `histogram`. Timing covers plan builds, never per-bar paint.
 #[must_use]
-/// Wrap plan construction in latency timing: the returned unit validates,
-/// builds the pane plan on `execute`, and records the observed duration
-/// into `histogram`. Timing covers plan builds, never per-bar paint.
 pub fn timed_plan_build(
     config: ChartConfig,
     histogram: Arc<LatencyHistogram>,
@@ -537,11 +504,6 @@ pub fn timed_plan_build(
 /// row when fewer exist), so a range pick maps to a data window through the
 /// canonical preset math instead of a second estimator.
 #[must_use]
-/// Trailing window for a toolbar range preset.
-///
-/// Keeps the last `range.estimated_bars(bar_duration_seconds)` rows (or every
-/// row when fewer exist), so a range pick maps to a data window through the
-/// canonical preset math instead of a second estimator.
 pub fn window_for_range(
     rows: &[ChartRow],
     range: DateRange,
@@ -558,12 +520,6 @@ pub fn window_for_range(
 /// math knowingly over-counts sessions (weekends still count), so the bound
 /// favors coverage, never precision.
 #[must_use]
-/// Fetch size for a range preset at a bar spacing, plus warmup headroom.
-///
-/// The floor keeps small windows on the bounded trailing read; above it the
-/// fetch is exactly the calendar need plus warmup — never more. Calendar
-/// math knowingly over-counts sessions (weekends still count), so the bound
-/// favors coverage, never precision.
 pub fn fetch_for_window(range: DateRange, bar_seconds: u64, warmup: usize) -> usize {
     fetch_for_span(range.span_seconds(), bar_seconds, warmup)
 }
@@ -574,11 +530,6 @@ pub fn fetch_for_window(range: DateRange, bar_seconds: u64, warmup: usize) -> us
 /// Floored at [`CHART_WINDOW_BARS`](crate::workspace::CHART_WINDOW_BARS) so a
 /// short window still plans a cheap, pannable read.
 #[must_use]
-/// Fetch size for a calendar span (seconds) at a bar spacing, plus warmup
-/// headroom: the one sizing rule behind every chart read, shared by presets
-/// and a custom Beginning span so neither invents its own bar-count math.
-/// Floored at [`CHART_WINDOW_BARS`](crate::workspace::CHART_WINDOW_BARS) so a
-/// short window still plans a cheap, pannable read.
 pub fn fetch_for_span(span_seconds: u64, bar_seconds: u64, warmup: usize) -> usize {
     let bars = (span_seconds / bar_seconds.max(1)) as usize;
     crate::workspace::CHART_WINDOW_BARS.max(bars.saturating_add(warmup))
@@ -591,12 +542,6 @@ pub fn fetch_for_span(span_seconds: u64, bar_seconds: u64, warmup: usize) -> usi
 /// from converted display rows. Anything outside the four wired kinds is
 /// not a third source — it refuses through [`refuse_chart_type`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Where one chart type's terminal picture comes from.
-///
-/// The single classification every dispatcher consumes: bar-backed pictures
-/// render candle geometry from bars, rows-backed pictures render a series
-/// from converted display rows. Anything outside the four wired kinds is
-/// not a third source — it refuses through [`refuse_chart_type`].
 pub enum PictureSource {
     /// Candle geometry pictures from bars (`Candles`, `Heikin`).
     Bars,
@@ -609,10 +554,6 @@ pub enum PictureSource {
 /// paint match — shares this construction instead of keeping its own
 /// wording in sync by hand.
 #[must_use]
-/// The one `chart_type` refusal: names the parameter, never renders a
-/// guess. Every dispatcher — the bars path, the rows path, and the demo's
-/// paint match — shares this construction instead of keeping its own
-/// wording in sync by hand.
 pub fn refuse_chart_type(kind: ChartType) -> EguiError {
     EguiError::InvalidParam {
         what: "chart_type".to_owned(),
@@ -662,14 +603,6 @@ pub fn chart_price_bars(bars: &[Bar], kind: ChartType) -> Result<Vec<Bar>, EguiE
 /// marker would force both call sites to re-wrap per frame — the same two
 /// allocations with more code — so the contract records the marker instead.
 #[must_use]
-/// Line series behind the terminal's line picture: the row closes, shaped
-/// for the polyline emitter.
-///
-/// The `Option` is the paint edge's hole currency, kept so the result feeds
-/// [`area_view`] and `oscillator_points` without re-wrapping: closes have
-/// no holes, so every element is unconditionally `Some` here. Dropping the
-/// marker would force both call sites to re-wrap per frame — the same two
-/// allocations with more code — so the contract records the marker instead.
 pub fn line_values(rows: &[ChartRow]) -> Vec<Option<f64>> {
     rows.iter().map(|row| Some(row.close)).collect()
 }
@@ -682,13 +615,6 @@ pub fn line_values(rows: &[ChartRow]) -> Vec<Option<f64>> {
 /// materialized as a per-bar vector because it repeats one baseline, and
 /// the trend key is never materialized because an area fill carries none.
 #[derive(Debug, Clone, PartialEq)]
-/// Validated area-fill input: the owned upper-edge series, the baseline it
-/// closes against, and the fill strength.
-///
-/// Built once by [`area_view`] (which validates every leg) and closed into
-/// polygons by the scaffolding's `area_polygons` — the lower edge is never
-/// materialized as a per-bar vector because it repeats one baseline, and
-/// the trend key is never materialized because an area fill carries none.
 pub struct AreaView {
     /// Per-bar upper edge with holes preserved; every present leg is finite.
     pub values: Vec<Option<f64>>,

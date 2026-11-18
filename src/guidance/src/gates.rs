@@ -14,7 +14,6 @@ use crate::ast_parser::{AstParser, TopItem};
 
 /// Changed file under certification.
 #[derive(Debug, Clone)]
-/// Changed file under certification.
 pub struct ChangedFile {
     /// Workspace-relative path, as cited.
     pub path: String,
@@ -27,8 +26,6 @@ pub struct ChangedFile {
 /// Pre-run build verdict across the cfg matrix (caller-supplied; the
 /// wave scheduler owns cargo).
 #[derive(Debug, Clone)]
-/// Pre-run build verdict across the cfg matrix (caller-supplied; the
-/// wave scheduler owns cargo).
 pub struct BuildReport {
     /// Clean across every matrix cell.
     pub clean: bool,
@@ -38,7 +35,6 @@ pub struct BuildReport {
 
 /// Pre-run test verdict against the recorded baseline.
 #[derive(Debug, Clone)]
-/// Pre-run test verdict against the recorded baseline.
 pub struct TestReport {
     /// Failures beyond the baseline; empty means no regression.
     pub new_failures: Vec<String>,
@@ -85,7 +81,6 @@ pub struct GateCtx<'a> {
 
 /// One gate's outcome: pass, fail with reason, or explicit skip.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One gate's outcome: pass, fail with reason, or explicit skip.
 pub enum GateOutcome {
     /// Certified.
     Pass,
@@ -97,7 +92,6 @@ pub enum GateOutcome {
 
 /// One gate's verdict with its stable ID.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// One gate's verdict with its stable ID.
 pub struct GateVerdict {
     /// Stable gate ID (`P1`–`P10`).
     pub id: String,
@@ -128,8 +122,6 @@ impl GateVerdict {
 /// Run all ten gates in order, collecting every verdict. Callers decide
 /// on [`gates_passed`]; the ledger records the full list either way.
 #[must_use]
-/// Run all ten gates in order, collecting every verdict. Callers decide
-/// on [`gates_passed`]; the ledger records the full list either way.
 pub fn run_gates(file: &ChangedFile, ctx: &GateCtx) -> Vec<GateVerdict> {
     let mut parser = AstParser::new();
     vec![
@@ -180,9 +172,6 @@ pub fn run_gates(file: &ChangedFile, ctx: &GateCtx) -> Vec<GateVerdict> {
 /// (no diagnostics in scope, no runner supplied). A skip anywhere else
 /// reverts, exactly like a fail.
 #[must_use]
-/// Certification rule: every gate passes, except P6-P8 which may skip
-/// (no diagnostics in scope, no runner supplied). A skip anywhere else
-/// reverts, exactly like a fail.
 pub fn gates_passed(verdicts: &[GateVerdict]) -> bool {
     verdicts.iter().all(|verdict| match verdict.id.as_str() {
         "P6" | "P7" | "P8" => !verdict.is_fail(),

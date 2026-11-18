@@ -111,7 +111,6 @@ pub enum ScoreDimension {
 /// Typed rejection for unknown dimension names: never a silent default.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("unknown score dimension: {0}")]
-/// Typed rejection for unknown dimension names: never a silent default.
 pub struct UnknownScoreDimension(pub String);
 
 impl ScoreDimension {

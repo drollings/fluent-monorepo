@@ -10,7 +10,6 @@ pub const HEADER_VERSION: u16 = 1;
 
 /// Common header shape (per-artifact).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Common header shape (per-artifact).
 pub struct BlobHeader {
     pub magic: u32,
     pub header_version: u16,
@@ -44,7 +43,6 @@ pub enum BlobError {
 
 /// Read little-endian primitives (no unsafe, no mmap).
 #[inline]
-/// Read little-endian primitives (no unsafe, no mmap).
 pub fn rd_u16(b: &[u8], o: usize) -> Option<u16> {
     Some(u16::from_le_bytes(b.get(o..o + 2)?.try_into().ok()?))
 }

@@ -329,10 +329,8 @@ fn feed_worker_new_panics_on_zero_queue_capacity() {
         queue_capacity: 0,
         ..config()
     };
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            CreditedFeedWorker::new(runtime(), bad, |_: usize| async {})
-        }))
-        .is_err()
-    );
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        CreditedFeedWorker::new(runtime(), bad, |_: usize| async {})
+    }))
+    .is_err());
 }

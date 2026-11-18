@@ -159,7 +159,6 @@ pub struct FieldSchema {
 /// Compatibility surface (scaffold).
 #[doc(hidden)]
 #[allow(dead_code)]
-/// Compatibility surface (scaffold).
 pub trait SchemaProvider {
     fn schema(&self) -> Vec<FieldSchema>;
 }
@@ -183,10 +182,10 @@ pub trait SchemaProvider {
 /// context but expects `execute` itself to return promptly. Violations
 /// defeat the supervisor's timeout and retry invariants.
 ///
-/// A blocking body that overruns its per-attempt budget keeps running
+/// A blocking body that overruns its whole-unit budget across all attempts (incl. backoff) keeps running
 /// past it: the supervisor reports `completed`, late — never a prompt
 /// `cancelled` — and a scheduled retry may overlap the still-running
-/// zombie. See the timeout guarantee on the supervisor's per-attempt
+/// zombie. See the timeout guarantee on the supervisor's whole-unit
 /// runner for the full accounting.
 ///
 /// # Examples

@@ -10,7 +10,6 @@ use super::VectorDbError;
 
 /// One generated summary projected for retrieval.
 #[derive(Debug, Clone, PartialEq)]
-/// One generated summary projected for retrieval.
 pub struct SummaryRecord {
     /// Owning fragment id (joins back to `fragments`).
     pub fragment_id: String,

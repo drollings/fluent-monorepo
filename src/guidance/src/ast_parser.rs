@@ -17,7 +17,6 @@ common_core::impl_from_io_error!(ParseError);
 
 /// One comment scope: the contiguous comment text attached to a node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One comment scope: the contiguous comment text attached to a node.
 pub struct CommentBlock {
     /// Stable identity (`scope::name`, or `$file` for the module comment).
     pub node_key: String,
@@ -46,7 +45,6 @@ pub const COLLECT_PYTHON_DOCSTRINGS: bool = true;
 
 /// Strip one comment's prefixes (`///`, `//!`, `//`, `#`, `/*`, `*`).
 #[must_use]
-/// Strip one comment's prefixes (`///`, `//!`, `//`, `#`, `/*`, `*`).
 pub fn clean_comment_block_text(text: &str) -> String {
     let mut out = text.to_string();
     if let Some(stripped) = out.strip_prefix("/**").or_else(|| out.strip_prefix("/*")) {
@@ -123,7 +121,6 @@ fn preceding_doc_parts(node: &tree_sitter::Node, source: &str) -> Vec<(String, u
 
 /// Contiguous doc text above `node`, walking across attributes.
 #[must_use]
-/// Contiguous doc text above `node`, walking across attributes.
 pub fn preceding_doc_text(node: &tree_sitter::Node, source: &str) -> Option<String> {
     let lines: Vec<String> = preceding_doc_parts(node, source)
         .into_iter()
@@ -421,8 +418,6 @@ impl Default for AstParser {
 /// Build a parser for one grammar. Takes ownership because
 /// `tree_sitter::Language` handles are moved into `set_language`.
 #[allow(clippy::needless_pass_by_value)]
-/// Build a parser for one grammar. Takes ownership because
-/// `tree_sitter::Language` handles are moved into `set_language`.
 fn parser_for(language: tree_sitter::Language) -> tree_sitter::Parser {
     let mut parser = tree_sitter::Parser::new();
     parser
@@ -750,7 +745,6 @@ impl AstParser {
 
 /// One top-level item span with its test status.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One top-level item span with its test status.
 pub struct TopItem {
     /// Byte start of the item (attributes included).
     pub(crate) start: u64,

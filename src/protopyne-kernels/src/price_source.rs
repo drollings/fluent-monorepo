@@ -10,7 +10,6 @@ use crate::indicator::{nan_hole, BarTick, OwnedOhlcv};
 
 /// Which OHLC-derived column an indicator reads.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-/// Which OHLC-derived column an indicator reads.
 pub enum PriceSource {
     /// Raw close.
     #[default]

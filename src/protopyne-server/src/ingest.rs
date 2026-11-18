@@ -181,7 +181,6 @@ impl_component!(IngestConfig);
 
 /// One ingestion health reading. Additive observation only.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-/// One ingestion health reading. Additive observation only.
 pub struct IngestHealth {
     /// Last observed feed counters.
     pub feed: FeedStatsSnapshot,
@@ -199,7 +198,6 @@ pub struct IngestHealth {
 
 /// What one closed event did.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// What one closed event did.
 pub enum IngestOutcome {
     /// Ignored: forming bar or non-bar event.
     Ignored,
@@ -558,7 +556,6 @@ impl IngestService {
 
 /// Read one coverage's last watermark without requiring a full read.
 #[must_use]
-/// Read one coverage's last watermark without requiring a full read.
 pub fn last_stamp(coverage: Option<&Coverage>) -> Option<i64> {
     coverage.map(|coverage| coverage.last.ts_ms)
 }

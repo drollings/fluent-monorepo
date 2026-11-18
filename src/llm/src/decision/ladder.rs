@@ -11,7 +11,6 @@ use crate::decision::{Decision, DecisionBreaker, DecisionCache, DecisionError};
 
 /// Ordered ladder rungs (owned; no clones or counters needed by callers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Ordered ladder rungs (owned; no clones or counters needed by callers).
 enum Rung {
     Rule,
     Cache,

@@ -51,8 +51,6 @@ fn keep_lemma(lemma: &str) -> bool {
 /// Comment-only lemmas over comment text slices: the single helper owning
 /// which text is indexed, reusing the `query_lemmas` normalization.
 #[must_use]
-/// Comment-only lemmas over comment text slices: the single helper owning
-/// which text is indexed, reusing the `query_lemmas` normalization.
 pub fn lemmas_for_comment_texts(
     texts: &[&str],
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
@@ -71,7 +69,6 @@ pub fn lemmas_for_comment_texts(
 
 /// Comment-only lemmas over collected blocks, in block order.
 #[must_use]
-/// Comment-only lemmas over collected blocks, in block order.
 pub fn lemmas_for_comment_blocks(
     blocks: &[CommentBlock],
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
@@ -142,7 +139,6 @@ fn lemmas_for_file(
 
 /// Ingestion outcome counts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-/// Ingestion outcome counts.
 pub struct IngestStats {
     /// Fragments committed.
     pub fragments: usize,
@@ -156,7 +152,6 @@ pub struct IngestStats {
 
 /// Ingestion failure (database only — parse/embed degrade, see above).
 #[derive(Debug, thiserror::Error)]
-/// Ingestion failure (database only — parse/embed degrade, see above).
 pub enum IngestError {
     /// Database failure.
     #[error("database error: {0}")]
@@ -224,14 +219,6 @@ pub fn ingest_text_file(
 /// so old rows keep matching exactly as before while pipeline rows gain
 /// inflection collapsing.
 #[must_use]
-/// Request/index lemma normalization: spacy rule lemmas when a pipeline is
-/// wired, unioned with the lowercase alphanumeric fallback (deterministic —
-/// L2 works with no model either way).
-///
-/// The union is backward compatible: rows ingested without a pipeline carry
-/// fallback tokens only, and every query still carries its fallback tokens,
-/// so old rows keep matching exactly as before while pipeline rows gain
-/// inflection collapsing.
 pub fn query_lemmas(nlp: Option<&spacy_rs::pipeline::NlpPipeline>, text: &str) -> Vec<String> {
     let fallback = fallback_tokens(text);
     let Some(nlp) = nlp else {
@@ -268,9 +255,6 @@ fn push_lemma(lemmas: &mut Vec<String>, seen: &mut HashSet<String>, lemma: &str)
 /// lemmatizer; no model, no network, zero embedding cost). `None` when
 /// construction fails — callers degrade to the fallback.
 #[must_use]
-/// Hermetic default English pipeline for L2 (rule tokenizer + rule
-/// lemmatizer; no model, no network, zero embedding cost). `None` when
-/// construction fails — callers degrade to the fallback.
 pub fn default_en_pipeline() -> Option<spacy_rs::pipeline::NlpPipeline> {
     spacy_rs::pipeline::NlpPipeline::en_default().ok()
 }

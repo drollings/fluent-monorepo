@@ -13,7 +13,6 @@ use crate::fix::Suggestion;
 
 /// One clippy/rustc diagnostic attributed to a file.
 #[derive(Debug, Clone, Default)]
-/// One clippy/rustc diagnostic attributed to a file.
 pub struct ClippyDiag {
     /// File path as reported (often package-relative).
     pub file: Option<String>,
@@ -31,7 +30,6 @@ pub struct ClippyDiag {
 
 /// One package invocation's diagnostics.
 #[derive(Debug, Clone)]
-/// One package invocation's diagnostics.
 pub struct ClippyReport {
     /// Parsed diagnostics in output order.
     pub diagnostics: Vec<ClippyDiag>,
@@ -53,7 +51,6 @@ impl Default for ClippyReport {
 
 /// Resource shaping for build invocations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Resource shaping for build invocations.
 pub struct BuildShaping {
     /// Cargo job cap, when reduced.
     pub jobs: Option<usize>,
@@ -64,8 +61,6 @@ pub struct BuildShaping {
 /// Shaping decision: interactive queries never wait on maintenance, so
 /// waves build small and nice while they are active.
 #[must_use]
-/// Shaping decision: interactive queries never wait on maintenance, so
-/// waves build small and nice while they are active.
 pub fn shaping_for(interactive_active: bool) -> BuildShaping {
     if interactive_active {
         BuildShaping {
@@ -82,7 +77,6 @@ pub fn shaping_for(interactive_active: bool) -> BuildShaping {
 
 /// Clippy invocation context.
 #[derive(Debug, Clone)]
-/// Clippy invocation context.
 pub struct ClippyCtx {
     /// Dedicated target dir (no lock fights with the user's own cargo).
     pub target_dir: Option<PathBuf>,
@@ -96,9 +90,6 @@ pub struct ClippyCtx {
 /// --message-format=json` over the package, with shaping applied.
 /// Pure, so tests pin it without spawning anything.
 #[must_use]
-/// Build the clippy argv plus environment: `cargo clippy
-/// --message-format=json` over the package, with shaping applied.
-/// Pure, so tests pin it without spawning anything.
 pub fn clippy_command(package_dir: &Path, ctx: &ClippyCtx) -> (Vec<String>, Vec<(String, String)>) {
     let mut argv = Vec::new();
     if ctx.shaping.nice {
@@ -148,9 +139,6 @@ pub fn run_clippy(package_dir: &Path, ctx: &ClippyCtx) -> std::io::Result<Clippy
 /// become diagnostics, build-finished and rendered lines drop out.
 /// Never fails: unparsable lines are skipped, not fatal.
 #[must_use]
-/// Parse `cargo clippy --message-format=json` output: compiler messages
-/// become diagnostics, build-finished and rendered lines drop out.
-/// Never fails: unparsable lines are skipped, not fatal.
 pub fn parse_clippy_json(output: &str) -> ClippyReport {
     let mut diagnostics = Vec::new();
     for line in output.lines() {
@@ -232,8 +220,6 @@ pub fn parse_clippy_json(output: &str) -> ClippyReport {
 /// Attribute diagnostics to files: package-relative names resolve
 /// against the package dir, absolute names stand alone.
 #[must_use]
-/// Attribute diagnostics to files: package-relative names resolve
-/// against the package dir, absolute names stand alone.
 pub fn attribute_diagnostics(report: &ClippyReport) -> HashMap<String, Vec<usize>> {
     let mut by_file: HashMap<String, Vec<usize>> = HashMap::new();
     for (index, diagnostic) in report.diagnostics.iter().enumerate() {
@@ -246,7 +232,6 @@ pub fn attribute_diagnostics(report: &ClippyReport) -> HashMap<String, Vec<usize
 
 /// Resolve one reported file name against its package directory.
 #[must_use]
-/// Resolve one reported file name against its package directory.
 pub fn resolve_reported(package_dir: &Path, reported: &str) -> PathBuf {
     let path = Path::new(reported);
     if path.is_absolute() {
@@ -259,8 +244,6 @@ pub fn resolve_reported(package_dir: &Path, reported: &str) -> PathBuf {
 /// Owning cargo package of a file: nearest ancestor with `Cargo.toml`.
 /// `None` past the search cap (detached files format without clippy).
 #[must_use]
-/// Owning cargo package of a file: nearest ancestor with `Cargo.toml`.
-/// `None` past the search cap (detached files format without clippy).
 pub fn package_root(path: &Path) -> Option<PathBuf> {
     let mut dir = path.parent()?.to_path_buf();
     for _ in 0..10 {

@@ -29,9 +29,6 @@ use crate::indicator::{IndicatorId, IndicatorRegistry, Ohlcv, OwnedOhlcv, ParamS
 /// Euclidean, so pre-epoch stamps land in their own bucket, never in the
 /// future one). Mirrors the Pine candle-index math.
 #[must_use]
-/// Floor a millisecond stamp to its grid bucket (`floor(ts / grid) * grid`,
-/// Euclidean, so pre-epoch stamps land in their own bucket, never in the
-/// future one). Mirrors the Pine candle-index math.
 pub fn floor_to_grid(ts_ms: i64, grid: NonZeroI64) -> i64 {
     ts_ms.div_euclid(grid.get()) * grid.get()
 }
@@ -51,9 +48,6 @@ pub fn floor_to_grid_checked(ts_ms: i64, grid_ms: i64) -> Result<i64, KernelErro
 /// `now_ms`: its end (`open + grid`) has passed. The lookahead guard —
 /// unconfirmed buckets are never projected.
 #[must_use]
-/// Whether the bucket opening at `bucket_open_ms` is fully formed at
-/// `now_ms`: its end (`open + grid`) has passed. The lookahead guard —
-/// unconfirmed buckets are never projected.
 pub fn fully_formed(bucket_open_ms: i64, grid: NonZeroI64, now_ms: i64) -> bool {
     bucket_open_ms.saturating_add(grid.get()) <= now_ms
 }
@@ -62,9 +56,6 @@ pub fn fully_formed(bucket_open_ms: i64, grid: NonZeroI64, now_ms: i64) -> bool 
 /// both with the earlier side's item first. Order within each side is
 /// preserved (stable); the inputs must already ascend.
 #[must_use]
-/// Merge two ascending timestamped streams, keeping every item; ties keep
-/// both with the earlier side's item first. Order within each side is
-/// preserved (stable); the inputs must already ascend.
 pub fn interleave_sorted_by<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) -> Vec<T> {
     let mut out = Vec::with_capacity(a.len() + b.len());
     let (mut i, mut j) = (0, 0);
@@ -90,8 +81,6 @@ pub fn interleave_sorted_by<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) 
 /// Merge two ascending `(stamp_ms, value)` tapes, keeping every point; ties
 /// keep both with the earlier side's point first.
 #[must_use]
-/// Merge two ascending `(stamp_ms, value)` tapes, keeping every point; ties
-/// keep both with the earlier side's point first.
 pub fn interleave_sorted(a: &[(i64, f64)], b: &[(i64, f64)]) -> Vec<(i64, f64)> {
     interleave_sorted_by(a, b, |row| row.0)
 }
@@ -100,9 +89,6 @@ pub fn interleave_sorted(a: &[(i64, f64)], b: &[(i64, f64)]) -> Vec<(i64, f64)> 
 /// equal stamps the later side's item wins (tick tapes key on time; tapes
 /// carry no price comparison). Inputs must already ascend.
 #[must_use]
-/// Merge two ascending timestamped streams with the overlap contract: on
-/// equal stamps the later side's item wins (tick tapes key on time; tapes
-/// carry no price comparison). Inputs must already ascend.
 pub fn merge_sorted_by<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) -> Vec<T> {
     let mut out = Vec::with_capacity(a.len() + b.len());
     let (mut i, mut j) = (0, 0);
@@ -131,8 +117,6 @@ pub fn merge_sorted_by<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) -> Ve
 /// Merge two ascending `(stamp_ms, value)` tapes with the overlap contract:
 /// on equal stamps the later tape's point wins.
 #[must_use]
-/// Merge two ascending `(stamp_ms, value)` tapes with the overlap contract:
-/// on equal stamps the later tape's point wins.
 pub fn merge_sorted(a: &[(i64, f64)], b: &[(i64, f64)]) -> Vec<(i64, f64)> {
     merge_sorted_by(a, b, |row| row.0)
 }
@@ -141,9 +125,6 @@ pub fn merge_sorted(a: &[(i64, f64)], b: &[(i64, f64)]) -> Vec<(i64, f64)> {
 /// order: the cross-timeframe pairing behind higher-timeframe diffs. Stamps
 /// present on one side only pair with nothing and are skipped.
 #[must_use]
-/// Inner-join two ascending timestamped streams on equal stamps, in stamp
-/// order: the cross-timeframe pairing behind higher-timeframe diffs. Stamps
-/// present on one side only pair with nothing and are skipped.
 pub fn pairs_from_sorted<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) -> Vec<(T, T)> {
     let mut out = Vec::new();
     let (mut i, mut j) = (0, 0);
@@ -163,7 +144,6 @@ pub fn pairs_from_sorted<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) -> 
 
 /// Candle index per stamp (`floor(ts / grid)`), in input order.
 #[must_use]
-/// Candle index per stamp (`floor(ts / grid)`), in input order.
 pub fn bucket_ids(tss: &[i64], grid: NonZeroI64) -> Vec<i64> {
     tss.iter().map(|ts| ts.div_euclid(grid.get())).collect()
 }
@@ -171,8 +151,6 @@ pub fn bucket_ids(tss: &[i64], grid: NonZeroI64) -> Vec<i64> {
 /// Whether ascending stamps skip a bucket: any consecutive index jump over
 /// one reads as a gap (the sparseHole the resampler leaves empty).
 #[must_use]
-/// Whether ascending stamps skip a bucket: any consecutive index jump over
-/// one reads as a gap (the sparseHole the resampler leaves empty).
 pub fn bucket_has_gap(tss: &[i64], grid: NonZeroI64) -> bool {
     let ids = bucket_ids(tss, grid);
     ids.windows(2).any(|pair| pair[1] - pair[0] > 1)
@@ -182,9 +160,6 @@ pub fn bucket_has_gap(tss: &[i64], grid: NonZeroI64) -> bool {
 /// `floor(floor(ts)) == floor(ts)` always holds — this names the check for
 /// the bucket round-trip property.
 #[must_use]
-/// Whether a stamp is already grid-aligned: floors are fixed points, so
-/// `floor(floor(ts)) == floor(ts)` always holds — this names the check for
-/// the bucket round-trip property.
 pub fn grid_roundtrip(ts_ms: i64, grid: NonZeroI64) -> bool {
     floor_to_grid(floor_to_grid(ts_ms, grid), grid) == floor_to_grid(ts_ms, grid)
 }
@@ -192,8 +167,6 @@ pub fn grid_roundtrip(ts_ms: i64, grid: NonZeroI64) -> bool {
 /// Smallest grid-aligned stamp at or above `bound_ms` (ceiling to grid):
 /// the aligned split/train edge at or after a bound.
 #[must_use]
-/// Smallest grid-aligned stamp at or above `bound_ms` (ceiling to grid):
-/// the aligned split/train edge at or after a bound.
 pub fn aligned_geq(bound_ms: i64, grid: NonZeroI64) -> i64 {
     let step = grid.get();
     bound_ms.div_euclid(step) * step
@@ -238,7 +211,6 @@ pub fn validate_split(
 
 /// Lookahead policy for projections: confirmed buckets only, or refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Lookahead policy for projections: confirmed buckets only, or refused.
 pub enum Lookahead {
     /// Project confirmed buckets only; unconfirmed tails are excluded.
     Off,
@@ -266,11 +238,6 @@ impl Lookahead {
 /// [`check_for_execute`](fluent_wvr::validate::check_for_execute) at execution),
 /// so invalid specs exist just long enough to refuse loudly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Validated bucket-grid handle for supervised assembly: the boundary form
-/// of a raw millisecond grid. Construction is plain (validation lives in
-/// [`Validate`](fluent_wvr::validate::Validate), bridged through
-/// [`check_for_execute`](fluent_wvr::validate::check_for_execute) at execution),
-/// so invalid specs exist just long enough to refuse loudly.
 pub struct BucketSpec {
     grid_ms: i64,
 }
@@ -405,9 +372,6 @@ pub const FRAME_KERNEL: &str = "@frame";
 /// fingerprint of the parameters it was computed with. Small and
 /// clone-cheap; `Ord` makes graph order deterministic (min-heap tie-break).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-/// Identity of one cached series: bar span, kernel id, and the canonical
-/// fingerprint of the parameters it was computed with. Small and
-/// clone-cheap; `Ord` makes graph order deterministic (min-heap tie-break).
 pub struct SeriesKey {
     /// Bar span in milliseconds (positive; the single ms table).
     pub tf_ms: i64,
@@ -474,8 +438,6 @@ impl fmt::Display for SeriesKey {
 /// One cached series: whole-window values plus the revision bookkeeping
 /// that makes backdating work.
 #[derive(Debug, Clone)]
-/// One cached series: whole-window values plus the revision bookkeeping
-/// that makes backdating work.
 pub struct SeriesCache {
     /// Per-bar outputs, one entry per frame bar (`None` reads na).
     pub values: Vec<Option<f64>>,

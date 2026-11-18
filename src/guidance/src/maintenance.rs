@@ -36,7 +36,6 @@ pub type ActFn = Arc<Mutex<dyn FnMut(&str, Tier) -> ActOutcome + Send>>;
 
 /// VISION work-item states. Serializable so a run can resume from states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// VISION work-item states. Serializable so a run can resume from states.
 pub enum WorkState {
     /// Waiting for dependencies, then for a worker pass.
     Queued,
@@ -52,7 +51,6 @@ pub enum WorkState {
 
 /// One unit of maintenance work.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-/// One unit of maintenance work.
 pub struct WorkItem {
     /// Stable id (also the graph key).
     pub id: String,
@@ -72,7 +70,6 @@ pub struct WorkItem {
 
 /// Queue error: duplicate ids and the single-loop guard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Queue error: duplicate ids and the single-loop guard.
 pub enum QueueError {
     /// A second driver was acquired while one is held.
     #[error("maintenance loop already running")]
@@ -85,8 +82,6 @@ pub enum QueueError {
 /// Action tier for one pass. Tiers advance only on recorded failure:
 /// nothing reaches `Escalate` without exhausting its attempts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Action tier for one pass. Tiers advance only on recorded failure:
-/// nothing reaches `Escalate` without exhausting its attempts.
 pub enum Tier {
     /// Deterministic fixers. Zero model calls.
     Deterministic,
@@ -100,7 +95,6 @@ pub enum Tier {
 
 /// Tier for an item's next attempt: evidence-gated by construction.
 #[must_use]
-/// Tier for an item's next attempt: evidence-gated by construction.
 pub fn tier_for(attempts: u32) -> Tier {
     match attempts {
         0 => Tier::Deterministic,
@@ -136,8 +130,6 @@ static LOOP_HELD: AtomicBool = AtomicBool::new(false);
 /// Serialize loop-driver tests: the single-loop guard is process-wide,
 /// so tests that acquire it hold this mutex for their whole run.
 #[cfg(test)]
-/// Serialize loop-driver tests: the single-loop guard is process-wide,
-/// so tests that acquire it hold this mutex for their whole run.
 pub(crate) fn serial_loop_tests() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::OnceLock;
     static SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
@@ -420,11 +412,6 @@ impl Default for MaintenanceQueue {
 /// Calibrate strictly against a control set before trusting it in
 /// production: an uncalibrated breaker stops converging runs.
 #[derive(Debug, Clone)]
-/// Breaker policy for a loop run. Defaults are permissive: the structural
-/// guarantees (attempt bound, tier-evidence escalation, max passes) carry
-/// ordinary runs, and the breaker only fires when configured strict.
-/// Calibrate strictly against a control set before trusting it in
-/// production: an uncalibrated breaker stops converging runs.
 pub struct BreakerConfig {
     /// Consecutive non-certified passes that stop the loop.
     pub max_consecutive_failures: usize,
@@ -471,11 +458,6 @@ impl BreakerConfig {
 /// terminally fails item after item (systemic). Trip reasons name the
 /// wire; `systemic fingerprint` carries the cause signature.
 #[derive(Debug)]
-/// Loop circuit breaker: bounded attempts per item are enforced by the
-/// tier ladder; this stops runs where the same failure repeats, the
-/// revert share climbs, passes stop certifying anything, or one cause
-/// terminally fails item after item (systemic). Trip reasons name the
-/// wire; `systemic fingerprint` carries the cause signature.
 pub struct LoopBreaker {
     config: BreakerConfig,
     consecutive_failures: usize,
@@ -562,10 +544,6 @@ impl LoopBreaker {
 /// anything else (pass budgets, aborts, owner blocks) is work
 /// remaining, never a halt.
 #[must_use]
-/// Whether a stop reason is a breaker trip (resumable halt) rather
-/// than an ordinary stop. Only the breaker's own named reasons count;
-/// anything else (pass budgets, aborts, owner blocks) is work
-/// remaining, never a halt.
 pub fn is_breaker_trip(reason: &str) -> bool {
     matches!(reason, "repeat failure" | "revert rate" | "no progress")
         || reason.starts_with("systemic fingerprint")
@@ -575,9 +553,6 @@ pub fn is_breaker_trip(reason: &str) -> bool {
 /// the loop stopped. Serializable so the reviewable ledger persists
 /// across runs — every applied change is listed, never implied.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-/// Fixpoint run report: what was verified, what was escalated, and why
-/// the loop stopped. Serializable so the reviewable ledger persists
-/// across runs — every applied change is listed, never implied.
 pub struct LoopReport {
     /// Passes executed (one bounded unit each).
     pub passes: usize,
@@ -710,7 +685,7 @@ pub(crate) const STEP_VERDICT_KEY: &str = "step-verdict";
 struct StepUnit {
     name: String,
     tier: Tier,
-    act: Arc<Mutex<dyn FnMut(Tier) -> ActOutcome + Send>>,
+    act: Arc<dyn Fn(Tier) -> ActOutcome + Send + Sync>,
 }
 
 impl WorkUnit for StepUnit {
@@ -727,13 +702,7 @@ impl WorkUnit for StepUnit {
     }
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        // The lock helper is `Sized`-bound; this mutex holds a trait
-        // object, so explicit poison recovery stays here.
-        let verdict = self
-            .act
-            .lock()
-            .map(|mut act| act(self.tier))
-            .map_err(|_| WorkError::Execution("step act poisoned".to_string()))?;
+        let verdict = (self.act)(self.tier);
         ctx.outputs.set(STEP_VERDICT_KEY, verdict);
         Ok(WorkOutput::ok(format!("{} done", self.name)))
     }
@@ -932,7 +901,7 @@ pub fn run_to_fixpoint_with_breaker(
 }
 
 /// Execute one unit through the supervised batch: panic containment and
-/// per-attempt timeout ride the shared supervisor, never inline code.
+/// whole-unit budget across all attempts (incl. backoff) ride the shared supervisor, never inline code.
 /// The verdict travels back through the typed outputs channel (no side
 /// slot); the batch summary is reported, never discarded. Returns `None`
 /// when the step produced no verdict (panic, drop).
@@ -949,7 +918,7 @@ fn execute_step(id: &str, tier: Tier, act: &ActFn) -> Option<ActOutcome> {
     let unit = StepUnit {
         name: format!("step-{id}"),
         tier,
-        act: Arc::new(Mutex::new(runner)),
+        act: Arc::new(runner),
     };
     let outputs = OutputStore::default();
     let summary = common_core::runtime::block_on_shared(async {

@@ -26,7 +26,6 @@ use crate::indicator::IndicatorRegistry;
 
 /// Verification standing of one kernel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Verification standing of one kernel.
 pub enum CompatStatus {
     /// Meets frozen eps against the staged `Expr` reference on the calibration
     /// sets with the global must-NOT-fire controls quiet.
@@ -42,7 +41,6 @@ pub enum CompatStatus {
 
 /// The artifact kind behind a row's claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The artifact kind behind a row's claim.
 pub enum ParityEvidence {
     /// The suite executes the kernel and asserts structural facts (it runs,
     /// it aligns, warmup stays `na`); no reference numbers are compared.
@@ -61,7 +59,6 @@ pub enum ParityEvidence {
 
 /// One row of the compatibility matrix.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// One row of the compatibility matrix.
 pub struct KernelCompat {
     /// Registry id.
     pub id: &'static str,
@@ -77,9 +74,6 @@ pub struct KernelCompat {
 /// traceable to a real run of a named script over a named symbol and
 /// timeframe.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Provenance of one external export: the fields that make its numbers
-/// traceable to a real run of a named script over a named symbol and
-/// timeframe.
 pub struct ExternalArtifact {
     /// Stable artifact id, minted into the standing.
     pub id: &'static str,
@@ -101,7 +95,6 @@ pub struct ExternalArtifact {
 
 /// One exported observation: the external value beside ours, at one bar.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// One exported observation: the external value beside ours, at one bar.
 pub struct ExternalRow {
     /// Bar index in the export.
     pub bar: usize,
@@ -198,16 +191,6 @@ pub use evidence::ArtifactId;
 ///
 /// See [`evidence::mint`]: any missing or malformed provenance field.
 #[must_use]
-/// The only path to [`CompatStatus::ExternalParityVerified`]: validate the
-/// export's provenance, then mint its artifact id.
-///
-/// Hand-writing the variant in [`COMPATIBILITY`] does not compile — the
-/// payload can only come from here — and an invalid artifact refuses when the
-/// table is evaluated, so a row cannot claim external numbers it cannot name.
-///
-/// # Panics
-///
-/// See [`evidence::mint`]: any missing or malformed provenance field.
 pub const fn external_evidence(artifact: &ExternalArtifact) -> CompatStatus {
     CompatStatus::ExternalParityVerified(evidence::mint(artifact))
 }
@@ -218,10 +201,6 @@ pub const fn external_evidence(artifact: &ExternalArtifact) -> CompatStatus {
 /// rot is the failure mode this catches.
 #[cfg(test)]
 #[must_use]
-/// Whether the file an evidence path names exists under this crate's root.
-/// A vector path names the file outright; a staged-reference path is
-/// `file :: symbol or gate`, and the file half is what must exist. Citation
-/// rot is the failure mode this catches.
 pub fn evidence_path_exists(path: &str) -> bool {
     let file = path.split(" :: ").next().unwrap_or(path);
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -615,7 +594,6 @@ pub const NATIVE_MATRIX_ROWS: &[(&str, &str, &str)] = &[
 
 /// Matrix id of the row claiming `publisher/name`, if any.
 #[must_use]
-/// Matrix id of the row claiming `publisher/name`, if any.
 pub fn native_row_id(publisher: &str, name: &str) -> Option<&'static str> {
     NATIVE_MATRIX_ROWS
         .iter()
@@ -626,8 +604,6 @@ pub fn native_row_id(publisher: &str, name: &str) -> Option<&'static str> {
 /// Whether a matrix id is a native-library row (served-view agreement, not a
 /// kernel in the builtin registry).
 #[must_use]
-/// Whether a matrix id is a native-library row (served-view agreement, not a
-/// kernel in the builtin registry).
 pub fn is_native_row(id: &str) -> bool {
     NATIVE_MATRIX_ROWS.iter().any(|(row, _, _)| *row == id)
 }
@@ -642,15 +618,6 @@ pub fn is_native_row(id: &str) -> bool {
 /// Needs the `pine` feature: it reads the native link table, which ships
 /// with the language runtime.
 #[cfg(feature = "pine")]
-/// Coverage for the native domain: every `native-*` row names a library in
-/// the native table, and every native-table library has its row — no
-/// orphans either way. Provider existence is orthogonal (the overlay owns
-/// serving): rows also cover served views like the `MarketContext`, which
-/// holds freeze agreement without a link-time provider. Eps rules match the
-/// kernel side: finite and positive, never widened.
-///
-/// Needs the `pine` feature: it reads the native link table, which ships
-/// with the language runtime.
 pub fn assert_native_matrix_covers() -> Result<(), String> {
     for (id, publisher, name) in NATIVE_MATRIX_ROWS {
         if !crate::native_libs::NATIVE_LIBRARIES
@@ -676,7 +643,6 @@ pub fn assert_native_matrix_covers() -> Result<(), String> {
 
 /// Look up a kernel's compatibility row.
 #[must_use]
-/// Look up a kernel's compatibility row.
 pub fn compat_for(id: &str) -> Option<&'static KernelCompat> {
     COMPATIBILITY.iter().find(|row| row.id == id)
 }

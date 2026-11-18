@@ -24,19 +24,6 @@ use common_core::constants::default_true;
 /// `models.default` at parse); the supervisor reads per-model spawn
 /// defaults through [`super::root::RouterConfig::spawn_defaults_for`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A role's run parameters — the `params` block on a `roles` entry.
-///
-/// Supplies the "how a model is run" configuration for everything serving
-/// the role: the `llama-server` launch knobs (`--batch-size`,
-/// `--ubatch-size`, `--cache-type-k/v`, `--flash-attn`, `--n-gpu-layers`,
-/// `--n-cpu-moe`, `--sleep-idle-seconds`, `--ctx-size`) and flat sampling
-/// keys (e.g. `temperature`) every selection for the role composes over
-/// (role-base, then pool profile, then per-model selection — each sparser
-/// layer wins; the role side wins over the model entry top-level at
-/// dispatch). There is no nested `params` object inside a run block.
-/// The fleet-wide block lives as `roles.default.params` (itself fed by
-/// `models.default` at parse); the supervisor reads per-model spawn
-/// defaults through [`super::root::RouterConfig::spawn_defaults_for`].
 pub struct RoleParams {
     /// Default context size in tokens (`--ctx-size`; also `ctx_size` alias).
     #[serde(default = "default_num_ctx", alias = "ctx_size")]
@@ -297,17 +284,6 @@ fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<Instanc
 /// `session: false` (one-shot: never snapshotted, like every undeclared
 /// window).
 #[allow(clippy::implicit_hasher)]
-/// On-demand role-window templates for one model: every role maps to the
-/// window a dispatch through that role opens when the model has no
-/// materialized profile for it (`<model>:<role>` from the role's params).
-/// Same composition as a bound profile — the role run block's `num_ctx`
-/// clamped to the model-side cap (role override, then the entry), the
-/// entry's `max_parallel`, the entry's `max_ctx` — except `pinned: false`
-/// always: on-demand windows are demand-driven and idle-reaped, never
-/// resident anchors (a pinned role's window exists only where the role
-/// binds the model and boot materializes it). `name` is filled at creation;
-/// `session: false` (one-shot: never snapshotted, like every undeclared
-/// window).
 pub(crate) fn role_window_templates(
     entry: &ModelEntry,
     roles: &HashMap<String, RoleEntry>,

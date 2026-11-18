@@ -34,17 +34,6 @@ pub fn should_generate(json_path: &Path, source_path: &Path) -> bool {
 /// Decision delegates to the single home (`crate::freshness::mtime_skew`);
 /// this shell only fetches mtimes (either missing → not ambiguous).
 #[must_use]
-/// Resolution-window probe: true when the two mtimes alone cannot decide
-/// freshness — the source is at-or-newer than the sidecar but within the
-/// 1-second timestamp-resolution window.
-///
-/// Axis statement: the window measures *producer self-doubt* (filesystem
-/// timestamp granularity), never task value. Inside it the clock is
-/// evidence-free, so the content hash decides instead. The threshold
-/// gates which evidence to consult, never the conclusion.
-///
-/// Decision delegates to the single home (`crate::freshness::mtime_skew`);
-/// this shell only fetches mtimes (either missing → not ambiguous).
 pub fn in_ambiguity_window(json_path: &Path, source_path: &Path) -> bool {
     let (Some(json_mtime), Some(source_mtime)) = (
         common_core::io::mtime(json_path),

@@ -54,7 +54,6 @@ pub const EMBED_RETRY_JITTER_PCT: u32 = 50;
 
 /// Pipeline options.
 #[derive(Debug, Clone)]
-/// Pipeline options.
 pub struct IndexOptions {
     /// Cross-file embed packing size.
     pub max_embed_batch: usize,
@@ -82,7 +81,6 @@ impl Default for IndexOptions {
 
 /// Progress report (phase + monotonic counts).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Progress report (phase + monotonic counts).
 pub struct IndexProgress {
     /// `scanning` | `embedding` | `retry`.
     pub phase: &'static str,
@@ -98,7 +96,6 @@ pub struct IndexProgress {
 
 /// Index run counts (mirrors zvec `IndexStats` + `IndexResult`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Index run counts (mirrors zvec `IndexStats` + `IndexResult`).
 pub struct IndexStats {
     /// Files seen by the scan.
     pub files_scanned: usize,
@@ -135,8 +132,6 @@ pub struct IndexStats {
 /// Index failure (stored per-file data surfaces as `FilesFailed`; the run
 /// still commits every sibling first).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Index failure (stored per-file data surfaces as `FilesFailed`; the run
-/// still commits every sibling first).
 pub enum IndexError {
     /// Files failed after the automatic retry (context names files +
     /// reasons, per `:1042`).
@@ -155,7 +150,6 @@ pub enum IndexError {
 
 /// Stable wave-unit name.
 #[must_use]
-/// Stable wave-unit name.
 pub fn wave_name(index: usize) -> String {
     format!("index-wave-{index}")
 }
@@ -167,12 +161,6 @@ pub fn wave_name(index: usize) -> String {
 /// embedder at all (diff fast path). Synchronous data plane; async
 /// callers drive it from `spawn_blocking`.
 #[allow(clippy::too_many_arguments)]
-/// Run the full index pass over `selection`.
-///
-/// The provider is wrapped in a content-hash `CachedEmbeddingProvider`
-/// (unchanged content never re-embeds); unchanged files never reach the
-/// embedder at all (diff fast path). Synchronous data plane; async
-/// callers drive it from `spawn_blocking`.
 pub fn index_workspace<P>(
     db: Arc<GuidanceSearchDb>,
     provider: P,
@@ -767,7 +755,7 @@ where
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         // Blocking parse/embed/commit work rides the shared offload seam
-        // (never the supervisor's worker): per-attempt timeouts keep
+        // (never the supervisor's worker): whole-unit budget across all attempts (incl. backoff) keeps
         // working because the body always suspends at an await point
         // between attempts instead of holding a worker past its budget.
         fluent_wvr::run_gated_blocking(ctx.caps.clone(), || self.execute_blocking(ctx))
@@ -970,10 +958,6 @@ where
 /// its file, not its wave (zvec batch/file/one-by-one parity). Returns
 /// per-file vectors plus per-file failures, or a fail-fast abort.
 #[allow(clippy::type_complexity)]
-/// Embed every prepared file with cross-file packing; a failed pack falls
-/// back to per-file, then per-fragment singles, so a poison fragment fails
-/// its file, not its wave (zvec batch/file/one-by-one parity). Returns
-/// per-file vectors plus per-file failures, or a fail-fast abort.
 fn embed_ready_files<P>(
     shared: &SharedPipeline<P>,
     ready: &[PreparedFile],
@@ -1057,7 +1041,6 @@ pub const MAX_EMBEDDING_INPUT_CHARS: usize = 4000;
 
 /// Candidate embedding input source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Candidate embedding input source.
 pub enum EmbeddingInput {
     /// Raw comment text only.
     Comment,
@@ -1324,11 +1307,6 @@ enum EmbedFailure {
 /// failing the file — the next attempt waits for new input, a new
 /// embedder, or an explicit backfill.
 #[derive(Debug, Clone)]
-/// One file's embed failure: the reason plus whether the backend (rather
-/// than the input) is at fault. Unavailable marks transport trouble and
-/// waits; anything else is a terminal input failure. Both record without
-/// failing the file — the next attempt waits for new input, a new
-/// embedder, or an explicit backfill.
 struct EmbedFileFailure {
     reason: String,
     unavailable: bool,
@@ -1409,11 +1387,6 @@ fn is_fail_fast(error: &EmbeddingError) -> bool {
 /// file on mismatch, degraded commits persist unembedded rows with a
 /// recorded failure instead.
 #[allow(clippy::too_many_arguments)]
-/// Commit one file's extractor chunks through the unified writer, then its
-/// graph rows from the same extract pass, and record per-fragment embedding
-/// status. `embedded` selects the vector policy: required vectors fail the
-/// file on mismatch, degraded commits persist unembedded rows with a
-/// recorded failure instead.
 fn commit_file(
     db: &GuidanceSearchDb,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
@@ -1520,7 +1493,6 @@ pub const EMBED_UNIT_SYMBOL_TYPES: &[&str] = &["module", "class", "interface", "
 
 /// One fragment selected for embedding plus its hashed input.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One fragment selected for embedding plus its hashed input.
 pub struct EmbedUnit {
     /// Fragment id.
     pub id: String,
@@ -1532,7 +1504,6 @@ pub struct EmbedUnit {
 
 /// One fragment that never becomes a vector, with its reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One fragment that never becomes a vector, with its reason.
 pub struct EmbedSkip {
     /// Fragment id.
     pub id: String,
@@ -1665,9 +1636,6 @@ pub fn classify_embed_fragment(fragment: &FragmentRow) -> Result<EmbedUnit, Embe
 /// sections; whole-file duplicates, images, eval fixtures, and
 /// derived-mirror rows skip with reasons.
 #[must_use]
-/// Select semantic units from stored rows: code symbols plus markdown
-/// sections; whole-file duplicates, images, eval fixtures, and
-/// derived-mirror rows skip with reasons.
 pub fn select_embed_units(fragments: &[FragmentRow]) -> (Vec<EmbedUnit>, Vec<EmbedSkip>) {
     let mut units = Vec::new();
     let mut skips = Vec::new();
@@ -1682,7 +1650,6 @@ pub fn select_embed_units(fragments: &[FragmentRow]) -> (Vec<EmbedUnit>, Vec<Emb
 
 /// Totals for one backfill run (stored data, never thrown).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Totals for one backfill run (stored data, never thrown).
 pub struct EmbedBackfillStats {
     /// Candidate rows read (no vector stored).
     pub candidates: usize,

@@ -8,7 +8,6 @@ use guidance_core::model_lanes::LaneGate;
 
 /// Outcome totals for one `summarize` run.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Outcome totals for one `summarize` run.
 pub struct SummaryReport {
     /// Files visited.
     pub files: usize,

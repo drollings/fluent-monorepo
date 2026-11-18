@@ -41,8 +41,6 @@ impl RerankTier for DocLabel {
 /// Collapse manifest rows: keep the first `Cargo.toml` finding,
 /// count the rest. Manifests describe the tree, never answer it.
 #[must_use]
-/// Collapse manifest rows: keep the first `Cargo.toml` finding,
-/// count the rest. Manifests describe the tree, never answer it.
 pub fn collapse_manifest_rows(
     findings: Vec<crate::read::engine::Finding>,
 ) -> (Vec<crate::read::engine::Finding>, usize) {
@@ -78,8 +76,6 @@ pub fn scope_row_admitted(path: &str, include_fixtures: bool) -> bool {
 /// Drop fixture-scope findings unless the escape hatch is set.
 /// Eval rows never pass, even opted in.
 #[must_use]
-/// Drop fixture-scope findings unless the escape hatch is set.
-/// Eval rows never pass, even opted in.
 pub fn exclude_fixtures(
     findings: Vec<crate::read::engine::Finding>,
     include_fixtures: bool,
@@ -92,7 +88,6 @@ pub fn exclude_fixtures(
 
 /// Serving status of one rerank pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Serving status of one rerank pass.
 pub enum RerankStatus {
     /// Verdicts applied as rank demotion.
     Ranked,
@@ -103,8 +98,6 @@ pub enum RerankStatus {
 /// Classify one verdict list: all-zero confidence with candidates
 /// present means the backend was down, never a relevance signal.
 #[must_use]
-/// Classify one verdict list: all-zero confidence with candidates
-/// present means the backend was down, never a relevance signal.
 pub fn rerank_status<L>(verdicts: &[CandidateVerdict<L>]) -> RerankStatus {
     if !verdicts.is_empty() && verdicts.iter().all(|v| v.confidence == 0.0) {
         RerankStatus::UnavailableRankedUnfiltered
@@ -116,8 +109,6 @@ pub fn rerank_status<L>(verdicts: &[CandidateVerdict<L>]) -> RerankStatus {
 /// Rebuild decisions from verdicts for the shared bulk ranker and
 /// shadow records. Total: unbuildable verdicts are skipped.
 #[must_use]
-/// Rebuild decisions from verdicts for the shared bulk ranker and
-/// shadow records. Total: unbuildable verdicts are skipped.
 pub fn verdict_decisions<L: CandidateLabel>(
     verdicts: &[CandidateVerdict<L>],
     model: &str,
@@ -145,9 +136,6 @@ pub fn verdict_decisions<L: CandidateLabel>(
 /// shared bulk confidence order (stable). Rank-only: every prior id
 /// appears exactly once, so recall is preserved by construction.
 #[must_use]
-/// Demote prior id order by verdict tier; within a tier follow the
-/// shared bulk confidence order (stable). Rank-only: every prior id
-/// appears exactly once, so recall is preserved by construction.
 pub fn demote_by_verdict<L: CandidateLabel + RerankTier>(
     prior_ids: &[String],
     verdicts: &[CandidateVerdict<L>],
@@ -190,11 +178,6 @@ pub fn demote_by_verdict<L: CandidateLabel + RerankTier>(
 /// zero from a non-empty prior. A cost cap, never a relevance
 /// gate: callers report every drop with its label.
 #[must_use]
-/// Admit the top-k prior ids by verdict tier, stable: tier 0 in
-/// prior order first, then tier 1, and so on, truncated to `k`.
-/// Unjudged ids sort last, like the demotion seam. Never admits
-/// zero from a non-empty prior. A cost cap, never a relevance
-/// gate: callers report every drop with its label.
 pub fn admit_top<L: CandidateLabel + RerankTier>(
     prior_ids: &[String],
     verdicts: &[CandidateVerdict<L>],

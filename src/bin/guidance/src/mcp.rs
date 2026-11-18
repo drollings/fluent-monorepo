@@ -45,7 +45,6 @@ pub struct McpServer {
 
 /// MCP toolset: `agent` is search-only, `full` adds lifecycle/status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// MCP toolset: `agent` is search-only, `full` adds lifecycle/status.
 pub enum Toolset {
     /// Search-only (`guidance_explain`).
     #[default]
@@ -69,9 +68,6 @@ impl Toolset {
 /// default); `wait_for_fresh` re-checks staleness first and refreshes when
 /// `auto_update` is set and the workspace is configured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Freshness contract: `eventual` serves the index as-is (background
-/// default); `wait_for_fresh` re-checks staleness first and refreshes when
-/// `auto_update` is set and the workspace is configured.
 pub enum FreshnessMode {
     /// Serve as-is; report the observed state.
     #[default]
@@ -82,7 +78,6 @@ pub enum FreshnessMode {
 
 /// Observed index freshness, rendered as the `freshness:` header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Observed index freshness, rendered as the `freshness:` header.
 pub enum Freshness {
     /// No stale files observed.
     Fresh,
@@ -104,7 +99,6 @@ impl Freshness {
 
 /// Coverage vocabulary: how the result set was produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Coverage vocabulary: how the result set was produced.
 pub enum Coverage {
     /// Ranked recall sample (fused index search).
     RankedSample,
@@ -132,7 +126,6 @@ pub const MAX_LIMIT: usize = 50;
 
 /// Parsed `guidance_explain` arguments.
 #[derive(Debug)]
-/// Parsed `guidance_explain` arguments.
 pub struct ExplainParams {
     /// One or more queries (each ≤ [`MAX_QUERY_CHARS`], at most [`MAX_GROUPS`]).
     pub queries: Vec<String>,
@@ -371,8 +364,6 @@ fn truncate_chars(text: &str, max: usize) -> String {
 /// Display title for a hit: symbol name, section heading, or entity id.
 /// Shared with the CLI explain table (one title rule, two renderers).
 #[must_use]
-/// Display title for a hit: symbol name, section heading, or entity id.
-/// Shared with the CLI explain table (one title rule, two renderers).
 pub fn hit_title(hit: &SearchHit) -> String {
     for evidence in &hit.evidence {
         if let Some(metadata) = &evidence.metadata {

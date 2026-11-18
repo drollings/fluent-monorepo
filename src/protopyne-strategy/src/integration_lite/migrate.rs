@@ -204,7 +204,6 @@ pub struct DisplaySpec {
 
 /// The nested composition view.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// The nested composition view.
 pub struct IntegrationLiteSpec {
     /// Market-leg dials.
     pub indicator: LiteIndicatorParams,
@@ -244,13 +243,6 @@ impl From<&IntegrationLiteStrategyConfig> for TriggerSlot {
 /// dials without a slot (setup window, adaptive default, dual bypass) ride
 /// the entry section directly.
 #[must_use]
-/// Project the flat wire config onto the nested entry section.
-///
-/// This is the one flat→entry mapping: the slot builders read the entry,
-/// never the flat config, so the flat struct reaches the slots only through
-/// this projection. Every entry dial has a lossless slot field; the section
-/// dials without a slot (setup window, adaptive default, dual bypass) ride
-/// the entry section directly.
 pub fn entry_from_config(config: &IntegrationLiteStrategyConfig) -> EntrySpec {
     let mut triggers = Vec::new();
     if config.sig_momentum {

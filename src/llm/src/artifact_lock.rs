@@ -24,7 +24,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Tuning for lock acquisition.
 #[derive(Debug, Clone, Copy)]
-/// Tuning for lock acquisition.
 pub struct LockOptions {
     /// Wait between acquisition polls.
     pub poll_ms: u64,

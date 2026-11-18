@@ -128,11 +128,11 @@ impl CloseWaker {
     /// Advance the wake epoch, saturating instead of wrapping so an epoch
     /// never repeats while a waiter may still hold the old one.
     fn bump_generation(&self) {
-        let _ = self.generation.fetch_update(
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-            |epoch| epoch.checked_add(1),
-        );
+        let _ = self
+            .generation
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |epoch| {
+                epoch.checked_add(1)
+            });
     }
 }
 

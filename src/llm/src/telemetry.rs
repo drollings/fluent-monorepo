@@ -26,7 +26,6 @@ use serde::Serialize;
 /// Router-relevant tool names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-/// Router-relevant tool names.
 pub enum ToolName {
     Search,
     Embed,
@@ -42,7 +41,6 @@ pub enum ToolName {
 /// Provider categories for routing decisions — never the provider name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-/// Provider categories for routing decisions — never the provider name.
 pub enum ProviderCategory {
     FirstPartyCloud,
     ThirdPartyCloud,
@@ -54,7 +52,6 @@ pub enum ProviderCategory {
 /// Feature names for usage tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-/// Feature names for usage tracking.
 pub enum FeatureName {
     OutputSanitization,
     InjectionDetection,

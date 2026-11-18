@@ -31,8 +31,6 @@ const SMA_LENGTHS: [(&str, i64); 3] = [("SMA 50", 50), ("SMA 100", 100), ("SMA 2
 /// One evaluated moving-average line: its name, per-bar display values with
 /// warmup holes preserved, and the theme style key resolved at paint time.
 #[derive(Debug, Clone, PartialEq)]
-/// One evaluated moving-average line: its name, per-bar display values with
-/// warmup holes preserved, and the theme style key resolved at paint time.
 pub struct FastMasLine {
     /// Display name (for example `"First MA"`, `"SMA 50"`).
     pub name: String,
@@ -44,7 +42,6 @@ pub struct FastMasLine {
 
 /// The evaluated overlay: one line per enabled average, in plot order.
 #[derive(Debug, Clone, PartialEq, Default)]
-/// The evaluated overlay: one line per enabled average, in plot order.
 pub struct FastMasView {
     /// Enabled lines, in plot order.
     pub lines: Vec<FastMasLine>,

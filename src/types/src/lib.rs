@@ -66,7 +66,7 @@ pub struct ContextHit {
 ///
 /// This is the cross-crate boundary for context retrieval: `fluent-router`
 /// consumes context through this trait only and never imports coral /
-/// knowledge / ontology / rdf. Concrete implementations (coral-context's
+/// knowledge / rdf. Concrete implementations (coral-context's
 /// cache, the router's ledger-backed cache) are composed at the binary.
 pub trait ContextCache: Send + Sync {
     /// Look up a deterministic answer/fact for `query`. `None` means the
@@ -339,7 +339,6 @@ pub enum OverlayKind {
 /// The lifecycle status of one overlay.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// The lifecycle status of one overlay.
 pub enum OverlayStatus {
     /// Never asked for (the default).
     #[default]
@@ -354,7 +353,6 @@ pub enum OverlayStatus {
 
 /// One overlay's bookkeeping entry (OVERLAYS §4.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One overlay's bookkeeping entry (OVERLAYS §4.3).
 pub struct OverlayState {
     pub kind: OverlayKind,
     pub status: OverlayStatus,

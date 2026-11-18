@@ -29,7 +29,6 @@ use crate::quote::Quote;
 
 /// Which side initiated a trade print, when the venue reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-/// Which side initiated a trade print, when the venue reports it.
 pub enum Aggressor {
     /// Buyer-initiated.
     Buy,
@@ -40,8 +39,6 @@ pub enum Aggressor {
 /// One public trade print. Unlike [`Fill`](crate::order::Fill), this is a
 /// market fact: it carries the print's own timestamp and no account state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-/// One public trade print. Unlike [`Fill`](crate::order::Fill), this is a
-/// market fact: it carries the print's own timestamp and no account state.
 pub struct TradePrint {
     /// Print timestamp.
     pub ts: DateTime<Utc>,
@@ -57,8 +54,6 @@ pub struct TradePrint {
 /// One forming or closed chart bar update. Forming updates are display-only
 /// and never enter [`MarketEvent::Candle`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// One forming or closed chart bar update. Forming updates are display-only
-/// and never enter [`MarketEvent::Candle`].
 pub struct BarUpdate {
     /// Symbol this bar belongs to.
     pub underlying: String,
@@ -70,7 +65,6 @@ pub struct BarUpdate {
 
 /// Subscription kind of one [`MarketEvent`]: what the receiver asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Subscription kind of one [`MarketEvent`]: what the receiver asked for.
 pub enum MarketEventKind {
     /// Top-of-book quote.
     Quote,
@@ -90,9 +84,6 @@ pub enum MarketEventKind {
 /// filtered per receiver. Payloads are the existing venue/types vocabulary;
 /// the enum adds only the (symbol, kind) routing header.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// One market fact for one symbol, published by the session pump and
-/// filtered per receiver. Payloads are the existing venue/types vocabulary;
-/// the enum adds only the (symbol, kind) routing header.
 pub enum MarketEvent {
     /// Newest top-of-book for `underlying`.
     Quote {

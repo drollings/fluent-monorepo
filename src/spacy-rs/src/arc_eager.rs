@@ -57,10 +57,6 @@ fn closed_funcword_pos(flags: LexemeFlags) -> Option<Upos> {
 /// Covers both receiver spellings in the file (`word` and `texts[i]`) and
 /// both polarities (guard and upgrade gate).
 #[inline]
-/// Whether the word begins with a lowercase letter — the single shared
-/// spelling of the finite-verb guard ("a finite verb is never capitalized".
-/// Covers both receiver spellings in the file (`word` and `texts[i]`) and
-/// both polarities (guard and upgrade gate).
 fn starts_lowercase(word: &str) -> bool {
     word.chars().next().is_some_and(char::is_lowercase)
 }
@@ -71,11 +67,6 @@ fn starts_lowercase(word: &str) -> bool {
 /// weights). Taking `&ArcEagerState` covers both receiver spellings in the
 /// file (`self` in the candidate arms, `state` in the oracle).
 #[inline]
-/// Whether a `cop` dependent is already attached to `b` — the single shared
-/// spelling of the copula-frame guard (the `copular_subject_frame` helper,
-/// the two `there`-expletive candidate arms, and the three oracle cop/attr
-/// weights). Taking `&ArcEagerState` covers both receiver spellings in the
-/// file (`self` in the candidate arms, `state` in the oracle).
 fn copula_is_attached(state: &ArcEagerState, b: usize, cop: u64) -> bool {
     state.left_children[b]
         .iter()
@@ -1599,10 +1590,6 @@ fn refine_pos_contracted_be(
 /// common nouns); Title-Case proper nouns (Google, Paris, Tuesday) fall
 /// through to `NOUN` — the documented false-negative class.
 #[must_use]
-/// Derive UPOS from lexeme flags + the closed function-word map. PROPN fires
-/// on `is_upper()` **only** (never `is_title()`, which matches sentence-initial
-/// common nouns); Title-Case proper nouns (Google, Paris, Tuesday) fall
-/// through to `NOUN` — the documented false-negative class.
 pub fn infer_pos(flags: LexemeFlags) -> Upos {
     if flags.is_punct() {
         return Upos::Punct;
@@ -1670,7 +1657,6 @@ pub struct ArcEagerAction {
 
 /// The five ArcEager moves (`arc_eager.pyx`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The five ArcEager moves (`arc_eager.pyx`).
 pub enum ArcEagerMove {
     /// Push the buffer head onto the stack.
     Shift,
@@ -1686,7 +1672,6 @@ pub enum ArcEagerMove {
 
 /// The parser state (F8): **absolute** head indices internally, `-1` unset.
 #[derive(Debug, Clone)]
-/// The parser state (F8): **absolute** head indices internally, `-1` unset.
 pub struct ArcEagerState {
     pub stack: Vec<usize>,
     pub buffer: VecDeque<usize>,

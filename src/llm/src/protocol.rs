@@ -105,7 +105,6 @@ impl From<reqwest::Error> for LlmError {
 
 /// A single chat message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
-/// A single chat message in a conversation.
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
@@ -166,7 +165,6 @@ pub struct LlmTask {
 
 /// Bounded-worker-pool tuning for the queue.
 #[derive(Debug, Clone, Copy)]
-/// Bounded-worker-pool tuning for the queue.
 pub struct LlmQueueConfig {
     pub worker_count: usize,
     pub queue_capacity: usize,

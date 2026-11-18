@@ -17,7 +17,6 @@ use crate::error::StrategyError;
 
 /// Direction of the proposed trade.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Direction of the proposed trade.
 pub enum Direction {
     /// Buy exposure / bullish position.
     Long,
@@ -38,9 +37,6 @@ impl fmt::Display for Direction {
 /// roll are separate permissions on a grant: exit-only operation is far lower
 /// risk than entry, so the side is explicit on every proposal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Which side of the order lifecycle a proposal belongs to. Entry, exit, and
-/// roll are separate permissions on a grant: exit-only operation is far lower
-/// risk than entry, so the side is explicit on every proposal.
 pub enum ProposalSide {
     /// Open new exposure.
     Entry,
@@ -64,9 +60,6 @@ impl fmt::Display for ProposalSide {
 /// carries bounded loss by construction; naked short option exposure is
 /// excluded from the initial grant envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Option structure of a proposal. Every variant except [`Self::NakedShort`]
-/// carries bounded loss by construction; naked short option exposure is
-/// excluded from the initial grant envelope.
 pub enum StructureKind {
     /// Single stock or single option leg.
     Single,
@@ -108,17 +101,6 @@ impl StructureKind {
 /// approval before submission (entries disarmed, quantity unrepresentable)
 /// terminalizes without journaling a submission that never happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Lifecycle state of a proposal.
-///
-/// ```text
-/// Proposed -> RiskChecked -> AutoApproved | PendingHuman
-/// -> Approved | Rejected | Expired -> Submitted -> Working
-/// -> Filled | Partial | Cancelled
-/// ```
-///
-/// An approved-but-unsubmitted proposal may also cancel directly: withdrawing
-/// approval before submission (entries disarmed, quantity unrepresentable)
-/// terminalizes without journaling a submission that never happened.
 pub enum ProposalState {
     /// Freshly created, not yet risk-checked.
     Proposed,
@@ -148,7 +130,6 @@ pub enum ProposalState {
 
 /// Events that advance the proposal lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// Events that advance the proposal lifecycle.
 pub enum ProposalEvent {
     /// Risk engine approved the proposal.
     PassRisk,
@@ -212,8 +193,6 @@ pub fn transition(
 /// One recorded lifecycle move. The caller persists the entry before acting
 /// on the new state, so replay rebuilds the exact proposal history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One recorded lifecycle move. The caller persists the entry before acting
-/// on the new state, so replay rebuilds the exact proposal history.
 pub struct JournaledTransition {
     /// Proposal this entry belongs to.
     pub proposal_id: String,
@@ -234,11 +213,6 @@ pub struct JournaledTransition {
 /// strategy handle: the checked values are the submitted values.
 #[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
-/// The single unit of tradable intent.
-///
-/// A proposal carries its own economics (`limit_price`, `max_loss`,
-/// `notional`) so risk and grant checks never re-derive numbers from a
-/// strategy handle: the checked values are the submitted values.
 pub struct Proposal {
     /// Stable external identifier, also used as the venue client key.
     pub id: String,

@@ -75,7 +75,6 @@ pub enum FragmentSpan {
 /// Fragment content payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-/// Fragment content payload.
 pub enum FragmentContent {
     /// UTF-8 text.
     Text {
@@ -94,7 +93,6 @@ pub enum FragmentContent {
 /// Image container formats (closed set from types.ts).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Image container formats (closed set from types.ts).
 pub enum ImageFormat {
     /// PNG.
     Png,
@@ -114,7 +112,6 @@ pub use fluent_types::file_kind::FileKind;
 /// Code symbol types — the closed 6-set (roadmap C.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Code symbol types — the closed 6-set (roadmap C.3).
 pub enum CodeSymbolType {
     /// Module / namespace.
     Module,
@@ -142,7 +139,6 @@ impl CodeSymbolType {
 /// Code entity modifiers — the closed 7-set (roadmap C.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Code entity modifiers — the closed 7-set (roadmap C.3).
 pub enum CodeEntityModifier {
     /// Exported from its module.
     Exported,
@@ -174,7 +170,6 @@ impl CodeEntityModifier {
 /// Entity metadata (code or markdown branch).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
-/// Entity metadata (code or markdown branch).
 pub enum EntityMetadata {
     /// Code symbol metadata.
     Code {
@@ -234,7 +229,6 @@ pub struct FileIndexStatus {
 /// Indexed file record (mirrors `FileInfo`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-/// Indexed file record (mirrors `FileInfo`).
 pub struct FileInfo {
     /// Stable file id.
     pub id: String,
@@ -261,7 +255,6 @@ pub struct FileInfo {
 /// A public search entity (mirrors `Entity`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// A public search entity (mirrors `Entity`).
 pub struct Entity {
     /// Public entity id (`group ?? id`).
     pub id: String,
@@ -279,8 +272,6 @@ pub struct Entity {
 /// `EntityFragment`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// A stored fragment: group member or standalone entity (mirrors
-/// `EntityFragment`).
 pub struct EntityFragment {
     /// Fragment id (unique per file).
     pub id: String,
@@ -313,7 +304,6 @@ pub use crate::query::rrf::RrfScore;
 /// Recall route mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Recall route mode.
 pub enum SearchPlanRouteMode {
     /// Lexical route.
     Fts,
@@ -323,7 +313,6 @@ pub enum SearchPlanRouteMode {
 
 /// One recall route in a search plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One recall route in a search plan.
 pub struct SearchPlanRoute {
     /// Route mode.
     pub mode: SearchPlanRouteMode,
@@ -333,7 +322,6 @@ pub struct SearchPlanRoute {
 
 /// A resolved route (plan validation assigns `id`s: `fts`, `fts-2`, …).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// A resolved route (plan validation assigns `id`s: `fts`, `fts-2`, …).
 pub struct ResolvedSearchPlanRoute {
     /// Assigned route id.
     pub id: String,
@@ -346,7 +334,6 @@ pub struct ResolvedSearchPlanRoute {
 /// A search plan (mirrors `SearchPlan`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-/// A search plan (mirrors `SearchPlan`).
 pub struct SearchPlan {
     /// Recall routes (≥1 after validation).
     pub routes: Vec<SearchPlanRoute>,
@@ -381,7 +368,6 @@ pub struct SearchPlan {
 /// A validated search plan (mirrors `ResolvedSearchPlan`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// A validated search plan (mirrors `ResolvedSearchPlan`).
 pub struct ResolvedSearchPlan {
     /// Resolved routes with assigned ids.
     pub routes: Vec<ResolvedSearchPlanRoute>,
@@ -419,10 +405,6 @@ pub struct ResolvedSearchPlan {
 /// original paths).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Which recall path produced a trace. `Lemma` arrived in P1 (the zvec
-/// vocabulary is `fts`/`vector`; lemma participation is an upgrade axis
-/// visible in traces — `derive_matched_by` stays zvec-exact over the two
-/// original paths).
 pub enum RecallPath {
     /// Lexical recall.
     Fts,
@@ -460,7 +442,6 @@ impl RecallPath {
 /// Per-route recall trace (mirrors `SearchRecallTrace`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Per-route recall trace (mirrors `SearchRecallTrace`).
 pub struct SearchRecallTrace {
     /// Recall path.
     pub path: RecallPath,
@@ -482,7 +463,6 @@ pub struct SearchRecallTrace {
 
 /// Fusion/ranking stage trace (mirrors `SearchStageTrace`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// Fusion/ranking stage trace (mirrors `SearchStageTrace`).
 pub struct SearchStageTrace {
     /// 1-based stage rank.
     pub rank: usize,
@@ -495,7 +475,6 @@ pub struct SearchStageTrace {
 /// Final-cut trace (mirrors `SearchFinalTrace`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Final-cut trace (mirrors `SearchFinalTrace`).
 pub struct SearchFinalTrace {
     /// Whether the limit cut the list (false for force-appended tracks).
     pub returned_by_limit: bool,
@@ -505,7 +484,6 @@ pub struct SearchFinalTrace {
 
 /// Full per-hit trace (mirrors `SearchHitTrace`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// Full per-hit trace (mirrors `SearchHitTrace`).
 pub struct SearchHitTrace {
     /// Per-route recall traces.
     pub recall: Vec<SearchRecallTrace>,
@@ -521,7 +499,6 @@ pub struct SearchHitTrace {
 /// Per-fragment evidence (mirrors `SearchHitEvidence`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Per-fragment evidence (mirrors `SearchHitEvidence`).
 pub struct SearchHitEvidence {
     /// Evidence range.
     pub range: FragmentSpan,
@@ -547,7 +524,6 @@ pub struct SearchHitEvidence {
 
 /// What recalled a hit (mirrors `SearchMatchedBy`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-/// What recalled a hit (mirrors `SearchMatchedBy`).
 pub enum SearchMatchedBy {
     /// Lexical only.
     #[serde(rename = "fts")]
@@ -575,8 +551,6 @@ impl SearchMatchedBy {
 /// Retrieval tier: which machinery produced a hit, edge, or excerpt.
 /// Additive labels only; routing and fallback never consult them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-/// Retrieval tier: which machinery produced a hit, edge, or excerpt.
-/// Additive labels only; routing and fallback never consult them.
 pub enum RetrievalTier {
     /// Exact symbol or edge lookup (parse-built, name-resolved).
     #[serde(rename = "exact")]
@@ -637,7 +611,6 @@ impl From<SearchMatchedBy> for RetrievalTier {
 /// A fused search hit (mirrors `SearchHit`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// A fused search hit (mirrors `SearchHit`).
 pub struct SearchHit {
     /// Hit entity.
     pub entity: Entity,
@@ -658,7 +631,6 @@ pub struct SearchHit {
 /// Timing entry (mirrors `TimingEntry`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Timing entry (mirrors `TimingEntry`).
 pub struct TimingEntry {
     /// Stage name.
     pub name: String,
@@ -671,7 +643,6 @@ pub struct TimingEntry {
 /// A search result (mirrors `SearchPlanResult`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// A search result (mirrors `SearchPlanResult`).
 pub struct SearchPlanResult {
     /// Resolved plan.
     pub plan: ResolvedSearchPlan,
@@ -721,7 +692,6 @@ pub struct StorageFilter {
 
 /// One storage recall hit (fragment + file + raw position).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// One storage recall hit (fragment + file + raw position).
 pub struct StorageHit {
     /// Hit fragment.
     pub fragment: EntityFragment,
@@ -766,7 +736,6 @@ impl FragmentErrorCode {
 
 /// Group-discipline failure (per-file isolation: failure is stored data).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-/// Group-discipline failure (per-file isolation: failure is stored data).
 pub enum FragmentError {
     /// Fragment belongs to a different file.
     #[error("entity fragment belongs to the wrong file: {context}")]
@@ -823,8 +792,6 @@ pub fn public_entity_id(fragment: &EntityFragment) -> &str {
 /// Public entity ids: majors + ungrouped fragments.
 /// Source: `storage/zvec.ts` (`publicEntityIds`).
 #[must_use]
-/// Public entity ids: majors + ungrouped fragments.
-/// Source: `storage/zvec.ts` (`publicEntityIds`).
 pub fn public_entity_ids(fragments: &[EntityFragment]) -> Vec<String> {
     let mut ids = HashSet::new();
     let mut ordered = Vec::new();
@@ -895,11 +862,6 @@ pub use crate::query::rrf::rrf_fuse;
 /// when neither exact lexical route fired, so `fts`/`vector` verdicts
 /// stay zvec-exact.
 #[must_use]
-/// Recall provenance from the contributing paths.
-/// Source: `pipeline/search/index.ts` (`deriveMatchedBy`; empty defaults
-/// to `fts`). The summary route is additive: it wins the headline only
-/// when neither exact lexical route fired, so `fts`/`vector` verdicts
-/// stay zvec-exact.
 pub fn derive_matched_by(paths: &[RecallPath]) -> SearchMatchedBy {
     let fts = paths.contains(&RecallPath::Fts);
     let vector = paths.contains(&RecallPath::Vector);

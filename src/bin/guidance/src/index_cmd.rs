@@ -101,7 +101,6 @@ pub fn run_index(
 
 /// Fragment-ingestion counts (stored data, never thrown).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Fragment-ingestion counts (stored data, never thrown).
 pub struct FragmentIngestStats {
     /// Files ingested into the fragment index (FTS + lemmas; embeddings skipped without
     /// a configured backend).

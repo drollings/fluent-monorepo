@@ -38,7 +38,6 @@ type CandidateRow = (i64, i64, i64, String, i64, Option<f64>, String, String);
 /// The lifecycle of an overlay candidate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// The lifecycle of an overlay candidate.
 pub enum CandidateStatus {
     /// Awaiting human review / promotion.
     Pending,
@@ -50,7 +49,6 @@ pub enum CandidateStatus {
 
 /// The persisted status string for a [`CandidateStatus`].
 #[must_use]
-/// The persisted status string for a [`CandidateStatus`].
 pub fn status_sql(status: CandidateStatus) -> &'static str {
     match status {
         CandidateStatus::Pending => "pending",
@@ -62,8 +60,6 @@ pub fn status_sql(status: CandidateStatus) -> &'static str {
 /// Parse a persisted status string back into a [`CandidateStatus`]. Unknown
 /// values degrade to [`CandidateStatus::Pending`] (fail-open).
 #[must_use]
-/// Parse a persisted status string back into a [`CandidateStatus`]. Unknown
-/// values degrade to [`CandidateStatus::Pending`] (fail-open).
 pub fn status_from_sql(s: &str) -> CandidateStatus {
     match s {
         "promoted" => CandidateStatus::Promoted,
@@ -74,7 +70,6 @@ pub fn status_from_sql(s: &str) -> CandidateStatus {
 
 /// One overlay candidate row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// One overlay candidate row.
 pub struct OverlayCandidate {
     pub node_id: NodeId,
     /// Byte span into the source text.
@@ -118,7 +113,6 @@ impl OverlayCandidate {
 
 /// The durable `overlay_candidates` table, over the shared ledger connection.
 #[derive(Clone)]
-/// The durable `overlay_candidates` table, over the shared ledger connection.
 pub struct OverlayCandidateStore {
     store: Arc<SqliteStore>,
 }
@@ -306,8 +300,6 @@ impl OverlayCandidateStore {
 /// One persisted entity stamp: a gate-approved entity id for a token,
 /// content-keyed so text mutation invalidates it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One persisted entity stamp: a gate-approved entity id for a token,
-/// content-keyed so text mutation invalidates it.
 pub struct EntityStampRow {
     pub token: usize,
     pub entity_id: InterlinguaId,
@@ -391,7 +383,6 @@ fn row_to_candidate(row: CandidateRow) -> OverlayCandidate {
 
 /// Open the candidate plane over a store's shared connection.
 #[must_use]
-/// Open the candidate plane over a store's shared connection.
 pub fn candidate_store(store: &ContentNodeStore) -> Option<OverlayCandidateStore> {
     store.shared_sqlite().map(OverlayCandidateStore::new)
 }

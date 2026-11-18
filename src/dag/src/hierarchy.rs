@@ -1,7 +1,7 @@
 //! The one hierarchy-closure index for the workspace.
 //!
 //! Subclass/ancestor closure was historically derived independently in the
-//! ontology, concept-store, and type-inference layers — against a
+//! concept, concept-store, and type-inference layers — against a
 //! `DependencyGraph`, a parent map, TTL edges, and CSR arrays. Those layers now
 //! compose the single, concrete [`HierarchyIndex`] below rather than
 //! re-implementing transitive closure. It is a concrete type, not a trait:

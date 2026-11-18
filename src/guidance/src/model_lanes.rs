@@ -17,8 +17,6 @@ use thiserror::Error;
 /// Which path a model call serves. Query dispatch admits `Interactive`;
 /// sync and maintenance loops admit `Background`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Which path a model call serves. Query dispatch admits `Interactive`;
-/// sync and maintenance loops admit `Background`.
 pub enum Lane {
     /// Serves a waiting query: admitted first, own timeout.
     Interactive,
@@ -31,10 +29,6 @@ pub enum Lane {
 /// behaves like today's direct calls; tighten budgets only from measured
 /// contention (the saturation test pins the mechanism, not the numbers).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Per-lane in-flight budgets and timeouts. Defaults bind nothing under
-/// normal load and match the model-role timeout, so an unconfigured gate
-/// behaves like today's direct calls; tighten budgets only from measured
-/// contention (the saturation test pins the mechanism, not the numbers).
 pub struct LaneConfig {
     /// Max concurrent interactive calls.
     pub interactive_in_flight: usize,
@@ -48,7 +42,6 @@ pub struct LaneConfig {
 
 /// Default lane budgets (see `LaneConfig` for the policy).
 #[must_use]
-/// Default lane budgets (see `LaneConfig` for the policy).
 pub fn default_lane_config() -> LaneConfig {
     LaneConfig {
         interactive_in_flight: 16,
@@ -69,10 +62,6 @@ impl Default for LaneConfig {
 /// Transport failure (`Unavailable`) is neither: the ladder signal passes
 /// through intact so callers can wait without consuming attempts.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-/// How lane admission failed. Saturation is absent by design: waiting is
-/// deferral, and only a closed gate (unreachable in practice) errors.
-/// Transport failure (`Unavailable`) is neither: the ladder signal passes
-/// through intact so callers can wait without consuming attempts.
 pub enum LaneError {
     /// The call body outran its lane timeout.
     #[error("lane {lane:?} timed out after {timeout_ms}ms")]

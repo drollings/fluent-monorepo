@@ -52,7 +52,6 @@ fn api_error(status: StatusCode, message: impl Into<String>) -> (StatusCode, Jso
 
 /// Machine-readable error body.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Machine-readable error body.
 pub struct ErrorBody {
     /// What failed.
     pub error: String,
@@ -60,7 +59,6 @@ pub struct ErrorBody {
 
 /// Preview request parameters.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-/// Preview request parameters.
 pub struct PreviewParams {
     /// Seed for deterministic proposal identifiers.
     #[serde(default)]
@@ -93,20 +91,6 @@ pub struct PreviewParams {
 /// `PreviewResponse` carries the same shape with the run opaque for
 /// terminal reads; this is the typed core side of that split.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-/// Preview outcome: the run plus why bars did not trade.
-///
-/// The histogram reports outcome counts (a property of the run), never a
-/// confidence score: nothing here measures a component's self-doubt, and
-/// nothing fires on these counts. Authorization behavior is unchanged — the
-/// same grants produce the same verdicts, now with visible reasons.
-///
-/// The response type stays server-local on purpose: the typed run tree
-/// (manifest, per-bar verdicts, report) is core-owned, and a neutral copy
-/// would be a second implementation. The histogram legs ride the neutral
-/// [`DenyCount`] DTO; the run serializes exactly as before, which the
-/// golden proves byte-for-byte. The neutral `protopyne_view::views::`
-/// `PreviewResponse` carries the same shape with the run opaque for
-/// terminal reads; this is the typed core side of that split.
 pub struct PreviewResponse {
     /// The backtest run, unchanged in shape.
     pub run: BacktestRun,
@@ -117,7 +101,6 @@ pub struct PreviewResponse {
 
 /// Revoke request body: the id of the live grant to end.
 #[derive(Debug, serde::Deserialize)]
-/// Revoke request body: the id of the live grant to end.
 pub struct RevokeParams {
     /// Grant id to revoke.
     pub grant_id: String,
@@ -125,7 +108,6 @@ pub struct RevokeParams {
 
 /// Attest request body: the id of the live grant to re-attest.
 #[derive(Debug, serde::Deserialize)]
-/// Attest request body: the id of the live grant to re-attest.
 pub struct AttestParams {
     /// Grant id to attest.
     pub grant_id: String,
@@ -134,8 +116,6 @@ pub struct AttestParams {
 /// Operator command body: the portfolio the command scopes to. The loop
 /// executes against its single-book session; the name rides the audit row.
 #[derive(Debug, serde::Deserialize)]
-/// Operator command body: the portfolio the command scopes to. The loop
-/// executes against its single-book session; the name rides the audit row.
 pub struct OperatorParams {
     /// Portfolio name the command scopes to.
     pub portfolio: String,
@@ -145,9 +125,6 @@ pub struct OperatorParams {
 /// is the averaging length; `mult` is the band multiplier for `bb` only
 /// (default 2.0, matching the calibration parameterization).
 #[derive(Debug, serde::Deserialize)]
-/// Overlay query: `kind` is `sma`, `ema`, `bb` (mid), or `trima`; `period`
-/// is the averaging length; `mult` is the band multiplier for `bb` only
-/// (default 2.0, matching the calibration parameterization).
 struct OverlayQuery {
     kind: String,
     period: i64,
@@ -157,8 +134,6 @@ struct OverlayQuery {
 /// Replay query: `checkpoint_every` is the bar cadence the core records
 /// anchors at. Absent means [`DEFAULT_REPLAY_CHECKPOINT_EVERY`].
 #[derive(Debug, serde::Deserialize)]
-/// Replay query: `checkpoint_every` is the bar cadence the core records
-/// anchors at. Absent means [`DEFAULT_REPLAY_CHECKPOINT_EVERY`].
 struct ReplayQuery {
     checkpoint_every: Option<usize>,
 }
@@ -186,7 +161,6 @@ async fn proposals_rehearsal(State(state): State<Shared>) -> Json<Vec<ProposalVi
 
 /// Reject request body: the human's reason, journaled with the decision.
 #[derive(Debug, serde::Deserialize)]
-/// Reject request body: the human's reason, journaled with the decision.
 pub struct RejectBody {
     /// Why the human rejected the proposal.
     pub reason: String,

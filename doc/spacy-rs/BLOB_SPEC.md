@@ -85,6 +85,6 @@ OCP: `fst`/`phf`/`CSR` behind trait, not exposed. `InMemory` vs `Sqlite` LSP.
 
 ## 6. Operational
 
-- Hermetic `n2` fixture in `env/` or `src/ontology/fixtures/`, never network-fetched in tests.
+- Hermetic `n2` fixture in `env/`, never network-fetched in tests.
 - Operator `n10`: `cargo xtask build-yago --input yago-ttl --output yago.bin`, `tools/download_yago_taxonomy.sh` pins `sha256`.
 - No `memmap2`; compile-time lemma via `include_bytes!(env!("LEMMA_BLOB"))` + `LazyLock<Arc<LemmaView>>`.

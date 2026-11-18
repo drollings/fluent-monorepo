@@ -4,9 +4,9 @@
 //! text half (`spacy-rs` `triple::build_plausibility_inputs`) fills one per
 //! extracted triple — the content-addressed [`InterlinguaId`] plus the raw
 //! lemma string each role resolved from — and the knowledge half
-//! (`guidance-ontology` `plausibility::score_plausibility`) scores them
+//! (`fluent-concept` `plausibility::score_plausibility`) scores them
 //! against the [`ConceptStore`]. Neither half names the other's domain
-//! types, so `spacy-rs` keeps no `guidance` edge and the ontology keeps no
+//! types, so `spacy-rs` keeps no `guidance` edge and fluent-concept keeps no
 //! `spacy-rs` edge (both import-boundary rules hold).
 //!
 //! The lemma string rides alongside the id because the curie fallback

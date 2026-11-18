@@ -31,7 +31,6 @@ pub trait RootRuntime: Send + Sync + 'static {
 
 /// Proof returned by a reconcile run (ports `IndexReconciliationProof`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Proof returned by a reconcile run (ports `IndexReconciliationProof`).
 pub struct ReconciliationProof {
     /// Full reconcile confirmed.
     pub reconciled: bool,
@@ -41,7 +40,6 @@ pub struct ReconciliationProof {
 
 /// Progress report for a running reconcile.
 #[derive(Debug, Clone, Default)]
-/// Progress report for a running reconcile.
 pub struct JobProgress {
     /// Files completed.
     pub done: usize,
@@ -67,7 +65,6 @@ pub type ReconcileRun = Arc<
 
 /// Enqueue reason (watch event vs scheduled reconcile).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Enqueue reason (watch event vs scheduled reconcile).
 pub enum EnqueueReason {
     /// Watcher event.
     Watch,
@@ -77,7 +74,6 @@ pub enum EnqueueReason {
 
 /// Per-revision step state kept on the `CheckpointedStepGraph`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Per-revision step state kept on the `CheckpointedStepGraph`.
 pub struct ReconcileStep {
     /// Revision number.
     pub revision: u64,
@@ -93,7 +89,6 @@ pub struct ReconcileStep {
 
 /// Revision step lifecycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Revision step lifecycle.
 pub enum StepPhase {
     /// Reconciling.
     Reconciling,

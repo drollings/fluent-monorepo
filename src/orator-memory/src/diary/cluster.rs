@@ -37,9 +37,6 @@ impl Default for DiarConfig {
 /// pair under the threshold until none remains. Returns one label per
 /// vector, compacted to `0..n`.
 #[must_use]
-/// Cluster `vectors` agglomeratively: repeatedly merge the closest
-/// pair under the threshold until none remains. Returns one label per
-/// vector, compacted to `0..n`.
 pub fn cluster(vectors: &[Vec<f32>], config: &DiarConfig) -> Vec<usize> {
     let count = vectors.len();
     if count == 0 {
@@ -101,8 +98,6 @@ pub fn cluster(vectors: &[Vec<f32>], config: &DiarConfig) -> Vec<usize> {
 /// Smooth `labels` by majority vote over `width` neighbors each side.
 /// Breaks single-segment flicker without moving real turns.
 #[must_use]
-/// Smooth `labels` by majority vote over `width` neighbors each side.
-/// Breaks single-segment flicker without moving real turns.
 pub fn smooth(labels: &[usize], width: usize) -> Vec<usize> {
     if width == 0 || labels.is_empty() {
         return labels.to_vec();
@@ -134,9 +129,6 @@ pub fn smooth(labels: &[usize], width: usize) -> Vec<usize> {
 /// numerator over segment counts (uniform windows, so counts stand in
 /// for time). Single-speaker control must score near zero.
 #[must_use]
-/// Misattributed-time fraction on a labeled held-out set: the DER
-/// numerator over segment counts (uniform windows, so counts stand in
-/// for time). Single-speaker control must score near zero.
 pub fn diarization_error(got: &[usize], want: &[usize]) -> f32 {
     if want.is_empty() {
         return 0.0;

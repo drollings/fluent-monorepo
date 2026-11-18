@@ -21,7 +21,6 @@ use crate::artifact_lock::{acquire_artifact_cache_lock, LockError, LockOptions};
 
 /// Where an artifact snapshot may come from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Where an artifact snapshot may come from.
 pub enum SourceKind {
     HuggingFace,
     ModelScope,
@@ -45,7 +44,6 @@ pub type FallbackHook<'a> = &'a (dyn Fn(&str) + Send + Sync);
 
 /// One download source: mirror coordinates plus the local cache layout.
 #[derive(Debug, Clone)]
-/// One download source: mirror coordinates plus the local cache layout.
 pub struct ModelArtifactSource {
     pub kind: SourceKind,
     pub repo: String,
@@ -57,7 +55,6 @@ pub struct ModelArtifactSource {
 
 /// One pinned file inside a snapshot.
 #[derive(Debug, Clone)]
-/// One pinned file inside a snapshot.
 pub struct ModelArtifact {
     pub path: String,
     pub size: u64,
@@ -66,7 +63,6 @@ pub struct ModelArtifact {
 
 /// Per-artifact download progress event.
 #[derive(Debug, Clone)]
-/// Per-artifact download progress event.
 pub struct ModelArtifactDownloadProgress {
     pub model: String,
     pub source: SourceKind,
@@ -77,7 +73,6 @@ pub struct ModelArtifactDownloadProgress {
 
 /// A resolved, integrity-checked local snapshot.
 #[derive(Debug, Clone)]
-/// A resolved, integrity-checked local snapshot.
 pub struct ResolvedModelArtifacts {
     pub source: ModelArtifactSource,
     pub directory: String,
@@ -101,7 +96,6 @@ pub enum FailureKind {
 
 /// A single-source download failure.
 #[derive(Debug, Clone)]
-/// A single-source download failure.
 pub struct ArtifactDownloadError {
     pub message: String,
     pub kind: FailureKind,
@@ -182,7 +176,6 @@ pub struct ArtifactFetchResponse {
 
 /// Fetch-level failures (mapped to [`FailureKind`] by the downloader).
 #[derive(Debug)]
-/// Fetch-level failures (mapped to [`FailureKind`] by the downloader).
 pub enum ArtifactFetchError {
     Network(String),
     Cancelled,
@@ -190,14 +183,12 @@ pub enum ArtifactFetchError {
 
 /// Streaming response body: each call yields the next chunk.
 #[async_trait]
-/// Streaming response body: each call yields the next chunk.
 pub trait ArtifactBody: Send {
     async fn next_chunk(&mut self) -> Option<Result<Vec<u8>, ArtifactFetchError>>;
 }
 
 /// Injectable HTTP boundary for artifact downloads.
 #[async_trait]
-/// Injectable HTTP boundary for artifact downloads.
 pub trait ArtifactFetcher: Send + Sync {
     async fn fetch(&self, url: &str) -> Result<ArtifactFetchResponse, ArtifactFetchError>;
 }
@@ -737,7 +728,6 @@ pub fn snapshot_fingerprint(
 
 /// Completion-marker path for one snapshot recipe.
 #[must_use]
-/// Completion-marker path for one snapshot recipe.
 pub fn snapshot_marker_path(source: &ModelArtifactSource, fingerprint: &str) -> PathBuf {
     source
         .cache_directory
@@ -746,7 +736,6 @@ pub fn snapshot_marker_path(source: &ModelArtifactSource, fingerprint: &str) -> 
 
 /// Lock path serializing writers of one snapshot recipe.
 #[must_use]
-/// Lock path serializing writers of one snapshot recipe.
 pub fn snapshot_lock_path(source: &ModelArtifactSource, fingerprint: &str) -> PathBuf {
     source
         .cache_directory

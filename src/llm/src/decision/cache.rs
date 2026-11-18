@@ -83,27 +83,6 @@ impl Drop for Retire<'_> {
 /// assert_eq!(input.key().len(), 64);
 /// ```
 #[derive(Debug, Clone)]
-/// Composite cache-key input: every identity axis in one struct so the key
-/// can grow (fingerprint today) without another signature break. `key()`
-/// frames each part with its length; an absent fingerprint contributes
-/// nothing, so legacy callers hash exactly as before.
-///
-/// ```rust
-/// use fluent_llm::decision::CacheKeyInput;
-///
-/// let input = CacheKeyInput {
-/// state: "s".to_string(),
-/// question: "q?".to_string(),
-/// question_id: "id".to_string(),
-/// version: 1,
-/// model: "m".to_string(),
-/// endpoint: "http://a".to_string(),
-/// extras: serde_json::json!({}),
-/// think: None,
-/// fingerprint: None,
-/// };
-/// assert_eq!(input.key().len(), 64);
-/// ```
 pub struct CacheKeyInput {
     pub state: String,
     pub question: String,

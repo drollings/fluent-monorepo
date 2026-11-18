@@ -26,8 +26,7 @@ enum Cmd {
         #[arg(long, default_value = "2")]
         tiers: usize,
     },
-    /// Convert a pruned YaGO taxonomy TTL to concise JSON (Rust owner of
-    /// `src/ontology/tools/parse_yago_taxonomy_to_json.py`).
+    /// Convert a pruned YaGO taxonomy TTL to concise JSON.
     YagoToJson {
         /// Input TTL file.
         #[arg(long)]
@@ -151,8 +150,7 @@ fn build_yago(input: &PathBuf, output: &PathBuf) -> anyhow::Result<()> {
 }
 
 fn prune_yago(input: &PathBuf, output: &PathBuf, tiers: usize) -> anyhow::Result<()> {
-    // Rust owner of `src/ontology/tools/prune_yago_taxonomy.py`: tier-BFS
-    // over the subClassOf edges via `fluent_concept::taxonomy`.
+    // Tier-BFS over the subClassOf edges via `fluent_concept::taxonomy`.
     let ttl = std::fs::read_to_string(input)?;
     let pruned = fluent_concept::taxonomy::prune_ttl(&ttl, tiers);
     std::fs::write(output, &pruned)?;

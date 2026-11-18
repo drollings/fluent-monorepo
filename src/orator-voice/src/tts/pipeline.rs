@@ -33,7 +33,6 @@ pub trait SynthSeam: Send + Sync {
 
 /// One synth result.
 #[derive(Debug, Clone, PartialEq)]
-/// One synth result.
 pub struct SynthOut {
     /// Mono f32 samples.
     pub samples: Vec<f32>,

@@ -16,7 +16,6 @@ use tokio::sync::Mutex;
 
 /// A compiled summary of one interaction session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A compiled summary of one interaction session.
 pub struct SessionSummary {
     /// Unique session identifier.
     pub session_id: String,
@@ -36,7 +35,6 @@ pub struct SessionSummary {
 
 /// A conclusion reached during a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A conclusion reached during a session.
 pub struct Decision {
     /// The conclusion statement.
     pub statement: String,
@@ -50,7 +48,6 @@ pub struct Decision {
 
 /// A reasoning path tracked across turns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A reasoning path tracked across turns.
 pub struct ReasoningPath {
     /// Human-readable description of the reasoning.
     pub description: String,
@@ -62,7 +59,6 @@ pub struct ReasoningPath {
 
 /// Configuration for the honcho plugin.
 #[derive(Debug, Clone)]
-/// Configuration for the honcho plugin.
 pub struct HonchoConfig {
     /// Maximum sessions to retain in memory.
     pub max_sessions: usize,

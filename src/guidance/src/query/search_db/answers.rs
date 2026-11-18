@@ -10,7 +10,6 @@ use super::VectorDbError;
 
 /// One cached generative answer, keyed by evidence manifest hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One cached generative answer, keyed by evidence manifest hash.
 pub struct AnswerCacheRecord {
     /// Evidence manifest hash (primary key).
     pub manifest_hash: String,

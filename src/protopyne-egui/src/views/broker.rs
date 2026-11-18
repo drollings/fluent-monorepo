@@ -10,7 +10,6 @@ use protopyne_view::{
 
 /// One broker-panel pull.
 #[derive(Debug, Clone, Default, PartialEq)]
-/// One broker-panel pull.
 pub struct BrokerModel {
     /// Venues and their declared capabilities.
     pub venues: Vec<BrokerCapabilityView>,
@@ -158,7 +157,6 @@ pub fn paint_broker_panel(ui: &mut egui::Ui, model: &BrokerModel) {
 
 /// One refusal from a broker panel read, shaped for tests.
 #[must_use]
-/// One refusal from a broker panel read, shaped for tests.
 pub fn refusal_of(error: &GatewayError) -> String {
     error.to_string()
 }

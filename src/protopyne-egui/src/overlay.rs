@@ -33,7 +33,6 @@ pub const BACKTEST_EQUITY_PANE: &str = "backtest:equity";
 
 /// One plotted run point: a bar timestamp plus a display price.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// One plotted run point: a bar timestamp plus a display price.
 pub struct BacktestPoint {
     /// Bar timestamp in seconds, matching [`ChartRow::time`].
     pub at: i64,
@@ -45,7 +44,6 @@ pub struct BacktestPoint {
 
 /// Which overlay series a point belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Which overlay series a point belongs to.
 pub enum BacktestPointKind {
     /// Long/short entry marker.
     Entry,
@@ -64,10 +62,6 @@ pub enum BacktestPointKind {
 /// id here keys the plan fingerprint and lets `evaluate` refuse a run it
 /// was not built for rather than painting a mislabelled run.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, FieldAccess, Describable)]
-/// The slot configuration: the stored run id this overlay paints. The run
-/// data itself rides the plugin (construction-time evaluation input); the
-/// id here keys the plan fingerprint and lets `evaluate` refuse a run it
-/// was not built for rather than painting a mislabelled run.
 pub struct BacktestOverlayConfig {
     /// Stored run id this overlay paints.
     #[field(desc = "Stored run id this overlay paints")]
@@ -164,10 +158,6 @@ fn parse_point(at: &str, price: &str, kind: BacktestPointKind) -> Option<Backtes
 /// curve. Unparseable rows are dropped (never fabricated); the series keep
 /// their holes.
 #[must_use]
-/// Lift one stored run view into overlay points: entry/exit markers from
-/// the trades, stop/target points from the resting levels, equity from the
-/// curve. Unparseable rows are dropped (never fabricated); the series keep
-/// their holes.
 pub fn backtest_points_of(view: &protopyne_view::BacktestRunView) -> Vec<BacktestPoint> {
     let mut points = Vec::new();
     for trade in &view.trades {

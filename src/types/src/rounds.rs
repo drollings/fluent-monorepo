@@ -9,7 +9,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Fixed round count for rigor/any loop (VISION: terminate, don't loop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Fixed round count for rigor/any loop (VISION: terminate, don't loop).
 pub struct BoundedRounds(u8);
 impl BoundedRounds {
     pub const MAX: u8 = 8;
@@ -105,7 +104,6 @@ impl<'de, Tag: ThresholdTag> Deserialize<'de> for UnitThreshold<Tag> {
 
 /// Tag for [`SeverityThreshold`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Tag for [`SeverityThreshold`].
 pub struct SeverityTag;
 impl ThresholdTag for SeverityTag {
     const NAME: &'static str = "SeverityThreshold";
@@ -113,7 +111,6 @@ impl ThresholdTag for SeverityTag {
 
 /// Tag for [`EscalationConfidence`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Tag for [`EscalationConfidence`].
 pub struct EscalationTag;
 impl ThresholdTag for EscalationTag {
     const NAME: &'static str = "EscalationConfidence";
@@ -121,7 +118,6 @@ impl ThresholdTag for EscalationTag {
 
 /// Tag for [`TaskRelevanceThreshold`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Tag for [`TaskRelevanceThreshold`].
 pub struct TaskRelevanceTag;
 impl ThresholdTag for TaskRelevanceTag {
     const NAME: &'static str = "TaskRelevanceThreshold";
@@ -129,7 +125,6 @@ impl ThresholdTag for TaskRelevanceTag {
 
 /// Tag for [`ProducerConfidenceThreshold`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Tag for [`ProducerConfidenceThreshold`].
 pub struct ProducerConfidenceTag;
 impl ThresholdTag for ProducerConfidenceTag {
     const NAME: &'static str = "ProducerConfidenceThreshold";

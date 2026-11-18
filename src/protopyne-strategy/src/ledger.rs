@@ -32,10 +32,6 @@ use crate::risk::PortfolioFacts;
 /// breached (configured and strictly past — the ledger trips), or unobserved
 /// (configured but the book's equity is unknown — refuse, never pass).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// What the drawdown arm concluded over one facts reading: inert (no cap, or
-/// a cap that can never be a threshold), within (configured and holding),
-/// breached (configured and strictly past — the ledger trips), or unobserved
-/// (configured but the book's equity is unknown — refuse, never pass).
 pub enum DrawdownStatus {
     /// No drawdown cap configured, or a garbage cap that arming refused.
     Inert,
@@ -49,7 +45,6 @@ pub enum DrawdownStatus {
 
 /// Why a grant could not be installed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Why a grant could not be installed.
 pub enum LedgerRefusal {
     /// An adopted grant would widen authority; only tightening is allowed.
     NotTightening,
@@ -67,7 +62,6 @@ impl std::error::Error for LedgerRefusal {}
 
 /// Why a reservation was released instead of settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Why a reservation was released instead of settled.
 pub enum ReleaseReason {
     /// The order was never handed to the venue.
     Unsubmitted,
@@ -77,7 +71,6 @@ pub enum ReleaseReason {
 
 /// What settling a reservation did to the budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// What settling a reservation did to the budgets.
 pub enum Settled {
     /// The committed budget was consumed.
     Consumed,
@@ -87,7 +80,6 @@ pub enum Settled {
 
 /// The venue verdict that settles a reservation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The venue verdict that settles a reservation.
 pub enum FillStatus {
     /// The order filled in full.
     Filled,
@@ -101,7 +93,6 @@ pub enum FillStatus {
 
 /// The settled facts a fill contributes to the budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The settled facts a fill contributes to the budgets.
 pub struct FillOutcome {
     /// Venue verdict.
     pub status: FillStatus,

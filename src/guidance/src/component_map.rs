@@ -76,11 +76,6 @@ const ENTRIES: &[Entry] = &[
         component: Some("guidance"),
     },
     Entry {
-        prefix: "src/ontology",
-        package: "guidance-ontology",
-        component: Some("guidance"),
-    },
-    Entry {
         prefix: "src/coral",
         package: "coral-context",
         component: Some("coral"),
@@ -269,7 +264,6 @@ const ENTRIES: &[Entry] = &[
 
 /// Narrowest gate for one workspace path.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Narrowest gate for one workspace path.
 pub struct ComponentGate {
     /// Owning Cargo package, empty when the path maps to nothing.
     pub package: String,
@@ -283,8 +277,6 @@ pub struct ComponentGate {
 /// Longest-registered prefix for one package (branch-2 scope glob
 /// root). `None` when the package maps to nothing.
 #[must_use]
-/// Longest-registered prefix for one package (branch-2 scope glob
-/// root). `None` when the package maps to nothing.
 pub fn prefix_for_package(package: &str) -> Option<&'static str> {
     ENTRIES
         .iter()
@@ -294,7 +286,6 @@ pub fn prefix_for_package(package: &str) -> Option<&'static str> {
 
 /// Workspace prefixes owning one Cargo package, in table order.
 #[must_use]
-/// Workspace prefixes owning one Cargo package, in table order.
 pub fn paths_for_package(package: &str) -> Vec<String> {
     ENTRIES
         .iter()
@@ -307,9 +298,6 @@ pub fn paths_for_package(package: &str) -> Vec<String> {
 /// the named packages, sorted and deduped. The recall/graph planes
 /// match stored `./`-relative rows against these roots.
 #[must_use]
-/// Workspace prefixes for a scope list: every indexed root owned by
-/// the named packages, sorted and deduped. The recall/graph planes
-/// match stored `./`-relative rows against these roots.
 pub fn prefixes_for_scope(packages: &[String]) -> Vec<String> {
     let mut out: Vec<String> = packages
         .iter()
@@ -324,9 +312,6 @@ pub fn prefixes_for_scope(packages: &[String]) -> Vec<String> {
 /// and component names, sorted and deduped. The subject anchor
 /// matches query chunks against exactly this set.
 #[must_use]
-/// Every name that can anchor a query to a crate: package, directory,
-/// and component names, sorted and deduped. The subject anchor
-/// matches query chunks against exactly this set.
 pub fn known_crate_names() -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for entry in ENTRIES {
@@ -351,8 +336,6 @@ pub fn known_crate_names() -> Vec<String> {
 /// Canonical package for one anchor name: exact package, directory,
 /// or component hit. `None` when the name anchors nothing.
 #[must_use]
-/// Canonical package for one anchor name: exact package, directory,
-/// or component hit. `None` when the name anchors nothing.
 pub fn package_for_crate_name(name: &str) -> Option<&'static str> {
     ENTRIES
         .iter()
@@ -372,13 +355,6 @@ pub fn package_for_crate_name(name: &str) -> Option<&'static str> {
 /// Ties keep table order. Empty when nothing names a crate — the
 /// caller then reads unscoped instead of guessing.
 #[must_use]
-/// Soft crate scope for a query: up to two owning packages named by
-/// the text, strongest signal first. Exact token hits on a package,
-/// directory, or component name count double; a package or component
-/// name merely containing a ≥4-char token counts single; a
-/// path-shaped token resolving through the gate table counts double.
-/// Ties keep table order. Empty when nothing names a crate — the
-/// caller then reads unscoped instead of guessing.
 pub fn scope_packages_for_query(query: &str) -> Vec<String> {
     let mut scores: std::collections::HashMap<&'static str, u32> = std::collections::HashMap::new();
     let mut bump = |package: &'static str, points: u32| {
@@ -460,8 +436,6 @@ pub fn scope_packages_for_query(query: &str) -> Vec<String> {
 /// Resolve `path` (workspace-relative, leading `./` tolerated) to its
 /// narrowest gate by longest boundary-matching prefix.
 #[must_use]
-/// Resolve `path` (workspace-relative, leading `./` tolerated) to its
-/// narrowest gate by longest boundary-matching prefix.
 pub fn component_gate_for_path(path: &str) -> ComponentGate {
     let normalized = path.trim().trim_start_matches("./").trim_end_matches('/');
     let mut best: Option<&Entry> = None;
@@ -496,7 +470,6 @@ pub fn component_gate_for_path(path: &str) -> ComponentGate {
 
 /// Distinct components in the table (unsorted; tests pin the set).
 #[must_use]
-/// Distinct components in the table (unsorted; tests pin the set).
 pub fn snapshot_components() -> Vec<String> {
     let mut components: Vec<String> = ENTRIES
         .iter()
@@ -511,9 +484,6 @@ pub fn snapshot_components() -> Vec<String> {
 /// Update that file with a reason when the matrix changes; the test
 /// failure names the file so the fix is mechanical.
 #[must_use]
-/// Components recorded in the checked-in snapshot file (sorted).
-/// Update that file with a reason when the matrix changes; the test
-/// failure names the file so the fix is mechanical.
 pub fn load_snapshot_components() -> Vec<String> {
     let path = format!("{}/component_snapshot.json", env!("CARGO_MANIFEST_DIR"));
     let text = std::fs::read_to_string(&path).expect("snapshot readable");

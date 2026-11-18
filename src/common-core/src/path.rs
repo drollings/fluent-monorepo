@@ -136,14 +136,12 @@ pub fn parent_lexical(path: &str) -> Option<String> {
 
 /// Final segment of a lexically-cleaned path (trailing `/` ignored).
 #[must_use]
-/// Final segment of a lexically-cleaned path (trailing `/` ignored).
 pub fn file_name_lexical(path: &str) -> Option<&str> {
     path.trim_end_matches('/').rsplit('/').next()
 }
 
 /// Absolute-path detection: leading `/`, or a drive prefix (`X:/`, `X:\`).
 #[must_use]
-/// Absolute-path detection: leading `/`, or a drive prefix (`X:/`, `X:\`).
 pub fn is_absolute_lexical(path: &str) -> bool {
     path.starts_with('/')
         || (path.len() >= 3

@@ -67,7 +67,6 @@ pub trait KeyedSnapshot: Sized {
 
 /// Where one observation landed relative to the bar currently forming.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Where one observation landed relative to the bar currently forming.
 pub enum Arrival<K> {
     /// First sighting of this key; it is now forming.
     Opened(K),
@@ -92,7 +91,6 @@ pub enum Arrival<K> {
 
 /// Why a forming bar was committed without a later bar proving it closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Why a forming bar was committed without a later bar proving it closed.
 pub enum SealReason {
     /// The held bar's stamp fell outside the trading session.
     SessionEnd,
@@ -104,7 +102,6 @@ pub enum SealReason {
 
 /// What the emitter has seen, one counter per [`Arrival`] shape plus seals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// What the emitter has seen, one counter per [`Arrival`] shape plus seals.
 pub struct ClosedCounts {
     /// First sightings.
     pub opened: u64,

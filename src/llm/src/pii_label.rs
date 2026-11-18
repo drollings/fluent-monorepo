@@ -43,7 +43,6 @@ pub enum PiiLabel {
 /// Refusal for label input outside the closed vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("unknown PII label: {0}")]
-/// Refusal for label input outside the closed vocabulary.
 pub struct PiiLabelParseError(pub String);
 
 impl PiiLabel {

@@ -492,7 +492,6 @@ fn skip_csi_final(chars: &mut Chars<'_>) {
 
 /// Identifier case-style classification for a query string.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Identifier case-style classification for a query string.
 pub enum IdentifierKind {
     CamelCase,
     PascalCase,
@@ -1005,41 +1004,6 @@ impl<'a> Iterator for AsciiAlnumTokens<'a> {
 /// );
 /// ```
 #[must_use]
-/// Replace byte spans rightmost-first so earlier offsets stay valid.
-///
-/// The one shared span-splicing stanza (scrubbers, anonymizers): sorts by
-/// `(start, end)` descending, then applies each span's replacement with
-/// [`str::replace_range`]. Total and deterministic — input order is
-/// irrelevant; degenerate spans are skipped, never panics:
-///
-/// - empty/inverted (`start >= end`), past-the-end, and non-`char`-boundary
-///   spans are skipped; spans straddling the end of (the current) text are
-///   clamped to what exists;
-/// - a span starting inside already-handled text is skipped (an exact
-///   duplicate, or nested inside a wider applied span);
-/// - a span straddling the handled frontier is clamped to the unhandled
-///   prefix — the rightmost replacement wins, and matched text is never
-///   left in place by an overlap (fail-closed bias: over-scrubbing clean
-///   text is safe, under-scrubbing a match is a leak).
-///
-/// Adjacent spans all apply; each span's replacement is used verbatim (no
-/// escaping). Callers with one replacement for every span pass the same
-/// `&str` N times.
-///
-/// # Examples
-///
-/// ```
-/// use common_core::string::apply_spans_rightmost;
-///
-/// assert_eq!(
-/// apply_spans_rightmost("aaaBBBccc", vec![(6, 9, "C"), (0, 3, "A")]),
-/// "ABBBC"
-/// );
-/// assert_eq!(
-/// apply_spans_rightmost("abcdef", vec![(0, 6, "O"), (2, 4, "I")]),
-/// "OIef"
-/// );
-/// ```
 pub fn apply_spans_rightmost(text: &str, spans: Vec<(usize, usize, &str)>) -> String {
     let mut sorted = spans;
     sorted.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));

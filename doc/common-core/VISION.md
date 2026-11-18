@@ -31,7 +31,7 @@ or `dag` crate.
 ## Consumers (verified `Cargo.toml` dependents)
 
 `fluent-wvr`, `fluent-concurrency`, `fluent-dag`, `fluent-db`,
-`guidance-ontology`, `fluent-llm`, `fluent-router`, `spacy-rs`,
+`fluent-concept`, `fluent-llm`, `fluent-router`, `spacy-rs`,
 `coral-context`, `fluent-knowledge`, `search-vector`, and others. The
 prelude (`common_core::prelude`) covers the 80% import.
 

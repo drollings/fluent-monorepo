@@ -54,7 +54,6 @@ const POSSIBILITY_AUX: &[&str] = &["can", "could", "may", "might", "will", "woul
 /// The syntactic role of a frame's argument slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// The syntactic role of a frame's argument slot.
 pub enum RoleType {
     Subject,
     DirectObject,
@@ -67,7 +66,6 @@ pub enum RoleType {
 /// Sentence polarity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Sentence polarity.
 pub enum Polarity {
     Positive,
     Negative,
@@ -76,7 +74,6 @@ pub enum Polarity {
 /// Sentence modality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Sentence modality.
 pub enum Modality {
     Declarative,
     Interrogative,
@@ -87,7 +84,6 @@ pub enum Modality {
 /// The typed ambiguity of a frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// The typed ambiguity of a frame.
 pub enum AmbiguityKind {
     AttachmentNearTie,
     PredicatePolysemy,
@@ -96,7 +92,6 @@ pub enum AmbiguityKind {
 
 /// One ambiguity entry, tied to a token span.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// One ambiguity entry, tied to a token span.
 pub struct AmbiguityEntry {
     pub kind: AmbiguityKind,
     /// The token span `(start, end)` the ambiguity concerns (the sentence
@@ -113,9 +108,6 @@ pub struct AmbiguityEntry {
 /// id, the sentence span, the role slots (role + token span + candidate
 /// concept ids), and the polarity/modality.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// A typed argument structure per predicate: the predicate's interlingua lemma
-/// id, the sentence span, the role slots (role + token span + candidate
-/// concept ids), and the polarity/modality.
 pub struct Frame {
     pub predicate_lemma_id: InterlinguaId,
     pub sentence_span: (usize, usize),
@@ -126,7 +118,6 @@ pub struct Frame {
 
 /// The output of frame extraction: the frames plus the typed ambiguity list.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-/// The output of frame extraction: the frames plus the typed ambiguity list.
 pub struct FrameAnalysis {
     pub frames: Vec<Frame>,
     pub ambiguities: Vec<AmbiguityEntry>,
@@ -155,9 +146,6 @@ fn spans_overlap(a: (usize, usize), b: (usize, usize)) -> bool {
 /// are the ones persisted to the ledger/graph; provisional keys mark frames
 /// with an open ambiguity and are never persisted as resolved structure.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// A content-addressed key for a frame. Permanent keys (ambiguity-free frames)
-/// are the ones persisted to the ledger/graph; provisional keys mark frames
-/// with an open ambiguity and are never persisted as resolved structure.
 pub struct FrameKey {
     pub predicate_lemma_id: InterlinguaId,
     /// Role slots as `(role, role-token lemma id)`.
@@ -212,13 +200,6 @@ impl FrameKey {
 /// This value type stays in spacy-rs (pure, no store); only the trait tenancy
 /// moved to the router.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// The disambiguation product of a resolved `(predicate, ambiguity_kind)`
-/// pattern. Recorded in the ledger-owner `PreferredSenseIndex`
-/// (see `fluent-router` `ledger::frame_index`) and replayed deterministically
-/// so the next occurrence never re-triggers an LLM call.
-///
-/// This value type stays in spacy-rs (pure, no store); only the trait tenancy
-/// moved to the router.
 pub struct Resolution {
     /// The chosen sense / attachment / scope id.
     pub chosen_candidate_id: InterlinguaId,
@@ -230,9 +211,6 @@ pub struct Resolution {
 /// the pipeline as the `frame` stage (spacy-rs owns the structure; the router
 /// implements the persistence seams).
 #[derive(Clone)]
-/// The deterministic frame extractor: a resolver + concept store wired into
-/// the pipeline as the `frame` stage (spacy-rs owns the structure; the router
-/// implements the persistence seams).
 pub struct FrameExtractor {
     resolver: Arc<InterlinguaResolver>,
     concept_store: Arc<dyn ConceptStore>,
@@ -294,17 +272,6 @@ impl FrameExtractor {
 /// predicate/role interlingua ids; `concept_store` backs polysemy candidate
 /// enumeration.
 #[must_use]
-/// Deterministically derive a frame analysis from an attached `doc`.
-///
-/// Sentence boundaries come from the `sent_start` markers (set by the
-/// sentencizer and by `set_children_from_heads` at each root). The frame tree
-/// reuses `Doc::children`/heads — the same dependency-tree discipline as
-/// validator checks 5/6, never a hand-rolled graph walk.
-///
-/// `margins` (the parse's per-oracle-step margins) drives the
-/// [`AmbiguityKind::AttachmentNearTie`] signal; `resolver` supplies the
-/// predicate/role interlingua ids; `concept_store` backs polysemy candidate
-/// enumeration.
 pub fn extract_frames(
     doc: &Doc,
     resolver: &InterlinguaResolver,
@@ -414,23 +381,6 @@ pub fn extract_frames(
 /// separately (a well-formed choice can still be the wrong sense — the gate
 /// is shape, not correctness).
 #[must_use]
-/// Task-value gate for sense promotion into the ledger-owner
-/// `PreferredSenseIndex` (router `ledger::frame_index`): whether a resolved
-/// `(predicate, ambiguity_kind)` pattern may persist. Both legs must hold
-/// (never blended):
-///
-/// - **valid**: the choice is a genuine sense id — nonzero (the `0` sentinel
-///   is the unparseable-output placeholder, never a sense) and, for
-///   sense-choice patterns, one of the offered candidates.
-/// - **ambiguity-free**: the choice settles the pattern. Only
-///   `PredicatePolysemy` names a sense choice; tie/scope kinds carry no
-///   candidates, so no resolution can leave them unambiguous and they never
-///   promote.
-///
-/// Pure: no store, no model. The worker calls this before every promotion
-/// write; sense-promotion precision/recall over promoted patterns is measured
-/// separately (a well-formed choice can still be the wrong sense — the gate
-/// is shape, not correctness).
 pub fn accept_resolution_for_promotion(
     kind: AmbiguityKind,
     candidate_ids: &[InterlinguaId],
@@ -450,9 +400,6 @@ pub fn accept_resolution_for_promotion(
 /// ambiguity entry gets a provisional key; an ambiguity-free frame a permanent
 /// one (the only kind persisted to the ledger/graph).
 #[must_use]
-/// Mint the provisional-or-permanent key for a frame. A frame with any open
-/// ambiguity entry gets a provisional key; an ambiguity-free frame a permanent
-/// one (the only kind persisted to the ledger/graph).
 pub fn mint_frame_key(
     doc: &Doc,
     resolver: &InterlinguaResolver,

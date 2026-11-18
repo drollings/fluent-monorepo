@@ -177,7 +177,6 @@ pub struct FragmentRecord {
 
 /// Lemma row for the `fragment_lemmas` L2 table.
 #[derive(Debug, Clone, PartialEq)]
-/// Lemma row for the `fragment_lemmas` L2 table.
 pub struct FragmentLemma {
     /// Owning fragment id.
     pub fragment_id: String,
@@ -219,7 +218,6 @@ impl SymbolRecord {
 
 /// Full fragment row for hit materialization.
 #[derive(Debug, Clone, PartialEq)]
-/// Full fragment row for hit materialization.
 pub struct FragmentRow {
     /// Fragment id.
     pub id: String,
@@ -274,7 +272,6 @@ impl FragmentRow {
 
 /// Recall filter pushed into fragment queries.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-/// Recall filter pushed into fragment queries.
 pub struct FragmentFilter {
     /// File allow-list (`None` = no path selection; `Some([])` = no files).
     pub file_ids: Option<Vec<String>>,
@@ -292,7 +289,6 @@ pub struct FragmentFilter {
 
 /// One ranked recall hit (rank assignment stays with the recall loop).
 #[derive(Debug, Clone, PartialEq)]
-/// One ranked recall hit (rank assignment stays with the recall loop).
 pub struct ScoredFragment {
     /// Fragment id.
     pub id: String,

@@ -41,7 +41,6 @@ impl TrayStatus {
 
 /// Current tray state plus the reason shown on hover.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Current tray state plus the reason shown on hover.
 pub struct TrayState {
     /// Indicator state.
     pub status: TrayStatus,

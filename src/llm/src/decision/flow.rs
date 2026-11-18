@@ -159,7 +159,6 @@ pub async fn match_arm(
 
 /// One item to rank: id plus the text the Score question reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One item to rank: id plus the text the Score question reads.
 pub struct RerankItem {
     /// Stable id (returned positions index the input slice).
     pub id: String,
@@ -213,7 +212,6 @@ pub async fn rerank_items(
 
 /// One tree level: its own question, options, and act gate.
 #[derive(Debug, Clone, PartialEq)]
-/// One tree level: its own question, options, and act gate.
 pub struct TreeLevel {
     /// State block for this level.
     pub state: String,

@@ -15,7 +15,6 @@ use crate::timeframe::Timeframe;
 /// One detected discontinuity in an otherwise ordered bar sequence.
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(start_fn = new)]
-/// One detected discontinuity in an otherwise ordered bar sequence.
 pub struct BarGap {
     /// Position in the window where the discontinuity was observed.
     pub at_index: usize,
@@ -29,7 +28,6 @@ pub struct BarGap {
 
 /// Ordered store of closed bars for one symbol and timeframe.
 #[derive(Debug, Clone)]
-/// Ordered store of closed bars for one symbol and timeframe.
 pub struct BarWindow {
     timeframe: Timeframe,
     bars: Vec<Bar>,

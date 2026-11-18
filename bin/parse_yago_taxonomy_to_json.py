@@ -16,8 +16,8 @@ This is the noun counterpart to ../../env/en_lemmatizer.json (which covers verbs
   yago-taxonomy.json : yago class -> ancestor classes (noun taxonomy)
 
 Usage:
-  python src/ontology/tools/parse_yago_taxonomy_to_json.py [input.ttl] [-o out.json]
-  python src/ontology/tools/parse_yago_taxonomy_to_json.py --help
+  python bin/parse_yago_taxonomy_to_json.py [input.ttl] [-o out.json]
+  python bin/parse_yago_taxonomy_to_json.py --help
 """
 
 from __future__ import annotations

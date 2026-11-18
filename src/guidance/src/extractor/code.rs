@@ -139,7 +139,6 @@ impl CodeExtractor {
 
 /// A harvested code symbol (graph edges; no fragments, no embeddings).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A harvested code symbol (graph edges; no fragments, no embeddings).
 pub struct HarvestedSymbol {
     /// Declared name, if any.
     pub name: Option<String>,
@@ -153,9 +152,6 @@ pub struct HarvestedSymbol {
 /// import specifiers. Reuses the entity walker (same trees, same
 /// adapters) — never a second parser.
 #[derive(Debug, Clone, Default)]
-/// Harvested per-file graph inputs: symbols with call names plus raw
-/// import specifiers. Reuses the entity walker (same trees, same
-/// adapters) — never a second parser.
 pub struct HarvestedFile {
     /// Defined symbols.
     pub symbols: Vec<HarvestedSymbol>,
@@ -165,7 +161,6 @@ pub struct HarvestedFile {
 
 /// Stable id for the module fragment owning top-of-file comments.
 #[must_use]
-/// Stable id for the module fragment owning top-of-file comments.
 pub fn module_fragment_id(file_id: &str) -> String {
     format!("{file_id}#$file")
 }
@@ -193,8 +188,6 @@ pub fn module_symbol_name(file_id: &str) -> String {
 /// Synthetic module fragment carrying the top-of-file comment block, so
 /// file-level commentary stays retrievable as an ordinary module row.
 #[must_use]
-/// Synthetic module fragment carrying the top-of-file comment block, so
-/// file-level commentary stays retrievable as an ordinary module row.
 pub fn module_fragment_for(
     file_id: &str,
     relative_path: &str,
@@ -270,7 +263,6 @@ fn fallback_fragments(
 
 /// A statement span for window grouping (bytes into the file source).
 #[derive(Debug, Clone)]
-/// A statement span for window grouping (bytes into the file source).
 struct StmtSpan {
     start_byte: usize,
     end_byte: usize,

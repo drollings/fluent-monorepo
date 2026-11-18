@@ -41,8 +41,6 @@ use crate::server::responses::{error_response, HyperResponse};
 /// One review job: a parse node plus the interlingua pattern keys to
 /// (re)check against the correction index.
 #[derive(Debug, Clone)]
-/// One review job: a parse node plus the interlingua pattern keys to
-/// (re)check against the correction index.
 pub struct ReviewJob {
     pub node_id: NodeId,
     pub session_id: String,
@@ -77,8 +75,6 @@ pub type ReviewFetch = Arc<dyn Fn(String) -> Result<String, String> + Send + Syn
 /// Errors surfaced by enqueue (the worker's own processing is best-effort and
 /// logged — a failed review must never take the hot path down).
 #[derive(Debug, Error)]
-/// Errors surfaced by enqueue (the worker's own processing is best-effort and
-/// logged — a failed review must never take the hot path down).
 pub enum ReviewError {
     #[error("review queue closed: {0}")]
     Closed(String),
@@ -479,7 +475,7 @@ fn process_job(
 /// a bounded `iter_ids()` scan when nothing resolved. Grounded in the parse —
 /// never an arbitrary slice of the store (red-team M4).
 /// M9.3 disposition: review-pipeline specific (ConceptStore + parse records +
-/// taxonomy-grounded fallback) — stays in router unless ontology gains the
+/// taxonomy-grounded fallback) — stays in router unless fluent-concept gains the
 /// shape (no second consumer today).
 fn candidate_concepts(
     concepts: &Arc<dyn ConceptStore>,

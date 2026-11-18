@@ -22,7 +22,6 @@ pub const WRITER_SCHEMA_VERSION: u32 = 3;
 
 /// Stored row shape for one entity id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Stored row shape for one entity id.
 pub enum RowShape {
     /// Whole-file v1 row (live writer, no chunk metadata required).
     WholeFile,
@@ -35,8 +34,6 @@ pub enum RowShape {
 /// Vector requirement for one commit: batch embeds every fragment, live
 /// sync commits rows without vectors and backfills later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Vector requirement for one commit: batch embeds every fragment, live
-/// sync commits rows without vectors and backfills later.
 pub enum VectorPolicy {
     /// Exactly one vector per fragment, or the file fails.
     Required,

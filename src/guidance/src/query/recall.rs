@@ -81,9 +81,6 @@ pub trait RecallStorage: Send + Sync {
 /// glob/type selection, mtime window. `None` = no path selection.
 /// Source: `resolveFilteredFileIds`.
 #[must_use]
-/// Resolve the storage file allow-list: include matchers, exclude matchers,
-/// glob/type selection, mtime window. `None` = no path selection.
-/// Source: `resolveFilteredFileIds`.
 pub fn resolve_filtered_file_ids(
     files: &[FileInfo],
     plan: &ResolvedSearchPlan,
@@ -122,8 +119,6 @@ pub fn resolve_filtered_file_ids(
 /// Closed symbol-type name in zvec wire spelling (`"function"`, …).
 /// Used by the GuidanceSearchDb adapter when pushing the filter into SQL.
 #[must_use]
-/// Closed symbol-type name in zvec wire spelling (`"function"`, …).
-/// Used by the GuidanceSearchDb adapter when pushing the filter into SQL.
 pub fn symbol_type_name(symbol: &CodeSymbolType) -> String {
     match symbol {
         CodeSymbolType::Module => "module",
@@ -152,7 +147,6 @@ fn matches_modified_time(file: &FileInfo, plan: &ResolvedSearchPlan) -> bool {
 
 /// Recall output: resolved plan, ranked hits, force-tracked hit, timings.
 #[derive(Debug)]
-/// Recall output: resolved plan, ranked hits, force-tracked hit, timings.
 pub struct RecallOutput {
     /// Resolved plan.
     pub plan: ResolvedSearchPlan,
@@ -177,8 +171,6 @@ struct RecallRoute {
 /// Summary route mode: generated commentary participates additively,
 /// never as source. Disabled by default; shadow observes without fusing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Summary route mode: generated commentary participates additively,
-/// never as source. Disabled by default; shadow observes without fusing.
 pub enum SummaryMode {
     /// Summary route off: zero extra work, byte-identical results.
     #[default]
@@ -192,8 +184,6 @@ pub enum SummaryMode {
 /// Additive recall policy: behavior beyond the deterministic routes.
 /// `run_recall` keeps the disabled default for existing callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Additive recall policy: behavior beyond the deterministic routes.
-/// `run_recall` keeps the disabled default for existing callers.
 pub struct RecallPolicy {
     /// Summary route mode.
     pub summary: SummaryMode,
@@ -430,8 +420,6 @@ fn record_summary_shadow(candidates: &HashMap<String, RecallCandidate>, hits: &[
 /// One labelled retrieval case for summary-index calibration: the queries
 /// a summary route must answer plus the controls that must never fire it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-/// One labelled retrieval case for summary-index calibration: the queries
-/// a summary route must answer plus the controls that must never fire it.
 pub struct SummaryRecallCase {
     /// Query text.
     pub query: String,
@@ -449,8 +437,6 @@ pub struct SummaryRecallCase {
 /// Task-value report for one summary-index measurement: precision/recall
 /// over expected hits, false-positive rate over controls.
 #[derive(Debug, Clone, PartialEq)]
-/// Task-value report for one summary-index measurement: precision/recall
-/// over expected hits, false-positive rate over controls.
 pub struct SummaryRecallReport {
     /// Hits that matched expectations / all summary hits.
     pub precision: f64,
@@ -484,9 +470,6 @@ pub fn load_summary_corpus(path: &std::path::Path) -> Result<Vec<SummaryRecallCa
 /// per query, zero tolerance for control fires. Hermetic: the caller seeds
 /// precomputed summary fixtures; no model runs here.
 #[must_use]
-/// Measure the summary route against labelled cases: expected fragment ids
-/// per query, zero tolerance for control fires. Hermetic: the caller seeds
-/// precomputed summary fixtures; no model runs here.
 pub fn measure_summary_recall(
     storage: &dyn RecallStorage,
     cases: &[SummaryRecallCase],

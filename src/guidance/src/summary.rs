@@ -41,8 +41,6 @@ pub const MAX_SUMMARY_OUTPUT_CHARS: usize = MAX_SUMMARY_OUTPUT_TOKENS * 4;
 /// Coverage gap recorded when a node cannot be claimed complete: empty
 /// inputs are skipped, truncated inputs summarize partially. Never silent.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Coverage gap recorded when a node cannot be claimed complete: empty
-/// inputs are skipped, truncated inputs summarize partially. Never silent.
 pub struct SummaryGap {
     /// Node that was skipped or cut short.
     pub node_key: String,
@@ -56,9 +54,6 @@ pub struct SummaryGap {
 /// truncated inputs. Greedy in order; every packet fits both caps, so cost
 /// is bounded before any model call.
 #[must_use]
-/// Split requests into budget-limited packets, recording gaps for empty or
-/// truncated inputs. Greedy in order; every packet fits both caps, so cost
-/// is bounded before any model call.
 pub fn plan_summary_packets(
     requests: &[SummaryRequest],
 ) -> (Vec<Vec<SummaryRequest>>, Vec<SummaryGap>) {
@@ -119,9 +114,6 @@ pub fn plan_summary_packets(
 /// document nothing and stay out of the denominator; held, missing, and
 /// oversized nodes lower the score honestly instead of hiding.
 #[must_use]
-/// Fraction of documented nodes with a ready summary: empty comments
-/// document nothing and stay out of the denominator; held, missing, and
-/// oversized nodes lower the score honestly instead of hiding.
 pub fn summary_coverage(ready: usize, documented: usize) -> f64 {
     if documented == 0 {
         return 1.0;
@@ -132,8 +124,6 @@ pub fn summary_coverage(ready: usize, documented: usize) -> f64 {
 /// Hit rate of current cache keys against a previous pass: the share of
 /// nodes needing no model call.
 #[must_use]
-/// Hit rate of current cache keys against a previous pass: the share of
-/// nodes needing no model call.
 pub fn summary_cache_hit_rate(
     previous: &std::collections::HashSet<String, impl std::hash::BuildHasher + Clone>,
     current: &[String],
@@ -149,9 +139,6 @@ pub fn summary_cache_hit_rate(
 /// capped code snippet. Bodies beyond the snippet never enter a
 /// request; node identity stays bounded context.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One file's summary input: a node key, its comment text, and its
-/// capped code snippet. Bodies beyond the snippet never enter a
-/// request; node identity stays bounded context.
 pub struct SummaryRequest {
     /// Stable comment-block node key (`scope::name`, `$file` for module).
     pub node_key: String,
@@ -169,7 +156,6 @@ pub struct SummaryRequest {
 
 /// Decoding policy for summary calls, manifested into every packet.
 #[must_use]
-/// Decoding policy for summary calls, manifested into every packet.
 pub fn summary_policy() -> crate::triage::ModelPolicy {
     crate::triage::ModelPolicy {
         temperature: SUMMARY_TEMPERATURE,
@@ -192,9 +178,6 @@ pub fn build_summary_requests(
 /// `source` (comment lines stripped, capped). The module request and
 /// comment-only spans carry no code.
 #[must_use]
-/// Request builder with node code: each block's snippet is sliced from
-/// `source` (comment lines stripped, capped). The module request and
-/// comment-only spans carry no code.
 pub fn build_summary_requests_with_code(
     module_comment: Option<&str>,
     blocks: &[CommentBlock],
@@ -247,10 +230,6 @@ fn build_summary_requests_inner(
 /// cap to the code budget at a char boundary. Empty when the span holds
 /// comments only.
 #[must_use]
-/// Slice one block's node-code snippet from the source span: drop comment
-/// lines (they already travel in the comment fence), keep the code head,
-/// cap to the code budget at a char boundary. Empty when the span holds
-/// comments only.
 pub fn code_snippet_for_block(block: &CommentBlock, source: &str) -> (String, String) {
     let span = source
         .get(block.start_byte..block.end_byte.min(source.len()))
@@ -288,9 +267,6 @@ fn is_comment_line(line: &str) -> bool {
 /// comment edit invalidates only its node, a model or prompt rotation
 /// invalidates everything it produced.
 #[must_use]
-/// Cache key over comment content, model identity, and prompt version: a
-/// comment edit invalidates only its node, a model or prompt rotation
-/// invalidates everything it produced.
 pub fn summary_cache_key(comment_hash: &str, model: &str) -> String {
     crate::triage::model_cache_key(comment_hash, model, SUMMARY_PROMPT_VERSION)
 }
@@ -352,8 +328,6 @@ pub fn summary_messages(requests: &[SummaryRequest]) -> Vec<ChatMessage> {
 /// Per-node summary outcome: ready text, a labelled failure, or transport
 /// unavailability (wait, never a verdict).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Per-node summary outcome: ready text, a labelled failure, or transport
-/// unavailability (wait, never a verdict).
 pub enum SummaryOutcome {
     /// Validated summary text.
     Ready { text: String },
@@ -501,7 +475,6 @@ fn validate_summary_response(
 
 /// Project one outcome into its sidecar record.
 #[must_use]
-/// Project one outcome into its sidecar record.
 pub fn comment_summary_for(
     comment_hash: &str,
     code_hash: &str,
@@ -562,7 +535,6 @@ mod budget_tests;
 
 /// One file's summary input for the background pass.
 #[derive(Debug, Clone, Copy)]
-/// One file's summary input for the background pass.
 pub struct SummaryFileInput<'a> {
     /// Stable file id used by the fragment index.
     pub file_id: &'a str,
@@ -574,7 +546,6 @@ pub struct SummaryFileInput<'a> {
 
 /// Per-file outcome of one background pass.
 #[derive(Debug, Clone, Default)]
-/// Per-file outcome of one background pass.
 pub struct FileSummaryOutcome {
     /// File the outcome describes.
     pub file_id: String,
@@ -592,7 +563,6 @@ pub struct FileSummaryOutcome {
 
 /// Background pass failure (per-file isolation: callers log and continue).
 #[derive(Debug, thiserror::Error)]
-/// Background pass failure (per-file isolation: callers log and continue).
 pub enum SummaryPassError {
     /// Comment collection failed.
     #[error("parse error: {0}")]

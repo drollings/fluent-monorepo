@@ -13,7 +13,6 @@ use std::collections::{HashMap, HashSet};
 
 /// One ablation fragment: indexed text under a stable id.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One ablation fragment: indexed text under a stable id.
 pub struct LemmaAblationFragment {
     /// Fragment id (also the public entity id: ungrouped rows).
     pub id: String,
@@ -25,9 +24,6 @@ pub struct LemmaAblationFragment {
 /// Empty `relevant` with `control` marks no-fire queries (both arms
 /// must stay empty).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One golden case: a query plus the fragment ids that answer it.
-/// Empty `relevant` with `control` marks no-fire queries (both arms
-/// must stay empty).
 pub struct LemmaAblationCase {
     /// Natural-language query.
     pub query: String,
@@ -39,7 +35,6 @@ pub struct LemmaAblationCase {
 
 /// Golden ablation corpus: the fragment universe plus labels.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Golden ablation corpus: the fragment universe plus labels.
 pub struct LemmaAblationCorpus {
     /// Every fragment the harness indexes.
     pub fragments: Vec<LemmaAblationFragment>,
@@ -124,8 +119,6 @@ pub fn load_lemma_ablation_corpus(path: &std::path::Path) -> Result<LemmaAblatio
 /// One case measured both ways: fused top-k with the lemma route
 /// (ON) and re-fused without it (OFF), each scored against relevance.
 #[derive(Debug, Clone, PartialEq)]
-/// One case measured both ways: fused top-k with the lemma route
-/// (ON) and re-fused without it (OFF), each scored against relevance.
 pub struct LemmaAblationCaseReport {
     /// Case query.
     pub query: String,
@@ -147,9 +140,6 @@ pub struct LemmaAblationCaseReport {
 /// averages that carry the keep/trim/restructure decision. No bars,
 /// no verdict — measurement only.
 #[derive(Debug, Clone, PartialEq)]
-/// Corpus-level ablation outcome: per-case reports plus the macro
-/// averages that carry the keep/trim/restructure decision. No bars,
-/// no verdict — measurement only.
 pub struct LemmaAblationReport {
     /// Per-case results in corpus order.
     pub cases: Vec<LemmaAblationCaseReport>,

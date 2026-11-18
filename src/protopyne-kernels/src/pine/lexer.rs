@@ -22,9 +22,6 @@ use std::fmt;
 /// shapes; the v6 subset (`ColonEqual`, `Import`, `Export`, `Enum`, `Type`,
 /// `Method`, `Const`, `Simple`, `Series`, `Switch`) is additive.
 #[derive(Debug, Clone, PartialEq)]
-/// One lexical kind. The egui-overlap subset carries egui's names and
-/// shapes; the v6 subset (`ColonEqual`, `Import`, `Export`, `Enum`, `Type`,
-/// `Method`, `Const`, `Simple`, `Series`, `Switch`) is additive.
 pub enum TokenKind {
     /// Numeric literal (scientific notation included).
     Number(f64),
@@ -224,7 +221,6 @@ impl fmt::Display for TokenKind {
 
 /// One token with its 1-based source position.
 #[derive(Debug, Clone, PartialEq)]
-/// One token with its 1-based source position.
 pub struct PineToken {
     /// Lexical kind.
     pub kind: TokenKind,
@@ -244,7 +240,6 @@ impl PineToken {
 
 /// Tokenize `source` into a terminated stream (always ending in [`Eof`](TokenKind::Eof)).
 #[must_use]
-/// Tokenize `source` into a terminated stream (always ending in [`Eof`](TokenKind::Eof)).
 pub fn lex(source: &str) -> Vec<PineToken> {
     PineLexer::new(source).tokenize()
 }

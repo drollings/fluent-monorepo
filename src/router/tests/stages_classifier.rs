@@ -357,9 +357,13 @@ fn classifier_sends_response_format_through_extras_seam() {
 #[test]
 fn interlingua_prompt_context_is_id_exact() {
     let il = vec![spacy_rs::routing::InterlinguaSignal {
-        predicate_id: Some(fluent_types::InterlinguaId::from_stored_u64(0x0300_0000_0000_0001)),
+        predicate_id: Some(fluent_types::InterlinguaId::from_stored_u64(
+            0x0300_0000_0000_0001,
+        )),
         subject_id: None,
-        direct_object_id: Some(fluent_types::InterlinguaId::from_stored_u64(0x0300_0000_0000_0002)),
+        direct_object_id: Some(fluent_types::InterlinguaId::from_stored_u64(
+            0x0300_0000_0000_0002,
+        )),
         indirect_object_id: None,
         concept_ids: vec![],
         token_ids: vec![],

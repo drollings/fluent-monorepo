@@ -23,8 +23,6 @@ use guidance_core::eval::parse_eval_tasks;
 /// Token accounting for every arm: the shared
 /// `fluent_llm::tokens::estimate_tokens` (no second estimator).
 #[must_use]
-/// Token accounting for every arm: the shared
-/// `fluent_llm::tokens::estimate_tokens` (no second estimator).
 pub fn tokens_for_text(text: &str) -> usize {
     fluent_llm::tokens::estimate_tokens(text) as usize
 }
@@ -43,8 +41,6 @@ pub const GREP_EXCERPT_CHARS: usize = 120;
 /// One benchmark task: the shared eval shape plus the original golden
 /// paths (the basename list remains for continuity with older reports).
 #[derive(Debug, Clone)]
-/// One benchmark task: the shared eval shape plus the original golden
-/// paths (the basename list remains for continuity with older reports).
 pub struct BenchTask {
     /// Stable task identity.
     pub id: String,
@@ -64,7 +60,6 @@ pub struct BenchTask {
 
 /// One arm's cost and value on one query.
 #[derive(Debug, Clone, Serialize)]
-/// One arm's cost and value on one query.
 pub struct ArmResult {
     /// Wall time for the arm (milliseconds).
     pub wall_ms: u128,
@@ -100,7 +95,6 @@ pub struct ArmResult {
 
 /// One query measured three ways.
 #[derive(Debug, Clone, Serialize)]
-/// One query measured three ways.
 pub struct QueryReport {
     /// Task identity.
     pub id: String,
@@ -126,7 +120,6 @@ pub struct QueryReport {
 
 /// Whole-run report: per-query rows plus session aggregates.
 #[derive(Debug, Clone, Serialize)]
-/// Whole-run report: per-query rows plus session aggregates.
 pub struct BenchReport {
     /// Workspace as given.
     pub workspace: String,
@@ -142,7 +135,6 @@ pub struct BenchReport {
 
 /// Session-level corpus behind the wholesale arm (measured once).
 #[derive(Debug, Clone, Serialize)]
-/// Session-level corpus behind the wholesale arm (measured once).
 pub struct CorpusStats {
     /// Selected files walked.
     pub files: usize,
@@ -156,7 +148,6 @@ pub struct CorpusStats {
 
 /// Per-arm session aggregate.
 #[derive(Debug, Clone, Default, Serialize)]
-/// Per-arm session aggregate.
 pub struct ArmTotals {
     /// Summed wall time (milliseconds).
     pub wall_ms: u128,
@@ -172,9 +163,6 @@ pub struct ArmTotals {
 /// in the relevant set. Prefixes (workspace vs src-root-relative) must
 /// never decide relevance — only the file identity does.
 #[must_use]
-/// Basename-folded matching: a surfaced file counts when its basename is
-/// in the relevant set. Prefixes (workspace vs src-root-relative) must
-/// never decide relevance — only the file identity does.
 pub fn matches(relevant: &BTreeSet<String>, surfaced: &str) -> bool {
     let base = Path::new(surfaced)
         .file_name()
@@ -187,9 +175,6 @@ pub fn matches(relevant: &BTreeSet<String>, surfaced: &str) -> bool {
 /// Empty relevant sets are controls: silence scores 1.0/1.0, any firing
 /// scores 0.0/0.0.
 #[must_use]
-/// Score one surfaced file list against the relevant basename set.
-/// Empty relevant sets are controls: silence scores 1.0/1.0, any firing
-/// scores 0.0/0.0.
 pub fn score_arm(surfaced: &[String], relevant: &BTreeSet<String>) -> (f64, f64) {
     if relevant.is_empty() {
         return if surfaced.is_empty() {
@@ -214,8 +199,6 @@ pub fn score_arm(surfaced: &[String], relevant: &BTreeSet<String>) -> (f64, f64)
 /// Normalize a path for exact comparison; workspace-relative spellings
 /// are the contract, but a leading `./` never decides a match.
 #[must_use]
-/// Normalize a path for exact comparison; workspace-relative spellings
-/// are the contract, but a leading `./` never decides a match.
 pub fn normalize_bench_path(path: &str) -> String {
     common_core::path::normalize_lexical(path)
         .trim_start_matches("./")
@@ -225,8 +208,6 @@ pub fn normalize_bench_path(path: &str) -> String {
 /// Exact path-level scoring over workspace-relative paths. Controls
 /// score 1.0 only when the surfaced set is silent.
 #[must_use]
-/// Exact path-level scoring over workspace-relative paths. Controls
-/// score 1.0 only when the surfaced set is silent.
 pub fn score_paths(surfaced: &[String], relevant: &BTreeSet<String>) -> (f64, f64) {
     if relevant.is_empty() {
         return if surfaced.is_empty() {
@@ -256,8 +237,6 @@ pub fn score_paths(surfaced: &[String], relevant: &BTreeSet<String>) -> (f64, f6
 /// Path scope for the acceptance report; the single classifier lives in
 /// `guidance_core::source_scope`.
 #[must_use]
-/// Path scope for the acceptance report; the single classifier lives in
-/// `guidance_core::source_scope`.
 pub fn scope_mix(paths: &[String]) -> BTreeMap<String, usize> {
     let mut out = BTreeMap::new();
     for path in paths {
@@ -387,14 +366,6 @@ fn is_measurement_path(path: &Path) -> bool {
 /// Files cap at [`GREP_FILE_BUDGET`] (reported); matches render per
 /// line (excerpt capped at [`GREP_EXCERPT_CHARS`]).
 #[cfg(test)]
-/// Targeted literal grep: files matching ANY significant term, with
-/// `sed`-style `relpath:line:excerpt` matches. The targeting lives in
-/// the vocabulary — callers pass the shared read-vocabulary content
-/// terms (scaffolding and light verbs stripped), so a file of pure
-/// scaffolding never surfaces. The match itself stays broad-net: one
-/// distinctive term suffices, the orchestrator reads the excerpts.
-/// Files cap at [`GREP_FILE_BUDGET`] (reported); matches render per
-/// line (excerpt capped at [`GREP_EXCERPT_CHARS`]).
 pub fn grep_arm(
     corpus: &[PathBuf],
     workspace: &str,
@@ -407,7 +378,6 @@ pub fn grep_arm(
 
 /// Grep arm with the workspace-relative paths behind each basename.
 #[must_use]
-/// Grep arm with the workspace-relative paths behind each basename.
 pub fn grep_arm_with_paths(
     corpus: &[PathBuf],
     workspace: &str,
@@ -553,9 +523,6 @@ pub fn explain_arm(
 /// (`cmd_explain --no-llm`) and the benchmark arm build the same
 /// struct, so byte counts stay honest.
 #[must_use]
-/// One `ReadEngine` request shape for the shipping path: the CLI
-/// (`cmd_explain --no-llm`) and the benchmark arm build the same
-/// struct, so byte counts stay honest.
 pub fn cli_explain_request(
     query: &str,
     limit: usize,
@@ -577,8 +544,6 @@ pub fn cli_explain_request(
 /// Render the body the CLI prints: full sections, or Coverage omitted
 /// under `--compact`. One renderer, never a second builder.
 #[must_use]
-/// Render the body the CLI prints: full sections, or Coverage omitted
-/// under `--compact`. One renderer, never a second builder.
 pub fn render_cli_body(answer: &guidance_core::read::engine::ReadAnswer, compact: bool) -> String {
     if compact {
         let mut compact_answer = answer.clone();
@@ -609,11 +574,6 @@ pub type ExplainArmWithEnvelope = (
 /// `compact_body` against `render_cli_body(_, true)` and the envelope
 /// breakdown against `envelope_json_v2`.
 #[must_use]
-/// Detailed shipping arm with the envelope the CLI prints beside the
-/// body: `(body, compact_body, envelope, files, order, paths, raw)`.
-/// `explain_arm_detailed` delegates (body only); the parity test pins
-/// `compact_body` against `render_cli_body(_, true)` and the envelope
-/// breakdown against `envelope_json_v2`.
 pub fn explain_arm_with_envelope(
     query: &str,
     workspace: &str,
@@ -704,8 +664,6 @@ pub fn explain_arm_with_envelope(
 /// Detailed shipping arm: rendered text, basenames, rank order,
 /// workspace-relative citation paths, and raw citations.
 #[must_use]
-/// Detailed shipping arm: rendered text, basenames, rank order,
-/// workspace-relative citation paths, and raw citations.
 pub fn explain_arm_detailed(
     query: &str,
     workspace: &str,
@@ -955,8 +913,6 @@ fn mean(values: impl Iterator<Item = f64>) -> f64 {
 /// Human rendering: per-query arm rows plus session totals and the
 /// token ratios that price exploration.
 #[must_use]
-/// Human rendering: per-query arm rows plus session totals and the
-/// token ratios that price exploration.
 pub fn render_human(report: &BenchReport, scope_report: bool) -> String {
     let mut out = format!(
         "## Benchmark: {} queries ({})\n\n",
@@ -1031,7 +987,6 @@ pub fn render_human(report: &BenchReport, scope_report: bool) -> String {
 
 /// JSON rendering for agents: the full report object, stable keys.
 #[must_use]
-/// JSON rendering for agents: the full report object, stable keys.
 pub fn render_json(report: &BenchReport) -> String {
     serde_json::to_string_pretty(report).unwrap_or_else(|_| "{}".to_string())
 }

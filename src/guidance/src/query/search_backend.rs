@@ -967,7 +967,13 @@ mod tests {
             .iter()
             .map(|r| fluent_wvr::Describable::describe(r.component.as_ref())["backend"].clone())
             .collect();
-        assert_eq!(kinds, vec![serde_json::json!("identifier"), serde_json::json!("search-only")]);
+        assert_eq!(
+            kinds,
+            vec![
+                serde_json::json!("identifier"),
+                serde_json::json!("search-only")
+            ]
+        );
     }
 
     #[test]

@@ -201,7 +201,6 @@ impl Control {
 
 /// One broken universal invariant.
 #[derive(Debug, Clone, PartialEq)]
-/// One broken universal invariant.
 pub struct ControlViolation {
     /// Kernel id.
     pub id: String,
@@ -216,10 +215,6 @@ pub struct ControlViolation {
 /// `Some(NaN)`/`Some(±inf)` anywhere, and leading warmup positions stay
 /// `None` on the primary leg.
 #[must_use]
-/// Run every registry kernel over one control input; empty means quiet.
-/// Checks, per kernel: batch succeeds, output lengths equal input length, no
-/// `Some(NaN)`/`Some(±inf)` anywhere, and leading warmup positions stay
-/// `None` on the primary leg.
 pub fn run_control(control: Control) -> Vec<ControlViolation> {
     let legs = control.legs();
     let n = legs.close.len();
@@ -313,9 +308,6 @@ pub fn run_control(control: Control) -> Vec<ControlViolation> {
 /// nulls may degrade defined outputs to `None`, never fabricate. Empty means
 /// the alignment contract holds for every kernel, primary and secondaries.
 #[must_use]
-/// Positions where null injection resurrected a warming `None` into a value:
-/// nulls may degrade defined outputs to `None`, never fabricate. Empty means
-/// the alignment contract holds for every kernel, primary and secondaries.
 pub fn null_alignment_diffs() -> Vec<ControlViolation> {
     let clean = seeded_legs(0, 30);
     let mut nulled = seeded_legs(0, 30);
@@ -383,8 +375,6 @@ pub struct ParityRow {
 /// Global Expr-parity dashboard: per-id accept rate plus control false-fire rate.
 /// Green is 1.0 accept with 0.0 false-fire.
 #[derive(Debug, Clone, Default, PartialEq)]
-/// Global Expr-parity dashboard: per-id accept rate plus control false-fire rate.
-/// Green is 1.0 accept with 0.0 false-fire.
 pub struct ParityDashboard {
     /// One row per registry kernel, in registry order.
     pub rows: Vec<ParityRow>,

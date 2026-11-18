@@ -22,9 +22,6 @@ pub const SUBJECT_ANCHOR_POINT: &str = "dp.subject_anchor";
 /// section and its relevance judgment. Controls name sections that
 /// must never be admitted for the query.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One hand-labelled admission row: a query plus one candidate
-/// section and its relevance judgment. Controls name sections that
-/// must never be admitted for the query.
 pub struct DocAdmissionRow {
     /// Stable row id.
     pub id: String,
@@ -136,8 +133,6 @@ pub fn doc_admission_scores(
 /// One anchor-measurement case: a query, its golden section texts,
 /// and the distractor texts admission must cut.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One anchor-measurement case: a query, its golden section texts,
-/// and the distractor texts admission must cut.
 pub struct AnchorEvalCase {
     /// Question text.
     pub query: String,
@@ -225,7 +220,6 @@ pub fn anchor_cases_from_coldstart(path: &std::path::Path) -> Result<Vec<AnchorE
 
 /// Deterministic anchor report over goldens plus distractors.
 #[derive(Debug, Clone, PartialEq)]
-/// Deterministic anchor report over goldens plus distractors.
 pub struct SubjectAnchorReport {
     /// Mean reciprocal rank of the first golden under anchor-mention
     /// ranking (mention count desc, id asc).
@@ -343,10 +337,6 @@ mod doc_admission_tests;
 /// exists; fixture and eval rows never ground, so nonsense and leak
 /// queries refuse even when they name a section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One sufficiency case: a query plus the evidence at hand. The
-/// abstain decision routes to an answer exactly when usable evidence
-/// exists; fixture and eval rows never ground, so nonsense and leak
-/// queries refuse even when they name a section.
 pub struct SufficiencyCase {
     /// Stable case id.
     pub id: String,
@@ -446,9 +436,6 @@ pub fn load_sufficiency_cases(path: &std::path::Path) -> Result<Vec<SufficiencyC
 /// cases (plus controls): grounded evidence routes to `Answer`,
 /// anything else refuses. No endpoint, no registry, never stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Deterministic sufficiency report over must-answer and must-refuse
-/// cases (plus controls): grounded evidence routes to `Answer`,
-/// anything else refuses. No endpoint, no registry, never stored.
 pub struct SufficiencyReport {
     /// Cases measured.
     pub support: usize,
@@ -524,10 +511,6 @@ pub enum SynthesisDecision {
 /// synthesize; every other intent reads evidence-only. Legacy stages
 /// keep the grounding gate as the single decider.
 #[must_use]
-/// Generative synthesis is earned, never default: explanatory
-/// intents (`HowTo`, `Conceptual`) with at least two admitted docs
-/// synthesize; every other intent reads evidence-only. Legacy stages
-/// keep the grounding gate as the single decider.
 pub fn synthesis_allowed(
     intent: crate::query::strategy::QueryIntent,
     admitted_docs: usize,

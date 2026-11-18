@@ -13,7 +13,6 @@ use crate::query::synthesize::Stage;
 
 /// Result of grounding verification on LLM synthesis output.
 #[derive(Debug, Clone)]
-/// Result of grounding verification on LLM synthesis output.
 pub struct GroundingResult {
     /// True if all citations in the output trace to provided stages.
     pub verified: bool,
@@ -45,7 +44,6 @@ pub use common_core::cite::{
 
 /// Stored byte range plus hashes for one member, as stamped at parse.
 #[derive(Debug, Clone)]
-/// Stored byte range plus hashes for one member, as stamped at parse.
 pub struct MemberRange {
     /// Byte start of the member span.
     pub start: u64,
@@ -59,7 +57,6 @@ pub struct MemberRange {
 
 /// Freshness of one citation against live bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Freshness of one citation against live bytes.
 pub enum CitationFreshness {
     /// Live range re-hashes to the stored receipt.
     Fresh,
@@ -71,7 +68,6 @@ pub enum CitationFreshness {
 
 /// One verified citation line plus its verdict.
 #[derive(Debug, Clone)]
-/// One verified citation line plus its verdict.
 pub struct StageCitation {
     /// Rendered citation (`path:Lstart-Lend @ b3:hash`, or legacy shape).
     pub cite: String,
@@ -90,9 +86,6 @@ pub struct StageCitation {
 /// map exactly; anything else returns `None` rather than inventing
 /// precision.
 #[must_use]
-/// Map a stage tier string to its retrieval label. Known vocabularies
-/// map exactly; anything else returns `None` rather than inventing
-/// precision.
 pub fn retrieval_tier_for_stage_tier(tier: &str) -> Option<crate::search_types::RetrievalTier> {
     use crate::search_types::RetrievalTier;
     match tier {
@@ -125,11 +118,6 @@ fn short_hash(hash: &str) -> &str {
 /// orchestrator can requeue exactly that unit; the read plane itself
 /// writes nothing.
 #[must_use]
-/// Re-hash every code stage's stored range against live bytes. `lookup`
-/// maps a stage to its stamped row (sidecar, index, or test fixture);
-/// `root` resolves relative sources. Mismatches name their item so the
-/// orchestrator can requeue exactly that unit; the read plane itself
-/// writes nothing.
 pub fn verify_stage_ranges(
     stages: &[Stage],
     root: &std::path::Path,
@@ -215,9 +203,6 @@ fn ranged_cite(stage: &Stage, range_hash: &str) -> String {
 /// orchestrator. The bytes-decide staleness gate picks them up on the
 /// next pass; this list only names them.
 #[must_use]
-/// Stale items as `(source, member)` requeue targets for the
-/// orchestrator. The bytes-decide staleness gate picks them up on the
-/// next pass; this list only names them.
 pub fn stale_members(cited: &[StageCitation]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for citation in cited {
@@ -264,9 +249,6 @@ fn extract_ranged_citations(output: &str) -> Vec<(String, u32)> {
 /// plus dropped claims and gap entries. Feeds `from_verified_stages`
 /// directly: kept lines carry Fresh/Stale, dropped claims become gaps.
 #[derive(Debug, Clone, Default)]
-/// Tiered output-guard verdict: per-line freshness against live bytes,
-/// plus dropped claims and gap entries. Feeds `from_verified_stages`
-/// directly: kept lines carry Fresh/Stale, dropped claims become gaps.
 pub struct LiveCitationReport {
     /// Kept citations with live-byte verdicts (stale lines stay listed).
     pub citations: Vec<StageCitation>,
@@ -364,10 +346,6 @@ fn resolve_claimed_stage<'s>(
 /// with a gap entry. The location-only `verify_citations` stays for
 /// callers without live bytes; this is the honest variant.
 #[must_use]
-/// Tiered output guard: exact bytes verify, moved bytes keep the line but
-/// mark it stale, and claims with no single staged excerpt are dropped
-/// with a gap entry. The location-only `verify_citations` stays for
-/// callers without live bytes; this is the honest variant.
 pub fn verify_citations_live(
     output: &str,
     stages: &[Stage],
@@ -454,11 +432,6 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
 /// filter output: the caller takes the pinned gap instead of
 /// synthesizing from no excerpts.
 #[must_use]
-/// Resolve requested names against current members, mirroring
-/// `Synthesizer::synthesize`'s own lookup predicate exactly (same match,
-/// no second implementation). Empty means stale index names or rogue
-/// filter output: the caller takes the pinned gap instead of
-/// synthesizing from no excerpts.
 pub fn grounded_names(doc: &GuidanceDoc, names: &[String]) -> Vec<String> {
     names
         .iter()
@@ -475,9 +448,6 @@ pub fn grounded_names(doc: &GuidanceDoc, names: &[String]) -> Vec<String> {
 /// hash protocol for stage manifests and evidence manifests alike.
 /// Changed source always wins: identical bytes hash identically.
 #[must_use]
-/// Manifest framing over `(source, line, content)` triples: one
-/// hash protocol for stage manifests and evidence manifests alike.
-/// Changed source always wins: identical bytes hash identically.
 pub fn manifest_bytes<'a>(items: impl Iterator<Item = (&'a str, u32, &'a str)>) -> Vec<u8> {
     let mut bytes = Vec::new();
     for (source, line, content) in items {
@@ -492,9 +462,6 @@ pub fn manifest_bytes<'a>(items: impl Iterator<Item = (&'a str, u32, &'a str)>) 
 /// synthesis cache keys. Changed source changes the key, so a stored
 /// summary can never override fresh bytes.
 #[must_use]
-/// Content hash over grounded stages (source + line + content) for
-/// synthesis cache keys. Changed source changes the key, so a stored
-/// summary can never override fresh bytes.
 pub fn stage_content_hash(stages: &[Stage]) -> String {
     common_core::hash::blake3_hex(&manifest_bytes(stages.iter().map(|stage| {
         (
@@ -509,9 +476,6 @@ pub fn stage_content_hash(stages: &[Stage]) -> String {
 /// project cards: the cache key for a generated answer. Same framing
 /// as [`stage_content_hash`], never a second hash protocol.
 #[must_use]
-/// Evidence manifest hash over admitted findings, verified docs, and
-/// project cards: the cache key for a generated answer. Same framing
-/// as [`stage_content_hash`], never a second hash protocol.
 pub fn evidence_manifest_hash(
     findings: &[crate::read::engine::Finding],
     docs: &[crate::read::planes::docs::DocHit],
@@ -557,10 +521,6 @@ pub fn evidence_manifest_hash(
 /// the two can never disagree about what the range holds. `None`
 /// when the file is unreadable, empty, or the range falls outside it.
 #[must_use]
-/// Read one 1-based inclusive line range from live bytes: the single
-/// implementation behind citation hashing and finding rendering, so
-/// the two can never disagree about what the range holds. `None`
-/// when the file is unreadable, empty, or the range falls outside it.
 pub fn live_range_text(path: &std::path::Path, start: usize, end: usize) -> Option<String> {
     if start == 0 {
         return None;
@@ -582,9 +542,6 @@ pub fn live_range_text(path: &std::path::Path, start: usize, end: usize) -> Opti
 /// path. `None` when the range cannot be read — callers render
 /// `unverified`, never an invented hash.
 #[must_use]
-/// Hash the live range: the citation integrity half of the read
-/// path. `None` when the range cannot be read — callers render
-/// `unverified`, never an invented hash.
 pub fn live_range_hash(path: &std::path::Path, start: usize, end: usize) -> Option<String> {
     live_range_text(path, start, end)
         .map(|text| common_core::hash::blake3_hex(format!("{text}\n").as_bytes()))

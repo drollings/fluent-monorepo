@@ -46,7 +46,6 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// One live `llama-server` process found by discovery (state file or `/proc`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One live `llama-server` process found by discovery (state file or `/proc`).
 pub struct DiscoveredServer {
     /// OS pid of the process.
     pub pid: u32,
@@ -63,8 +62,6 @@ pub struct DiscoveredServer {
 /// The verified identity of a reachable server: what `/props` reports plus
 /// whether the `/instances` management route exists on it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// The verified identity of a reachable server: what `/props` reports plus
-/// whether the `/instances` management route exists on it.
 pub struct ServerIdentity {
     /// `model_alias` from `/props` (empty when the field is absent).
     pub alias: String,
@@ -78,8 +75,6 @@ pub struct ServerIdentity {
 /// What adoption recorded for one model: the non-child pid owned by adoption
 /// and whether its management API speaks `/instances`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// What adoption recorded for one model: the non-child pid owned by adoption
-/// and whether its management API speaks `/instances`.
 pub struct AdoptionInfo {
     /// OS pid of the adopted process (never a child of this router).
     pub pid: u32,
@@ -89,7 +84,6 @@ pub struct AdoptionInfo {
 
 /// The per-boot adoption outcome, logged by the caller.
 #[derive(Debug, Default)]
-/// The per-boot adoption outcome, logged by the caller.
 pub struct AdoptReport {
     /// `(model_key, base_url, instances_supported)` for every adopted model.
     pub adopted: Vec<(String, String, bool)>,
@@ -265,7 +259,6 @@ pub fn scan_proc() -> Vec<DiscoveredServer> {
 
 /// One persisted server record: where the router last left a model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// One persisted server record: where the router last left a model.
 struct SavedServer {
     port: u16,
     pid: u32,
@@ -274,8 +267,6 @@ struct SavedServer {
 /// The persisted fleet map (`sidecar.server_state_path`): model key to the
 /// port/pid the router last spawned or adopted for it.
 #[derive(Debug, Default, Serialize, Deserialize)]
-/// The persisted fleet map (`sidecar.server_state_path`): model key to the
-/// port/pid the router last spawned or adopted for it.
 struct ServerStateFile {
     #[serde(default)]
     servers: HashMap<String, SavedServer>,

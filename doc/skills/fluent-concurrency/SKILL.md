@@ -409,7 +409,7 @@ The `fluent-wvr` crate defines `Component`, `WorkUnit`, `FieldAccess`, `Describa
 - `ComponentAdapter` — runtime override of `name`, `execute`, and any field on a `Component`. `set_field` forwards via `Arc::get_mut` when possible and otherwise stores an override on the adapter. This is the only wrapper that handles the shared-Arc case correctly. `Instrumented` is a *transparent* wrapper: its `FieldAccess` impls delegate `set_field`/`get_field`/`field_names` straight to the inner type (requiring exclusive access to the inner or interior mutability), matching the delegation semantics of its `WorkUnit` impls.
 - `retry_call(max_attempts, base_ms, f)` — the synchronous free-function retry (explicitly blocking, never for `execute` bodies) with jittered-exponential backoff. Returns `Result<RetryResult<T>, E>` where `RetryResult` carries the attempt count. The async canonical path is `common_core::retry::retry_async`.
 
-**Retry**: there is no `WithRetry` wrapper. The single jittered-exponential backoff helper lives in `common_core::retry` (`backoff_ms` / `retry_async`); `SupervisedBatch` drives per-attempt timeout, `WorkError::Timeout` routing, and dependency cancellation on top of it.
+**Retry**: there is no `WithRetry` wrapper. The single jittered-exponential backoff helper lives in `common_core::retry` (`backoff_ms` / `retry_async`); `SupervisedBatch` drives whole-unit budget across all attempts (incl. backoff), `WorkError::Timeout` routing, and dependency cancellation on top of it.
 
 **Macros from `fluent-wvr`**:
 

@@ -9,7 +9,6 @@ use thiserror::Error;
 
 /// Errors from venue submission, journaling, reconciliation, and health.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-/// Errors from venue submission, journaling, reconciliation, and health.
 pub enum VenueError {
     /// The order cannot trade at this quote (illiquid, wide, stale,
     /// non-marketable). Permanent.

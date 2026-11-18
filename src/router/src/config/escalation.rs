@@ -15,11 +15,6 @@ use crate::frontier::modes::EscalationMode;
 /// currently-loaded members first, in config order. Both only *order*
 /// candidates — the intelligence climb underneath is unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One member of a role `models` list: either a literal model key or an
-/// availability-ordering sentinel. `Last` expands to the role's
-/// most-recently-successful key (when still a member); `Any` orders the
-/// currently-loaded members first, in config order. Both only *order*
-/// candidates — the intelligence climb underneath is unchanged.
 pub enum RoleMember {
     /// A literal model key (possibly qualified, e.g. `qwen3.5-9b:quick`).
     Key(String),
@@ -55,8 +50,6 @@ impl RoleMember {
 /// The frontier endpoint a ladder dispatches to, plus the model name it asks
 /// that endpoint to use.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// The frontier endpoint a ladder dispatches to, plus the model name it asks
-/// that endpoint to use.
 pub struct FrontierConfig {
     /// OpenAI-compatible chat-completions base URL. Reuses the canonical
     /// `dispatch/backend.rs` transport — no third HTTP path.
@@ -72,7 +65,6 @@ pub struct FrontierConfig {
 
 /// The full escalation ladder for one role (`roles.<role>.escalation`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// The full escalation ladder for one role (`roles.<role>.escalation`).
 pub struct EscalationLadderConfig {
     /// Ordered escalation modes; tried filter → question → team → turnover.
     /// Empty/absent → no frontier escalation for this group.

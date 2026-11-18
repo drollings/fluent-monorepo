@@ -54,13 +54,6 @@ const DEFERRED_CRATES: &[(&str, &[&str], &str)] = &[
          whether they still assert anything, not a forwarder",
     ),
     (
-        "src/ontology",
-        &["tests/taxonomy_equivalence.rs", "tests/yago_interlingua.rs"],
-        "two suites left behind when the crate stopped forwarding its own \
-         tree; each needs to be either forwarded or deleted, and deleting is \
-         a decision the suite's subject has to make first",
-    ),
-    (
         "src/fluent-onnx",
         &["tests/live.rs", "tests/session.rs"],
         "two suites superseded by the `live-*` suites but never deleted, so \

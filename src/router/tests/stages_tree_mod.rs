@@ -926,7 +926,9 @@ fn report_tree() -> ClassificationTree {
 
 fn report_signal(object_id: u64) -> spacy_rs::routing::InterlinguaSignal {
     spacy_rs::routing::InterlinguaSignal {
-        predicate_id: Some(fluent_types::InterlinguaId::from_stored_u64(2251799813685260)),
+        predicate_id: Some(fluent_types::InterlinguaId::from_stored_u64(
+            2251799813685260,
+        )),
         subject_id: None,
         direct_object_id: Some(fluent_types::InterlinguaId::from_stored_u64(object_id)),
         indirect_object_id: None,

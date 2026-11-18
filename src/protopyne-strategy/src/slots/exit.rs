@@ -25,7 +25,6 @@ use crate::tape::Tape;
 
 /// How much of the position one intent unwinds.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// How much of the position one intent unwinds.
 pub enum ExitQuantity {
     /// The whole remaining position.
     All,
@@ -37,7 +36,6 @@ pub enum ExitQuantity {
 
 /// Where the exit rests.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Where the exit rests.
 pub enum RestingPrice {
     /// Marketable at the touch (a signal exit).
     Market,
@@ -47,7 +45,6 @@ pub enum RestingPrice {
 
 /// One requested unwind.
 #[derive(Debug, Clone, PartialEq)]
-/// One requested unwind.
 pub struct ExitIntent {
     /// Machine-readable kind (`"stop"`, `"take-profit"`, `"time-stop"`,
     /// `"session-flatten"`, …).
@@ -154,7 +151,6 @@ pub trait ExitRule: Send + Sync {
 
 /// The adapter that gives any [`LossMgmt`] the exit-intent shape.
 #[derive(Clone)]
-/// The adapter that gives any [`LossMgmt`] the exit-intent shape.
 pub struct LossExitRule {
     inner: Arc<dyn LossMgmt>,
 }

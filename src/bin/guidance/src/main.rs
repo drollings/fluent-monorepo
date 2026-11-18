@@ -3286,10 +3286,6 @@ fn cmd_pack(file: &str) {
 /// bars pass. Measurement itself is never an error: exit 0 carries the
 /// AUTHORIZED or HELD verdict.
 #[allow(clippy::too_many_arguments)]
-/// Measure a decision point on a gold corpus plus harvested journal
-/// negatives; store a calibration entry only when the precision/recall
-/// bars pass. Measurement itself is never an error: exit 0 carries the
-/// AUTHORIZED or HELD verdict.
 fn cmd_calibrate(
     point: &str,
     dataset: &str,
@@ -4706,8 +4702,6 @@ fn print_fix_handoff(
 /// One decisive summary for humans and agents. The counts are the
 /// contract; `--verbose` adds the per-stage progress lines.
 #[allow(clippy::too_many_arguments)]
-/// One decisive summary for humans and agents. The counts are the
-/// contract; `--verbose` adds the per-stage progress lines.
 fn print_sync_summary(
     files: usize,
     generated: usize,

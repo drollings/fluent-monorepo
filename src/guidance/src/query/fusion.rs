@@ -36,7 +36,6 @@ use crate::search_types::{
 
 /// One recall evidence: the fragment plus where it surfaced.
 #[derive(Debug, Clone)]
-/// One recall evidence: the fragment plus where it surfaced.
 pub struct RecallEvidence {
     /// Hit fragment.
     pub fragment: crate::search_types::EntityFragment,
@@ -56,7 +55,6 @@ pub struct RecallEvidence {
 
 /// A fused candidate under construction.
 #[derive(Debug, Clone)]
-/// A fused candidate under construction.
 pub struct RecallCandidate {
     /// Public entity id.
     pub id: String,
@@ -83,10 +81,6 @@ pub struct RecallCandidate {
 /// the unscoped pool is always retained as the recall safety net).
 /// Deterministic fallback when unavailable: funnel terms only, labelled.
 #[must_use]
-/// Bounded scope rank prior: findings whose crate matches the
-/// hypothesis gain a small score boost (reorder only, never a filter —
-/// the unscoped pool is always retained as the recall safety net).
-/// Deterministic fallback when unavailable: funnel terms only, labelled.
 pub fn apply_scope_prior(
     mut candidates: Vec<RecallCandidate>,
     scope_crate: Option<&str>,
@@ -119,12 +113,6 @@ pub fn apply_scope_prior(
 /// the trace filtering, composite wrap, and rank assignment stay here
 /// (domain logic, not math).
 #[must_use]
-/// Score, order, and rank candidates: `score = Σ 1/(K + rank)` over found
-/// recalls, lexicographic id tie-break. Source: `fuseCandidates`.
-/// Scoring composes the shared seam
-/// (`crate::query::rrf::score_postings` — the one kernel-call site);
-/// the trace filtering, composite wrap, and rank assignment stay here
-/// (domain logic, not math).
 pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandidate> {
     let postings: Vec<(String, usize)> = candidates
         .iter()
@@ -191,8 +179,6 @@ fn path_order(path: RecallPath) -> u8 {
 /// Final cut: first `limit` fused candidates plus the force-tracked one when
 /// it fell outside. Source: the visible/track slice.
 #[must_use]
-/// Final cut: first `limit` fused candidates plus the force-tracked one when
-/// it fell outside. Source: the visible/track slice.
 pub fn apply_limit_and_track(
     mut ordered: Vec<RecallCandidate>,
     limit: usize,
@@ -212,8 +198,6 @@ pub fn apply_limit_and_track(
 /// Per-hit trace: recall + fusion position + final cut.
 /// Source: `candidateToTrace` (`returnedByLimit = rank <= limit`).
 #[must_use]
-/// Per-hit trace: recall + fusion position + final cut.
-/// Source: `candidateToTrace` (`returnedByLimit = rank <= limit`).
 pub fn candidate_trace(candidate: &RecallCandidate, limit: usize) -> SearchHitTrace {
     SearchHitTrace {
         recall: candidate.recall.clone(),
@@ -233,8 +217,6 @@ pub fn candidate_trace(candidate: &RecallCandidate, limit: usize) -> SearchHitTr
 /// Materialize a candidate into a search hit (evidence sorted, provenance
 /// derived). Source: `candidateToHit`.
 #[must_use]
-/// Materialize a candidate into a search hit (evidence sorted, provenance
-/// derived). Source: `candidateToHit`.
 pub fn build_hit(candidate: &RecallCandidate, limit: usize, trace: bool) -> SearchHit {
     let evidence = common_core::sort::sorted_by_vec(candidate.evidence.clone(), evidence_order);
     SearchHit {
@@ -265,8 +247,6 @@ pub fn build_hit(candidate: &RecallCandidate, limit: usize, trace: bool) -> Sear
 /// Stage-timing collector: `record` stamps elapsed-since-previous.
 /// Names mirror the zvec `TimingCollector` stages (`search_total`, …).
 #[derive(Debug)]
-/// Stage-timing collector: `record` stamps elapsed-since-previous.
-/// Names mirror the zvec `TimingCollector` stages (`search_total`, …).
 pub struct TimingCollector {
     start: Instant,
     last: Instant,

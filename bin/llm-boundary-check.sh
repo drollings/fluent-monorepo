@@ -18,7 +18,7 @@
 #      work list, tracked by `src/llm/tests/no_domain_imports.rs` instead).
 #      This lint fires only on NEW consumers outside those trees.
 #   2. `src/llm/src/**` or `src/common-core/src/**` importing domain crates
-#      (router|coral|guidance|types|dag|db|ontology|rdf|spacy|wasm_ipc).
+#      (router|coral|guidance|types|dag|db|concept|rdf|spacy|wasm_ipc).
 #
 # Table-0 parity corpus (M0.2 baseline — goldens that must stay byte-identical
 # through M0–M10; moves relocate them, never fork them):
@@ -61,7 +61,7 @@ if [ -n "$LEAK_HITS" ]; then
 fi
 
 # ── Check 2: domain imports in llm / common-core ─────────────────────────
-DOMAIN_PAT='use (fluent_)?(router|coral|guidance|guidance_core|guidance_ontology|coral_context|fluent_types|fluent_dag|fluent_db|fluent_llm|ontology|rdfs?|spacy|spacy_rs|wasm_ipc|search_vector)(::|;)'
+DOMAIN_PAT='use (fluent_)?(router|coral|guidance|guidance_core|coral_context|fluent_types|fluent_dag|fluent_db|fluent_llm|concept|rdfs?|spacy|spacy_rs|wasm_ipc|search_vector)(::|;)'
 DOMAIN_HITS="$(grep -rnE "$DOMAIN_PAT" src/llm/src/ src/common-core/src/ --include='*.rs' 2>/dev/null | grep -v '//.*use ' || true)"
 if [ -n "$DOMAIN_HITS" ]; then
   printf '%s\n' "$DOMAIN_HITS"

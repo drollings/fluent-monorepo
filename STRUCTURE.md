@@ -125,8 +125,8 @@ Then you you must read
 │   ├── memory-plugin/
 │   │   └── ARCHITECTURE.md  # # Memory Plugin Architecture — Clea...
 │   ├── ontology/
-│   │   ├── ARCHITECTURE.md  # # guidance-ontology — Architecture
-│   │   └── VISION.md  # # guidance-ontology — Vision
+│   │   ├── ARCHITECTURE.md  # # fluent-concept — Architecture
+│   │   └── VISION.md  # # fluent-concept — Vision
 │   ├── orator/
 │   │   ├── ARCHITECTURE.md  # # Orator — Architecture
 │   │   ├── CALIBRATION.md  # # Orator calibration register
@@ -1241,53 +1241,6 @@ Then you you must read
     │       ├── registry.rs  # Central memory plugin registry. Type-...
     │       ├── traits.rs  # Core trait definitions for the memory...
     │       └── types.rs  # Shared types for the memory plugin sy...
-    ├── ontology/
-    │   ├── Cargo.toml
-    │   ├── build.rs  # ROADMAP M11.4 — build-time validati...
-    │   ├── data/
-    │   │   ├── entity_stoplist.txt
-    │   │   └── yago_classes.json
-    │   ├── src/
-    │   │   ├── bin/
-    │   │   │   └── ysm1_encode.rs  # Operator tool: encode a YaGO taxonomy...
-    │   │   ├── canonical.rs  # The versioned canonical-form table.
-    │   │   ├── entity.rs
-    │   │   ├── inference.rs
-    │   │   ├── lib.rs  # guidance-ontology: Entity extraction,...
-    │   │   ├── mapper.rs
-    │   │   ├── migration.rs
-    │   │   ├── normalize.rs  # Single source for YaGO name normaliza...
-    │   │   ├── plausibility.rs  # Taxonomy plausibility scoring — the...
-    │   │   ├── prefix.rs  # Well-known CURIE prefixes behind a cl...
-    │   │   ├── taxonomy.rs  # YaGO TTL → JSON taxonomy pipeline ...
-    │   │   ├── turtle.rs  # The one Turtle `rdfs:subClassOf` read...
-    │   │   ├── yago.rs
-    │   │   ├── yago_loader.rs  # The YaGO taxonomy loader (ROADMAP §1...
-    │   │   ├── yago_view.rs  # YagoView — runtime file, safe `std:...
-    │   │   └── ysm1.rs  # YSM1 v1 — the binary view of the Ya...
-    │   └── tests/
-    │       ├── canonical.rs  # // Moved verbatim with `CanonicalFormTab
-    │       ├── curie_disambiguation.rs  # use crate::taxonomy::normalize_taxonomy_
-    │       ├── doc_stubs.rs  # //! Stale-name guard for the `guidance-o
-    │       ├── entity.rs  # use super::*;
-    │       ├── entity_calibration.rs  # use super::*;
-    │       ├── fixtures/
-    │       │   └── yago_mini.ttl
-    │       ├── inference.rs  # use super::*;
-    │       ├── inference_equiv.rs  # //! Equivalence coverage for the subclas
-    │       ├── loader.rs  # //! `YaGoLoader` behavior: duplicate-IRI
-    │       ├── mapper.rs  # use super::*;
-    │       ├── migration.rs  # use super::*;
-    │       ├── normalize.rs  # use super::*;
-    │       ├── plausibility.rs  # //! Moved with the scoring (M5.
-    │       ├── prefix.rs  # use crate::prefix::{split_prefix, CurieP
-    │       ├── taxonomy.rs  # //! Parity with the deprecated `src/onto
-    │       ├── taxonomy_equivalence.rs  # //! Equivalence between [`crate::taxonom
-    │       ├── yago.rs  # use super::*;
-    │       ├── yago_interlingua.rs  # //! ROADMAP M11.8 — the YaGO taxono...
-    │       ├── yago_loader.rs  # use super::*;
-    │       ├── yago_view.rs  # //! Moved with the view (M5.
-    │       └── ysm1.rs  # //! YSM1 codec suite: control group (mus
     ├── orator/
     │   ├── Cargo.toml
     │   ├── src/

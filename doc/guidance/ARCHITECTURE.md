@@ -208,7 +208,7 @@ result stays authoritative until measurement says otherwise.
 | SQLite, HNSW, FTS | `fluent-db` (`src/db`), `search-vector` (`src/search-vector`) | Fragment/symbol/edge tables, recall |
 | Embedded document-node store (change-gated JSON ingest via `sync_from_dir`, vector/keyword/HNSW search) | `search-vector` (`nodes` table, node APIs) | Shared generic primitive with its own goldens (`search-vector/tests/node_sync.rs`); guidance's live path reads the fragment index and does not depend on it |
 | Shared types (`GuidanceDoc`, `Member`, sidecar header codec) | `fluent-types` (`src/types`) | Mirror schema read by core, index, and binary alike |
-| Concept stores | `fluent-concept` (`src/concept`), `guidance-ontology` (`src/ontology`) | Taxonomy/concept resolution for rerank-only groundedness evidence (`query/concept_ground.rs`); term normalization with curie/lemma variants |
+| Concept stores | `fluent-concept` (`src/concept`) | Taxonomy/concept resolution for rerank-only groundedness evidence (`query/concept_ground.rs`); term normalization with curie/lemma variants |
 | Routing signals | `spacy-rs` (`src/spacy-rs`) | `RoutingSignal` consumed by `graph_index.rs` |
 | Knowledge plumbing | `fluent-knowledge` (`src/knowledge`) | Query-engine dependency |
 | Test scaffolding | `fluent-wvr-testutil` (`src/fluent-wvr-testutil`) | Temp dirs and shared harnesses in tests |

@@ -119,7 +119,6 @@ pub struct DecisionAudit {
 
 /// What `prepare` decided about one prompt (`PreparedPrompt`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// What `prepare` decided about one prompt (`PreparedPrompt`).
 pub struct PreparedPrompt {
     pub text: String,
     pub audited: bool,
@@ -163,7 +162,6 @@ fn is_exact_loopback(host: &str) -> bool {
 
 /// Localhost-only by default; remote requires explicit opt-in.
 #[derive(Clone, Default)]
-/// Localhost-only by default; remote requires explicit opt-in.
 pub struct DecisionTransport {
     allow_remote: bool,
     redact: Option<RedactHook>,

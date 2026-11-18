@@ -16,8 +16,6 @@ use crate::gates::{GateOutcome, GateVerdict};
 /// Write-ahead intent: what one apply means to do, recorded before the
 /// file moves so a crash can always reconcile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// Write-ahead intent: what one apply means to do, recorded before the
-/// file moves so a crash can always reconcile.
 pub struct IntentRecord {
     /// Stable intent id.
     pub id: String,
@@ -31,7 +29,6 @@ pub struct IntentRecord {
 
 /// Restart verdict for one intent against the live hash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Restart verdict for one intent against the live hash.
 pub enum Reconcile {
     /// Live bytes equal the post hash: the apply landed.
     Applied,
@@ -45,8 +42,6 @@ pub enum Reconcile {
 /// Reconcile one intent: post means applied, pre means requeue, anything
 /// else means a human edit.
 #[must_use]
-/// Reconcile one intent: post means applied, pre means requeue, anything
-/// else means a human edit.
 pub fn reconcile_intent(record: &IntentRecord, live_hash: &str) -> Reconcile {
     if live_hash == record.post_hash {
         Reconcile::Applied
@@ -68,7 +63,6 @@ pub fn write_intent(dir: &Path, record: &IntentRecord) -> std::io::Result<()> {
 
 /// Read all intent records, sorted by id for determinism.
 #[must_use]
-/// Read all intent records, sorted by id for determinism.
 pub fn read_intents(dir: &Path) -> Vec<IntentRecord> {
     let mut out = Vec::new();
     crate::walk::walk_files(dir, &["json"], |path| {
@@ -92,10 +86,6 @@ pub fn clear_intent(dir: &Path, id: &str) {
 /// reverts live side by side: `read_journal` skips these files (wrong
 /// shape), `read_reverts` lists them. Reads never mutate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One reverted draft: the patch gates refused, kept for calibration
-/// harvesting (reverted drafts are negative labels). Kept edits and
-/// reverts live side by side: `read_journal` skips these files (wrong
-/// shape), `read_reverts` lists them. Reads never mutate.
 pub struct RevertRecord {
     /// Content id: hash of file plus draft and reason.
     pub id: String,
@@ -160,7 +150,6 @@ pub fn append_revert(dir: &Path, record: &RevertRecord) -> String {
 
 /// Read all revert records, sorted by id for deterministic harvest.
 #[must_use]
-/// Read all revert records, sorted by id for deterministic harvest.
 pub fn read_reverts(dir: &Path) -> Vec<RevertRecord> {
     let mut out = Vec::new();
     crate::walk::walk_files(dir, &["json"], |path| {
@@ -184,9 +173,6 @@ pub fn read_reverts(dir: &Path) -> Vec<RevertRecord> {
 /// texts (not diffs) make replay and undo total: replay writes forward
 /// texts in order, undo writes the reverse text on a clean match.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One journaled edit: provenance, both texts, and gate results. Full
-/// texts (not diffs) make replay and undo total: replay writes forward
-/// texts in order, undo writes the reverse text on a clean match.
 pub struct JournalEntry {
     /// Content id: hash of file plus both texts, so identical appends
     /// deduplicate and replays converge.
@@ -269,7 +255,6 @@ pub fn append_journal(dir: &Path, entry: &JournalEntry) -> String {
 
 /// Read all journal entries, sorted by id for deterministic replay.
 #[must_use]
-/// Read all journal entries, sorted by id for deterministic replay.
 pub fn read_journal(dir: &Path) -> Vec<JournalEntry> {
     let mut out = Vec::new();
     crate::walk::walk_files(dir, &["json"], |path| {
@@ -285,7 +270,6 @@ pub fn read_journal(dir: &Path) -> Vec<JournalEntry> {
 
 /// One review group: entries for a file and fix class.
 #[derive(Debug, Clone)]
-/// One review group: entries for a file and fix class.
 pub struct ReviewGroup {
     /// Target file.
     pub file: String,
@@ -297,7 +281,6 @@ pub struct ReviewGroup {
 
 /// Group journal entries by file and fix class, both sorted.
 #[must_use]
-/// Group journal entries by file and fix class, both sorted.
 pub fn review_journal(dir: &Path) -> Vec<ReviewGroup> {
     use std::collections::BTreeMap;
     let mut groups: BTreeMap<(String, String), Vec<JournalEntry>> = BTreeMap::new();
@@ -320,7 +303,6 @@ pub fn review_journal(dir: &Path) -> Vec<ReviewGroup> {
 /// Undo refusal: the live text no longer matches the entry, with why.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{reason}")]
-/// Undo refusal: the live text no longer matches the entry, with why.
 pub struct UndoConflict {
     /// Entry id that refused.
     pub id: String,
@@ -428,8 +410,6 @@ pub fn apply_journaled(
 /// Reconcile a whole wal directory after a restart: applied intents
 /// stay done, the rest requeue by hash. Returns `(applied, requeue)`.
 #[must_use]
-/// Reconcile a whole wal directory after a restart: applied intents
-/// stay done, the rest requeue by hash. Returns `(applied, requeue)`.
 pub fn reconcile_wal<S: std::hash::BuildHasher>(
     wal_dir: &Path,
     live_hashes: &std::collections::HashMap<String, String, S>,

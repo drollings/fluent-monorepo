@@ -32,8 +32,6 @@ pub const MIN_AUTO_APPLY_RECALL: f64 = 0.80;
 /// Closed triage verdict: the only shapes a model may emit, and the
 /// only shapes the static table produces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Closed triage verdict: the only shapes a model may emit, and the
-/// only shapes the static table produces.
 pub enum TriageVerdict {
     /// Auto-fixable in the named mechanical class.
     Mechanical {
@@ -52,9 +50,6 @@ pub enum TriageVerdict {
 /// without a shape never auto-apply; the single home for the mapping
 /// the wave scheduler composes (no second table).
 #[must_use]
-/// Declared fix class for a diagnostic code, when one exists. Codes
-/// without a shape never auto-apply; the single home for the mapping
-/// the wave scheduler composes (no second table).
 pub fn fix_class_for_code(code: &str) -> Option<&'static str> {
     if code.contains("needless_borrow") {
         Some("needless_borrow")
@@ -75,17 +70,12 @@ pub fn fix_class_for_code(code: &str) -> Option<&'static str> {
 /// machine-applicable: the `clippy::manual_*` family rewrites working
 /// code by shape, so the loop holds it for a human instead.
 #[must_use]
-/// Behavior-risky codes are never auto-executed, even when
-/// machine-applicable: the `clippy::manual_*` family rewrites working
-/// code by shape, so the loop holds it for a human instead.
 pub fn is_denied_code(code: &str) -> bool {
     code.contains("manual_")
 }
 /// Static table first: well-understood codes classify without any
 /// model call. Unlisted codes return `None` into the model rung.
 #[must_use]
-/// Static table first: well-understood codes classify without any
-/// model call. Unlisted codes return `None` into the model rung.
 pub fn static_classify(diagnostic: &str) -> Option<TriageVerdict> {
     if diagnostic.contains("can't find crate")
         || diagnostic.contains("no matching package")
@@ -118,11 +108,6 @@ pub fn static_classify(diagnostic: &str) -> Option<TriageVerdict> {
 /// `fluent_llm::decision::match_text_label` (M4.1/M4.2 tables pin
 /// the fold and the Kelvin-K rejection).
 #[must_use]
-/// Parse one closed-enum model verdict. Anything outside the four
-/// labels (including prose around them) rejects to `None` and the
-/// deterministic fallback decides instead. Shared closed match via
-/// `fluent_llm::decision::match_text_label` (M4.1/M4.2 tables pin
-/// the fold and the Kelvin-K rejection).
 pub fn parse_triage_verdict(text: &str) -> Option<TriageVerdict> {
     match fluent_llm::decision::match_text_label(
         text,
@@ -153,7 +138,6 @@ pub fn parse_triage_verdict(text: &str) -> Option<TriageVerdict> {
 
 /// Closed route primitives a routing model may emit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Closed route primitives a routing model may emit.
 pub enum RoutePrimitive {
     /// Exact definition lookup.
     Def,
@@ -182,8 +166,6 @@ pub enum RoutePrimitive {
 /// One routed query plan: a primitive plus its target. The model
 /// translates; it never answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One routed query plan: a primitive plus its target. The model
-/// translates; it never answers.
 pub struct RoutePlan {
     /// Primitive to execute.
     pub primitive: RoutePrimitive,
@@ -193,7 +175,6 @@ pub struct RoutePlan {
 
 /// Parse one `PRIMITIVE: target` plan line. Anything else rejects.
 #[must_use]
-/// Parse one `PRIMITIVE: target` plan line. Anything else rejects.
 pub fn parse_route_plan(text: &str) -> Option<RoutePlan> {
     let (primitive, target) = text.split_once(':')?;
     let primitive = match primitive.trim().to_lowercase().as_str() {
@@ -221,9 +202,6 @@ pub fn parse_route_plan(text: &str) -> Option<RoutePlan> {
 /// of X` and `what calls X` route callers, `implements` routes impls.
 /// Anything else falls to the grammar-direct model or the fallback.
 #[must_use]
-/// Static routing rules first: path-shaped questions define, `callers
-/// of X` and `what calls X` route callers, `implements` routes impls.
-/// Anything else falls to the grammar-direct model or the fallback.
 pub fn static_route(question: &str) -> Option<RoutePlan> {
     let trimmed = question.trim();
     if trimmed.contains(".rs") || trimmed.contains(".zig") || trimmed.contains(".py") {
@@ -274,10 +252,6 @@ pub fn static_route(question: &str) -> Option<RoutePlan> {
 /// contracts, and capped sibling usages, fenced as inert data with a
 /// citation manifest. Same inputs always render the same packet.
 #[derive(Debug, Clone)]
-/// Deterministic context packet for one model judgment: target source,
-/// verbatim diagnostic, callee signatures (never bodies), trait
-/// contracts, and capped sibling usages, fenced as inert data with a
-/// citation manifest. Same inputs always render the same packet.
 pub struct TriagePacket {
     /// Rendered packet text.
     pub text: String,
@@ -291,11 +265,6 @@ pub struct TriagePacket {
 /// configuration (never enforced here — the manifest is evidence of
 /// what was asked, not proof of what ran).
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Decoding policy for one model judgment. The contract is split in
-/// two: this side manifests the temperature and seed into every packet
-/// (machine-readable, pinned by test); the endpoint honors them by
-/// configuration (never enforced here — the manifest is evidence of
-/// what was asked, not proof of what ran).
 pub struct ModelPolicy {
     /// Sampling temperature (0.0 pins deterministic sampling).
     pub temperature: f64,
@@ -314,7 +283,6 @@ impl Default for ModelPolicy {
 
 /// Build one packet. Budgets cap siblings; callers enforce them.
 #[must_use]
-/// Build one packet. Budgets cap siblings; callers enforce them.
 pub fn build_packet(
     source: &str,
     diagnostic: &str,
@@ -336,9 +304,6 @@ pub fn build_packet(
 /// names the temperature and seed alongside the content hash, so a
 /// rerun can prove what it asked for.
 #[must_use]
-/// Build one packet under an explicit decoding policy: the manifest
-/// names the temperature and seed alongside the content hash, so a
-/// rerun can prove what it asked for.
 pub fn build_packet_with_policy(
     source: &str,
     diagnostic: &str,
@@ -375,9 +340,6 @@ pub fn build_packet_with_policy(
 /// review. A heuristic producer-axis signal, never a verdict: a hit
 /// routes around auto-apply, nothing more.
 #[must_use]
-/// Instruction-like patterns that downgrade a packet to queue-held
-/// review. A heuristic producer-axis signal, never a verdict: a hit
-/// routes around auto-apply, nothing more.
 pub fn is_suspicious(packet: &str) -> bool {
     let lowered = packet.to_lowercase();
     [
@@ -399,8 +361,6 @@ pub fn is_suspicious(packet: &str) -> bool {
 /// Model cache key over context hash, model id, and prompt version:
 /// reruns are free and reproducible, rotations invalidate.
 #[must_use]
-/// Model cache key over context hash, model id, and prompt version:
-/// reruns are free and reproducible, rotations invalidate.
 pub fn model_cache_key(context_hash: &str, model_id: &str, prompt_version: u64) -> String {
     common_core::hash::blake3_hex(
         format!("{context_hash}\0{model_id}\0{prompt_version}").as_bytes(),
@@ -410,8 +370,6 @@ pub fn model_cache_key(context_hash: &str, model_id: &str, prompt_version: u64) 
 /// Budgets for one triage run. Attempts bound the ladder; identical
 /// patches by hash never retry; the token cap sizes packets.
 #[derive(Debug, Clone)]
-/// Budgets for one triage run. Attempts bound the ladder; identical
-/// patches by hash never retry; the token cap sizes packets.
 pub struct TriageBudgets {
     /// Model attempts per item.
     pub attempts_per_item: u32,
@@ -431,8 +389,6 @@ impl Default for TriageBudgets {
 /// Per-run triage state: verdict cache, patch suppression set,
 /// budgets, and shared metrics.
 #[derive(Default)]
-/// Per-run triage state: verdict cache, patch suppression set,
-/// budgets, and shared metrics.
 pub struct TriageState {
     /// Verdict cache by model cache key.
     pub cache: HashMap<String, TriageVerdict>,
@@ -578,7 +534,6 @@ pub fn route_query(question: &str, model: Option<ModelFn<'_>>) -> Option<RoutePl
 
 /// One golden triage case: diagnostic text plus the expected verdict.
 #[derive(Debug, Clone)]
-/// One golden triage case: diagnostic text plus the expected verdict.
 pub struct GoldCase {
     /// Diagnostic text to classify.
     pub diagnostic: String,
@@ -590,9 +545,6 @@ pub struct GoldCase {
 /// Named for its owner: `common_core::calibration::CalibrationReport`
 /// is the threshold-sweep shape, a different contract.
 #[derive(Debug, Clone, Default)]
-/// Triage calibration report: accuracy plus per-class scores.
-/// Named for its owner: `common_core::calibration::CalibrationReport`
-/// is the threshold-sweep shape, a different contract.
 pub struct TriageReport {
     /// Cases measured.
     pub total: usize,
@@ -624,10 +576,6 @@ fn verdict_label(verdict: &TriageVerdict) -> String {
 /// journal does not keep yet — goldens and the blind fixture set below
 /// supply labels until that follow-up lands.
 #[must_use]
-/// Measure a classifier over golden cases. Journal-harvested labels
-/// (reverted drafts as negatives) need revert records, which the
-/// journal does not keep yet — goldens and the blind fixture set below
-/// supply labels until that follow-up lands.
 pub fn calibrate(cases: &[GoldCase], classify: impl Fn(&str) -> TriageVerdict) -> TriageReport {
     use common_core::calibration::{macro_precision_or, macro_recall_or, ClassCounts};
     use std::collections::BTreeMap;
@@ -688,8 +636,6 @@ pub fn calibrate(cases: &[GoldCase], classify: impl Fn(&str) -> TriageVerdict) -
 /// Whether a calibration report authorizes auto-apply: macro precision
 /// and recall both clear their pinned bars.
 #[must_use]
-/// Whether a calibration report authorizes auto-apply: macro precision
-/// and recall both clear their pinned bars.
 pub fn auto_apply_allowed(report: &TriageReport) -> bool {
     report.total > 0
         && report.macro_precision >= MIN_AUTO_APPLY_PRECISION
@@ -700,9 +646,6 @@ pub fn auto_apply_allowed(report: &TriageReport) -> bool {
 /// slice the static table already decides, so a table-parroting
 /// classifier cannot inflate scores on the corpus.
 #[derive(Debug, Clone)]
-/// One golden triage case plus its control flag: control cases are the
-/// slice the static table already decides, so a table-parroting
-/// classifier cannot inflate scores on the corpus.
 pub struct GoldCorpus {
     /// Every golden case, control and discriminating alike.
     pub cases: Vec<GoldCase>,
@@ -749,7 +692,6 @@ pub fn load_gold_corpus(path: &std::path::Path) -> Result<GoldCorpus, String> {
 
 /// One golden routing case plus its control flag.
 #[derive(Debug, Clone)]
-/// One golden routing case plus its control flag.
 pub struct RouteGoldCase {
     /// Question to route.
     pub question: String,
@@ -831,9 +773,6 @@ pub const STATIC_PROCEDURE_FINGERPRINT: &str = "static-table";
 /// journal negatives. The report measures the static rule; the entry
 /// stores only when the bars pass.
 #[derive(Debug, Clone)]
-/// Outcome of one `calibrate` run over a gold corpus plus harvested
-/// journal negatives. The report measures the static rule; the entry
-/// stores only when the bars pass.
 pub struct TriageCalibrate {
     /// Precision/recall over goldens plus harvested negatives.
     pub report: TriageReport,
@@ -963,9 +902,6 @@ pub fn route_agreement(path: &Path) -> Result<(usize, usize), String> {
 /// status. Authority (may the pipeline act on its own doubt) is
 /// separate from calibration evidence (is the decision right).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// What the loop may do with a model draft under an authorization
-/// status. Authority (may the pipeline act on its own doubt) is
-/// separate from calibration evidence (is the decision right).
 pub enum DraftDisposition {
     /// Verify in scratch and hold for review; never auto-apply. Every
     /// accept or reject becomes a label for the next round.
@@ -978,9 +914,6 @@ pub enum DraftDisposition {
 /// drafts for review; only an authorized status may apply. Empty
 /// registries therefore degrade into measurement, never silence.
 #[must_use]
-/// Cold-start queue rule: shadow-only and advisory statuses hold
-/// drafts for review; only an authorized status may apply. Empty
-/// registries therefore degrade into measurement, never silence.
 pub fn draft_disposition(status: &fluent_llm::decision::CalibrationStatus) -> DraftDisposition {
     if status.is_calibrated() {
         DraftDisposition::MayApply
@@ -994,10 +927,6 @@ pub fn draft_disposition(status: &fluent_llm::decision::CalibrationStatus) -> Dr
 /// while the rest hold; an interaction fails the set, since no single
 /// patch is to blame and the combination is not reviewable as-is.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Outcome of merged hold verification: per-patch placement plus the
-/// merge verdict. A clean merge holds everything; a culprit fails alone
-/// while the rest hold; an interaction fails the set, since no single
-/// patch is to blame and the combination is not reviewable as-is.
 pub struct HoldOutcome {
     /// Files verified alone and in the merge: await human review.
     pub held: Vec<String>,
@@ -1016,12 +945,6 @@ pub struct HoldOutcome {
 /// A merged failure bisects to its culprit; an interaction fails the
 /// set instead of blaming one patch.
 #[must_use]
-/// Shadow-verify unclassified residuals without auto-applying: each
-/// patch verifies alone in scratch under the cell check, then the
-/// passing set verifies once under the merged check (usually the
-/// stronger predicate: parse per cell, package truth for the merge).
-/// A merged failure bisects to its culprit; an interaction fails the
-/// set instead of blaming one patch.
 pub fn hold_for_review(
     shadow_root: &Path,
     patches: &[crate::shadow::ShadowPatch],

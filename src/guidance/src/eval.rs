@@ -9,7 +9,6 @@ use serde::Deserialize;
 
 /// One evaluation question plus its task-value goldens.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-/// One evaluation question plus its task-value goldens.
 pub struct EvalTask {
     /// Stable task id. Duplicate ids reject the corpus.
     pub id: String,
@@ -96,8 +95,6 @@ pub fn load_eval_tasks(path: &Path) -> Result<Vec<EvalTask>, String> {
 /// Whether a workspace-relative path belongs to the eval corpus. Eval files
 /// are excluded from indexing, doc scans, and capability imports.
 #[must_use]
-/// Whether a workspace-relative path belongs to the eval corpus. Eval files
-/// are excluded from indexing, doc scans, and capability imports.
 pub fn is_eval_path(relative: &str) -> bool {
     let relative = relative
         .strip_prefix("./")

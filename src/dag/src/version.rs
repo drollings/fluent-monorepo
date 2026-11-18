@@ -63,7 +63,6 @@ impl fmt::Display for Version {
 
 /// A version constraint from an import seed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A version constraint from an import seed.
 pub enum VersionReq {
     /// No constraint (`Any` never appears from seed parsing; it is the
     /// explicit "unconstrained" value for callers composing filters by hand).

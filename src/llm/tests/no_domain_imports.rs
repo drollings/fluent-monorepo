@@ -2,7 +2,7 @@
 //!
 //! Compile-time + source-level assertion that `fluent-llm` (and
 //! `common-core`) never import domain crates:
-//! `router | coral | guidance | types | dag | db | ontology | rdf |
+//! `router | coral | guidance | types | dag | db | concept | rdf |
 //!  spacy | wasm_ipc` (plus their Cargo package-name spellings).
 //! Implemented as a source grep-test over `src/llm/src` +
 //! `src/common-core/src` so a future `use router::…` fails this test
@@ -17,12 +17,12 @@ const FORBIDDEN: &[&str] = &[
     "coral_context",
     "guidance",
     "guidance_core",
-    "guidance_ontology",
+    "fluent_concept",
     "fluent_types",
     "fluent_dag",
     "fluent_db",
     "fluent_router",
-    "ontology",
+    "concept",
     "rdf",
     "spacy",
     "spacy_rs",

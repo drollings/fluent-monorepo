@@ -13,7 +13,6 @@ use crate::selection::is_benchmark_corpus_path;
 
 /// What a source path is for retrieval and maintenance purposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-/// What a source path is for retrieval and maintenance purposes.
 pub enum SourceScope {
     /// Product source code.
     Product,
@@ -61,7 +60,6 @@ impl SourceScope {
 
 /// Classify a workspace-relative path with an optional file kind.
 #[must_use]
-/// Classify a workspace-relative path with an optional file kind.
 pub fn classify(workspace_path: &str, kind: Option<FileKind>) -> SourceScope {
     let path = workspace_path.trim_start_matches("./").replace('\\', "/");
     if path.contains("doc/capabilities/") || path.starts_with("doc/capabilities/") {
@@ -87,7 +85,6 @@ pub fn classify(workspace_path: &str, kind: Option<FileKind>) -> SourceScope {
 
 /// Classify an indexed file.
 #[must_use]
-/// Classify an indexed file.
 pub fn of_file(file: &FileInfo) -> SourceScope {
     classify(&file.relative_path, file.kind)
 }
@@ -96,9 +93,6 @@ pub fn of_file(file: &FileInfo) -> SourceScope {
 /// read/graph fixtures. Kept separate from `is_test_path` because fixtures
 /// may be legitimate test inputs and must be opt-in for indexing.
 #[must_use]
-/// Checked-in fixture trees: `fixture_*`, `fixtures/`, and the known
-/// read/graph fixtures. Kept separate from `is_test_path` because fixtures
-/// may be legitimate test inputs and must be opt-in for indexing.
 pub fn is_fixture_path(path: &str) -> bool {
     let normalized = path.trim_start_matches("./").replace('\\', "/");
     normalized.split('/').any(|part| {

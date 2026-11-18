@@ -24,7 +24,6 @@ use crate::sync_engine::SyncEngine;
 
 /// How to reproduce a metric's failure with one narrow command.
 #[derive(Debug, Clone)]
-/// How to reproduce a metric's failure with one narrow command.
 pub struct Measured {
     /// Flat metric name (`nav.recall_at_3.tune`).
     pub name: String,
@@ -42,11 +41,6 @@ pub struct Measured {
 /// bars that hold even when tolerance would allow more. History makes
 /// hand edits detectable: replaying it must reproduce `metrics`.
 #[derive(Debug, Clone, Default)]
-/// Checked-in baseline: last approved values plus the ratchet policy.
-/// Tolerances absorb measurement noise (higher-better may read down to
-/// `base - tol`, lower-better up to `base + tol`); bounds are absolute
-/// bars that hold even when tolerance would allow more. History makes
-/// hand edits detectable: replaying it must reproduce `metrics`.
 pub struct Baseline {
     /// Flat metric name → last approved value.
     pub metrics: HashMap<String, f64>,
@@ -61,7 +55,6 @@ pub struct Baseline {
 
 /// One reasoned update: what changed, why, and the policy in force after.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-/// One reasoned update: what changed, why, and the policy in force after.
 pub struct HistoryEntry {
     /// UTC date (`YYYY-MM-DD`).
     pub date: String,
@@ -77,7 +70,6 @@ pub struct HistoryEntry {
 
 /// Ratchet status of one metric.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Ratchet status of one metric.
 pub enum MetricStatus {
     /// At or beyond baseline in the good direction.
     Pass,
@@ -89,7 +81,6 @@ pub enum MetricStatus {
 
 /// One scored metric line.
 #[derive(Debug, Clone)]
-/// One scored metric line.
 pub struct ScoredLine {
     /// Flat metric name.
     pub name: String,
@@ -107,7 +98,6 @@ pub struct ScoredLine {
 
 /// One of the three worst regressions.
 #[derive(Debug, Clone)]
-/// One of the three worst regressions.
 pub struct Regression {
     /// Flat metric name.
     pub name: String,
@@ -119,7 +109,6 @@ pub struct Regression {
 
 /// Scored tier: lines, worst regressions, process exit code.
 #[derive(Debug, Clone)]
-/// Scored tier: lines, worst regressions, process exit code.
 pub struct Scorecard {
     /// One line per metric (violations first).
     pub lines: Vec<ScoredLine>,
@@ -136,12 +125,6 @@ pub struct Scorecard {
 /// `value <= bound`. Missing values or policy never pass silently — they
 /// report `no-baseline`.
 #[must_use]
-/// Score measured values against the baseline. A metric passes when it is
-/// at least as good as its approved value within tolerance, and within its
-/// absolute bound: higher-better needs `value + tol >= base` and
-/// `value >= bound`; lower-better needs `value <= base + tol` and
-/// `value <= bound`. Missing values or policy never pass silently — they
-/// report `no-baseline`.
 pub fn score_metrics(measured: &[Measured], baseline: &Option<Baseline>) -> Scorecard {
     let mut lines: Vec<ScoredLine> = measured
         .iter()
@@ -225,8 +208,6 @@ pub fn score_metrics(measured: &[Measured], baseline: &Option<Baseline>) -> Scor
 /// At most 40 lines: header, metric lines (violations first), worst
 /// regressions with repro commands. Full detail lives in JSON/the log.
 #[must_use]
-/// At most 40 lines: header, metric lines (violations first), worst
-/// regressions with repro commands. Full detail lives in JSON/the log.
 pub fn render_human(card: &Scorecard) -> String {
     const MAX_METRIC_LINES: usize = 34;
     let pass = card
@@ -283,7 +264,6 @@ pub fn render_human(card: &Scorecard) -> String {
 
 /// Machine-readable scorecard for agents.
 #[must_use]
-/// Machine-readable scorecard for agents.
 pub fn render_json(card: &Scorecard) -> String {
     let metrics: Vec<serde_json::Value> = card
         .lines
@@ -326,8 +306,6 @@ pub fn render_json(card: &Scorecard) -> String {
 /// Load a checked-in baseline. New policy fields default empty so older
 /// files still load; missing or unparseable files are not violations.
 #[must_use]
-/// Load a checked-in baseline. New policy fields default empty so older
-/// files still load; missing or unparseable files are not violations.
 pub fn load_baseline(path: &Path) -> Option<Baseline> {
     let text = common_core::io::read_to_string_err(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -409,10 +387,6 @@ pub fn load_baseline(path: &Path) -> Option<Baseline> {
 /// every value went through the reasoned-update command. The latest entry
 /// must also carry the live policy, so hand-loosened tolerances fail too.
 #[must_use]
-/// Replay the history log onto an empty map. A hand edit to `metrics`
-/// without a matching history entry fails this check — the file proves
-/// every value went through the reasoned-update command. The latest entry
-/// must also carry the live policy, so hand-loosened tolerances fail too.
 pub fn baseline_replays(baseline: &Baseline) -> bool {
     let mut replayed: HashMap<String, f64> = HashMap::new();
     for entry in &baseline.history {
@@ -434,7 +408,6 @@ pub fn baseline_replays(baseline: &Baseline) -> bool {
 
 /// Why a baseline update was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Why a baseline update was refused.
 pub enum BaselineUpdateError {
     /// Updates require a recorded human reason.
     EmptyReason,
@@ -567,8 +540,6 @@ pub fn apply_baseline_update(
 /// Serialize a baseline for the checked-in file (reason, date, metrics,
 /// policy, and the tamper-evident history).
 #[must_use]
-/// Serialize a baseline for the checked-in file (reason, date, metrics,
-/// policy, and the tamper-evident history).
 pub fn baseline_to_value(baseline: &Baseline, reason: &str, date: &str) -> serde_json::Value {
     serde_json::json!({
         "reason": reason,
@@ -583,7 +554,6 @@ pub fn baseline_to_value(baseline: &Baseline, reason: &str, date: &str) -> serde
 
 /// Today's UTC date (`YYYY-MM-DD`) for history entries.
 #[must_use]
-/// Today's UTC date (`YYYY-MM-DD`) for history entries.
 pub fn today_utc() -> String {
     let days = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1850,10 +1820,6 @@ async fn measure_lanes() -> Vec<Measured> {
 /// call. Local to this instrument (test-only stubs in other modules
 /// stay scoped to their own suites).
 #[derive(Clone, Copy)]
-/// Constant-vector embedder for the hermetic loop tier: offline by
-/// construction, so the converged-pass counter is never a network
-/// call. Local to this instrument (test-only stubs in other modules
-/// stay scoped to their own suites).
 struct ConstantEmbedding {
     dims: u32,
 }
@@ -2162,7 +2128,6 @@ pub async fn run_fast_tier() -> Vec<Measured> {
 
 /// Deep tier extra: per-query hit lines for drill-down.
 #[must_use]
-/// Deep tier extra: per-query hit lines for drill-down.
 pub fn run_deep_extra() -> Vec<Measured> {
     let (_root, docs) = stage_fixture_docs();
     let queries = load_nav_queries();

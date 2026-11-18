@@ -12,7 +12,6 @@ use ort::session::builder::GraphOptimizationLevel;
 
 /// Real session loader backed by ONNX Runtime.
 #[derive(Default)]
-/// Real session loader backed by ONNX Runtime.
 pub struct OrtSessionLoader;
 
 fn optimization_level(name: &str) -> GraphOptimizationLevel {

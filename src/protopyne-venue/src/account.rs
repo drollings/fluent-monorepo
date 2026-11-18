@@ -17,7 +17,6 @@ use crate::order::{Fill, OrderRecord, OrderSide};
 
 /// One account's headline facts at an observed instant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One account's headline facts at an observed instant.
 pub struct AccountSummary {
     /// Broker account identifier.
     pub account: String,
@@ -37,7 +36,6 @@ pub struct AccountSummary {
 
 /// One broker deal: an execution fact, wrapping the existing [`Fill`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-/// One broker deal: an execution fact, wrapping the existing [`Fill`].
 pub struct BrokerDeal {
     /// Broker deal/execution identifier.
     pub deal_id: String,
@@ -61,7 +59,6 @@ pub struct BrokerDeal {
 
 /// Optional read window and page bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-/// Optional read window and page bound.
 pub struct AccountRange {
     /// Inclusive execution timestamp lower bound.
     pub start: Option<DateTime<Utc>>,
@@ -102,8 +99,6 @@ impl AccountRange {
 /// Account-read failure with the same terminal/transient split as the rest
 /// of the venue.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Account-read failure with the same terminal/transient split as the rest
-/// of the venue.
 pub enum AccountError {
     /// The broker does not implement this surface.
     #[error("unsupported broker read: {0}")]

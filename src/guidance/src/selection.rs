@@ -22,7 +22,6 @@ use crate::search_types::FileKind;
 
 /// Selection roots + filters for one index pass.
 #[derive(Debug, Clone)]
-/// Selection roots + filters for one index pass.
 pub struct FileSelection {
     /// Workspace root used for the display/citation/glob identity.
     pub workspace_root: PathBuf,
@@ -45,7 +44,6 @@ pub struct FileSelection {
 
 /// A discovered file with its kind tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A discovered file with its kind tag.
 pub struct SelectedFile {
     /// Absolute path.
     pub path: PathBuf,
@@ -67,7 +65,6 @@ pub struct SelectedFile {
 
 /// Discovery counters (zvec `FileScanDiagnostics` equivalent).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// Discovery counters (zvec `FileScanDiagnostics` equivalent).
 pub struct ScanDiagnostics {
     /// Files accepted into the selection.
     pub scanned: usize,
@@ -89,7 +86,6 @@ pub struct ScanDiagnostics {
 
 /// Selection failure (missing / overlapping roots).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-/// Selection failure (missing / overlapping roots).
 pub enum SelectionError {
     /// A root does not exist.
     #[error("selection root does not exist: {0}")]
@@ -104,10 +100,6 @@ pub enum SelectionError {
 /// Format tables are canonical in `fluent_types::file_kind` — called directly
 /// (no local wrappers) so the two maps cannot drift.
 #[must_use]
-/// Classify a path into `(kind, format)` (port of `detectFileType`).
-/// Binary extensions return `None`; unknown extensions fall back to text.
-/// Format tables are canonical in `fluent_types::file_kind` — called directly
-/// (no local wrappers) so the two maps cannot drift.
 pub fn detect_file_type(path: &Path) -> Option<(FileKind, String)> {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if let Some((kind, format)) = fluent_types::file_kind::named_file_kind(name) {
@@ -444,10 +436,6 @@ fn is_hidden_file(path: &Path) -> bool {
 /// corpus has its own owner (`eval::is_eval_path`); this covers the
 /// benchmark side. Workspace-relative, forward slashes.
 #[must_use]
-/// Measurement fixtures are not retrieval inputs: the benchmark task
-/// corpus must never be indexed, answered from, or cited. The eval
-/// corpus has its own owner (`eval::is_eval_path`); this covers the
-/// benchmark side. Workspace-relative, forward slashes.
 pub fn is_benchmark_corpus_path(relative: &str) -> bool {
     let normalized = relative.trim_start_matches("./").replace('\\', "/");
     normalized == "src/guidance/corpora" || normalized.starts_with("src/guidance/corpora/")

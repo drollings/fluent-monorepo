@@ -22,7 +22,6 @@ use orator::{Channel, Frame, MediaTime, SttError, SttStream, Word, WordUpdate};
 
 /// One word from a block decode, timed in milliseconds since utterance start.
 #[derive(Debug, Clone, PartialEq)]
-/// One word from a block decode, timed in milliseconds since utterance start.
 pub struct DecodedWord {
     /// Surface text.
     pub text: String,

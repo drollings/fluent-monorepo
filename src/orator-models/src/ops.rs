@@ -11,7 +11,6 @@ use thiserror::Error;
 
 /// File-operation failures. Every variant names the next action.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-/// File-operation failures. Every variant names the next action.
 pub enum ModelOpError {
     /// No catalog entry matches.
     #[error("unknown model: {0}")]
@@ -35,7 +34,6 @@ pub enum ModelOpError {
 
 /// One row of `models list`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One row of `models list`.
 pub struct ModelStatus {
     /// Catalog tag.
     pub name: String,
@@ -54,9 +52,6 @@ pub struct ModelStatus {
 /// entries (LLM, audio) resolve through [`resolve_entry_path`].
 /// `None` when no home base resolves.
 #[must_use]
-/// Local file for `entry` in the managed directory. Installation
-/// entries (LLM, audio) resolve through [`resolve_entry_path`].
-/// `None` when no home base resolves.
 pub fn path_for(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
     orator::models_dir().map(|dir| dir.join(&entry.file))
 }
@@ -65,9 +60,6 @@ pub fn path_for(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
 /// LLM weights (router rule) and audio bundles (component files),
 /// the managed directory otherwise. `None` when nothing exists.
 #[must_use]
-/// Resolve where `entry` lives: the installation layout first for
-/// LLM weights (router rule) and audio bundles (component files),
-/// the managed directory otherwise. `None` when nothing exists.
 pub fn resolve_entry_path(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
     match entry.kind {
         crate::model::ModelKind::Llm => {
@@ -86,7 +78,6 @@ pub fn resolve_entry_path(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
 
 /// Installation directory holding the audio bundle, when complete.
 #[must_use]
-/// Installation directory holding the audio bundle, when complete.
 pub fn bundle_dir() -> Option<PathBuf> {
     let bundle = orator::default_bundle();
     bundle.present().then(|| {
@@ -148,7 +139,6 @@ pub fn verify_bundle_files(
 
 /// List every catalog entry with presence and verification state.
 #[must_use]
-/// List every catalog entry with presence and verification state.
 pub fn list_models() -> Vec<ModelStatus> {
     let mut out = Vec::new();
     for entry in crate::model::whisper_entries()
@@ -272,7 +262,6 @@ fn orator_s2s_bundle_present() -> bool {
 
 /// Find an entry by family tag and name across the catalog.
 #[must_use]
-/// Find an entry by family tag and name across the catalog.
 pub fn find_entry(kind: crate::model::ModelKind, name: &str) -> Option<crate::model::ModelEntry> {
     crate::model::ModelManifest {
         entries: crate::model::whisper_entries()

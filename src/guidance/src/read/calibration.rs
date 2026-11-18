@@ -52,9 +52,6 @@ pub const RERANK_THRESHOLD: f64 = 1.0;
 /// recall floor, and zero control fires (enforced separately — a
 /// control firing vetoes promotion even when the sweep is clean).
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Task-value bars for one scored gate: precision floor, FPR ceiling,
-/// recall floor, and zero control fires (enforced separately — a
-/// control firing vetoes promotion even when the sweep is clean).
 pub struct TaskBars {
     pub min_precision: f64,
     pub max_fpr: f64,
@@ -97,9 +94,6 @@ pub const INTENT_MIN_CLASS_SUPPORT: usize = 2;
 /// Ranking rows are answered by mechanism recall or the general
 /// fallback, so `HowTo`, `Conceptual`, and `GeneralSearch` all count.
 #[must_use]
-/// Whether one rule-table prediction counts for a golden eval intent.
-/// Ranking rows are answered by mechanism recall or the general
-/// fallback, so `HowTo`, `Conceptual`, and `GeneralSearch` all count.
 pub fn golden_intent_matches(predicted: QueryIntent, golden: &str) -> bool {
     match golden {
         "orientation" => predicted == QueryIntent::Orientation,
@@ -121,7 +115,6 @@ pub fn golden_intent_matches(predicted: QueryIntent, golden: &str) -> bool {
 
 /// Per-class score for one predicted rule class.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Per-class score for one predicted rule class.
 pub struct IntentClassScore {
     /// Predicted rule class.
     pub intent: QueryIntent,
@@ -158,12 +151,6 @@ impl IntentClassScore {
 /// backend. Controls are excluded from accuracy (they must stay
 /// silent, which is a retrieval property, not a routing label).
 #[derive(Debug, Clone, PartialEq)]
-/// Deterministic intent measurement over the eval corpus: per-class
-/// precision/recall plus overall accuracy. Pure: no I/O, no model —
-/// the table never calls one, so `model_calls` is always zero and the
-/// exact symbol/path controls are structurally unable to reach a
-/// backend. Controls are excluded from accuracy (they must stay
-/// silent, which is a retrieval property, not a routing label).
 pub struct IntentMeasurement {
     /// Non-control tasks evaluated.
     pub evaluated: usize,
@@ -194,9 +181,6 @@ impl IntentMeasurement {
 /// accuracy but counted nowhere else — silence is measured at the
 /// retrieval gate, not here.
 #[must_use]
-/// Measure the rule table on eval tasks. Controls are skipped for
-/// accuracy but counted nowhere else — silence is measured at the
-/// retrieval gate, not here.
 pub fn measure_intent_rules(tasks: &[EvalTask]) -> IntentMeasurement {
     use QueryIntent as Q;
     let order = [
@@ -292,8 +276,6 @@ pub fn weak_intent_classes(measurement: &IntentMeasurement) -> Vec<QueryIntent> 
 /// Route one table prediction through the measured bars: weak classes
 /// fall back to `General`, everything else keeps its route.
 #[must_use]
-/// Route one table prediction through the measured bars: weak classes
-/// fall back to `General`, everything else keeps its route.
 pub fn demote_weak_intent(intent: QueryIntent, weak: &[QueryIntent]) -> QueryIntent {
     if weak.contains(&intent) {
         QueryIntent::GeneralSearch
@@ -305,8 +287,6 @@ pub fn demote_weak_intent(intent: QueryIntent, weak: &[QueryIntent]) -> QueryInt
 /// Coverage gap for a demoted prediction (`None` when the table route
 /// stands).
 #[must_use]
-/// Coverage gap for a demoted prediction (`None` when the table route
-/// stands).
 pub fn intent_coverage_gap(predicted: QueryIntent, weak: &[QueryIntent]) -> Option<String> {
     if weak.contains(&predicted) {
         Some(format!(
@@ -322,10 +302,6 @@ pub fn intent_coverage_gap(predicted: QueryIntent, weak: &[QueryIntent]) -> Opti
 /// and never call one. Only the ambiguous remainder is model-eligible.
 /// Delegates to the single `read::intent::is_exact` rule.
 #[must_use]
-/// Whether one query may ever reach a decision model: exact
-/// symbol/path evidence (and empty queries) resolve deterministically
-/// and never call one. Only the ambiguous remainder is model-eligible.
-/// Delegates to the single `read::intent::is_exact` rule.
 pub fn model_callable(query: &str) -> bool {
     !crate::read::intent::is_exact(query)
 }
@@ -335,10 +311,6 @@ pub fn model_callable(query: &str) -> bool {
 /// fires; anything else stays `HELD` (nothing stored, nothing
 /// promoted).
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// One scored gate verdict: the shared sweep numbers plus the
-/// task-value bars. `passed` requires every bar and zero control
-/// fires; anything else stays `HELD` (nothing stored, nothing
-/// promoted).
 pub struct GateVerdict {
     pub precision: f64,
     pub recall: f64,
@@ -351,8 +323,6 @@ pub struct GateVerdict {
 /// Gate scored cases against task-value bars at one threshold. Empty
 /// corpora never pass (a never-firing gate proves nothing).
 #[must_use]
-/// Gate scored cases against task-value bars at one threshold. Empty
-/// corpora never pass (a never-firing gate proves nothing).
 pub fn gate_scored_cases(
     cases: &[fluent_llm::decision::ScoredCase],
     threshold: f64,
@@ -393,10 +363,6 @@ pub fn gate_scored_cases(
 /// evidence), `irrelevant` scores zero. Discrete by construction —
 /// the gate measures judge accuracy, not a ranking sweep.
 #[must_use]
-/// Judge-label score for finding relevance: `relevant` fires at the
-/// 1.0 operating point, `insufficient` stays below it (gaps, never
-/// evidence), `irrelevant` scores zero. Discrete by construction —
-/// the gate measures judge accuracy, not a ranking sweep.
 pub fn finding_label_score(label: &crate::read::decide::FindingLabel) -> f64 {
     use crate::read::decide::FindingLabel;
     match label {
@@ -413,9 +379,6 @@ pub const FINDING_THRESHOLD: f64 = 1.0;
 /// point. `expected_relevant` is the label; `control` rows must never
 /// fire (a control firing vetoes promotion).
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One hand-labelled finding: the task-value goldens for the finding
-/// point. `expected_relevant` is the label; `control` rows must never
-/// fire (a control firing vetoes promotion).
 pub struct LabeledFinding {
     /// Stable case id.
     pub id: String,
@@ -512,9 +475,6 @@ fn eval_provenance() -> fluent_llm::decision::CaseProvenance {
 /// production calibration, the lexical proxy for harness checks).
 /// Scores travel with expected/control flags into the shared gate.
 #[must_use]
-/// Score labeled findings through one scorer (judge labels in
-/// production calibration, the lexical proxy for harness checks).
-/// Scores travel with expected/control flags into the shared gate.
 pub fn score_findings(
     rows: &[LabeledFinding],
     mut scorer: impl FnMut(&LabeledFinding) -> f64,
@@ -535,10 +495,6 @@ pub fn score_findings(
 /// (it measures below bars by construction on hard negatives), and
 /// production calibration scores judge labels instead.
 #[must_use]
-/// Deterministic lexical proxy: shared content-term overlap between
-/// query and excerpt. A harness stand-in only — it never authorizes
-/// (it measures below bars by construction on hard negatives), and
-/// production calibration scores judge labels instead.
 pub fn proxy_finding_score(query: &str, excerpt: &str) -> f64 {
     if excerpt.trim().is_empty() {
         return 0.0;
@@ -558,8 +514,6 @@ pub fn proxy_finding_score(query: &str, excerpt: &str) -> f64 {
 /// Measure labeled findings through one scorer at the finding
 /// operating point.
 #[must_use]
-/// Measure labeled findings through one scorer at the finding
-/// operating point.
 pub fn measure_findings(
     rows: &[LabeledFinding],
     scorer: impl FnMut(&LabeledFinding) -> f64,
@@ -571,8 +525,6 @@ pub fn measure_findings(
 /// Build the registry corpus for a passing point: cases plus the
 /// dataset hash that pins the measurement to its labels.
 #[must_use]
-/// Build the registry corpus for a passing point: cases plus the
-/// dataset hash that pins the measurement to its labels.
 pub fn finding_corpus(
     cases: Vec<fluent_llm::decision::ScoredCase>,
     model_fingerprint: &str,
@@ -597,9 +549,6 @@ pub fn finding_corpus(
 /// the registry on fail. Measurement is never an error: the outcome
 /// carries the verdict, and callers print it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Store one registry entry on pass; report `HELD` without touching
-/// the registry on fail. Measurement is never an error: the outcome
-/// carries the verdict, and callers print it.
 pub enum StoreOutcome {
     Authorized { path: String },
     Held { reason: String },
@@ -633,7 +582,6 @@ pub fn store_entry_if_passed(
 
 /// Expected support for one hand-labelled claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Expected support for one hand-labelled claim.
 pub enum ExpectedSupport {
     Supported,
     Contradicted,
@@ -644,9 +592,6 @@ pub enum ExpectedSupport {
 /// point. Binding is structural (sentence names its citation);
 /// support is the verdict a calibrated judge must return.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One hand-labelled claim: the task-value goldens for the support
-/// point. Binding is structural (sentence names its citation);
-/// support is the verdict a calibrated judge must return.
 pub struct ClaimCase {
     /// Stable case id.
     pub id: String,
@@ -747,9 +692,6 @@ pub fn load_claim_cases(path: &std::path::Path) -> Result<Vec<ClaimCase>, String
 /// the operating point. `Unverified` stays below it (labelled, never
 /// settled); `Contradicted` and `Insufficient` score zero (dropped).
 #[must_use]
-/// Judge-verdict score for claim support: only `Verified` fires at
-/// the operating point. `Unverified` stays below it (labelled, never
-/// settled); `Contradicted` and `Insufficient` score zero (dropped).
 pub fn support_verdict_score(support: &crate::read::claims::Support) -> f64 {
     use crate::read::claims::Support;
     match support {
@@ -769,12 +711,6 @@ pub const SUPPORT_THRESHOLD: f64 = 1.0;
 /// supported ones, and support stays a verdict. Deterministic and
 /// model-free: it reports a rate and never gates a registry entry.
 #[must_use]
-/// Binding accuracy over claim cases: fraction of sentences whose
-/// structural binding is well-formed (a non-empty citation is named
-/// by the sentence; empty citations bind nothing). Binding is
-/// structural, never semantic — contradicted rows bind exactly like
-/// supported ones, and support stays a verdict. Deterministic and
-/// model-free: it reports a rate and never gates a registry entry.
 pub fn binding_accuracy(cases: &[ClaimCase]) -> f64 {
     if cases.is_empty() {
         return 1.0;
@@ -792,8 +728,6 @@ pub fn binding_accuracy(cases: &[ClaimCase]) -> f64 {
 /// Score claim cases through one verdict scorer (judge verdicts in
 /// production calibration, scripted scores in harness checks).
 #[must_use]
-/// Score claim cases through one verdict scorer (judge verdicts in
-/// production calibration, scripted scores in harness checks).
 pub fn score_claims(
     cases: &[ClaimCase],
     mut scorer: impl FnMut(&ClaimCase) -> f64,
@@ -813,8 +747,6 @@ pub fn score_claims(
 /// Measure claim cases through one scorer at the support operating
 /// point.
 #[must_use]
-/// Measure claim cases through one scorer at the support operating
-/// point.
 pub fn measure_support(cases: &[ClaimCase], scorer: impl FnMut(&ClaimCase) -> f64) -> GateVerdict {
     gate_scored_cases(
         &score_claims(cases, scorer),
@@ -825,7 +757,6 @@ pub fn measure_support(cases: &[ClaimCase], scorer: impl FnMut(&ClaimCase) -> f6
 
 /// Build the registry corpus for the support point.
 #[must_use]
-/// Build the registry corpus for the support point.
 pub fn support_corpus(
     cases: Vec<fluent_llm::decision::ScoredCase>,
     model_fingerprint: &str,
@@ -850,9 +781,6 @@ pub fn support_corpus(
 /// point. Control rows must hypothesize nothing (`unknown`); any
 /// listed crate on a control is a must-NOT-fire violation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One hand-labelled scope row: the task-value goldens for the scope
-/// point. Control rows must hypothesize nothing (`unknown`); any
-/// listed crate on a control is a must-NOT-fire violation.
 pub struct LabeledScope {
     /// Stable case id.
     pub id: String,
@@ -940,10 +868,6 @@ pub fn load_labeled_scopes(path: &std::path::Path) -> Result<Vec<LabeledScope>, 
 /// (0.0) on `unknown`. Discrete by construction — the gate measures
 /// hypothesis accuracy, not a ranking sweep.
 #[must_use]
-/// Scope-hypothesis score: 1.0 when the verdict names the expected
-/// crate; controls fire (1.0) on any listed crate and stay silent
-/// (0.0) on `unknown`. Discrete by construction — the gate measures
-/// hypothesis accuracy, not a ranking sweep.
 pub fn scope_label_score(label: &str, expected_crate: &str, control: bool) -> f64 {
     if control {
         f64::from(label != "unknown")
@@ -955,8 +879,6 @@ pub fn scope_label_score(label: &str, expected_crate: &str, control: bool) -> f6
 /// Score scope rows through one hypothesis producer (judge labels in
 /// production calibration, scripted labels for harness checks).
 #[must_use]
-/// Score scope rows through one hypothesis producer (judge labels in
-/// production calibration, scripted labels for harness checks).
 pub fn score_scopes(
     rows: &[LabeledScope],
     mut hypothesize: impl FnMut(&LabeledScope) -> String,
@@ -975,8 +897,6 @@ pub fn score_scopes(
 /// Measure scope rows through one hypothesis producer at the scope
 /// operating point.
 #[must_use]
-/// Measure scope rows through one hypothesis producer at the scope
-/// operating point.
 pub fn measure_scope(
     rows: &[LabeledScope],
     hypothesize: impl FnMut(&LabeledScope) -> String,
@@ -987,7 +907,6 @@ pub fn measure_scope(
 
 /// Build the registry corpus for the scope point.
 #[must_use]
-/// Build the registry corpus for the scope point.
 pub fn scope_corpus(
     cases: Vec<fluent_llm::decision::ScoredCase>,
     model_fingerprint: &str,
@@ -1012,9 +931,6 @@ pub fn scope_corpus(
 /// point. Rerank reuses the finding label shape: relevance decides
 /// demotion, and calibration measures the same verdicts.
 #[must_use]
-/// Measure rerank rows through one scorer at the rerank operating
-/// point. Rerank reuses the finding label shape: relevance decides
-/// demotion, and calibration measures the same verdicts.
 pub fn measure_rerank(
     rows: &[LabeledFinding],
     scorer: impl FnMut(&LabeledFinding) -> f64,
@@ -1025,7 +941,6 @@ pub fn measure_rerank(
 
 /// Build the registry corpus for the rerank point.
 #[must_use]
-/// Build the registry corpus for the rerank point.
 pub fn rerank_corpus(
     cases: Vec<fluent_llm::decision::ScoredCase>,
     model_fingerprint: &str,

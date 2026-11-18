@@ -20,7 +20,6 @@ use std::fmt::Write as _;
 
 /// A single string→string shaping step applied to a boundary value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// A single string→string shaping step applied to a boundary value.
 pub enum Coercion {
     /// Trim leading/trailing whitespace.
     Trim,
@@ -218,7 +217,6 @@ fn is_null_literal(s: &str) -> bool {
 
 /// Classification of a boundary string into the JSON literal it spells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Classification of a boundary string into the JSON literal it spells.
 pub enum LiteralKind {
     /// A `null`-ish spelling (`undefined`, `None`, `NaN`, `Infinity`, `null`).
     Null,

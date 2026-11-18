@@ -227,9 +227,6 @@ impl_component!(RiskLimits);
 /// healthy: an unobserved bundle carries `observed == false` and refuses
 /// every configured aggregate cap.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Observed portfolio facts the aggregate caps read. No default reads as
-/// healthy: an unobserved bundle carries `observed == false` and refuses
-/// every configured aggregate cap.
 pub struct PortfolioFacts {
     /// Whether the numbers below are an observation. `false` is a
     /// producer-health refusal, never a pass.
@@ -334,10 +331,6 @@ pub trait GreeksSource: Send + Sync {
 /// supplies per-contract surfaces instead; this wrapper exists so the delta
 /// cap has a deterministic producer in rehearsal and calibration.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Rehearsal-grade computed greeks: the kernels closed form at one spot,
-/// rate, and volatility, dated `as_of` (ACT/365 year fractions). A live feed
-/// supplies per-contract surfaces instead; this wrapper exists so the delta
-/// cap has a deterministic producer in rehearsal and calibration.
 pub struct ComputedGreeks {
     /// Underlying spot the closed form prices against.
     pub spot: f64,
@@ -407,8 +400,6 @@ impl ComputedGreeks {
 /// The shape of the order that will actually be submitted, derived from the
 /// intent rather than asserted by the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The shape of the order that will actually be submitted, derived from the
-/// intent rather than asserted by the caller.
 pub struct OrderShape {
     /// Whether the order is a multi-leg spread.
     pub is_spread: bool,
@@ -439,10 +430,6 @@ impl OrderShape {
 /// facts), never strategy opinion: the gate fails closed whenever any fact
 /// is unhealthy.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Per-decision venue and market facts the engine checks a proposal against.
-/// This is observed state (quote age, reconciliation health, portfolio
-/// facts), never strategy opinion: the gate fails closed whenever any fact
-/// is unhealthy.
 pub struct RiskState {
     /// Age of the newest quote in seconds.
     pub quote_age_secs: u64,
@@ -456,7 +443,6 @@ pub struct RiskState {
 
 /// Why the risk engine refused a proposal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Why the risk engine refused a proposal.
 pub enum RiskReason {
     /// Kill switch is engaged.
     KillSwitch,
@@ -489,7 +475,6 @@ pub enum RiskReason {
 
 /// A refused proposal with every failed gate collected for audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A refused proposal with every failed gate collected for audit.
 pub struct RiskRefused {
     /// Every failed gate, in check order.
     pub reasons: Vec<RiskReason>,
@@ -502,10 +487,6 @@ pub struct RiskRefused {
 /// this token cannot bypass the gate. Carries the approved proposal id so a
 /// token cannot be reused for a different proposal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Proof that [`RiskEngine::check`] approved a proposal. The only
-/// constructor is the engine's own check, so submission code that demands
-/// this token cannot bypass the gate. Carries the approved proposal id so a
-/// token cannot be reused for a different proposal.
 pub struct RiskApproved {
     proposal_id: String,
 }

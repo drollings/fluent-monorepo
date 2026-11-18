@@ -43,7 +43,7 @@ router implements `SqliteConceptStore`/`CorrectionIndex` over the shared
 | `routing.rs` | `extract_routing_signals` → `RoutingSignal` (+ `InterlinguaSignal`) |
 | `frame.rs` | `RoleType`/`Frame`/`AmbiguityKind`/`FrameAnalysis`, `FrameKey::permanent/provisional`, `extract_frames`, `Resolution` value type — the deterministic structural index (M3); the `PreferredSenseIndex` promotion seam lives in the router (`ledger::frame_index`, M2a) |
 | `taxonomy_blob.rs` | `LemmaView::from_bytes` (`SLM2` compile-time `include_bytes!`), `LazyLock<Arc<LemmaView>>` safe embed |
-| `triple.rs` | Deterministic `(subject, predicate, object)` extraction (`extract_triples`, pure over the attached tree) + the text-half adapter (`build_plausibility_inputs`) and the dependency-free `PlausibilityFetch` seam the knowledge owner wires (M5 — scoring itself lives in `guidance-ontology` `plausibility::score_plausibility`; hermetic `Dog→Animal` suite moved with it; E7 `oracle_margins` separation test stays here) |
+| `triple.rs` | Deterministic `(subject, predicate, object)` extraction (`extract_triples`, pure over the attached tree) + the text-half adapter (`build_plausibility_inputs`) and the dependency-free `PlausibilityFetch` seam the knowledge owner wires (M5 — scoring itself lives in `fluent-concept` `plausibility::score_plausibility`; hermetic `Dog→Animal` suite moved with it; E7 `oracle_margins` separation test stays here) |
 | `yago_resolve.rs` | `YagoResolveStage` shell between `attach` and `frame` (M5: default-off, knowledge-half scoring injected via `PlausibilityFetch` — same pattern as the router injecting `LlmFetch`; unwired stays fail-closed `None`); `StagePipeline::new_with_resolver_and_plausibility` / `NlpPipeline::new_with_resolver_and_plausibility` thread the fetch |
 | `cache.rs` | Span-level detail cache: content-addressed `span_key` (pure hash discipline, stays) + dependency-free `SpanCacheSeam` callback bundle (`get`/`put`/`invalidate` closures, M2b) the ladder consults; the `SpanCache` trait + `InMemorySpanCache` hermetic double live with the ledger view owner (router `ledger/span_cache.rs` beside `SqliteSpanCache` — key stored as fixed-width hex `span_key TEXT` (`{:016x}`), not `i64` cast, F7) |
 | `lang/genesis.rs` | Rule genesis for POS/NER (`GenesisIndex` trait, `InMemoryGenesisIndex` hermetic, threshold-promoted version-pinned data; M6.2 pos/ner genesis — `CorrectionField::Ner` promotes `ner` on same `count >= threshold` path, `RuleAnnotator::annotate` consults `genesis.get_ner` for `ent_type`, F4; M2c rule-data home beside tokenizer exceptions + lemma-blob pipeline, thresholds POS 3 / NER 5 preserved) |
@@ -255,7 +255,7 @@ wired via `StagePipeline::new_with_resolver`, the DAG is
 the **`yago_resolve` stage** (`YagoResolveStage`) runs right after attach
 (scoring `semantic_plausibility` through the owner-injected `PlausibilityFetch`;
 M5 — the shell is constructed in-crate but the knowledge-half scoring arrives
-from `guidance-ontology`, unwired it stamps `None`); the **`frame` stage** (a `FrameStage`
+from `fluent-concept`, unwired it stamps `None`); the **`frame` stage** (a `FrameStage`
 WorkUnit) depends on `yago_resolved` and derives per-predicate `Frame`s + a
 typed `AmbiguityEntry` list, minting provisional-vs-permanent `FrameKey`s; the
 **read-only `resolve` stage** then stamps `interlingua_lemma_id` +
@@ -308,9 +308,9 @@ with metadata from the YaGO 4.5 taxonomy for nouns and direct objects.
 | `routing.rs` | `extract_routing_signals` | per-sentence `predicate/subject/direct_object` lemmas + `InterlinguaSignal` role ids |
 | `interlingua.rs` | `InterlinguaResolver::resolve_doc` | lemma → `InterlinguaId` (pure, read-only) |
 | `fluent-concept` | `ConceptStore` / `TaxonomyHierarchy` (DAG-backed) | `ancestors_of` / `is_subclass_of` over `rdfs:subClassOf` edges |
-| `guidance-ontology` | `YagoView` (CSR + memo, moved from spacy-rs in M5) + `plausibility::score_plausibility` | runtime YaGO class hierarchy (`Loading→Ready` fail-open, `ancestors_of`) + triple-vs-taxonomy scoring over the shared `PlausibilityTriple` input |
+| `fluent-concept` | `YagoView` (CSR + memo, moved from spacy-rs in M5) + `plausibility::score_plausibility` | runtime YaGO class hierarchy (`Loading→Ready` fail-open, `ancestors_of`) + triple-vs-taxonomy scoring over the shared `PlausibilityTriple` input |
 | `frame.rs` | `FrameExtractor` | per-predicate `Frame` + `AmbiguityKind` + provisional vs permanent `FrameKey` |
-| ontology | `YaGoLoader` + router `SqliteConceptStore` | the two durable homes, reconciled at boot (id-membership) |
+| `fluent-concept` | `YaGoLoader` + router `SqliteConceptStore` | the two durable homes, reconciled at boot (id-membership) |
 
 **Design proposal (M3.2):**
 
@@ -339,8 +339,8 @@ an `enabled: bool` (default **off**) plus an optional owner-injected
 `semantic_plausibility` as `None` (pre-M3 behavior, ladder unchanged). When
 enabled with a fetch it runs `triple::extract_triples` →
 `triple::build_plausibility_inputs` → owner fetch (the triple-vs-taxonomy mean
-in `[0,1]`, scored by `guidance-ontology`). Hermetic tests use
-`InMemoryConceptStore` with `Dog → Animal` edges (suite moved to the ontology
+in `[0,1]`, scored by `fluent-concept`). Hermetic tests use
+`InMemoryConceptStore` with `Dog → Animal` edges (suite moved to `fluent-concept`
 in M5). The ladder behavior is unchanged either way — this stage only stamps
 confidence, never a rung decision.
 

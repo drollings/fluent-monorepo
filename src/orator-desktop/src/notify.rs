@@ -39,7 +39,6 @@ impl NotifyAction {
 
 /// One notification: title, content-free summary, and actions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// One notification: title, content-free summary, and actions.
 pub struct Notification {
     /// Short title (tool name, session state).
     pub title: String,

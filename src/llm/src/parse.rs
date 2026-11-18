@@ -12,7 +12,6 @@ use serde_json::Value;
 
 /// Errors produced by [`parse_json_response`].
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-/// Errors produced by [`parse_json_response`].
 pub enum JsonParseError {
     /// The text contained no parseable JSON value at all.
     #[error("no JSON value found in LLM output")]
