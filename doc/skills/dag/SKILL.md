@@ -12,9 +12,11 @@ type-inference engine, target registry, and capability-based middleware.
 **Path**: `src/dag/src/dep_graph.rs`  
 **Export**: `fluent_dag::dep_graph::{DependencyGraph, GraphError}`
 
-A generic, cycle-resilient directed graph where `K: Eq + Hash + Clone + Display`.
+A generic, cycle-resilient directed graph where `K: Eq + Hash + Clone`.
 Every edge is `(dependent ← dependency)` — the node provides an asset, and
-other nodes depend on that asset.
+other nodes depend on that asset. Readiness and ordering methods add
+`Debug` (`register`, `dependents_of`) or `Ord + Debug` (`topo_sort`,
+`topo_sort_from`) bounds per method.
 
 ### API surface
 
@@ -56,7 +58,7 @@ impl<K: Eq + Hash + Clone> DependencyGraph<K> {
 
 `dependents_of` uses cycle-resilient DFS: back-edges into the active path
 emit a `tracing::warn!` and return the partial result rather than looping
-indefinitely. `topo_sort` returns `Err(GraphError::Cycle)` on cycles.
+indefinitely. `topo_sort` returns `Err(GraphError::CircularDependency(..))` on cycles.
 
 ## Production consumers
 
@@ -87,7 +89,7 @@ completed.
 ### API surface
 
 ```rust
-impl<K: Eq + Hash + Clone + Display, S: Send + Sync + 'static> CheckpointedStepGraph<K, S> {
+impl<K: Eq + Hash + Clone + Debug, S> CheckpointedStepGraph<K, S> {
     pub fn new() -> Self;
     pub fn add_step(&mut self, key: K, deps: &[K], state: S) -> Result<(), GraphError>;  // GraphError::DuplicateNode
     pub fn checkpoint(&mut self, name: K) -> Result<(), GraphError>;   // names a rewind point
@@ -148,7 +150,7 @@ for node in graph.topo_sort()? {
 | `closure` | Shared transitive-closure primitive (DFS over depends edges) — `pub(crate)` | `src/dag/src/closure.rs` |
 | `narrowing` | Narrowing pipeline (essential/strict-sat/locality/no-dep) + error constructors — `pub(crate)` | `src/dag/src/narrowing.rs` |
 | `work_unit` | ~~`CommandUnit` shell wrapper~~ **pruned** (no production caller; shell execution composes `common_core::shell` directly) | (`deleted`) |
-| `target` | Target + TargetRegistry + re-export of `CapabilityRegistry` from `common_core::interner` | `src/dag/src/target.rs` |
+| `target` | `Target` + `TargetRegistry` (names via `KeyedRegistry`, first-wins `try_insert`) + re-export of `CapabilityInterner` from `common_core::interner` | `src/dag/src/target.rs` |
 | `middleware` | ~~`TimingMiddleware`~~ **pruned** (no production caller; timing composes `fluent_wvr::wrapper::Instrumented`) | (`deleted`) |
 | `type_inference` | Class hierarchy / subtyping for target resolution | `src/dag/src/type_inference.rs` |
 | `wvr` | Re-exports `fluent_wvr` core types for DAG integration | `src/dag/src/wvr.rs` |
@@ -179,7 +181,7 @@ compilation DAGs and LLM workflow capabilities.
 | `All` (default) | Include every provider of every capability | Build graphs, data pipelines where all outputs are needed |
 | `NarrowOne` | Pick exactly one provider per contested capability | LLM tool selection, agent orchestration, capability graphs |
 
-`NarrowOne` requires a `CapabilityRegistry` (from `common_core::interner`) that
+`NarrowOne` requires a `CapabilityInterner` (from `common_core::interner`) that
 interns capability name strings to stable bit indices. Targets store `depends`
 and `provides` as `BitVec` sets for O(1) membership checks.
 
@@ -202,12 +204,11 @@ candidate list for re-prompting or human-in-the-loop resolution.
 
 ### Durability Invariant
 
-Once a provider loses narrowing for a capability, it enters a `rejected`
-bitset. The final transitive closure expansion skips rejected targets, so a
-narrowing loser cannot sneak back in through a different dependency path
-that leads to the same capability. Rejection is **capability-scoped** — a
-target rejected for capability X can still enter the plan through a
-different uncontested capability Y.
+Once a provider loses narrowing for a capability, its target bit-index
+enters a global `rejected` set. The final transitive closure expansion
+skips rejected targets on every path, so a narrowing loser cannot re-enter
+the plan through a different dependency path — even one leading through an
+uncontested capability.
 
 ### Execution Plan
 
@@ -217,7 +218,7 @@ names. Run the plan in `plan.order` (sequentially, or as a supervision
 `SupervisedBatch` that runs independent waves concurrently with a
 caller-provided `WorkUnit` per target).
 
-### Error Types (from `common_core::error::ResolverError`)
+### Error Types (from `fluent_dag::error::ResolverError`, `src/dag/src/error.rs`)
 
 | Error | When |
 |---|---|

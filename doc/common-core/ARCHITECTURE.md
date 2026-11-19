@@ -8,34 +8,36 @@
 
 | Module | Purpose | Path |
 |--------|---------|------|
-| `cache` | `LoadCache`, `ArcLoadCache` bounded get-or-load LRU; `eviction_score` / `evict_until_fit` weighted-LRU engine; `Budget` | `src/common-core/src/cache.rs` |
+| `cache` | `LoadCache`, `ArcLoadCache` bounded get-or-load LRU; `eviction_score` / `eviction_order` / `evict_until_fit` weighted-LRU engine; `Budget` | `src/common-core/src/cache.rs` |
 | `registry` | `KeyedRegistry`, `ConcurrentRegistry` (`resolve_or_create` single-construction) | `src/common-core/src/registry.rs` |
 | `metrics` | `LatencyHistogram` lock-free `AtomicU64` buckets | `src/common-core/src/metrics.rs` |
-| `retry` | `retry_async`, `backoff_ms`, `PollWithBackoff` jittered backoff | `src/common-core/src/retry.rs` |
+| `retry` | `retry_async`, `backoff_ms`, `capped_backoff_ms`, `capped_exp_backoff_ms`, `PollWithBackoff`/`PollResult` jittered backoff, plus whole-call timeout (`run_with_budget`/`BudgetExceeded`, `common_core::retry`-only, not at crate root) | `src/common-core/src/retry.rs` |
 | `runtime` | `block_on` (single-threaded fallback), `block_on_shared` (process-wide multi-thread fallback) | `src/common-core/src/runtime.rs` |
 | `sync` | `lock`, `lock_read`, `lock_write` poison-recovering helpers | `src/common-core/src/sync.rs` |
 | `hash` | `blake3_hex`, `sha256_hex`/`sha256_str`/`sha256_file`/`sha256_digest`, `fingerprint_framed`, chunked `hash_file` | `src/common-core/src/hash.rs` |
 | `score` | `ScoreMatrix` generic math, `ScoreDimension` closed enum, `normalize_score`, `top_k_by_score` | `src/common-core/src/score.rs` |
-| `interner` | `CapabilityRegistry` interned-name bitsets | `src/common-core/src/interner.rs` |
+| `interner` | `CapabilityInterner` interned-name bitsets | `src/common-core/src/interner.rs` |
 | `drift` | `BitSetDrift` follow-up tracking | `src/common-core/src/drift.rs` |
 | `string` | byte-trim, case-insensitive search, `contains_token` (caller-separator whole-word match), HTML/ANSI strip, slug, sentence truncation, CJK bigrams, FTS quoting | `src/common-core/src/string.rs` |
-| `io` | `mtime`, `read_first_line` (header-line reads: missing/empty → `None`), `write_atomic`, `read_to_string_err`, `read_file_alloc[_err]`, `resolve_path`, `ensure_dir`, `bind_unix_listener_with_stale_reclaim` + `ReclaimBindError` | `src/common-core/src/io.rs` |
+| `io` | `mtime`, `read_first_line` (header-line reads: missing/empty → `None`), `write_atomic`, `read_to_string_err`, `read_file_alloc_opt`/`read_file_alloc_result` (plus deprecated `read_file_alloc`/`read_file_alloc_err` aliases), `resolve_path`, `ensure_dir`, `bind_unix_listener_with_stale_reclaim` + `ReclaimBindError` | `src/common-core/src/io.rs` |
 | `path` | pure lexical cleaners (`normalize_lexical`, `collapse_separators`, `is_absolute_lexical`) — no I/O | `src/common-core/src/path.rs` |
 | `format` | `format_json`/`format_csv`/`format_size`/`parse_size`, `Table`, generic `render_markdown_table` | `src/common-core/src/format.rs` |
 | `calibration` | threshold sweeps, `CalibrationReport`, `render_calibration_table` (legacy `render_markdown_table` alias); per-class counting (`ClassCounts`, `precision_or`/`recall_or`/`macro_*_or` with caller-supplied empty fallback); `GateBars` + `passes_gate_at` (shipping default 0.90/0.05) | `src/common-core/src/calibration.rs` |
 | `walk` | `walk_files`/`walk_files_filtered`, `WalkFilter`, `SkipReason`, `make_tree` test helper | `src/common-core/src/walk.rs` |
 | `config` | `load_json[_or_default]`, `find_hierarchical` | `src/common-core/src/config.rs` |
 | `shell` / `shell_parser` | subprocess capture (`shell_cmd`, `run_capture`) + `parse_command` | `src/common-core/src/shell.rs`, `shell_parser.rs` |
-| `git` | `diff_staged`, `commit`, `rev_parse_head` subprocess wrappers | `src/common-core/src/git.rs` |
+| `duration_ms` | serde helper: `Duration` as whole-millisecond `u64` JSON numbers (plus `opt` submodule for `Option<Duration>`) | `src/common-core/src/duration_ms.rs` |
 | `jsonrpc` | `JsonRpcRequest/Response/Error`, `serve_stdio` MCP loop | `src/common-core/src/jsonrpc.rs` |
-| `http` | `shared_http_client`, `test_http_client`, `json_body` | `src/common-core/src/http.rs` |
-| `error` / `error_context` | `IoError`, `ResolverError`, feature-gated `SqliteError`, `ErrorContext` | `src/common-core/src/error.rs`, `error_context.rs` |
+| `http` | `shared_http_client`, `test_http_client` (test/`test-util`-only), `json_body` (feature-gated: `http`) | `src/common-core/src/http.rs` |
+| `error` / `error_context` | `IoError`, feature-gated `SqliteError`, `ErrorContext`, `HeapErrorContext` + `impl_from_io_error!` macro | `src/common-core/src/error.rs`, `error_context.rs` |
 | `constants` | `MAX_FILE_SIZE`, `HnswParams`, `MAX_KNN_CANDIDATES`, `MAX_MCP_REQUEST_SIZE`, … | `src/common-core/src/constants.rs` |
-| `blob_spec` | lemma/YAGO blob framing (`BlobHeader`, `BlobCursor`) | `src/common-core/src/blob_spec.rs` |
-| `golden` | `compare_series`, `Mismatch`, `StageTimer` | `src/common-core/src/golden.rs` |
+| `blob_spec` | versioned blob framing (`BlobHeader`, `BlobCursor`) — generic framing, no domain vocabulary (callers own their magic values) | `src/common-core/src/blob_spec.rs` |
+| `golden` | `compare_series`, `Mismatch`/`MismatchKind`, `CompareReport` | `src/common-core/src/golden.rs` |
 | `cite` | `extract_citations`, `extract_citation_at` file:line scanner | `src/common-core/src/cite.rs` |
 | `watchdog` | `WatchdogSet`, `Budget/ WallClock/Repetition` watchdogs | `src/common-core/src/watchdog.rs` |
 | `sort` / `label_match` / `checksum` / `capacity` / `time` / `telemetry` | `sorted_vec`, `label_eq`, `luhn_valid`, `nonzero_capacity`, `now_secs`, `FailureClass` | `src/common-core/src/sort.rs` + siblings |
+| `pcm` | PCM sample math (`f32_to_i16_sample`/`i16_to_f32_sample`, `encode_wav_mono_pcm16`, RMS, channel downmix, WAV framing) | `src/common-core/src/pcm.rs` |
+| `envelope` | Gain-envelope curves (`db_to_linear`, `linear_ramp_gain`, `apply_fade_out`) | `src/common-core/src/envelope.rs` |
 
 ## Load-bearing invariants
 

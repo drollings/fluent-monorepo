@@ -225,8 +225,8 @@ Twelve patterns compose into a single coherent architecture.
 | **Binary IPC** | Executing untrusted code across a WASM boundary | Memcpy + `#[repr(C, packed)]` | `wasm_ipc/src/lib.rs` |
 | **Scoped Ownership** | Repeated malloc/free in batch processing | Zero — RAII scope drop | Throughout |
 | **Newtype Handles** | ID type confusion across module boundaries | Zero — same representation | `guidance-types/src/lib.rs` |
-| **Unit of Work** | Uniform orchestration of heterogeneous tasks | One trait impl per task | `dag/src/work_unit.rs` |
-| **Middleware Chain** | Composable cross-cutting on trait objects | One allocation per layer | `dag/src/middleware.rs` |
+| **Unit of Work** | Uniform orchestration of heterogeneous tasks | One trait impl per task | `fluent-wvr/src/traits.rs` (`WorkUnit`; `dag/src/wvr.rs` re-exports the trait surface for DAG integration) |
+| **Middleware Chain** | Composable cross-cutting on trait objects | One allocation per layer | `fluent-wvr/src/wrapper.rs` (`Middleware`/`MiddlewareChain`; the `dag/src/middleware.rs` home was pruned) |
 | **Component Adapter** | Runtime type adaptation without losing uniform interface | One `Arc` per adapter | `fluent-wvr/src/wrapper.rs` (`ComponentAdapter`; `dag/src/adapter.rs` is a backward-compat re-export) |
 | **Structured Logging Context** | Request-scoped observability without manual context passing | Thread-local storage | `fluent-wvr/src/wrapper.rs` (Instrumented) |
 | **Runtime Composition** | Full lifecycle: build → configure → wrap → execute → inspect | Zero — uses above patterns | Throughout |
@@ -258,7 +258,7 @@ pub trait WorkUnit: Send + Sync {
     fn depends(&self) -> &[ArcIntern<str>];   // assets this unit needs
     fn provides(&self) -> &[ArcIntern<str>];  // assets this unit produces
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError>;
-    fn default_timeout_ms(&self) -> u64 { 30_000 }   // override per unit
+    fn default_timeout(&self) -> std::time::Duration { std::time::Duration::from_secs(30) }   // override per unit
     fn type_name(&self) -> &'static str { std::any::type_name::<Self>() }
 }
 
@@ -332,9 +332,9 @@ must block on async work outside an executor, compose
 
 ```rust
 pub enum WorkError {
-    Execution(String),                      // sync failure → SupervisedBatchSummary::failed
+    Execution(ExecutionFailure),          // sync failure → SupervisedBatchSummary::failed
     Dependency(String),                     // a depends() asset not yet provides()'d
-    Timeout { duration_ms: u64, unit: String },  // wall-clock budget exhausted → cancelled
+    Timeout { duration: std::time::Duration, unit: String },  // wall-clock budget exhausted → cancelled
 }
 
 pub struct WorkOutput {
@@ -363,8 +363,9 @@ capability set; `SupervisedBatch` overrides both at registration time.
 pub struct WorkContext {
     pub dry_run: bool,                   // short-circuit mutating handlers
     pub max_retries: u32,                // 0 = no retry; >0 = SupervisedBatch retries this many times
-    pub timeout_ms: u64,                 // whole-unit budget across all attempts (incl. backoff)
+    pub timeout: std::time::Duration,    // whole-unit budget across all attempts (incl. backoff)
     pub metadata: HashMap<String, MetadataValue>,
+    pub structured: HashMap<String, serde_json::Value>,  // JSON handoff channel (see table below)
     pub outputs: OutputStore,            // typed inter-unit channel
     pub rt: Arc<dyn Runtime>,            // pluggable: TokioRuntime, TestRuntime, NoopRuntime
     pub caps: CapabilitySet,             // type-erased capability tokens
@@ -388,10 +389,10 @@ requires serialization. The router's stages use `structured["request"]` for
 the live request and `outputs` for typed decisions; see `pipeline.rs`.
 
 ```rust
-impl Default for WorkContext { /* dry_run=false, max_retries=0, timeout_ms=30_000, outputs: OutputStore::default(), NoopRuntime */ }
+impl Default for WorkContext { /* dry_run=false, max_retries=0, timeout=Duration::from_secs(30), outputs: OutputStore::default(), NoopRuntime */ }
 
 impl WorkContext {
-    /// Build a context for a single unit, using its `default_timeout_ms()`.
+    /// Build a context for a single unit, using its `default_timeout()`.
     pub fn for_unit(unit: &dyn WorkUnit, caps: CapabilitySet) -> Self;
 
     /// Build a context that inherits the SupervisedBatch.s `rt` and `caps`, with
@@ -654,22 +655,22 @@ impl FieldAccess for ToolConfig {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         match name {
             "port" => {
-                let wide: f64 = value.parse().map_err(|_| FieldError::Parse(
-                    format!("invalid u16 for 'port': {}", value)
+                let wide: f64 = value.parse().map_err(|_| FieldError::parse(
+                    "port", format!("invalid u16 for 'port': {}", value)
                 ))?;
                 if wide < 1.0 {
-                    return Err(FieldError::Constraint("port: value below minimum 1".into()));
+                    return Err(FieldError::constraint("port", "value below minimum 1"));
                 }
                 if wide > 65535.0 {
-                    return Err(FieldError::Constraint("port: value above maximum 65535".into()));
+                    return Err(FieldError::constraint("port", "value above maximum 65535"));
                 }
                 self.port = wide as u16;
                 Ok(())
             }
             "host" => { self.host = value.to_string(); Ok(()) }
             "verbose" => {
-                self.verbose = value.parse().map_err(|_| FieldError::Parse(
-                    format!("invalid bool for 'verbose': {}", value)
+                self.verbose = value.parse().map_err(|_| FieldError::parse(
+                    "verbose", format!("invalid bool for 'verbose': {}", value)
                 ))?;
                 Ok(())
             }
@@ -866,7 +867,7 @@ let resp = common_core::retry::retry_async(3, 1000, 0, DispatchError::is_retryab
 }).await?;
 
 // sync free-function retry (explicitly blocking — not for execute):
-let retried = retry_call(3, 50, || parse_file(path))?;
+let retried = retry_call(3, 50, || parse_file(path))?.result;
 ```
 
 For async retry with supervision, use the `SupervisedBatch` supervisor (Pattern in
@@ -1239,7 +1240,7 @@ pub trait WorkUnit: Send + Sync {
     fn depends(&self) -> &[ArcIntern<str>];
     fn provides(&self) -> &[ArcIntern<str>];
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError>;
-    fn default_timeout_ms(&self) -> u64 { 30_000 }
+    fn default_timeout(&self) -> std::time::Duration { std::time::Duration::from_secs(30) }
     fn type_name(&self) -> &'static str { std::any::type_name::<Self>() }
 }
 ```
@@ -1250,9 +1251,10 @@ A native command unit (illustrative sketch — the `dag::CommandUnit`
 spelling is pruned). Note that `WorkContext` does
 **not** carry a `library` or `input` field — those belong in
 component-specific configuration or in the `data` payload of
-`WorkOutput`. `WorkError` does not have `ExecutionFailed` or
-`WasmFailed` variants; the only variants are `Execution(String)`,
-`Dependency(String)`, and `Timeout { duration_ms, unit }`.
+`WorkOutput`. `WorkError` has no `ExecutionFailed` or
+`WasmFailed` variants; execution failures are `Execution(ExecutionFailure)`
+(`message`/`kind: ExecutionKind`/`context`), plus `Dependency(String)` and
+`Timeout { duration: Duration, unit }`.
 
 ```rust
 use bon::Builder;
@@ -1282,16 +1284,17 @@ impl WorkUnit for CommandUnit {
             return Ok(WorkOutput::ok(format!("no-op: {}", self.name)));
         }
         let output = common_core::shell::run_shell_capture(&self.command)
-            .map_err(|e| WorkError::Execution(format!("command failed: {e}")))?;
+            .map_err(WorkError::execution_display)?;
         if output.success {
             Ok(WorkOutput::ok_with_data(
                 format!("{} completed", self.name),
                 serde_json::json!({"stdout": output.stdout}),
             ))
         } else {
-            Err(WorkError::Execution(format!(
-                "{} failed: {}", self.name, output.stderr
-            )))
+            Err(WorkError::execution_context(
+                &self.name,
+                format!("command failed: {}", output.stderr),
+            ))
         }
     }
 }
@@ -1330,7 +1333,7 @@ impl WorkUnit for WasmComponent {
             .and_then(|v| v.as_str().map(String::as_bytes))
             .unwrap_or(&[]);
         let result = plugin.call("execute", payload)
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(WorkError::execution_display)?;
         Ok(decode_output(&result)?)
     }
 }
@@ -1339,8 +1342,8 @@ impl FieldAccess for WasmComponent {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         let mut plugin = self.plugin.lock().unwrap();
         plugin.call("set_config", format!("{}={}", name, value).as_bytes())
-            .map_err(|e| FieldError::Parse(
-                format!("wasm set_config failed for '{}': {}", name, e)
+            .map_err(|e| FieldError::parse(
+                name, format!("wasm set_config failed for '{}': {}", name, e)
             ))?;
         self.config.lock().unwrap().insert(name.to_string(), value.to_string());
         Ok(())
@@ -1358,49 +1361,18 @@ impl Describable for WasmComponent {
 impl_component!(WasmComponent);
 ```
 
-### Implementation: database work-unit (`fluent-db::wvr::DbWorkUnit`)
+### Database access under supervision (no `DbWorkUnit` — pruned)
 
-Synchronous database operations are not natively schedulable as `WorkUnit`s:
-`execute` MUST NOT block a tokio worker thread. `fluent-db` (the canonical
-database-access crate, `src/db/`) solves this with the `DbWorkUnit<F>`
-adapter — a `Component`/`WorkUnit` whose `execute` offloads the blocking
-rusqlite op off the executor via `tokio::task::block_in_place` (on a
-multi-thread runtime worker) or runs it directly (otherwise). It composes the
-`fluent-db` store shapes rather than touching a `Connection` itself:
-
-```rust
-use fluent_db::wvr::store_unit;
-use fluent_db::store::SqliteStore;
-use fluent_wvr::prelude::*;
-
-let store: Arc<SqliteStore> = Arc::new(SqliteStore::open(path)?);
-
-// `store_unit` wraps a `Fn(&Connection) -> Result<WorkOutput, DbError>` op;
-// `execute` offloads it and maps `DbError` → `WorkError::Execution`.
-let unit: Arc<dyn Component> = Arc::new(Instrumented::new(
-    store_unit(
-        store,
-        "db.sync",
-        |conn| {
-            let n = fluent_db::query::execute(conn, "UPDATE t SET seen = 1", [])?;
-            Ok(WorkOutput::ok_with_data("synced", serde_json::json!({ "rows": n })))
-        },
-    ),
-    "db.sync",
-));
-```
-
-`DbWorkUnit::builder()` (bon-style: `.name()`, `.op(...)`, `.depends()`,
-`.provides()`, `.default_timeout_ms()`) is the fully general form for ops that
-need to read `&WorkContext` or return arbitrary `WorkOutput`. Because the op
-runs on a blocking thread, the unit can be registered under a `SupervisedBatch` for
-timeout/retry/dependency-cancellation without violating the purity contract —
-the `SupervisedBatch`'s whole-unit budget across all attempts (incl. backoff) applies to the offloaded task, and the
-executor is never starved. `execute` scopes `ctx.caps` into the `CURRENT_CAPS`
-task-local on **both** offload paths (`block_in_place` and the scoped-thread
-path), so a pool-backed op that calls `SqlitePool::acquire`/`with_conn` (both
-capability-gated) works under a `SupervisedBatch`-style context on multi-thread and
-current-thread runtimes alike.
+The former `fluent_db::wvr::{DbWorkUnit, store_unit}` bridge is pruned
+(no production caller). Synchronous database operations that must run under
+a `SupervisedBatch` use the same recipe the supervisor documents: offload
+the blocking rusqlite work (`tokio::task::block_in_place` on a multi-thread
+runtime, scoped thread otherwise — see `fluent_wvr::capability::run_gated_blocking`)
+inside a normal `WorkUnit::execute`, map `DbError` with
+`WorkError::execution_display`, and register the unit normally. The
+supervisor's whole-unit budget (incl. backoff) and dependency cancellation
+apply unchanged, and `ctx.caps` scoping makes capability-gated
+`SqlitePool::acquire`/`with_conn` work on both offload paths.
 
 ### Orchestration — uniform loop
 
@@ -1429,7 +1401,7 @@ for unit in &registry {
 
 - **Every orchestratable task implements `WorkUnit`.** No exceptions.
 - **Store as `Arc<dyn WorkUnit>` or `Arc<dyn Component>`** in registries.
-- **Do NOT add methods to `WorkUnit` speculatively.** Start with `name`, `depends`, `provides`, `execute`. Add `default_timeout_ms`/`type_name` overrides only when the second implementation requires it (both have sensible defaults).
+- **Do NOT add methods to `WorkUnit` speculatively.** Start with `name`, `depends`, `provides`, `execute`. Add `default_timeout`/`type_name` overrides only when the second implementation requires it (both have sensible defaults).
 - **For full runtime configurability**, implement all three sub-traits and call `impl_component!` to satisfy the `Component` supertrait.
 - **`execute` MUST be synchronous and non-blocking.** See the purity contract in the `WorkUnit` doc comment — violations defeat the `SupervisedBatch` timeout/retry invariants.
 
@@ -1453,8 +1425,9 @@ When you already have `Arc<dyn WorkUnit>` and need to add logging, retry, or rat
 ### Definition
 
 The `Middleware` trait and `MiddlewareChain` live in
-`fluent-wvr/src/wrapper.rs` (the canonical home); `dag/src/middleware.rs`
-implements `TimingMiddleware` on top of them. The trait is the minimal
+`fluent-wvr/src/wrapper.rs` (the canonical and only home — the former
+`dag/src/middleware.rs::TimingMiddleware` was pruned; cross-cutting timing
+now attaches via `Instrumented::with_metrics`). The trait is the minimal
 post-erasure seam:
 
 ```rust
@@ -1462,6 +1435,7 @@ pub trait Middleware: Send + Sync {
     fn wrap(&self, inner: Arc<dyn Component>) -> Arc<dyn Component>;
 }
 
+// Example middleware (illustrative — implement against your own wrapper):
 pub struct TimingMiddleware {
     histogram: Option<Arc<LatencyHistogram>>,
 }
@@ -1469,8 +1443,8 @@ pub struct TimingMiddleware {
 impl Middleware for TimingMiddleware {
     fn wrap(&self, inner: Arc<dyn Component>) -> Arc<dyn Component> {
         match &self.histogram {
-            // The actual implementation reuses `Instrumented::with_metrics`
-            // from fluent-wvr — no parallel `InstrumentedWorkUnit` struct.
+            // Reuse `Instrumented::with_metrics` from fluent-wvr — no parallel
+            // wrapper struct.
             Some(hist) => Arc::new(Instrumented::with_metrics(
                 inner, "middleware", Arc::clone(hist),
             )),
@@ -1480,11 +1454,10 @@ impl Middleware for TimingMiddleware {
 }
 ```
 
-The middleware crate does **not** redefine its own wrapper types — it
-composes the canonical ones. The actual
-`TimingMiddleware::with_histogram(histogram)` constructor takes an
-`Arc<LatencyHistogram>`; without one, it produces an `Instrumented`
-that logs via `tracing::info!` only.
+A middleware crate does **not** redefine its own wrapper types — it
+composes the canonical ones. A `with_histogram(histogram:
+Arc<LatencyHistogram>)` constructor takes the histogram; without one, the
+middleware produces an `Instrumented` that logs via `tracing::info!` only.
 
 ### Stacking middleware
 
@@ -1556,7 +1529,7 @@ When adaptation decisions are made at runtime — renaming a component, overridi
 
 `ComponentAdapter` wraps any `Arc<dyn Component>` and lets callers
 override `name`, `execute`, and field values at runtime. The
-overrides stack — calling `with_field_override` twice with the same
+overrides stack — calling `with_field_overrides` twice with the same
 key keeps the most recently set value.
 
 ```rust
@@ -1585,11 +1558,8 @@ impl ComponentAdapter {
     #[must_use]
     pub fn with_execute_override(mut self, f: ExecuteFn) -> Self;
 
-    /// Add one field override. Re-setting the same key keeps the new value.
-    #[must_use]
-    pub fn with_field_override(self, name: impl Into<String>, value: impl Into<String>) -> Self;
-
-    /// Bulk-set from a `HashMap`. Existing keys are replaced.
+    /// Bulk-set field overrides. Re-setting an existing key (in this map or
+    /// a later call) keeps the newest value (last-write-wins).
     #[must_use]
     pub fn with_field_overrides(mut self, overrides: HashMap<String, String>) -> Self;
 
@@ -1689,7 +1659,7 @@ let adapted = Arc::new(
         .with_execute_override(Arc::new(|_ctx| {
             Ok(WorkOutput::ok("overridden by adapter"))
         }))
-        .with_field_override("port", "8080"),
+        .with_field_overrides(HashMap::from([("port".into(), "8080".into())])),
 );
 
 registry.push(adapted);
@@ -1700,7 +1670,7 @@ registry.push(adapted);
 - **Use when adaptation decisions are made at runtime.** For compile-time adaptation, use newtype wrappers.
 - **Adapters implement `Component`** via `impl_component!(ComponentAdapter)`, so they store in the same registry as any other component.
 - **Delegate to the inner component** for all methods you don't override — `depends`, `provides`, `field_names`, and `get_field` (when no override is set) all fall through.
-- **`set_field` validates against the inner first, then stores — and fails closed when the inner is shared.** If `Arc::get_mut(&mut self.inner)` returns `None`, `set_field` returns `FieldError::ReadOnly` and stores nothing (mirroring the `Arc<dyn Component>` blanket impl): `get_field` keeps reading the inner value, never a forked override. If the inner rejects the value, the override is *not* stored. The `with_field_override` / `with_field_overrides` builders remain the explicit unchecked path — use them only when the fork is deliberate.
+- **`set_field` validates against the inner first, then stores — and fails closed when the inner is shared.** If `Arc::get_mut(&mut self.inner)` returns `None`, `set_field` returns `FieldError::ReadOnly` and stores nothing (mirroring the `Arc<dyn Component>` blanket impl): `get_field` keeps reading the inner value, never a forked override. If the inner rejects the value, the override is *not* stored. The `with_field_overrides` builder remains the explicit unchecked path — use them only when the fork is deliberate.
 - **`get_field` falls back to the inner component** when no override exists for the requested field.
 - **Unwrap one layer at a time.** `as_any` yields the outermost wrapper, never the inner type. `Instrumented::inner()`, `ComponentAdapter::inner()`, and `SuffixedComponent::inner()` each peel exactly one layer; there is no forwarded auto-downcast that would hide which layer answered.
 
@@ -1930,13 +1900,14 @@ two production sites in the workspace (plus one test-only example):
    compiled workflow target in `Instrumented::with_metrics` before erasure,
    so workflow-execution latency lands in a shared `LatencyHistogram`.
 
-(Test-only example: `dag/src/middleware.rs` — `TimingMiddleware` wraps an
+(Illustrative test-only shape: a `TimingMiddleware` that wraps an
 `Arc<dyn Component>` in `Instrumented::with_metrics` when a histogram is
 provided, falling back to `Instrumented::new` otherwise. It demonstrates
-the post-erasure pattern; it is not a production wiring.)
+the post-erasure pattern; it is not a production wiring — the former
+`dag/src/middleware.rs` home for this shape was pruned.)
 
 A consumer test that exercises the histogram path end-to-end lives in
-`wrapper.rs:783-800` (`instrumented_with_metrics_records_duration`).
+`src/fluent-wvr/tests/wrapper.rs` (`instrumented_with_metrics_records_duration`).
 
 ### Key properties
 
@@ -2292,7 +2263,7 @@ rules of thumb.
 | Object | Mechanism | Reason |
 |--------|-----------|--------|
 | `Library` | `Mutex<rusqlite::Connection>` | SQLite writes must serialize |
-| `CapabilityRegistry` | `RwLock<HashMap<...>>` | Read-heavy concurrent intern calls |
+| `CapabilityInterner` | `RwLock<HashMap<...>>` | Read-heavy concurrent intern calls |
 | `L1Cache` | `DashMap<String, RoutingResult>` | Write-concurrent cache access |
 | `WasmComponent.plugin` | `Mutex<extism::Plugin>` | Plugin state is not thread-safe |
 | Observability (Pattern 11) | `Instrumented` + `LatencyHistogram` | No global mutable state; histogram is lock-free atomic |
@@ -2467,7 +2438,7 @@ When writing new code in `rust-src/`:
 
 10. **New request-scoped observability** → Wrap the unit in `Instrumented::with_metrics(inner, label, histogram)`. The histogram is `Arc<common_core::metrics::LatencyHistogram>`; p50/p99/count/sum are queryable after `execute`.
 
-11. **New runtime adaptation** → Use `ComponentAdapter::new(arc).with_name_override("...").with_field_override("k", "v")` to layer runtime decisions on top of an existing `Component` without modifying it.
+11. **New runtime adaptation** → Use `ComponentAdapter::new(arc).with_name_override("...").with_field_overrides(HashMap::from([("k".into(), "v".into())]))` to layer runtime decisions on top of an existing `Component` without modifying it.
 
 12. **New test component** → Use `fluent_wvr_testutil::StubComponent` for `ok`/`fail`/`panic`/`with_dep`/`with_provides`/`with_handler` builders. Avoid hand-rolled `WorkUnit + FieldAccess + Describable + impl_component!` quads in test code.
 
@@ -2509,7 +2480,7 @@ When writing new code in `rust-src/`:
 
 ### Verification
 
-28. **Run `cargo clippy --workspace -- -D warnings` before finishing.** The project enforces `#![deny(warnings)]`. (Pre-existing `uninlined_format_args` warnings at `fluent-wvr/src/work.rs:278,284` are grandfathered — do not introduce more.)
+28. **Run `cargo clippy --workspace -- -D warnings` before finishing.** The project enforces `#![deny(warnings)]` — do not introduce new warnings.
 
 29. **Run `cargo test --workspace` before finishing.** All workspace tests must pass. (The count is not documented — it changes too quickly to be a stable reference.)
 

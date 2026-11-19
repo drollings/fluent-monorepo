@@ -2,14 +2,14 @@
 
 > Authoritative API reference: `doc/skills/dag/SKILL.md`. Every type
 > named below exists in `src/dag/src/`; capabilities are interned
-> through `common_core::interner::CapabilityRegistry` (shared, not
+> through `common_core::interner::CapabilityInterner` (shared, not
 > reimplemented here).
 
 ## Module table
 
 | Module | Purpose | Path |
 |--------|---------|------|
-| `dep_graph` | `DependencyGraph<K>` — register/resolve/dependents, `topo_sort[_from]`, `unresolved_deps`, `ready_nodes` | `src/dag/src/dep_graph.rs` |
+| `dep_graph` | `DependencyGraph<K>` — register/unregister/dependents_of/direct_dependents, `topo_sort[_from]`, `unresolved_deps`, `ready_nodes`/`is_ready` | `src/dag/src/dep_graph.rs` |
 | `closure` | Transitive-closure DFS shared by the resolver | `src/dag/src/closure.rs` |
 | `resolver` | `DependencyResolver::{new, with_narrowing}`, `ProviderSelection::{All, NarrowOne}`, `ExecutionPlan` (order + names), `ResolverError::{MissingDependency, AmbiguousDependency{name, candidates}, TargetNotFound, CircularDependency}` | `src/dag/src/resolver.rs` |
 | `narrowing` | Four-stage provider narrowing (essential → strict-satisfaction → locality → no-dep) + rejected-set durability guard | `src/dag/src/narrowing.rs` |
@@ -19,11 +19,11 @@
 | `checkpointed` | `CheckpointedStepGraph::{add_step, checkpoint, complete, ready_steps, rewind_to, cancel_dependents}` resumable pipelines | `src/dag/src/checkpointed.rs` |
 | `target_work_unit` | ~~`TargetWorkUnit::from_target` — Target → supervised-unit bridge~~ **pruned** (no production caller) | (`deleted`) |
 | `work_unit` / `adapter` / `middleware` / `wvr` | ~~`CommandUnit` shell wrapper, `TimingMiddleware`~~ **pruned** (no production callers); `ComponentAdapter` re-export stays | (`deleted` as marked) |
-| `type_inference` / `version` / `error` | Target type inference, versioned imports, `GraphError` taxonomy | `src/dag/src/type_inference.rs`, `version.rs`, `error.rs` |
+| `type_inference` / `version` / `error` | Target type inference, versioned imports, `RegistryError`/`ResolverError` taxonomy (`GraphError` lives in `dep_graph`) | `src/dag/src/type_inference.rs`, `version.rs`, `error.rs` |
 
 ## Load-bearing invariants
 
-- `NarrowOne` without a `CapabilityRegistry` is a typed error, never a panic.
+- `NarrowOne` without a `CapabilityInterner` is a typed error, never a panic.
 - Narrowing losers are recorded in a rejected set; the final closure skips them (no include-all leak through alternate paths).
 - Deterministic output: candidates sort by name before filtering.
 - Fast path: zero contested capabilities delegates straight to Kahn's.

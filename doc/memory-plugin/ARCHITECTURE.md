@@ -5,6 +5,12 @@
 **Date:** 2026-06-14  
 **Supersedes:** None (greenfield)  
 
+> **Tree note (2026-11):** the implemented crate lives at `src/memory-plugin/`
+> (package `memory-plugin`), not the `src/memory/` paths used below — read
+> those paths as the spec's module layout, with `src/memory/` ≡
+> `src/memory-plugin/`. Shared-API snippets follow the current
+> `fluent-wvr` shapes (`FieldError::parse/constraint`, `WorkError::Execution(ExecutionFailure)`).
+
 ---
 
 ## 1. Executive Summary
@@ -216,17 +222,17 @@ impl FieldAccess for HolographicMemory {
             }
             "hrr_dim" => {
                 self.config.hrr_dim = value.parse::<usize>()
-                    .map_err(|e| FieldError::Parse(format!("invalid hrr_dim: {e}")))?;
+                    .map_err(|e| FieldError::parse("hrr_dim", format!("invalid hrr_dim: {e}")))?;
                 Ok(())
             }
             "default_trust" => {
                 self.config.default_trust = value.parse::<f64>()
-                    .map_err(|e| FieldError::Parse(format!("invalid default_trust: {e}")))?;
+                    .map_err(|e| FieldError::parse("default_trust", format!("invalid default_trust: {e}")))?;
                 Ok(())
             }
             "auto_extract" => {
                 self.config.auto_extract = value.parse::<bool>()
-                    .map_err(|e| FieldError::Parse(format!("invalid auto_extract: {e}")))?;
+                    .map_err(|e| FieldError::parse("auto_extract", format!("invalid auto_extract: {e}")))?;
                 Ok(())
             }
             _ => Err(FieldError::NotFound(name.into())),
@@ -600,8 +606,8 @@ impl fluent_wvr::WorkUnit for IngestUnit {
             IngestJob::AutoExtract { .. } => "memory.auto_extract",
         }
     }
-    fn depends(&self) -> &[ArcIntern<fluent_wvr::ArcIntern<str>>] { &[] }
-    fn provides(&self) -> &[ArcIntern<fluent_wvr::ArcIntern<str>>] { &[] }
+    fn depends(&self) -> &[ArcIntern<str>] { &[] }
+    fn provides(&self) -> &[ArcIntern<str>] { &[] }
     fn execute(&self, _ctx: &fluent_wvr::WorkContext) -> Result<fluent_wvr::WorkOutput, fluent_wvr::WorkError> {
         // Ingestion is async — this unit is a bridge that the SupervisedBatch polls
         Ok(fluent_wvr::WorkOutput::ok("ingestion dispatched"))

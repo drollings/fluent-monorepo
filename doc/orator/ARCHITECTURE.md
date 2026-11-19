@@ -175,7 +175,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   `MediaTime`, `Channel::{Mic, Sys, Reply}`, `AudioChunk`,
   `DuplexOut`, `Epoch`, `Event`, `Word`/`WordMark`, `Token`,
   `Sampler`.
-- `src/protocol.rs`: `METHOD_NAMES` (11 methods), `MessageType`
+- `src/protocol.rs`: `METHOD_NAMES` (14 methods), `MessageType`
   (+ `to_u8` discriminants), `validate_method`.
 - `src/socket.rs`: `SocketFrame::{read_from, write_to}`,
   `check_peer_uid`, `socket_path`, `FrameError`, `SOCKET_MODE`.
@@ -584,9 +584,10 @@ composed over these definitions.
 ## 5. Cross-cutting contracts
 
 - **Wire** (`orator::protocol`, `orator::socket`,
-  `orator-daemon::socket`, `orator-cli::socket`): 11 methods;
-  `COMMANDS` (18 CLI verbs) ↔ `METHOD_NAMES` ↔
-  `DISPATCH_METHODS` pinned equal by `it_parity.rs`;
+  `orator-daemon::socket`, `orator-cli::socket`): 14 methods;
+  `Cli::methods() == METHOD_NAMES == DISPATCH_METHODS` (14, pinned by
+  `it_parity.rs`); `COMMANDS` (18 CLI verbs) is a separate surface
+  (pinned by `clap_surface_matches_canonical_commands`), not wire-equal;
   `OutboundRequest::new` refuses unknown/ignored params.
 - **Errors**: `ExitCode` (CLI), `S2sError` (adapter),
   `VoiceError` (daemon, additive `kind` bodies),

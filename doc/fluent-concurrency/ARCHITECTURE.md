@@ -9,9 +9,18 @@
 
 | Module | Purpose | Path |
 |--------|---------|------|
-| `scope` | `Scope` (`close` / `close_sync` / `close_graceful`, `#[must_use]`, Drop-panics-if-unclosed) | `src/fluent-concurrency/src/scope.rs` |
-| `batch` | `SupervisedBatch`, `SupervisedBatchSummary`, dependency cancellation, per-task retry/timeout | `src/fluent-concurrency/src/batch.rs` |
-| `pool` | Facade over leaves: `pool/queue.rs` (`Queue`), `pool/worker.rs` (`WorkerPool`), `pool/result.rs` (`ResultPool`), `pool/priority.rs` (`PriorityResultPool`), `pool/limiter.rs` (`Limiter`), `pool/traits.rs` (`PoolError`, pool traits), `pool/common.rs` (shared loop) | `src/fluent-concurrency/src/pool.rs` |
+| `scope` | `Scope` (`close` / `close_sync` / `close_graceful → ScopeCloseReport`, `#[must_use]`, Drop-panics-if-unclosed), `CURRENT_CAPS` re-export | `src/fluent-concurrency/src/scope.rs` |
+| `batch` | `SupervisedBatch`, `SupervisedBatchSummary`, `SupervisedBatchConfig { poll_budget, is_retryable, backoff_base: Duration, backoff_jitter_pct }`, dependency cancellation, per-task retry/timeout | `src/fluent-concurrency/src/batch.rs` |
+| `cache` | `AsyncLoadCache` — async bounded get-or-load LRU + singleflight (`get_or_compute[_with]` + `admit` predicate) | `src/fluent-concurrency/src/cache.rs` |
+| `affinity` | `AffinityScheduler`, `ScheduledTask`, aging config | `src/fluent-concurrency/src/affinity.rs` |
+| `capability` | `default_capability_set` / `capability_set_with_db` constructors | `src/fluent-concurrency/src/capability.rs` |
+| `io` | Capability-gated `fs`/`net` engines + `DbCapability` re-export | `src/fluent-concurrency/src/io.rs` |
+| `ladder` | Re-export shim: `first_accept_in_order[_sync]`, `first_some_in_order_sync` (impl in `fluent-wvr`) | `src/fluent-concurrency/src/ladder.rs` |
+| `runtime` | `TokioRuntime` / `TestRuntime` runtime seam | `src/fluent-concurrency/src/runtime.rs` |
+| `thread_resource` | `thread_local_resource!` + `with_tlr` per-thread reuse | `src/fluent-concurrency/src/thread_resource.rs` |
+| `close` / `sync` | Close-wake primitives (`CloseWaker`) / poison-safe lock helpers | `src/fluent-concurrency/src/close.rs`, `src/fluent-concurrency/src/sync.rs` |
+| `retry` | Re-export of the `common_core::retry` schedule math | `src/fluent-concurrency/src/retry.rs` |
+| `pool` | Facade over leaves: `pool/queue.rs` (`Queue`), `pool/worker.rs` (`WorkerPool`), `pool/result.rs` (`ResultPool`: `submit/submit_with_backpressure/submit_all/submit_with_abort`), `pool/priority.rs` (`PriorityResultPool`), `pool/limiter.rs` (`Limiter`), `pool/traits.rs` (`PoolError`, pool traits), `pool/common.rs` (shared loop) | `src/fluent-concurrency/src/pool.rs` |
 | `flow` | `CreditSpec`, `CreditSender`, `CreditReceiver`, `flow::new` | `src/fluent-concurrency/src/flow.rs` |
 | `feed_worker` | `CreditedFeedWorker`, `FeedConfig` | `src/fluent-concurrency/src/feed_worker.rs` |
 | `credit_pool` | `CreditGatedPool` credit-gated worker pool | `src/fluent-concurrency/src/credit_pool.rs` |
@@ -34,7 +43,8 @@ Rules:
 - Tests must not share a pooled `reqwest::Client` across `#[tokio::test]` runtimes.
 
 - `#![forbid(unsafe_code)]`; `autotests = false` with `#[path]`-wired
-  suites plus explicit `[[test]]` targets (`audit_h5`, `pool_paths`).
+  suites plus explicit `[[test]]` targets (`audit_h5`, `pool_paths`,
+  `doc_stubs`, `scope_caps`, `scoped`, `pool_submit_all`).
 - Lock discipline: `std::sync::Mutex` never held across `.await`;
   poison recovered via `common_core::sync::lock`, never `unwrap`.
 - Capability fail-closed: tasks bypassing `Scope`/`SupervisedBatch` see an

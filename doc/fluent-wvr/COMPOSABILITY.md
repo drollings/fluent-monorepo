@@ -428,7 +428,7 @@ let adapted: Arc<dyn Component> = Arc::new(
         .with_execute_override(Arc::new(|_ctx| {
             Ok(WorkOutput::ok("overridden by adapter"))
         }))
-        .with_field_override("port", "8080"),
+        .with_field_overrides(HashMap::from([("port".into(), "8080".into())])),
 );
 ```
 
@@ -662,7 +662,7 @@ from `fluent_concurrency`.
 | First-Ok fallback | `first_accept_in_order` / `first_accept_in_order_sync` |
 | Structured concurrency | `Scope::new()` + `spawn` + `close().await` / `close_graceful` / `defer()` (calls `close_sync`) |
 | Supervised DAG | `SupervisedBatch::new(rt, caps)` + `register` (`Result`) + `await` |
-| Runtime adaptation | `ComponentAdapter::new(h).with_name_override(..).with_field_override(..)` |
+| Runtime adaptation | `ComponentAdapter::new(h).with_name_override(..).with_field_overrides(..)` |
 | First-Ok dispatch | `ComponentCascade::with_units(..)` + `execute_first_ok` |
 | Post-erasure wrap | `MiddlewareChain::new().push(..).apply(h)` |
 | Sequential steps | `Pipeline::new().step(..).maybe(..)` |

@@ -18,7 +18,7 @@ second consumer appears — never speculatively, never copied.
 Belongs: `LoadCache` / `ArcLoadCache` bounded get-or-load caches,
 `KeyedRegistry` / `ConcurrentRegistry` keyed stores, `LatencyHistogram`
 lock-free latency buckets, `retry_async` jittered backoff,
-`block_on` / `block_on_shared` runtime bridges, `CapabilityRegistry`
+`block_on` / `block_on_shared` runtime bridges, `CapabilityInterner`
 interned bitsets, `BitSetDrift`, `score::ScoreMatrix` generic math and the
 closed `score::ScoreDimension` enum, `hash` fingerprinting, `sync`
 poison-safe lock helpers.

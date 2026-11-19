@@ -17,9 +17,10 @@ adapter that turns its sessions into `fluent_llm::client::ChatBackend`s.
 
 | Module | Role |
 |---|---|
-| `config.rs` | Pure, ort-free schema: `OnnxTask`, `Quant`, `ResidencyPolicy`, `OnnxConfig`, `OnnxRole`/`OnnxFleetConfig`/`OnnxRoleConfig`, `LlmIo`, `AnnotationHeads`, and the `instances` block. Validation runs ort-free (hermetic). |
-| `session.rs` | `OrtSessionRegistry` (one session per model key, type-erased `SessionHandle`s, `SessionLoader` DIP seam for hermeticity). The real `OrtSessionLoader` (feature `onnx`) builds `ort` sessions **including execution-provider selection**. Residency parity: `last_used`, `resident_bytes`, `release`, `unloadable_keys`, `residency_report`. |
-| `residency.rs` | `OrtResidencyLoop` — the CPU-RAM residency sibling of the llama sidecar: idle release + working-set LRU eviction; `Always`/pinned never released. |
+| `config.rs` | Re-export of the `fluent_llm::onnx_config` schema (`OnnxTask`, `Quant`, `ResidencyPolicy`, `OnnxConfig`, `OnnxRole`/`OnnxFleetConfig`/`OnnxRoleConfig`, `LlmIo`, `AnnotationHeads`, `instances` block) — the single definition lives in `fluent-llm`; validation runs ort-free (hermetic). |
+| `session.rs` | Re-export of `fluent_llm::onnx_session` (`OrtSessionRegistry`, `SessionHandle`, `ResidencyReportEntry`, `SessionLoader` DIP seam); the ort-bound `OrtSessionLoader` lives in `ort_loader.rs` (feature `onnx`). Registry residency surface: `last_used`, `resident_bytes`, `release`, `unloadable_keys`, `residency_report`. |
+| `ort_loader.rs` | `OrtSessionLoader` — the real `ort` session builder **including execution-provider selection** (feature `onnx`). |
+| (no `residency.rs` in this crate) | CPU-RAM residency lives in `fluent-llm`: `src/llm/src/onnx_session.rs` registry + `src/llm/src/runtime.rs` residency loop. |
 | `llm.rs` | `OrtLlmSession` (feature `onnx`): chat-template, tokenize, prefill, per-token decode loop over the KV + conv-state contract (`LlmIo`), grammar-constrained sampling. `OnnxChatCompletion` is the "run a chat call" entry. |
 | `grammar.rs` | `Grammar`, `JsonObjectGrammar`/`JsonArrayGrammar`/`BatchPromptGrammar`, `HuggingFaceVocab`, `grammar_from_json_schema` — structural JSON automata so invalid output shapes are impossible at generation time. |
 | `context.rs`, `context_pool.rs` | `OnnxContext`/`OnnxKVCache` (the shared `fluent-llm::runtime` `LlmContext`/`LlmKVCache` contracts) and `OnnxContextPool` (one weights load, N named context windows with per-context KV). |
@@ -30,7 +31,7 @@ adapter that turns its sessions into `fluent_llm::client::ChatBackend`s.
 
 Feature gating: the config/lifecycle/registry types are **ort-free** (the crate
 compiles and its hermetic config tests run with `--no-default-features`); the
-real `OrtSessionLoader` and every worker are behind feature `onnx` (default-on).
+real `OrtSessionLoader` and every worker are behind feature `onnx` (**opt-in, off by default**: `default = []`).
 Real-inference tests live in `tests/live/` under feature `live-ai`, `#[ignore]`d,
 run only via `make test-live` / `make ort-test-live`.
 
@@ -69,16 +70,15 @@ the ROCm fork of onnxruntime (`github.com/ROCm/onnxruntime`) and bound by this
 `ort` crate version as `ort::ep::MIGraphX` (behind the `migraphx` feature). On
 an AMD Radeon / ROCm system, `"gpu"` therefore maps to MIGraphX.
 
-### Build-time resolution (`lax-feature-matching`)
+### Build-time resolution (feature set)
 
 The workspace pins `ort = { version = "2.0.0-rc.13", features =
-["migraphx", "lax-feature-matching"] }`.
+["migraphx", "load-dynamic"] }`.
 
 - `migraphx` compiles `ort::ep::MIGraphX` in.
 - The `download-binaries` prebuilt-binary resolver ships **no AMD-GPU dist**
-  (its table covers CPU/CUDA/TensorRT/directml/webgpu). Without
-  `lax-feature-matching`, requesting `migraphx` would fail the build; with it,
-  the resolver falls back to the closest dist — the CPU build — with a debug
+  (its table covers CPU/CUDA/TensorRT/directml/webgpu); requesting `migraphx`
+  falls back to the closest dist — the CPU build — with a debug
   log. So the default build links a CPU-only onnxruntime, and the loader's
   `is_available()` probe reports MIGraphX absent → `"gpu"` fails open to CPU.
 

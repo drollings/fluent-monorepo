@@ -59,16 +59,18 @@ content hash** (bits 0–47).
 
 ## Lemmas → ids (the text side)
 
-1. **Annotate via the fallback ladder.** The pipeline runs
-   `first_accept_in_order` over `LlmRung → EncoderRung → ArcEagerRung →
-   RuleRung` (`src/spacy-rs/src/pipeline.rs`). The LLM rung (a `ChatBackend`
-   bridged by the router's `stages/nlp.rs::annotation_fetch`) and the
-   trained-encoder rung (`fluent-onnx`, built in `src/router/src/ort.rs` via
-   `nlp_encoder_fetch`) produce full Universal-Dependency-quality parses; the
-   deterministic `arc_eager.rs` heuristic parser and the infallible rule rung
-   are the fail-open falls. Every rung's output passes the 7-check gate, so
-   the lemmas the resolver sees are always validated. Lemmas come from the
-   rule lemmatizer.
+1. **Annotate via the fallback ladder.** The pipeline runs two ordered
+   phases (`src/spacy-rs/src/pipeline.rs`): a deterministic **base** phase —
+   `first_accept_in_order` over `[ArcEagerRung, RuleRung]` (always run) — then
+   a gated **refine** phase — `first_accept_in_order` over model refiners
+   `[EncoderRung, LlmRung]` (consulted only when the refine policy says so).
+   The trained-encoder rung (`fluent-onnx`, built in `src/router/src/ort.rs`
+   via `nlp_encoder_fetch`) and the LLM rung (a `ChatBackend` bridged by the
+   router's `stages/nlp.rs::annotation_fetch`) produce full
+   Universal-Dependency-quality parses; the deterministic `arc_eager.rs`
+   heuristic parser and the infallible rule rung are the fail-open falls.
+   Every rung's output passes the 7-check gate, so the lemmas the resolver
+   sees are always validated. Lemmas come from the rule lemmatizer.
 2. **Resolve.** `InterlinguaResolver::resolve_doc` stamps
    `interlingua_lemma_id` (+ `confidence`) on every token — **pure and
    read-only**; the concept store is never written by the data plane.
@@ -178,8 +180,10 @@ knowledge: YaGO classes/entities (interlingua_concepts) ⇄ coral graph (node_id
 ## Invariants to preserve
 
 - No raw `InterlinguaId` constructor; ids are always content-derived
-  (`from_u64`/`from_i64` exist only to reconstruct a stored id at the
-  serde/DB round-trip — never to manufacture one).
+  (`from_stored_u64(u64)` — with `from_i64(i64) -> Option<Self>` for
+  non-negative DB values — exist only to reconstruct a stored id at the
+  serde/DB round-trip — never to manufacture one; `from_u64` is a deprecated
+  alias of `from_stored_u64`).
 - `node_id` (64-bit) stored, never derived from `local_id` (48-bit).
 - First-wins on every id/canonical store.
 - The resolver and pipeline never write the concept store (boot-only

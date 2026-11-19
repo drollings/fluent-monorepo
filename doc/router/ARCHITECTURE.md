@@ -11,7 +11,8 @@ Aspirational goals and the finished design live in [`VISION.md`](./VISION.md).*
 ## Overview
 
 Coral Router exposes an OpenAI-compatible HTTP endpoint (`POST /v1/chat/completions`
-on `:8079`) and runs every request through an **ordered stage pipeline**
+on `:8079` — the reference `env/coral-router.json` value; the code default is
+`bind_addr: ""`) and runs every request through an **ordered stage pipeline**
 (deterministic pre-filter → optional NLP/overlay → classifier) before dispatching
 to a model. Stages are `Arc<dyn Component>` units (the Fluent WVR uniform
 interface) and the server itself is a `WorkUnit` — everything composes. The
@@ -35,9 +36,9 @@ POST /v1/chat/completions {model, messages, ...}  (+ query routing fields)
         │
         ├─ classifier_response  → respond directly
         └─ routing_target       → server/dispatch.rs (ChatBackend chain)
-   management: /instances /v1/models /models /memory /props + model-less proxies;
-   /health /stats /v1/plan /v1/rigor /metrics; POST /admin/cache/invalidate;
-   admin /models/unload
+   management: /instances (+ /v1/instances alias) /v1/models /models /memory /props + model-less proxies;
+   /health /stats /v1/plan /v1/rigor /metrics; POST /admin/cache/invalidate (+ DELETE /admin/cache/*);
+   POST /models/unload (top-level, not under /admin); POST /admin/coordinator/rollback + /admin/frame/rollback
 
 PipelineOrchestrator: Vec<Arc<dyn Component>>, sequential; known stages call
 StageDecisionProducer::evaluate (typed handoff, STAGE_DECISION_KEY); arbitrary
@@ -68,7 +69,11 @@ overlay are opt-in **enrichment** between them (they publish parse/route context
 never a verdict). The removed `PipelineStage::Router` variant no longer exists
 (historical `"Router"` labels deserialize to `PipelineStage::Classifier` with a
 `warn!`). Stage failures surface as `PipelineError::Stage`, naming the failing
-`PipelineStage` and carrying its `WorkError`.
+`PipelineStage` and carrying its `WorkError`. Note the two namings:
+`PipelineStage::{DeterministicPreFilter, Nlp, Overlay, Classifier}` are the
+enum values (config strings `"DeterministicPreFilter"`, `"Nlp"`, `"Overlay"`,
+`"Classifier"`, plus historical `"Router"` → `Classifier`); `NlpStage` /
+`OverlayStage` are the `Component` struct names implementing the middle rungs.
 
 | Stage | File | Model call? | Produces |
 |-------|------|-------------|----------|
@@ -173,7 +178,7 @@ serialized decision is deserialized once and published to the same store.
 | `ledger/node_annotation.rs` | `NodeAnnotation` — the fully-materialized immutable annotation document (moved from `spacy-rs::arcready::ArcReadyAnnotation`, renamed), with its `fluent_types::NodeOverlay` impl; built by `node_annotation(doc, result)` |
 | `node_store.rs` | `ContentNodeStore` — nodes behind `Arc<RwLock<ContentNode>>`, interned `ArcIntern<str>` session/role index keys, durable `content_json` hydration (seeded `next_id`), `ensure_tier`/`lod_text`/`session_node_ids`, `knn_brute_force`, and `content_hash` stamping in the single write funnel. Overlays: `annotation_for`/`embedding_for`/`llm_overlay_for` derive lazily and **at-most-once** from LOD0 (shared `derive_overlay` re-checks under the write lock, marks `ready`/`failed`); fail-open seams injected by `set_overlay_pipeline`/`set_overlay_embedder`/`set_overlay_llm`; the `overlay_events` feed (`enqueue_if_needs_overlay`, `node_ids_needing_overlays`) |
 | `ledger_guard.rs` | `scrub_for_ledger` — the irreversible write-path scrubber, decision D1; Redact/Anonymize collapse to `[REDACTED:<pattern>]`, no codeword map retained; uses the builtin filter engine with `ContentNodeWrite` scope |
-| `views.rs` | `LedgerView` — reference-only view layer over `ContentNodeStore` (`Lod` 0..=5, `ParallelLedger`, `FilteredLedger<V>`, single text-exit `render()`); canonical view types live in the knowledge crate (`src/knowledge/src/views.rs`), re-exported here |
+| `knowledge.rs` (+ `fluent_knowledge::views`) | Reference-only view layer over `ContentNodeStore` (`Lod` 0..=5, `ParallelLedger`, `FilteredLedger<V>`, single text-exit `render()`); canonical view types live in the knowledge crate (`src/knowledge/src/views.rs`) — there is no `src/router/src/views.rs` |
 | `knowledge.rs` | `KnowledgeCapability` impl on `ContentNodeStore` behind the `RouterKnowledgeCapability` token — the cross-crate read path for embedded consumers |
 
 ### Routes
@@ -189,7 +194,7 @@ serialized decision is deserialized once and published to the same store.
 | File | Role |
 |------|------|
 | `server.rs` | `RouterServer` (`WorkUnit`) — hyper HTTP/1.1 accept loop on tokio; assembles `ServerDeps` and fans out to `server/`; `serve_http` is `pub(crate)` for integration tests; runs each `InstanceManager`'s boot reconcile + residency task from the attached `InstancePool` (in a drained `JoinSet`, never detached) |
-| `server/handler.rs` | HTTP routing + request orchestration; `ServerDeps` (pipelines, routes, models, stats, `max_payload`, classifier, cache, ledger, plan/rigor, sessions, ladders, context_cache, mock_dispatch, http_client, `instance_pool`, `api_key_env_name`, `supervisor`, `onnx`(+`onnx_llm_backend`), `fleet`, `coordinator`+`coordinator_gate`, `review_worker`+`review_fetch`, `entity_link_worker`, `roles`/`groups`, `workflow_recorder`, `frame_gate`). Merges query routing fields into the body (`RoutingContext`: body wins), resolves the `<model_id>[:<instance\|group\|latest>]` grammar in `resolve_pipeline`, routes management/model-less endpoints |
+| `server/handler.rs` | HTTP routing + request orchestration; `ServerDeps` (pipelines, routes, models, stats, `max_payload`, classifier, cache, ledger, plan/rigor, sessions, ladders, context_cache, mock_dispatch, http_client, `instance_pool`, `api_key_env_name`, `supervisor`, `onnx`(+`onnx_llm_backend`), `fleet`, `coordinator`+`coordinator_gate`, `review_worker`+`review_fetch`, `entity_link_worker`, `roles`, `workflow_recorder`, `frame_gate`, `runtime`). Merges query routing fields into the body (`RoutingContext`: body wins), resolves the `<model_id>[:<instance\|group\|latest>]` grammar in `resolve_pipeline`, routes management/model-less endpoints |
 | `server/cors.rs` | Permissive CORS header helpers (`CORS_ALLOW_*`, `add_cors_headers`) |
 | `server/instances_api.rs` | Public `/instances` management facade: aggregate envelope across models, `POST /instances`, per-instance ops (delete/pin/unpin/resume/no-resume/resize/snapshot), `/memory` compat reshape, `/v1/models`, `/props`, model-less proxies (`/tokenize`/`/detokenize`/`/apply-template`/`/control`); management API-key enforcement; query parse/percent-decode helpers |
 | `server/dispatch.rs` | `handle_dispatch`/`dispatch_real` — primary + `fallbacks` chain through `ChatBackend` (each wrapped in `RetryBackend`), short-circuit on non-retryable errors, response cache read/write, workflow extraction, allocate-on-503 via `InstancePool` |
@@ -216,9 +221,8 @@ serialized decision is deserialized once and published to the same store.
 | `transforms/` | `TransformStrategy` trait + `rewrite_text_messages`/`insert_string_map` helpers: `NoTransform`, `PiiAnonymize`, `DecomposeToAnonymizedHypothetical`, `DecomposeToSubtasks` (bespoke `subtasks` object), `CodewordAnonymizer`, `Sanitize`, `SecretMask` |
 | `ranking.rs` | Ranking pipeline — `SalienceSignal`/`SalienceScorer` (weighted, pure), `pagerank` (minimal power-iteration over the `interlingua_index` co-reference + `parent_id` graph), `SalienceSource`/`LedgerSalienceProvider` (read-only snapshot), `rank_candidates` (salience prefilter to top-K then **one** grammar-constrained call over the shortlist; degrades to salience order), `SalienceRanker` (the composable step the retrieval service composes) |
 | `retrieval.rs` | Live dispatch seam + subagent tool owner: `NodeRetrievalService` parses a candidate node's LOD0, runs spacy-rs' pure `lemma_grep` + the router-owned fuzzy axis (`EmbeddingProvider`/`FuzzyRetrieval`/`InMemoryFuzzyIndex`) + the `cross_check` combiner, and pre-filters the pool through `SalienceRanker`; exposed on `LedgerAgentCoordinator` via `with_retrieval`/`retrieve_nodes`. Reports carry per-sentence `predicate_ids`; `filter_by_interlingua` drops candidates whose predicates are neither equal to nor a subclass of the query predicate (fail-open; never consults parse confidence; default-off) |
-| `cli/` | Admin CLI support backing `coral-router` `list`/`ps`/`pull`/`scan`/`rm`/`show`/`stop`/`speedtest` (ported from `gguf_tool.py`): `gguf.rs` (GGUF scanning + `models.json` cache), `preset.rs` (`models-preset.ini`), `commands/` (`filesystem.rs`, `server.rs`), `CliContext`/`CliError` |
-| `testing/` | `TranscriptProvider`, `MockTranscriptEntry`, `MockDispatchContext` — transcript-driven integration-test harness for E2E/golden tests; `testing/{calibration.rs, fixtures.rs, ledger_golden.rs, mock.rs}` |
-| `cli/` | Admin CLI (`cli/gguf.rs`, `preset.rs`, `cli/commands/{filesystem,server}.rs`, `cli/{ps_table,tables}.rs`) backing `coral-router list/ps/pull/scan/rm/show/stop/speedtest`, plus `routes/mod.rs`, `dispatch/mod.rs`, `frontier/mod.rs` re-export facades |
+| `cli/` | Admin CLI (`cli/gguf.rs`, `preset.rs`, `cli/commands/{filesystem,server}.rs`, `cli/{ps_table,tables}.rs`, `CliContext`/`CliError`) backing `coral-router start/list/ps/pull/scan/rm/show/stop/speedtest/schema/coordinator-rollback/frame-rollback`, plus `routes/mod.rs`, `dispatch/mod.rs`, `frontier/mod.rs` re-export facades |
+| `testing/` | `TranscriptProvider`, `MockTranscriptEntry`, `MockDispatchContext` — transcript-driven integration-test harness for E2E/golden tests; `testing/{calibration.rs, fixtures/ (ledger_lod.json), ledger_golden.rs, mock.rs}` |
 | `test_stubs.rs` | `StubChatBackend`, `HashEmbedder` — test-only backends (cfg(test)) |
 | `test_support.rs` | Test-only log capture (`capture_logs`) — installs a global subscriber and rebuilds the callsite-interest cache so parallel tests assert logs deterministically |
 
@@ -436,7 +440,7 @@ enrichment, tiering, summarization, ranking, retrieval. `encoder_model` and
 `overlay_models` remain feature-gated but are not configured in the reference
 deployment. `target_match` (`"self_assess"` default | `"static"`) selects the
 in-group policy (§"Model-group target selection"); `target_match_timeout_ms`
-defaults to `DEFAULT_TOTAL_TIMEOUT_MS`. `routes.<name>.always_route` forbids direct
+defaults to `DEFAULT_TOTAL_TIMEOUT` (Duration; wire key stays `target_match_timeout_ms` via `common_core::duration_ms`). `routes.<name>.always_route` forbids direct
 classifier answers on that route. `gguf_dir` feeds the admin CLI's weights
 resolution and prefixes every relative `models.<model>.weights`/`template`
 declaration at every setup seam (`resolve_weights`/`resolve_template`); `onnx_dir`

@@ -2,7 +2,7 @@
 
 `forbid(unsafe_code)`. Crate `fluent-llm` (`src/llm/`). Boundary guard:
 `tests/no_domain_imports.rs` forbids imports of router/coral/guidance/types/
-dag/db/concept/rdf/spacy/wasm_ipc. Live-AI tests are `#[ignore]` +
+dag/db/concept/rdf/spacy/search-vector/wasm_ipc (plus self-import `fluent_llm`). Live-AI tests are `#[ignore]` +
 `live-ai`-gated (`tests/live.rs`); hermetic suite never dials real endpoints.
 
 Consumers: `router`, `coral`, `knowledge`, `guidance`, `orator-*`,
@@ -21,9 +21,9 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
 
 - `protocol.rs` — Owned protocol + queue vocabulary (M11 canonical home;
   `fluent-concurrency::llm_queue` shims deleted). `LlmError`
-  (`Api/Http/NoResponse/RateLimited`) + `is_retryable` + `From<reqwest::Error>`;
+  (`Api/Http/NoResponse/RateLimited/QueueFull`) + `is_retryable` (`Http`/`RateLimited` only) + `From<reqwest::Error>`;
   `ChatMessage` (bon builder, `role_enum/with_role`); `LlmConfig` (bon builder:
-  `api_url/model/think/timeout_ms/extra_body_params/debug/show_prompts`);
+  `api_url/model/think/timeout: Duration/extra_body_params/debug/show_prompts` (wire JSON key stays `timeout_ms`);
   `LlmTask`, `LlmQueueConfig` (default 1 worker/100 cap), `LlmRequestQueue`
   (thin `ResultPool` wrapper: `new/worker_count/submit/submit_with_abort`).
   Re-exported at crate root so `use fluent_llm::LlmConfig` keeps working.
@@ -35,7 +35,7 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
   `block_on`; `decide_async/decide_prompt/decide_request/
   decide_batch_requests/probe_decision_support`). Free functions:
   `block_on`, `chat_complete_http_async/chat_complete_http`,
-  `post_chat_json_async`, `merge_extra_params`, `model_name`,
+  `post_chat_json_async` (private), `merge_extra_params` (private), `model_name`,
   `strip_preamble/is_malformed_response/extract_comment_tag/
   is_blank_or_plausible`. Mixes transport + judgment seam + string heuristics
   in one file (~900 lines) — split with care.
@@ -68,13 +68,13 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
   checked); `validate_embed_batch/check_embed_batch_output/block_on_provider`;
   `NoopEmbedding` (dims-0 sentinel), `OllamaEmbedding`
   (`with_client/embed_raw`), `OpenAiEmbedding`
-  (`with_client/request_body/embeddings_url`), `CachedEmbeddingProvider<T>`
+  (`with_client`, plus private `request_body`/`embeddings_url`), `CachedEmbeddingProvider<T>`
   (`new/new_with_limit/with_adapter/adapter`; dedup+shard cache fan-out);
-  `do_http_post_async/do_http_post/parse_float_array/
-  parse_ollama_response[_batch]/parse_openai_response[_batch]/
+  `do_http_post_async/do_http_post/parse_float_array` (private helpers) +
+  `parse_ollama_response[_batch]/parse_openai_response[_batch]/
   create_embedding_provider`. Multi-provider god-module: Ollama and OpenAI
   sync/async bodies differ only in body/URL.
-- `qwen.rs` — `QwenTextOptions` (api_key/endpoint/extra_headers/timeout_ms);
+- `qwen.rs` — `QwenTextOptions` (api_key/endpoint/extra_headers/timeout: Option<Duration>);
   `QwenImageFormat` + `parse`; `EmbedContent` (`Text/Image` + `image`);
   `QwenEmbedResult`; `QwenTextEmbeddingV4` / `Qwen37TextEmbedding`
   (`new/embed_texts/max_batch_size/max_input_tokens`; V4 also
@@ -85,17 +85,17 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
   near-identical).
 - `catalog.rs` — Static single source of truth. `EmbeddingBackend`
   (`LlamaCpp/Model2Vec/TransformersJs/Qwen`); `ArtifactMirror/
-  ArtifactSources/PinnedArtifact/CatalogEntry` (20-field sparse struct, each
+  ArtifactSources/PinnedArtifact/CatalogEntry` (26-field sparse struct, each
   backend uses a disjoint subset); `EMBEDDING_MODEL_CATALOG` (14 rows),
   `DEFAULT_QWEN_TEXT_EMBEDDING_ENDPOINT/
   DEFAULT_QWEN3_VL_EMBEDDING_ENDPOINT/DEFAULT_LOCAL_EMBEDDING`;
-  `list_embedding_models/get_embedding_reference`.
+  `list_embedding_models/get_embedding_model_catalog_entry`.
 - `resolution.rs` — Precedence chain `explicit > existing > env > global >
   fallback`. `EMBEDDING_ENVIRONMENT_VARIABLE`; `ResolveEmbeddingReferenceOptions`
   (env injectable as map for hermetic tests); `resolve_embedding_reference`;
   unknown env value is a hard error.
 - `factory.rs` — `CreateModelOptions` (api_key/endpoint/model_cache_dir/
-  device/timeout_ms/extra_headers); `create_embedding_model(reference,
+  device/timeout: Option<Duration>/extra_headers); `create_embedding_model(reference,
   options)` (two arms return `BackendNotWired`: `Model2Vec`,
   `TransformersJs`); `EmbeddingIdentity`; `RebuildField/RebuildMismatch`;
   `require_compatible_embedding` (model/endpoint drift check).
@@ -120,11 +120,11 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
 - `onnx_config.rs` — `OnnxTask` (7 variants) + `expected_architecture_families/
   required_outputs`; `Quant (Fp32/Fp16/Q8/Q4/Fp8)` + `suggested_for/is_fp32`;
   `LlmIo` (15 fields, bon builder); `AnnotationHeads/AnnotationLabels`
-  (`load`); `ResidencyPolicy (Always/Unloadable)`; `OnnxConfig` (16 fields:
+  (`load`); `ResidencyPolicy (Always/Unloadable)`; `OnnxConfig` (17 fields:
   `policy/resolved_tokenizer_path/config_json_path/resolve_model_file/
   validate`); `OnnxRole (Encoder/Pii/Router/Policy/Colbert/Llm)` +
   `task/registry_key/suggested_quantization/all`; `OnnxInstanceProfile
-  (apply_max_ctx)`; `OnnxRoleConfig (to_onnx_config)`; `OnnxFleetConfig
+  (apply_max_ctx)`; `OnnxRoleConfig (to_onnx_config; `timeout/idle_timeout: Duration`, serde `*_ms` keys); `OnnxFleetConfig
   (is_empty/iter/get/has)`. `OnnxTask`/`OnnxRole` overlap 1:1.
 - `onnx_session.rs` — ort-free registry + injectable loader. `SessionHandle`
   (`new/downcast_ref/downcast_arc` over `Arc<dyn Any>`);
@@ -137,7 +137,7 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
   ConfigParse/TaskMismatch/OutputMismatch/SessionLoad/SessionRun/
   Tokenization/Other` + `tokenization`).
 - `backend.rs` — Backend-component contract (~590 lines, intentionally broad).
-  `BackendCaps` (6 bools) + `chat_with_contexts`; `Readiness`;
+  `BackendCaps` (5 bools) + `chat_with_contexts`; `Readiness`;
   `ContextProfile`; `DEFAULT_CONTEXT_GROUP`; `WellKnownBackend (Llama/Onnx)`;
   `BackendLoader (load/probe_ready)`; `BackendError`; `InferenceBackend:
   Component` (`backend_id/model_keys/weights/chat_backend/
@@ -152,12 +152,12 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
 - `runtime.rs` — Residency engine (~990 lines). `LlmRuntime (Llama/Onnx)`;
   `EvictionPolicy (FootprintColdness/LruLargest)` + `pool`;
   `MemoryPool (Vram/Ram)`; `LlmRuntimeError`; `ResidencyState
-  (Loaded/Sleeping/Unloaded)`; `LlmResidencyRow` (12 fields);
-  `SnapshotMeta`; `LlmWeights` (13-method wide interface:
+  (Loaded/Sleeping/Unloaded)`; `LlmResidencyRow` (14 fields);
+  `SnapshotMeta`; `LlmWeights` (17-method wide interface:
   `model_key/weights_bytes/pinned/refuse_unload/is_loaded/
   sleep_idle_seconds/ensure_loaded/unload/touch/last_used/in_flight/
   residency_rows/context/ensure_context/eviction_policy/expire_resume/
-  evict_weights`); `LlmContext` (11 methods incl. `resize/destroy/kv_cache/
+  evict_weights`); `LlmContext` (14 methods incl. `resize/destroy/kv_cache/
   evict`); `LlmKVCache (save/restore/list/delete)`; `LlmResidencyEngine`
   (`new/new_with_clock/with_admission_budget/residency_cycle/make_room_for/
   start` over `fluent_wvr::runtime::Runtime`). Four-phase cycle
@@ -170,33 +170,33 @@ This crate owns LLM policy and vocabulary only (`tokens` lives here, not in
 
 Facade `decision/mod.rs` re-exports all submodules.
 
-- `decision/types.rs` — Pure policy core. `DecisionKind (Choice/Score/Noul)`;
+- `decision/types.rs` — Pure policy core. `DecisionKind (Choice/Score/Noul)` + `parse -> Result<_, UnknownDecisionKind>`;
   `Decision (label/distribution/confidence/margin/degraded)` +
   `from_distribution` (top-1/top-2 math); `DecisionError
   (Unavailable/Rejected/Decode)` + `is_unavailable/is_retryable` (maps
-  `LlmError::is_retryable`); `ThresholdSet (act/review)` + `validate`;
+  `LlmError::is_retryable`); `ThresholdSet (act/review)` + `validate -> Result<(), ThresholdError>` (`OutOfRange`/`BadOrder`);
   `Verdict (Act/Review/Escalate)`; `decide_verdict/decide_score_verdict/
   decide_noul_verdict/noul_p_yes/score_moment/ScoreMoment` (degraded caps
   `Act→Review`).
-- `decision/backend.rs` — `DecisionOption`; `DecideRequest` (owned `'static`);
+- `decision/backend.rs` — `DecisionOption`; `DecideRequest` (owned `'static`, `timeout: Duration`);
   `BatchFuture`; `DecideBackend` trait (`decide/decide_batch`, default batch
   is sequential fan-out — override for speed); `ScriptedDecideBackend`
   (hermetic double, errors on exhaustion).
 - `decision/transport.rs` — Safety rails. `RedactHook/AuditSink` (`Arc<dyn
   Fn>`); `anonymize_hook`; `DecisionProbe (logprobs/top_entries/
   reasoning_hijack)` + `read/degrades_to_text`; `DecisionAudit/
-  PreparedPrompt` (metadata-only); `DecisionTransport` (`local_only/
+  PreparedPrompt` (redacted prompt text + audit flag); `DecisionTransport` (`local_only/
   with_allow_remote/with_redact/with_audit/redact_text/prepare`,
   localhost-only by default). Own `endpoint_host/is_exact_loopback` forked
   from `crate::url` (SSRF-range note in comments).
 - `decision/cache.rs` — `CacheKeyInput` + `key` (framed `blake3_hex`);
-  `decision_cache_key` (legacy 8-arg ctor); `DecisionCache
+  `DecisionCache
   (get_or_decide/get/insert/len/is_empty/capacity)` over
-  `common_core::cache::LoadCache`; caches only `Ok && !degraded`.
-  Hand-rolled singleflight (`Inflight` + `Notify` + `Retire` guard) instead of
-  a `fluent-concurrency` pool — most complex file in the stack.
+  `fluent_concurrency::cache::AsyncLoadCache` (singleflight election owned
+  by `AsyncLoadCache`; this module owns key framing + degraded-never-stored
+  admission); caches only `Ok && !degraded`.
 - `decision/ladder.rs` — Canonical composition example:
-  `decide_with_ladder(rule/cache/key/cacheable/breaker/model/factory/
+  `decide_with_ladder(rule/cache/key/cacheable/breaker/model/fallback
   fallback)` via `fluent_wvr::ladder::first_accept_in_order`
   (`Unavailable` skips, only `Rejected` terminal, degraded never cached).
   Private `Rung` enum drives the walk.
@@ -212,7 +212,7 @@ Facade `decision/mod.rs` re-exports all submodules.
   then `decode_boundary_typed` with private `LabelDoc
   (FieldAccess/Describable)`.
 - `decision/question.rs` — Control-plane spec. `QuestionSpec` (bon builder +
-  `FieldAccess/Describable/Component/WorkUnit`; `validate/kind_enum/options/
+  `FieldAccess/Describable/Component/WorkUnit`; `validate -> Result<(), QuestionError>` / `kind_enum` / `options` /
   thresholds`; enforces single-token labels, canonicalized dedup,
   `MAX_DECISION_OPTIONS=10`); `Question` (`render` state-first/question-last
   with `(seed,salt)` rotation); `MAX_DECISION_PROMPT_BYTES=8192`;
@@ -226,17 +226,17 @@ Facade `decision/mod.rs` re-exports all submodules.
   degraded-sticky); `route_hierarchical` (chunked tournament over max
   options); `filter_noul/route_choice/rank_score` (kind-checked wrappers);
   `bulk_filter/bulk_rerank/bulk_route` (pure post-processors over
-  `decide_verdict`). `cap = items.len()` is unbounded by default.
-- `decision/breaker.rs` — `DecisionBreaker (new/threshold/cooldown)` +
+  `decide_verdict`). `decide_all` takes explicit `cap`/`queue_capacity` (no built-in default; callers typically pass `cap = items.len()`); `DecidePool` + `decide_all_with_pool` provide the caller-owned pool variant.
+- `decision/breaker.rs` — `DecisionBreaker (new(threshold: u32, cooldown_ms: u64)/is_open/check/record_*)` +
   `is_open/check/record_transport_failure/record_permanent/record_success`
   (consecutive-`Unavailable` trip, cooldown, single half-open trial;
   `Instant`-based clock, non-injectable).
 - `decision/registry.rs` — Calibration persistence. `CaseOrigin
-  (Human/HumanReviewed/Synthetic)`; `CaseProvenance/CorpusProvenance/Corpus`;
+  (Human/HumanReviewed/Synthetic)`; `authorize` (+ advisory/pinned variants); `CaseProvenance/CorpusProvenance/Corpus`;
   `GateReport`; `RegistryEntry (calibrate/calibrate_with)`;
   `CalibrationRegistry (empty/upsert/lookup/load/save/load_corpus)`;
   `GateParams`; `gate_for_point_with`; `CalibrationStatus
-  (Calibrated/ShadowOnly)`; `authorize` (human-provenance gate). Composes
+  (Calibrated/Advisory/ShadowOnly)`; `authorize` (human-provenance gate). Composes
   `common_core::calibration::calibrate_threshold` and `io::write_atomic`;
   `calibrate_with` records `passed` via default gate even with custom
   `GateParams`.
@@ -304,15 +304,14 @@ Facade `decision/mod.rs` re-exports all submodules.
   bypasses defaults/sanitize.
 - `prompt.rs` — `RouteEntry/render_available_routes/substitute_thresholds/
   build_self_assessment_prompt` (pure string, moved verbatim from router).
-- `thinking.rs` — `strip_thinking_blocks/strip_think_block/strip_tag_pairs/
-  strip_plain_thinking`; `StreamingThinkFilter (push/finish)` with split-tag
+- `thinking.rs` — `strip_thinking_blocks/strip_think_block`; `StreamingThinkFilter (push/finish)` with split-tag
   holdback (streaming covers `<think>/<thinking>` only; hex-escaped literals
   hide tags in source).
 - `roles.rs` — `ChatRole (System/User/Assistant/Tool)` +
   `as_str/FromStr/TryFrom/Display`; `RoleParseError`. Closed vocab over the
   `String` wire type.
 - `constants.rs` — `MAX_EMBEDDING_DIMENSIONS`,
-  `DEFAULT_TOTAL_TIMEOUT_MS/DEFAULT_IDLE_TIMEOUT_MS/RETRY_INTERVAL_S`.
+  `DEFAULT_TOTAL_TIMEOUT/DEFAULT_IDLE_TIMEOUT: Duration`, `DEFAULT_RETRY_INTERVAL_S`.
 - `error.rs` — Alias shim only: `type EmbedError = EmbeddingError`.
 - `telemetry.rs` — `ToolName/ProviderCategory/FeatureName`;
   `TelemetryEvent (ToolInvoked/ToolCompleted/Routing/Error/FeatureUsed)`;
@@ -354,10 +353,12 @@ Facade `decision/mod.rs` re-exports all submodules.
   HMAC-signed JSON doc store (`hmac_sha256`, constant-time compare) with
   per-root lock fan-out.
 - `cache.rs` — `CachedResponse`; `ResponseCache
-  (new/with_delete/with_clear/get/set/invalidate_key/
-  invalidate_key_raw/invalidate_all)`; key is
-  `"{model}:{sha256(request_json)}"`. Closure-injected storage, lazy TTL
-  only, no size bound, `set` best-effort.
+  (in_memory/over_backend/get/set/invalidate_key/
+  invalidate_key_raw/invalidate_all)` over the `CacheBackend` trait
+  (`MemoryBackend` bounded LRU; key is
+  `"{model}:{sha256(request_json)}"`). TTL-lazy reads, `set` best-effort;
+  `invalidate_all` on the memory backend is a no-op (full clears need a
+  backend that implements eviction).
 
 ## Key flows (where to start reading)
 

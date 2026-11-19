@@ -31,7 +31,7 @@ argv, builds engines, prints reports, and maps exit codes.
 |---|---|---|
 | Source tree | Truth; everything derives from it | — |
 | Sidecars (`<guidance>/src/**/*.json` with a header first line) | Per-file derived facts and receipts | `sync/json_store.rs`, `sync/json_writer.rs`, header codec in `fluent-types` |
-| Derived index (SQLite fragments/symbols/edges plus FTS, summaries, lemma dictionary, embedding status) | Disposable; refused on generation mismatch, rebuilt from sidecars | `search-vector` tables (`fragments` + FTS over content/symbol/doc, `fragment_summaries` + FTS, `fragment_lemmas` integer keys + `lemma_terms`, `fragment_embedding_status`, symbols/edges, `nodes` shared document store, `capabilities` + FTS over title/purpose/keywords + lemma postings, `project_cards` + FTS), writers in `query/ingest.rs`, `query/db_storage.rs`, `index_pipeline.rs`, card importers in `read/doc_cards.rs` + `read/project_map.rs`, guard in `index_generation.rs` |
+| Derived index (SQLite fragments/symbols/edges plus FTS, summaries, lemma dictionary, embedding status) | Disposable; refused on generation mismatch, rebuilt from sidecars | `search-vector` tables (`fragments` + FTS over content/symbol/doc, `fragment_summaries` + FTS, `fragment_lemmas` integer keys + `lemma_terms`, `fragment_embedding_status`, symbols/edges, `nodes` shared document store, `capabilities` + FTS over title/purpose/keywords + lemma postings, `project_cards` + FTS), writers in `query/ingest.rs`, `query/db_storage.rs`, `query/search_db/*` (files/fragments/capabilities/answers/graph-rows/schema/summary/embedding-status/symbol storage layer), `index_pipeline.rs`, card importers in `read/doc_cards.rs` + `read/project_map.rs`, guard in `index_generation.rs` |
 | Control state (queue snapshots, calibration registry, intent records, journal, escalation ledger, run reports) | Durable and not derivable; back it up | `maintenance.rs`, `journal.rs`, `orchestrator.rs`, `plans.rs` |
 
 Mtime is a cache over this layout; content hashes decide. The
@@ -122,6 +122,8 @@ model, prompt, or question version returns the point to shadow.
 | `seal.rs` | Workspace seal: matrix clippy, full build, full tests, witness pass, contract exit codes, budget targets |
 | `scorecard.rs` | Hermetic improvement instrument: fast tier with ratchet baselines that block release on regression (nav, graph, freshness, speed, decision, lanes, loop, avoidance) |
 | `config.rs` | Project configuration load and precedence (providers, embed config, model roles, lane budgets) |
+| `capability.rs` | Capability-corpus types, calibration, and SVO normalization over the external `capabilities_dir/corpus.json` input (imported via `read::doc_cards`, no model call on the import path) |
+| `profile.rs` | Opt-in phase timing (`GUIDANCE_PROFILE=1` prints `[profile] name: N ms` to stderr; off by default) |
 | `search_types.rs`, `search_constants.rs` | Tested index/search contracts, budgets, and value types |
 | `eval.rs`, `jumps.rs` | Eval corpus loader (corpus lives in `doc/guidance/eval/`, outside every indexed root, never a retrieval input); doc→code jump records (crate attribution plus the funnel vocabulary, one scanner/table shared with capability ingest). Model-output parsing lives in `fluent-llm` (`parse::extract_first_json_span`/`extract_fence`, `decision::match_text_label`); guidance's `model_text.rs` shim was deleted after migration |
 | `runtime.rs` | Shared AST/DB pools: per-call `ResultPool`s (`ast_pool`, index pools) over `fluent-concurrency` with backpressure; thread-local parser resources |
@@ -132,9 +134,10 @@ tests live in `src/guidance/tests/<module>.rs` with a `#[path]`
 forwarder in the owning module — never an inline test module
 (the `read` tree keeps one local exception: `read/mod.rs` hosts
 the `read_perf` forwarder). Checked-in fixtures the tests run
-from: `corpora/` (intent, triage, route-calibration, staleness,
+from: `corpora/` (intent, triage (+`triage_calibration.json`), route-calibration, staleness,
 sufficiency, support, excerpt, lemma-ablation, summary,
-nav, answer-floor, span-cap, doc-admission seed sets plus
+nav, answer-floor, span-cap, doc-admission, `brief_traverse_goldens.json`,
+`doc_judge_goldens.json`, `capability_seed.json` seed sets plus
 `benchmark_tasks.jsonl`), `fixture_graph/` (caller/callee parse
 fixtures with `ground_truth.json`), `fixture_read/` (minimal
 workspace with `doc/`, `src/`, `README.md`), `doc/guidance/eval/`

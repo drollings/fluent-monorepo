@@ -48,7 +48,7 @@ before `Arc`-sharing, override at runtime via `ComponentAdapter`.
 | `src/feed.rs` | Feeds, waves, caps, aborts, backpressure | `ChartFeed`, `PaneWaveUnit`, `run_wave`, `RefreshGate`, `PaneHandle`, `CreditIntake`, `load_history`, `TransportRetry` |
 | `src/fonts.rs` | Bundled-font fallback-chain policy (builders + thin `Context` installers; byte-free, no new deps) | `font_insert`, `proportional_font_insert`, `monospace_font_insert`, `bundled_font_insert`, `primary_with_fallback_insert`, `with_bundled_font`, `install_bundled_font` |
 | `src/replay.rs` | Scrub-back controller + toolbar cursor | `ReplayController`, `ReplayState` |
-| `src/error.rs` | Fail-closed refusals | `EguiError :: InvalidParam/Dependency` |
+| `src/error.rs` | Fail-closed refusals | `EguiError :: InvalidParam/Dependency/GraphDependency` (`GraphDependency` carries the structured `fluent_dag::dep_graph::GraphError` as `#[source]`; match on it, never parse the message) |
 
 Conventions: `#![forbid(unsafe_code)]`; `autotests = false` with
 `tests/<module>.rs` + `#[path]` forwarders, never inline `mod tests`;

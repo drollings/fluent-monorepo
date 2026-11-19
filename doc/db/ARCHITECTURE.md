@@ -10,7 +10,7 @@
 |--------|---------|------|
 | `pool` | `SqlitePool` pooled async store (`Semaphore` + `spawn_blocking`, RAII `PooledConnection`, capability-gated `acquire`) | `src/db/src/pool.rs` |
 | `store` | `SqliteStore` single-connection store | `src/db/src/store.rs` |
-| `query` | `query_row`, `query_rows`, `execute`, `transaction` typed helpers over `OwnedValue` (single source of truth) | `src/db/src/query.rs` |
+| `query` | `query_row`, `query_rows`, `execute`, `execute_batch`, `query_rows_from_iter`, `last_insert_rowid`, `transaction` typed helpers over `OwnedValue` (single source of truth) | `src/db/src/query.rs` |
 | `sqlite` | `open_wal`, `quote_ident`, `in_clause`, `is_unique_violation` raw mechanics (canonical home) | `src/db/src/sqlite.rs` |
 | `capability` | `DbCapability` token (`open`, `open_with_config`, `pool`) | `src/db/src/capability.rs` |
 | `migrate` | `Migration` trait, `PRAGMA user_version` versioning | `src/db/src/migrate.rs` |
@@ -29,5 +29,6 @@
   `fluent-wvr` so both `fluent-db` and `fluent-concurrency` read the same
   task-local without a dependency cycle.
 - Blocking work never runs inline: blocking rusqlite work is offloaded
-  (never blocks the executor), and `ctx.caps` are scoped on every
-  offload path.
+  (never blocks the executor). `ctx.caps` are **checked** (not re-scoped)
+  on every offload path via `check_db_capability` — callers install the
+  capability set through `Scope`/`SupervisedBatch` before entering.
