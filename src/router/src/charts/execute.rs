@@ -7,7 +7,7 @@
 //!   canonical `DependencyGraph::topo_sort`). The executor never re-implements
 //!   graph algorithms — it only walks the already-computed order in waves.
 //! - **Supervision**: each target runs under the SupervisedBatch's timeout/retry
-//!   contract (`WorkContext::max_retries` / `timeout_ms`). A failed or
+//!   contract (`WorkContext::max_retries` / `timeout`). A failed or
 //!   rubric-rejected target cancels its transitive dependents — independent
 //!   branches keep running (VISION: contain, don't restart; local-first).
 //! - **Rubric gate**: each target's output is gated by its `rubric`
@@ -85,7 +85,7 @@ impl ChartAuditEntry {
 /// `WorkError`s, but never a permanent `Execution` failure.
 fn chart_retry_predicate(err: &WorkError) -> bool {
     match err {
-        WorkError::Execution(msg) => msg.contains("LLM call failed"),
+        WorkError::Execution(f) => f.message.contains("LLM call failed"),
         other => other.is_retryable(),
     }
 }
@@ -105,8 +105,8 @@ pub struct ChartExecOptions {
     pub metrics: Option<Arc<LatencyHistogram>>,
     /// Per-attempt retries (0 = none) — the SupervisedBatch's `WorkContext.max_retries`.
     pub max_retries: u32,
-    /// Per-attempt wall-clock budget in ms (0 = none) — `WorkContext.timeout_ms`.
-    pub timeout_ms: u64,
+    /// Per-attempt wall-clock budget (zero = none) — `WorkContext.timeout`.
+    pub timeout: std::time::Duration,
     /// Selection provenance for the audit trail (e.g. `"exact"` / `"partial"`).
     pub fit: Option<String>,
     /// Selection confidence for the audit trail.
@@ -129,7 +129,7 @@ impl Default for ChartExecOptions {
             cache: None,
             metrics: None,
             max_retries: 0,
-            timeout_ms: 0,
+            timeout: std::time::Duration::ZERO,
             fit: None,
             score: None,
             health: None,
@@ -279,7 +279,7 @@ impl ChartExecutionPlan {
             for target in &ready {
                 let mut ctx = build_target_context(base_ctx, target, &completed);
                 ctx.max_retries = opts.max_retries;
-                ctx.timeout_ms = opts.timeout_ms;
+                ctx.timeout = opts.timeout;
                 ctx.rt = opts.runtime.clone();
                 if opts.unprivileged {
                     ctx.caps = CapabilitySet::default();

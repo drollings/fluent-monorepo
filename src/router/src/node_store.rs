@@ -1538,8 +1538,8 @@ fn insert_node_row(conn: &Connection, node: &ContentNode) -> Result<(), DbError>
         .as_ref()
         .unwrap_or(&serde_json::json!({}))
         .to_string();
-    let lod_json = serde_json::to_string(&node.lod).map_err(|e| DbError::Other(e.to_string()))?;
-    let content_json = serde_json::to_string(node).map_err(|e| DbError::Other(e.to_string()))?;
+    let lod_json = serde_json::to_string(&node.lod).map_err(|e| DbError::Serialization(e.to_string()))?;
+    let content_json = serde_json::to_string(node).map_err(|e| DbError::Serialization(e.to_string()))?;
     let content = node.lod.first().map_or("", String::as_str);
     let label = node
         .lod
@@ -1595,8 +1595,8 @@ fn update_node_row(conn: &Connection, node: &ContentNode) -> Result<(), DbError>
         .as_ref()
         .unwrap_or(&serde_json::json!({}))
         .to_string();
-    let lod_json = serde_json::to_string(&node.lod).map_err(|e| DbError::Other(e.to_string()))?;
-    let content_json = serde_json::to_string(node).map_err(|e| DbError::Other(e.to_string()))?;
+    let lod_json = serde_json::to_string(&node.lod).map_err(|e| DbError::Serialization(e.to_string()))?;
+    let content_json = serde_json::to_string(node).map_err(|e| DbError::Serialization(e.to_string()))?;
     let content = node.lod.first().map_or("", String::as_str);
     let label = node
         .lod

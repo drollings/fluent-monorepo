@@ -32,7 +32,10 @@ impl FieldAccess for TestComponent {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         match name {
             "value" => {
-                self.value = value.parse().map_err(|_| FieldError::Parse(value.into()))?;
+                self.value = value.parse().map_err(|_| FieldError::Parse {
+                    field: "value".to_string(),
+                    reason: value.to_string(),
+                })?;
                 Ok(())
             }
             _ => Err(FieldError::NotFound(name.into())),
@@ -150,7 +153,7 @@ impl WorkUnit for MockUnit {
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
         if self.should_fail {
-            Err(WorkError::Execution("failed".into()))
+            Err(WorkError::execution_display("failed"))
         } else {
             Ok(WorkOutput::ok("done"))
         }
@@ -335,11 +338,15 @@ impl FieldAccess for ConstrainedHost {
         if name == "port" {
             let v: u16 = value
                 .parse()
-                .map_err(|_| FieldError::Parse(format!("invalid u16 for 'port': {value}")))?;
+                .map_err(|_| FieldError::Parse {
+                    field: "port".to_string(),
+                    reason: format!("invalid u16 for 'port': {value}"),
+                })?;
             if v > 1024 {
-                return Err(FieldError::Constraint(
-                    "port: value above maximum 1024".into(),
-                ));
+                return Err(FieldError::Constraint {
+                    field: "port".to_string(),
+                    reason: "value above maximum 1024".to_string(),
+                });
             }
             self.port = v;
             Ok(())

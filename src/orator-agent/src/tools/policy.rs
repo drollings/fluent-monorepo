@@ -151,9 +151,7 @@ impl FieldAccess for Policy {
             }
             "t2_always_ask" => {
                 if !parse_bool(value)? {
-                    return Err(FieldError::Constraint(
-                        "t2_always_ask cannot be disabled: no persistent grants in v1".to_string(),
-                    ));
+                    return Err(FieldError::constraint("t2_always_ask", "cannot be disabled: no persistent grants in v1"));
                 }
                 self.t2_always_ask = true;
                 Ok(())
@@ -194,9 +192,7 @@ fn parse_bool(value: &str) -> Result<bool, FieldError> {
     match value {
         "true" => Ok(true),
         "false" => Ok(false),
-        _ => Err(FieldError::Parse(format!(
-            "expected true/false, got {value:?}"
-        ))),
+        _ => Err(FieldError::parse("bool", format!("expected true/false, got {value:?}"))),
     }
 }
 

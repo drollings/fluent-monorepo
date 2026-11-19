@@ -1,7 +1,7 @@
 //! Protocol-ownership parity.
 //!
-//! Locks the `fluent_llm::protocol` contract: `bon`-builder defaults (`timeout_ms`
-//! 2000, `extra_body_params` merge ignoring `model`/`messages`/`stream`),
+//! Locks the `fluent_llm::protocol` contract: `bon`-builder defaults (`timeout`
+//! 2s, `extra_body_params` merge ignoring `model`/`messages`/`stream`),
 //! the four `LlmError` variants (+ `is_retryable`), and a queue smoke via
 //! `TestRuntime` proving the executor dispatches.
 //!
@@ -24,7 +24,7 @@ fn llm_config_builder_defaults() {
     assert_eq!(cfg.api_url, "http://localhost:11434/v1");
     assert_eq!(cfg.model, "code");
     assert_eq!(cfg.think, None);
-    assert_eq!(cfg.timeout_ms, 2000);
+    assert_eq!(cfg.timeout, std::time::Duration::from_secs(2));
     assert_eq!(cfg.extra_body_params, None);
     assert!(!cfg.debug);
     assert!(!cfg.show_prompts);
@@ -36,13 +36,13 @@ fn llm_config_builder_overrides_stick() {
         .api_url("http://x/v1".into())
         .model("m".into())
         .think(true)
-        .timeout_ms(50)
+        .timeout(std::time::Duration::from_millis(50))
         .extra_body_params(serde_json::json!({"temperature": 0.5}))
         .debug(true)
         .show_prompts(true)
         .build();
     assert_eq!(cfg.think, Some(true));
-    assert_eq!(cfg.timeout_ms, 50);
+    assert_eq!(cfg.timeout, std::time::Duration::from_millis(50));
     assert_eq!(
         cfg.extra_body_params,
         Some(serde_json::json!({"temperature": 0.5}))

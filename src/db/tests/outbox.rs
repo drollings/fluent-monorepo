@@ -245,7 +245,7 @@ fn claim_retry_policy_is_shared_and_busy_only() {
         &crate::error::DbError::Busy("database is locked".into())
     ));
     assert!(!crate::outbox::is_claim_retryable(
-        &crate::error::DbError::Other("boom".into())
+        &crate::error::DbError::Spawn("boom".into())
     ));
     assert!(!crate::outbox::is_claim_retryable(
         &crate::error::DbError::NotFound("missing".into())

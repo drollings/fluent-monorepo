@@ -78,7 +78,7 @@ fn bridge_maps_invalid_to_execution_error() {
         .build();
     let err = check_for_execute(&bad, "bar invalid").expect_err("must fail");
     match err {
-        fluent_wvr::WorkError::Execution(msg) => assert!(msg.contains("bar invalid")),
+        fluent_wvr::WorkError::Execution(f) => assert!(f.message.contains("bar invalid")),
         other => panic!("expected Execution, got {other:?}"),
     }
     let good = sample_bar();

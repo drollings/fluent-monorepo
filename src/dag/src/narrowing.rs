@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::error::ResolverError;
-use common_core::interner::CapabilityRegistry;
+use common_core::interner::CapabilityInterner;
 
 use crate::target::Target;
 
@@ -68,7 +68,7 @@ pub(crate) fn narrow_providers<'t>(
 
 /// Get the human-readable name for a capability index, falling back to
 /// `cap_{idx}` when no registry is available or the name is unknown.
-pub(crate) fn cap_name(caps: Option<&CapabilityRegistry>, cap_idx: usize) -> String {
+pub(crate) fn cap_name(caps: Option<&CapabilityInterner>, cap_idx: usize) -> String {
     caps.and_then(|c| c.get_name(cap_idx))
         .map_or_else(|| format!("cap_{cap_idx}"), |s| s.to_string())
 }
@@ -76,7 +76,7 @@ pub(crate) fn cap_name(caps: Option<&CapabilityRegistry>, cap_idx: usize) -> Str
 /// Build a `MissingDependency` error for a capability with no providers.
 /// Canonical message: `"no provider for '{cap}' (required by '{target}')"`
 pub(crate) fn missing_provider_error(
-    caps: Option<&CapabilityRegistry>,
+    caps: Option<&CapabilityInterner>,
     cap_idx: usize,
     target_name: &str,
 ) -> ResolverError {
@@ -88,7 +88,7 @@ pub(crate) fn missing_provider_error(
 
 /// Build an `AmbiguousDependency` error when narrowing produces >1 candidate.
 pub(crate) fn ambiguous_error(
-    caps: Option<&CapabilityRegistry>,
+    caps: Option<&CapabilityInterner>,
     cap_idx: usize,
     narrowed: &[&Target],
 ) -> ResolverError {

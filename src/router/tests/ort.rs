@@ -16,8 +16,8 @@ fn plain_entry() -> ModelEntry {
         cost_output: 0.0,
         cost_cached_read: 0.0,
         tok_s: 1.0,
-        total_timeout_ms: 0,
-        idle_timeout_ms: 0,
+        total_timeout: std::time::Duration::from_millis(0),
+        idle_timeout: std::time::Duration::from_millis(0),
         stream: true,
         filter_thinking: false,
         retry_count: 0,
@@ -39,8 +39,8 @@ fn role_config(model_path: &str) -> fluent_llm::onnx_config::OnnxRoleConfig {
         pinned: false,
         no_sleep: false,
         sleep_idle_seconds: None,
-        total_timeout_ms: 0,
-        idle_timeout_ms: 0,
+        total_timeout: std::time::Duration::from_millis(0),
+        idle_timeout: std::time::Duration::from_millis(0),
         params: None,
         instances: None,
         model: fluent_llm::onnx_config::OnnxConfig::new()
@@ -115,8 +115,8 @@ fn llm_role_registers_as_causal_lm_with_lifecycle() {
             pinned: true,
             no_sleep: false,
             sleep_idle_seconds: Some(30),
-            total_timeout_ms: 120000,
-            idle_timeout_ms: 0,
+            total_timeout: std::time::Duration::from_millis(120000),
+            idle_timeout: std::time::Duration::from_millis(0),
             params: None,
             model: fluent_llm::onnx_config::OnnxConfig::new()
                 .model_path("/models/llm.onnx")
@@ -571,8 +571,8 @@ fn lazy_llm_role() -> fluent_llm::onnx_config::OnnxRoleConfig {
         pinned: false,
         no_sleep: false,
         sleep_idle_seconds: Some(1),
-        total_timeout_ms: 0,
-        idle_timeout_ms: 0,
+        total_timeout: std::time::Duration::from_millis(0),
+        idle_timeout: std::time::Duration::from_millis(0),
         params: None,
         instances: None,
         model: fluent_llm::onnx_config::OnnxConfig::new()

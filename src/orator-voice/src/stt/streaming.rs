@@ -388,24 +388,22 @@ impl FieldAccess for StreamingStt {
         match name {
             "provisional_ms" => {
                 self.provisional_ms = value.parse().map_err(|_| {
-                    FieldError::Parse("provisional_ms must be a number".to_string())
+                    FieldError::parse("provisional_ms", "must be a number")
                 })?;
                 Ok(())
             }
             "agree_ms" => {
                 self.agree_ms = value
                     .parse()
-                    .map_err(|_| FieldError::Parse("agree_ms must be a number".to_string()))?;
+                    .map_err(|_| FieldError::parse("agree_ms", "must be a number"))?;
                 Ok(())
             }
             "no_speech_max" => {
                 let parsed: f32 = value
                     .parse()
-                    .map_err(|_| FieldError::Parse("no_speech_max must be a number".to_string()))?;
+                    .map_err(|_| FieldError::parse("no_speech_max", "must be a number"))?;
                 if !(0.0..=1.0).contains(&parsed) {
-                    return Err(FieldError::Constraint(
-                        "no_speech_max must be within [0.0, 1.0]".to_string(),
-                    ));
+                    return Err(FieldError::constraint("no_speech_max", "must be within [0.0, 1.0]"));
                 }
                 self.no_speech_max = parsed;
                 Ok(())

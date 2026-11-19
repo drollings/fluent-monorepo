@@ -109,7 +109,7 @@ pub type DocJudge<'a> = CandidateJudge<'a, DocLabel>;
 pub struct CandidateJudge<'a, L: CandidateLabel> {
     backend: &'a dyn DecideBackend,
     model: String,
-    timeout_ms: u64,
+    timeout: std::time::Duration,
     _marker: std::marker::PhantomData<L>,
 }
 
@@ -123,11 +123,11 @@ impl<'a, L: CandidateLabel> CandidateJudge<'a, L> {
     /// Borrow a decision backend (usually the `decision` role over
     /// `/v1/systemone`).
     #[must_use]
-    pub fn new(backend: &'a dyn DecideBackend, model: String, timeout_ms: u64) -> Self {
+    pub fn new(backend: &'a dyn DecideBackend, model: String, timeout: std::time::Duration) -> Self {
         Self {
             backend,
             model,
-            timeout_ms,
+            timeout,
             _marker: std::marker::PhantomData,
         }
     }
@@ -163,7 +163,7 @@ impl<'a, L: CandidateLabel> CandidateJudge<'a, L> {
                 options: L::options(),
                 kind: DecisionKind::Choice,
                 version: 1,
-                timeout_ms: self.timeout_ms,
+                timeout: self.timeout,
                 model: self.model.clone(),
             })
             .collect();

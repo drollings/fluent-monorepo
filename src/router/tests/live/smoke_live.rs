@@ -54,7 +54,7 @@ fn run_pipeline(pipeline: &PipelineOrchestrator, text: &str) -> Result<PipelineR
     let output = pipeline.execute(&ctx)?;
     output
         .data_take()
-        .map_err(|e| WorkError::Execution(e.to_string()))
+        .map_err(|e| WorkError::execution_display(e.to_string()))
 }
 
 #[tokio::test(flavor = "multi_thread")]

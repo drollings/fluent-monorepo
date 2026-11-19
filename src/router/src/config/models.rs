@@ -45,10 +45,10 @@ pub struct ModelEntry {
     /// planning (the ladder orders by cost, never by speed).
     #[serde(default = "default_tok_s")]
     pub tok_s: f64,
-    #[serde(default = "default_total_timeout_ms")]
-    pub total_timeout_ms: u64,
-    #[serde(default = "default_idle_timeout_ms")]
-    pub idle_timeout_ms: u64,
+    #[serde(default = "default_total_timeout", rename = "total_timeout_ms", with = "common_core::duration_ms")]
+    pub total_timeout: std::time::Duration,
+    #[serde(default = "default_idle_timeout", rename = "idle_timeout_ms", with = "common_core::duration_ms")]
+    pub idle_timeout: std::time::Duration,
     #[serde(default = "default_true")]
     pub stream: bool,
     /// Whether thinking blocks are stripped for dispatches through this
@@ -514,8 +514,8 @@ impl ModelEntry {
     }
 }
 
-fn default_total_timeout_ms() -> u64 {
-    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS
+fn default_total_timeout() -> std::time::Duration {
+    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT
 }
 
 /// Default capability rating for a sparse model entry that declares none
@@ -530,8 +530,8 @@ fn default_tok_s() -> f64 {
     20.0
 }
 
-fn default_idle_timeout_ms() -> u64 {
-    fluent_llm::constants::DEFAULT_IDLE_TIMEOUT_MS
+fn default_idle_timeout() -> std::time::Duration {
+    fluent_llm::constants::DEFAULT_IDLE_TIMEOUT
 }
 
 fn default_retry_interval() -> u64 {

@@ -808,10 +808,6 @@ impl OnnxRole {
     }
 }
 
-fn default_zero_u64() -> u64 {
-    0
-}
-
 fn default_onnx_instance_count() -> u32 {
     1
 }
@@ -900,12 +896,14 @@ pub struct OnnxRoleConfig {
     /// overrides the registry default, `None`/`0` inherits it.
     #[serde(default)]
     pub sleep_idle_seconds: Option<i32>,
-    /// Per-run timeout in milliseconds (parallel to `ModelEntry.total_timeout_ms`).
-    #[serde(default = "default_zero_u64")]
-    pub total_timeout_ms: u64,
-    /// Idle timeout in milliseconds (parallel to `ModelEntry.idle_timeout_ms`).
-    #[serde(default = "default_zero_u64")]
-    pub idle_timeout_ms: u64,
+    /// Per-run timeout (parallel to `ModelEntry.total_timeout`).
+    /// Wire format stays milliseconds under the `total_timeout_ms` key.
+    #[serde(default, rename = "total_timeout_ms", with = "common_core::duration_ms")]
+    pub total_timeout: std::time::Duration,
+    /// Idle timeout (parallel to `ModelEntry.idle_timeout`).
+    /// Wire format stays milliseconds under the `idle_timeout_ms` key.
+    #[serde(default, rename = "idle_timeout_ms", with = "common_core::duration_ms")]
+    pub idle_timeout: std::time::Duration,
     /// Sampling defaults merged into dispatch bodies (parallel to llama
     /// `params` / `roles.<role>.params`); per-request values win.
     #[serde(default)]

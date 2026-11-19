@@ -142,19 +142,19 @@ impl WorkUnit for NoopLlmFilter {
             .get("query")
             .and_then(|value| value.as_str())
             .ok_or_else(|| {
-                WorkError::Execution("filter execute needs ctx.structured[\"query\"]".into())
+                WorkError::execution_display("filter execute needs ctx.structured[\"query\"]")
             })?;
         let candidates_value = ctx.structured.get("candidates").ok_or_else(|| {
-            WorkError::Execution("filter execute needs ctx.structured[\"candidates\"]".into())
+            WorkError::execution_display("filter execute needs ctx.structured[\"candidates\"]")
         })?;
         let candidates: Vec<String> = serde_json::from_value(candidates_value.clone())
-            .map_err(|e| WorkError::Execution(format!("filter execute: candidates decode: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("filter execute: candidates decode: {e}")))?;
         let refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
         let scores = self
             .score_relevance(query, &refs)
-            .map_err(|e| WorkError::Execution(format!("filter execute: score: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("filter execute: score: {e}")))?;
         WorkOutput::typed("noop scores", &scores)
-            .map_err(|e| WorkError::Execution(format!("filter execute: encode: {e}")))
+            .map_err(|e| WorkError::execution_display(format!("filter execute: encode: {e}")))
     }
 }
 

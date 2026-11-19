@@ -40,8 +40,8 @@ impl Ladder {
                 request.clone(),
                 front.model.clone(),
                 None,
-                fluent_llm::constants::DEFAULT_IDLE_TIMEOUT_MS,
-                fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS,
+                fluent_llm::constants::DEFAULT_IDLE_TIMEOUT,
+                fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT,
                 false,
             )
             .await
@@ -152,8 +152,8 @@ impl Ladder {
                                     task.request,
                                     model,
                                     None,
-                                    fluent_llm::constants::DEFAULT_IDLE_TIMEOUT_MS,
-                                    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS,
+                                    fluent_llm::constants::DEFAULT_IDLE_TIMEOUT,
+                                    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT,
                                     false,
                                 )
                                 .await

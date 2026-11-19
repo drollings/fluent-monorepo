@@ -41,7 +41,7 @@ impl FrozenSnapshot {
     /// that fit render byte-identically to the unbounded join; oversized
     /// snapshots drop the largest sections first, never silently.
     #[must_use]
-    pub fn format_for_system_prompt_budgeted(&self, max_tokens: usize) -> String {
+    pub fn format_for_system_prompt_budgeted(&self, max_tokens: u64) -> String {
         use super::context_pack::{pack_context, ContextItem};
         let mut sections = Vec::new();
         if !self.memory.is_empty() {

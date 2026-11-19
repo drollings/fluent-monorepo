@@ -218,11 +218,9 @@ impl FieldAccess for Spy {
         if name == "port" {
             let parsed: u16 = value
                 .parse()
-                .map_err(|_| FieldError::Parse(format!("invalid u16 for 'port': {value}")))?;
+                .map_err(|_| FieldError::parse("port", format!("invalid u16 for 'port': {value}")))?;
             if !(1..=100).contains(&parsed) {
-                return Err(FieldError::Constraint(
-                    "port: value above maximum 100".into(),
-                ));
+                return Err(FieldError::constraint("port", "value above maximum 100"));
             }
             self.port = parsed;
         }

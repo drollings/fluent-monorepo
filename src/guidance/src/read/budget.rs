@@ -12,13 +12,13 @@ use crate::query::strategy::QueryIntent;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SectionBudgets {
     /// Project-map cards.
-    pub project: usize,
+    pub project: u64,
     /// Docs and capability cards.
-    pub evidence: usize,
+    pub evidence: u64,
     /// Code findings.
-    pub code: usize,
+    pub code: u64,
     /// Total answer target.
-    pub total: usize,
+    pub total: u64,
 }
 
 impl SectionBudgets {
@@ -87,7 +87,7 @@ pub fn budgets_for(intent: QueryIntent) -> SectionBudgets {
 /// Truncate rendered text to a section budget, estimating with the
 /// shared token counter.
 #[must_use]
-pub fn enforce_budget(text: &str, budget_tokens: usize) -> String {
+pub fn enforce_budget(text: &str, budget_tokens: u64) -> String {
     let budget = TokenBudget(budget_tokens);
     budget.truncate_to_budget(text)
 }

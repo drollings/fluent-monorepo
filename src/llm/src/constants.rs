@@ -2,8 +2,8 @@
 //!
 //! Moved verbatim from `common_core::constants`: `MAX_EMBEDDING_DIMENSIONS`
 //! (the embedding width every provider and HNSW store agrees on) and the
-//! three request-budget defaults (`DEFAULT_TOTAL_TIMEOUT_MS`,
-//! `DEFAULT_IDLE_TIMEOUT_MS`, `DEFAULT_RETRY_INTERVAL_S`) that every
+//! three request-budget defaults (`DEFAULT_TOTAL_TIMEOUT`,
+//! `DEFAULT_IDLE_TIMEOUT`, `DEFAULT_RETRY_INTERVAL_S`) that every
 //! router serde default and dispatch call site reads. Generic caps
 //! (`MAX_VALUE_LEN`, `MAX_FILE_SIZE`, `MAX_JSON_DEPTH`,
 //! `MAX_MCP_REQUEST_SIZE`, `default_true`) stay in `common-core`; the HNSW
@@ -20,10 +20,10 @@
 /// Maximum embedding dimensions every provider and HNSW store agrees on.
 pub const MAX_EMBEDDING_DIMENSIONS: usize = 4_096;
 
-/// Canonical per-dispatch wall-clock budget for a full LLM request (ms).
+/// Canonical per-dispatch wall-clock budget for a full LLM request.
 /// `RoutingTarget` (serde) and `ModelEntry` (serde) both read this constant.
-pub const DEFAULT_TOTAL_TIMEOUT_MS: u64 = 300_000;
-/// Canonical per-chunk idle budget for a streaming LLM response (ms).
-pub const DEFAULT_IDLE_TIMEOUT_MS: u64 = 30_000;
+pub const DEFAULT_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// Canonical per-chunk idle budget for a streaming LLM response.
+pub const DEFAULT_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Canonical base interval between retries (seconds).
 pub const DEFAULT_RETRY_INTERVAL_S: u64 = 1;

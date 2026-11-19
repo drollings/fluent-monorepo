@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use crate::tools::sandbox::{kill_program, shell_escape, Guarded, GuardedConfig, WithinError};
 
-fn guarded(timeout_ms: u64) -> (Guarded, tempfile::TempDir) {
+fn guarded(timeout: std::time::Duration) -> (Guarded, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("tempdir");
     let guard = Guarded::new(GuardedConfig {
         root: dir.path().to_path_buf(),
-        timeout_ms,
+        timeout,
         max_address_kb: 0,
         ..GuardedConfig::default()
     })
@@ -23,7 +23,7 @@ fn argv(parts: &[&str]) -> Vec<String> {
 
 #[test]
 fn echo_runs_and_audits() {
-    let (guard, _dir) = guarded(5000);
+    let (guard, _dir) = guarded(std::time::Duration::from_secs(5));
     let result = common_core::runtime::block_on(guard.run("echo", &argv(&["echo", "hi"])))
         .expect("echo runs");
     assert!(!result.timed_out);
@@ -37,7 +37,7 @@ fn echo_runs_and_audits() {
 
 #[test]
 fn timeout_kills_the_group_leaving_no_writer() {
-    let (guard, dir) = guarded(300);
+    let (guard, dir) = guarded(std::time::Duration::from_millis(300));
     let marker = dir.path().join("orphan.txt");
     // Grandchild sleeps, then writes: a group kill means no marker.
     let script = format!("sleep 5; echo x > {}", marker.display());
@@ -45,7 +45,7 @@ fn timeout_kills_the_group_leaving_no_writer() {
     let error = result.expect_err("budget must fire");
     assert_eq!(
         error,
-        crate::tools::tool::ToolError::Timeout("sleep".to_string(), 300)
+        crate::tools::tool::ToolError::Timeout("sleep".to_string(), std::time::Duration::from_millis(300))
     );
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(
@@ -60,7 +60,7 @@ fn timeout_kills_the_group_leaving_no_writer() {
 
 #[test]
 fn env_scrubs_and_path_pins() {
-    let (guard, _dir) = guarded(5000);
+    let (guard, _dir) = guarded(std::time::Duration::from_secs(5));
     std::env::set_var("ORATOR_REDTEAM_SECRET", "hunter2");
     let result =
         common_core::runtime::block_on(guard.run("env", &argv(&["env"]))).expect("env runs");
@@ -76,7 +76,7 @@ fn env_scrubs_and_path_pins() {
 
 #[test]
 fn within_refuses_escapes_and_loops() {
-    let (guard, dir) = guarded(5000);
+    let (guard, dir) = guarded(std::time::Duration::from_secs(5));
     let inside = dir.path().join("ok.txt");
     std::fs::write(&inside, "data").expect("fixture");
     assert!(guard.within(std::path::Path::new("ok.txt")).is_ok());
@@ -114,7 +114,7 @@ fn shell_quoting_escapes_embedded_quotes() {
 
 #[test]
 fn shell_quoting_round_trips_through_sh() {
-    let (guard, _dir) = guarded(5000);
+    let (guard, _dir) = guarded(std::time::Duration::from_secs(5));
     let tricky = "it's 'quoted' $HOME `id`".to_string();
     let argv = vec!["echo".to_string(), tricky.clone()];
     let inner = shell_escape(&argv);
@@ -148,7 +148,7 @@ fn kill_program_prefers_absolute_path() {
 #[test]
 fn open_within_refuses_symlink_swap() {
     use std::fs::OpenOptions;
-    let (guard, dir) = guarded(5000);
+    let (guard, dir) = guarded(std::time::Duration::from_secs(5));
     let inside = dir.path().join("inside.txt");
     std::fs::write(&inside, "inside").expect("fixture");
     let outside_dir = tempfile::tempdir().expect("outside");
@@ -169,7 +169,7 @@ fn open_within_refuses_symlink_swap() {
 fn open_within_reads_validated_handle() {
     use std::fs::OpenOptions;
     use std::io::Read as _;
-    let (guard, dir) = guarded(5000);
+    let (guard, dir) = guarded(std::time::Duration::from_secs(5));
     std::fs::write(dir.path().join("note.txt"), "hello").expect("fixture");
     let mut file = guard
         .open_within(
@@ -184,7 +184,7 @@ fn open_within_reads_validated_handle() {
 
 #[test]
 fn real_dir_replacement_invalidates() {
-    let (guard, dir) = guarded(5000);
+    let (guard, dir) = guarded(std::time::Duration::from_secs(5));
     let target = dir.path().join("real");
     std::fs::create_dir_all(&target).expect("mkdir");
     let first = guard.real_dir(&target).expect("resolves");
@@ -202,7 +202,7 @@ fn real_dir_replacement_invalidates() {
 #[test]
 fn audit_vector_rotates_under_cap() {
     use crate::tools::sandbox::MAX_AUDIT_ROWS;
-    let (guard, _dir) = guarded(5000);
+    let (guard, _dir) = guarded(std::time::Duration::from_secs(5));
     let argv = vec!["true".to_string()];
     for _ in 0..(MAX_AUDIT_ROWS + 50) {
         let _ = common_core::runtime::block_on(guard.run("true", &argv));
@@ -253,7 +253,7 @@ fn default_root_is_private_and_never_tmp() {
 
 #[test]
 fn within_rejects_dotdot_and_chained_escapes() {
-    let (guard, dir) = guarded(5000);
+    let (guard, dir) = guarded(std::time::Duration::from_secs(5));
     // Ancestor escape via `..`.
     for evil in [
         "a/../../outside.txt",

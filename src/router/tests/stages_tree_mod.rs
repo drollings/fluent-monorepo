@@ -24,8 +24,8 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         cost_output: cost * 6.0,
         cost_cached_read: cost * 0.4,
         tok_s: 8.0,
-        total_timeout_ms: 40_000,
-        idle_timeout_ms: 8_000,
+        total_timeout: std::time::Duration::from_millis(40_000),
+        idle_timeout: std::time::Duration::from_millis(8_000),
         stream: true,
         filter_thinking: true,
         retry_count: 0,
@@ -184,7 +184,7 @@ fn ladder_matcher_keyed(pairs: Vec<(&str, String)>) -> TargetMatcher {
     TargetMatcher::new(
         TargetBackends::new(by_key, Arc::new(StubChatBackend::always("{}"))),
         Arc::new(Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     )
 }
 
@@ -419,7 +419,7 @@ fn terminal_single_member_role_runs_assessment_free() {
             Arc::clone(&counting) as Arc<dyn ChatBackend>,
         ),
         Arc::new(Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     );
     let engine = engine_with_matcher(
         &tree,

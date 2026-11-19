@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -11,24 +12,66 @@ use crate::store::OutputStore;
 use crate::traits::WorkUnit;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum ExecutionKind {
+    #[error("transport")]
+    Transport,
+    #[error("serialization")]
+    Serialization,
+    #[error("config")]
+    Config,
+    #[error("upstream")]
+    Upstream,
+    #[error("other")]
+    Other,
+}
+
+/// Machine-readable execution failure: message for logs plus a kind for
+/// matching without string parsing. `context` absorbs the old
+/// `"{context}: {e}"` prefix as data instead of baked into the message.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[error("execution failed ({kind}): {message}")]
+pub struct ExecutionFailure {
+    pub message: String,
+    pub kind: ExecutionKind,
+    pub context: Option<String>,
+}
+
+impl ExecutionFailure {
+    pub fn new(message: String, kind: ExecutionKind) -> Self {
+        Self {
+            message,
+            kind,
+            context: None,
+        }
+    }
+}
+
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum WorkError {
     #[error("execution failed: {0}")]
-    Execution(String),
+    Execution(ExecutionFailure),
     #[error("dependency not satisfied: {0}")]
     Dependency(String),
-    #[error("timeout after {duration_ms}ms ({unit})")]
-    Timeout { duration_ms: u64, unit: String },
+    #[error("timeout after {duration:?} ({unit})")]
+    Timeout {
+        duration: Duration,
+        unit: String,
+    },
 }
 
 impl WorkError {
     /// Bridge any displayable error into [`WorkError::Execution`] verbatim.
     pub fn execution_display(e: impl core::fmt::Display) -> Self {
-        Self::Execution(e.to_string())
+        Self::Execution(ExecutionFailure::new(e.to_string(), ExecutionKind::Other))
     }
 
-    /// Context-prefixed [`WorkError::Execution`]: `"{context}: {e}"`.
+    /// Context-prefixed [`WorkError::Execution`]: context stored as data.
     pub fn execution_context(context: &str, e: impl core::fmt::Display) -> Self {
-        Self::Execution(format!("{context}: {e}"))
+        Self::Execution(ExecutionFailure {
+            message: e.to_string(),
+            kind: ExecutionKind::Other,
+            context: Some(context.to_string()),
+        })
     }
 
     /// Whether the error represents a transient condition worth retrying.
@@ -90,14 +133,14 @@ impl WorkOutput {
     }
 
     /// Create a successful output with typed data serialized to JSON.
-    /// Returns `Err(WorkError::Execution(...))` on serialization failure.
+    /// Returns `Err(WorkError::execution_display(...))` on serialization failure.
     /// This is the canonical way to pass structured data between components.
     pub fn typed<T: serde::Serialize>(
         message: impl Into<String>,
         data: &T,
     ) -> Result<Self, WorkError> {
         let data = serde_json::to_value(data)
-            .map_err(|e| WorkError::Execution(format!("serialize typed data: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("serialize typed data: {e}")))?;
         Ok(Self {
             success: true,
             message: message.into(),
@@ -123,13 +166,13 @@ impl WorkOutput {
     /// Deserialize the `data` field back to a typed value (borrowed).
     pub fn data_ref<'a, T: serde::Deserialize<'a>>(&'a self) -> Result<T, WorkError> {
         T::deserialize(&self.data)
-            .map_err(|e| WorkError::Execution(format!("deserialize data: {e}")))
+            .map_err(|e| WorkError::execution_display(format!("deserialize data: {e}")))
     }
 
     /// Deserialize the `data` field back to a typed value, consuming `self`.
     pub fn data_take<T: for<'de> Deserialize<'de>>(self) -> Result<T, WorkError> {
         serde_json::from_value(self.data)
-            .map_err(|e| WorkError::Execution(format!("deserialize data: {e}")))
+            .map_err(|e| WorkError::execution_display(format!("deserialize data: {e}")))
     }
 }
 
@@ -173,11 +216,12 @@ impl std::fmt::Display for WorkOutput {
 /// ```no_run
 /// use fluent_wvr::{WorkContext, CapabilitySet, NoopRuntime};
 /// use std::sync::Arc;
+/// use std::time::Duration;
 ///
 /// let mut ctx = WorkContext {
 ///     dry_run: true,
 ///     max_retries: 3,
-///     timeout_ms: 10_000,
+///     timeout: Duration::from_secs(10),
 ///     metadata: Default::default(),
 ///     structured: Default::default(),
 ///     outputs: Default::default(),
@@ -191,7 +235,7 @@ impl std::fmt::Display for WorkOutput {
 pub struct WorkContext {
     pub dry_run: bool,
     pub max_retries: u32,
-    pub timeout_ms: u64,
+    pub timeout: Duration,
     pub metadata: HashMap<String, MetadataValue>,
     /// Typed/structured metadata channel. Unlike `metadata` (scalar
     /// `MetadataValue`), this holds arbitrary `serde_json::Value` payloads —
@@ -218,7 +262,7 @@ impl std::fmt::Debug for WorkContext {
         f.debug_struct("WorkContext")
             .field("dry_run", &self.dry_run)
             .field("max_retries", &self.max_retries)
-            .field("timeout_ms", &self.timeout_ms)
+            .field("timeout", &self.timeout)
             .field("metadata", &self.metadata)
             .field("structured", &self.structured)
             .field("outputs", &self.outputs)
@@ -233,7 +277,7 @@ impl Default for WorkContext {
         Self {
             dry_run: false,
             max_retries: 0,
-            timeout_ms: 30_000,
+            timeout: Duration::from_secs(30),
             metadata: HashMap::new(),
             structured: HashMap::new(),
             outputs: OutputStore::default(),
@@ -245,12 +289,12 @@ impl Default for WorkContext {
 
 impl WorkContext {
     /// Construct a `WorkContext` for a specific unit with a given capability set.
-    /// Uses the unit's `default_timeout_ms()` and a default runtime.
+    /// Uses the unit's `default_timeout()` and a default runtime.
     pub fn for_unit(unit: &dyn WorkUnit, caps: CapabilitySet) -> Self {
         Self {
             dry_run: false,
             max_retries: 0,
-            timeout_ms: unit.default_timeout_ms(),
+            timeout: unit.default_timeout(),
             metadata: HashMap::new(),
             structured: HashMap::new(),
             outputs: OutputStore::default(),
@@ -289,10 +333,10 @@ impl WorkContext {
     /// The single place that does `serde_json::from_value` for the channel.
     pub fn structured<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<T, WorkError> {
         let value = self.structured_ref(key).ok_or_else(|| {
-            WorkError::Execution(format!("structured metadata key not found: {key}"))
+            WorkError::execution_display(format!("structured metadata key not found: {key}"))
         })?;
         T::deserialize(value)
-            .map_err(|e| WorkError::Execution(format!("structured metadata key {key:?}: {e}")))
+            .map_err(|e| WorkError::execution_display(format!("structured metadata key {key:?}: {e}")))
     }
 
     /// Write a structured value by key, serializing a typed value.
@@ -311,7 +355,7 @@ impl WorkContext {
     }
 
     /// Returns a new `WorkContext` with `rt` and `caps` cloned from the
-    /// SupervisedBatch's defaults, with `max_retries`/`timeout_ms`/etc
+    /// SupervisedBatch's defaults, with `max_retries`/`timeout`/etc
     /// overridden by the supplied closure.
     ///
     /// For batched registration of identical contexts, construct one `WorkContext`

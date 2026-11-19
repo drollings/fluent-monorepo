@@ -192,13 +192,13 @@ impl WorkUnit for WasmComponent {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let payload = serde_json::to_vec(&*self.config.lock().unwrap())
-            .map_err(|e| WorkError::Execution(format!("serialization: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("serialization: {e}")))?;
         let result = self
             .plugin
             .lock()
             .unwrap()
             .call(&payload)
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(|e| WorkError::execution_display(e.to_string()))?;
         let data: serde_json::Value = serde_json::from_slice(&result).unwrap_or_default();
         Ok(WorkOutput::ok_with_data(
             format!("{} executed", self.name),

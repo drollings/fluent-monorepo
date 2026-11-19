@@ -23,7 +23,7 @@
 //! `fluent_concurrency::pool` executor, so the `fluent-llm →
 //! fluent-concurrency` edge stands unchanged (defer-by-default).
 //!
-//! The `LlmConfig` builder defaults (`timeout_ms` 2000) and the
+//! The `LlmConfig` builder default (`timeout` 2s) and the
 //! `extra_body_params` merge rule (`model` / `messages` / `stream` set
 //! explicitly, everything else merged) are task-value transport wiring,
 //! not producer confidence — a fast timeout is never "the model is sure".
@@ -68,8 +68,8 @@ use fluent_concurrency::pool::{PoolError, ResultPool, ResultPoolError};
 /// Errors returned by LLM chat completions and the request queue.
 ///
 /// Two timeout axes bound a request at different layers (never unify their
-/// values): `LlmConfig::timeout_ms` (per-attempt transport, default 2000)
-/// caps one HTTP round-trip, while `DEFAULT_TOTAL_TIMEOUT_MS` (whole-dispatch
+/// values): `LlmConfig::timeout` (per-attempt transport, default 2s)
+/// caps one HTTP round-trip, while `DEFAULT_TOTAL_TIMEOUT` (whole-dispatch
 /// wall clock, 300000) caps the entire dispatch including retries and
 /// fallback. A fast per-attempt timeout is transport wiring, never a
 /// confidence signal.
@@ -137,11 +137,13 @@ pub struct LlmConfig {
     pub api_url: String,
     pub model: String,
     pub think: Option<bool>,
-    /// Per-attempt transport budget for one HTTP round-trip (default 2000).
-    /// Different layer from `DEFAULT_TOTAL_TIMEOUT_MS` (whole-dispatch wall
-    /// clock); the values are never unified.
-    #[builder(default = 2000)]
-    pub timeout_ms: u64,
+    /// Per-attempt transport budget for one HTTP round-trip (default 2s).
+    /// Different layer from `DEFAULT_TOTAL_TIMEOUT` (whole-dispatch wall
+    /// clock); the values are never unified. Wire format stays milliseconds
+    /// under the `timeout_ms` key.
+    #[builder(default = std::time::Duration::from_secs(2))]
+    #[serde(rename = "timeout_ms", with = "common_core::duration_ms")]
+    pub timeout: std::time::Duration,
     /// Arbitrary JSON body parameters merged into every chat completion
     /// request (e.g. `num_ctx`, `temperature`, `stop`).  The keys `"model"`,
     /// `"messages"`, and `"stream"` are ignored if present since those are

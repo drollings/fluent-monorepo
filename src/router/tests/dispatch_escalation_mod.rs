@@ -94,8 +94,8 @@ impl DispatchBackend for StubFrontier {
         request: RouterRequest,
         _model: String,
         _params: Option<Value>,
-        _idle_timeout_ms: u64,
-        _total_timeout_ms: u64,
+        _idle_timeout: std::time::Duration,
+        _total_timeout: std::time::Duration,
         _filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<RouterResponse, DispatchError>> + Send>> {
         self.received.lock().unwrap().push(request);
@@ -113,8 +113,8 @@ impl DispatchBackend for StubFrontier {
         _request: RouterRequest,
         _model: String,
         _params: Option<Value>,
-        _idle_timeout_ms: u64,
-        _total_timeout_ms: u64,
+        _idle_timeout: std::time::Duration,
+        _total_timeout: std::time::Duration,
         _filter_thinking: bool,
         _abort: Option<fluent_concurrency::stream::StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {

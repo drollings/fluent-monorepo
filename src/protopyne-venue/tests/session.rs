@@ -227,7 +227,7 @@ impl WorkUnit for Stub {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         if self.fail {
-            Err(WorkError::Execution("stale quote".to_owned()))
+            Err(WorkError::execution_display("stale quote".to_owned()))
         } else {
             Ok(WorkOutput::ok("fresh"))
         }

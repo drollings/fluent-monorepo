@@ -245,7 +245,7 @@ fn seam_judges_through_candidate_judge_only() {
         Err(DecisionError::Unavailable("down".to_string())),
     ];
     let backend = ScriptedDecideBackend::new(scripted);
-    let judge = FindingJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = FindingJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let verdicts = judge.judge(
         "how does sync decide what to reprocess",
         &[

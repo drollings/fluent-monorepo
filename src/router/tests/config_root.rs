@@ -388,12 +388,12 @@ fn model_entry_serde_defaults_read_canonical_constants() {
     }))
     .unwrap();
     assert_eq!(
-        entry.total_timeout_ms,
-        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS
+        entry.total_timeout,
+        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT
     );
     assert_eq!(
-        entry.idle_timeout_ms,
-        fluent_llm::constants::DEFAULT_IDLE_TIMEOUT_MS
+        entry.idle_timeout,
+        fluent_llm::constants::DEFAULT_IDLE_TIMEOUT
     );
     assert_eq!(
         entry.retry_base_interval_s,
@@ -489,8 +489,8 @@ fn pipeline_params_target_match_defaults() {
         "the self-assess ladder is the default policy (-4.6)"
     );
     assert_eq!(
-        defaults.target_match_timeout_ms,
-        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS,
+        defaults.target_match_timeout,
+        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT,
         "per-self-assessment budget defaults to the shared total-timeout constant"
     );
 }
@@ -512,8 +512,8 @@ fn pipeline_params_target_match_absent_fields_deserialize_to_defaults() {
         crate::config::builder::TargetMatchMode::SelfAssess
     );
     assert_eq!(
-        params.target_match_timeout_ms,
-        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS
+        params.target_match_timeout,
+        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT
     );
 }
 
@@ -554,7 +554,7 @@ fn pipeline_params_target_match_round_trips() {
         cfg.pipelines["default"].target_match,
         crate::config::builder::TargetMatchMode::Static
     );
-    assert_eq!(cfg.pipelines["default"].target_match_timeout_ms, 12345);
+    assert_eq!(cfg.pipelines["default"].target_match_timeout, std::time::Duration::from_millis(12345));
 
     let serialized = serde_json::to_string(&cfg).unwrap();
     let back: RouterConfig = serde_json::from_str(&serialized).unwrap();
@@ -562,7 +562,7 @@ fn pipeline_params_target_match_round_trips() {
         back.pipelines["default"].target_match,
         crate::config::builder::TargetMatchMode::Static
     );
-    assert_eq!(back.pipelines["default"].target_match_timeout_ms, 12345);
+    assert_eq!(back.pipelines["default"].target_match_timeout, std::time::Duration::from_millis(12345));
 }
 
 // -- Effective-pool synthesis ---------------------------------------

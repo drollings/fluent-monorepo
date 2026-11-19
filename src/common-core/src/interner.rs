@@ -1,4 +1,4 @@
-//! Capability registry: thread-safe string ↔ BitVec index for capability bitsets.
+//! Capability interner: thread-safe string ↔ BitVec index for capability bitsets.
 
 use bitvec::vec::BitVec;
 use internment::ArcIntern;
@@ -7,12 +7,12 @@ use std::sync::RwLock;
 
 use crate::sync::{lock_read, lock_write};
 
-pub struct CapabilityRegistry {
+pub struct CapabilityInterner {
     names: RwLock<HashMap<ArcIntern<str>, usize>>,
     indices: RwLock<Vec<ArcIntern<str>>>,
 }
 
-impl CapabilityRegistry {
+impl CapabilityInterner {
     pub fn new() -> Self {
         Self {
             names: RwLock::new(HashMap::new()),
@@ -88,7 +88,7 @@ impl CapabilityRegistry {
     }
 }
 
-impl Default for CapabilityRegistry {
+impl Default for CapabilityInterner {
     fn default() -> Self {
         Self::new()
     }

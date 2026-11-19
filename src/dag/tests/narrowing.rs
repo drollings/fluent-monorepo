@@ -1,6 +1,6 @@
 use super::*;
 use crate::tests::common::make_bitset;
-use common_core::interner::CapabilityRegistry;
+use common_core::interner::CapabilityInterner;
 use fluent_types::{ExecutorKind, TargetType};
 
 use crate::target::Target;
@@ -121,7 +121,7 @@ fn test_stage_ordering_determinism() {
 
 #[test]
 fn test_cap_name_with_registry() {
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     let idx = caps.intern("animal");
     let name = cap_name(Some(&caps), idx);
     assert_eq!(name, "animal");
@@ -135,7 +135,7 @@ fn test_cap_name_fallback() {
 
 #[test]
 fn test_cap_name_with_registry_unknown_index() {
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     let name = cap_name(Some(&caps), 99);
     assert_eq!(name, "cap_99");
 }
@@ -154,7 +154,7 @@ fn test_ambiguous_error_format() {
     let a = t(0, "provider_a", &[], &[1], false);
     let b = t(1, "provider_b", &[], &[1], false);
     let candidates = vec![&a, &b];
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     let idx = caps.intern("animal");
     let err = ambiguous_error(Some(&caps), idx, &candidates);
     assert!(matches!(err, ResolverError::AmbiguousDependency { .. }));

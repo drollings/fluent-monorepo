@@ -20,27 +20,30 @@ use std::sync::{Arc, Mutex};
 
 type Store = Arc<Mutex<HashMap<String, CachedResponse>>>;
 
+struct MapBackend {
+    store: Store,
+}
+
+impl fluent_llm::cache::CacheBackend for MapBackend {
+    fn fetch(&self, key: &str) -> Option<CachedResponse> {
+        self.store.lock().unwrap().get(key).cloned()
+    }
+    fn persist(&self, key: &str, entry: &CachedResponse) {
+        self.store
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), entry.clone());
+    }
+    fn evict_key(&self, key: &str) {
+        self.store.lock().unwrap().remove(key);
+    }
+    fn evict_all(&self) {
+        self.store.lock().unwrap().clear();
+    }
+}
+
 fn make_cache(store: &Store) -> ResponseCache {
-    let s_check = Arc::clone(store);
-    let s_store = Arc::clone(store);
-    let s_clear = Arc::clone(store);
-    let s_delete = Arc::clone(store);
-    ResponseCache::new(
-        None,
-        move |key: &str| s_check.lock().unwrap().get(key).cloned(),
-        move |key: &str, value: &CachedResponse| {
-            s_store
-                .lock()
-                .unwrap()
-                .insert(key.to_string(), value.clone());
-        },
-    )
-    .with_delete(move |key: &str| {
-        s_delete.lock().unwrap().remove(key);
-    })
-    .with_clear(move || {
-        s_clear.lock().unwrap().clear();
-    })
+    ResponseCache::over_backend(Arc::new(MapBackend { store: Arc::clone(store) }), None)
 }
 
 // ── Moved from common-core/tests/cache.rs ─────────────────────────────────
@@ -84,16 +87,11 @@ fn response_cache_ttl_expiry_misses() {
     let s_check = Arc::clone(&store);
     let s_store = Arc::clone(&store);
     // Use a 0-second TTL so entries are immediately expired
-    let cache = ResponseCache::new(
+    let cache = ResponseCache::over_backend(
+        Arc::new(MapBackend { store: s_check.clone() }),
         Some(std::time::Duration::from_secs(0)),
-        move |key: &str| s_check.lock().unwrap().get(key).cloned(),
-        move |key: &str, value: &CachedResponse| {
-            s_store
-                .lock()
-                .unwrap()
-                .insert(key.to_string(), value.clone());
-        },
     );
+    let _ = &s_store;
     let request_json = r#"{"model":"test"}"#;
     cache.set(
         "gpt-4",
@@ -163,17 +161,9 @@ fn control_expired_cross_model_and_unknown_must_miss() {
             response_json: serde_json::json!({"result": "stale"}),
         },
     );
-    let s_check = Arc::clone(&store);
-    let s_store = Arc::clone(&store);
-    let cache = ResponseCache::new(
+    let cache = ResponseCache::over_backend(
+        Arc::new(MapBackend { store: Arc::clone(&store) }),
         Some(ttl),
-        move |key: &str| s_check.lock().unwrap().get(key).cloned(),
-        move |key: &str, value: &CachedResponse| {
-            s_store
-                .lock()
-                .unwrap()
-                .insert(key.to_string(), value.clone());
-        },
     );
     // Expired entry must miss …
     assert!(cache.get("gpt-4", req).is_none());
@@ -206,11 +196,9 @@ fn control_ttl_boundary_is_locked() {
             },
         );
     }
-    let s = Arc::clone(&store);
-    let cache = ResponseCache::new(
+    let cache = ResponseCache::over_backend(
+        Arc::new(MapBackend { store: Arc::clone(&store) }),
         Some(std::time::Duration::from_secs(ttl_secs)),
-        move |key: &str| s.lock().unwrap().get(key).cloned(),
-        |_: &str, _: &CachedResponse| {},
     );
     assert!(
         cache.get("m", "edge-req").is_none(),

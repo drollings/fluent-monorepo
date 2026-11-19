@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 #[allow(dead_code)]
 struct TimeoutUnit {
-    timeout: u64,
+    timeout: std::time::Duration,
 }
 impl WorkUnit for TimeoutUnit {
     fn name(&self) -> &str {
@@ -20,8 +20,8 @@ impl WorkUnit for TimeoutUnit {
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         Ok(WorkOutput::ok("done"))
     }
-    fn default_timeout_ms(&self) -> u64 {
-        5_000
+    fn default_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(5)
     }
     fn type_name(&self) -> &'static str {
         "CustomTimeoutUnit"
@@ -47,8 +47,8 @@ fluent_wvr::impl_component!(TimeoutUnit);
 
 #[test]
 fn h6_instrumented_delegates_timeout_and_typename() {
-    let wrapped = Instrumented::new(TimeoutUnit { timeout: 0 }, "lbl");
-    assert_eq!(wrapped.default_timeout_ms(), 5_000);
+    let wrapped = Instrumented::new(TimeoutUnit { timeout: std::time::Duration::ZERO }, "lbl");
+    assert_eq!(wrapped.default_timeout(), std::time::Duration::from_secs(5));
     assert_eq!(
         wrapped.type_name(),
         "CustomTimeoutUnit",
@@ -58,33 +58,33 @@ fn h6_instrumented_delegates_timeout_and_typename() {
 
 #[test]
 fn h6_adapter_delegates_timeout() {
-    let inner: Arc<dyn Component> = Arc::new(TimeoutUnit { timeout: 0 });
+    let inner: Arc<dyn Component> = Arc::new(TimeoutUnit { timeout: std::time::Duration::ZERO });
     let adapter = ComponentAdapter::new(inner);
-    assert_eq!(adapter.default_timeout_ms(), 5_000);
+    assert_eq!(adapter.default_timeout(), std::time::Duration::from_secs(5));
 }
 
 #[test]
 fn h6_suffixed_delegates_both() {
-    let inner: Arc<dyn Component> = Arc::new(TimeoutUnit { timeout: 0 });
+    let inner: Arc<dyn Component> = Arc::new(TimeoutUnit { timeout: std::time::Duration::ZERO });
     let ctx = WorkContext::default();
     let s = SuffixedComponent::new(inner, "shard", ctx);
-    assert_eq!(s.default_timeout_ms(), 5_000);
+    assert_eq!(s.default_timeout(), std::time::Duration::from_secs(5));
     assert_eq!(s.type_name(), "CustomTimeoutUnit");
 }
 
 #[test]
 fn h6_stacked_wrappers_delegate_timeout() {
     // Instrumented(Adapter(TimeoutUnit)) -> both layers delegate.
-    let inner: Arc<dyn Component> = Arc::new(TimeoutUnit { timeout: 0 });
+    let inner: Arc<dyn Component> = Arc::new(TimeoutUnit { timeout: std::time::Duration::ZERO });
     let adapter = ComponentAdapter::new(inner);
     // Adapter is a Component; wrap in Instrumented generically.
     let stacked = Instrumented::new(adapter, "outer");
-    assert_eq!(stacked.default_timeout_ms(), 5_000);
+    assert_eq!(stacked.default_timeout(), std::time::Duration::from_secs(5));
 }
 
 #[test]
 fn h6_downcast_through_wrapper_fails_characterization() {
-    let inner = TimeoutUnit { timeout: 0 };
+    let inner = TimeoutUnit { timeout: std::time::Duration::ZERO };
     let wrapped = Instrumented::new(inner, "lbl");
     let arc: Arc<dyn Component> = Arc::new(wrapped);
     assert!(fluent_wvr::component_downcast_ref::<Instrumented<TimeoutUnit>>(&*arc).is_some());

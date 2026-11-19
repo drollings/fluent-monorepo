@@ -270,7 +270,7 @@ fn shadow_only_serves_ranked_unfiltered_without_filtering() {
         let judge = JudgeCtx {
             backend: &backend,
             model: "d".to_string(),
-            timeout_ms: 2000,
+            timeout: std::time::Duration::from_secs(2),
             fingerprint: None,
         };
         let judged = engine.explain_with_judge(&request, &ctx, None, Some(&judge));

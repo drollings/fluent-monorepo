@@ -1075,7 +1075,7 @@ impl VoiceOwner {
             Some(id) => self.prompt_with_history(id, question),
             None => question.to_string(),
         };
-        let mut llm_session = orator_agent::llm::HttpSession::open(endpoint, model, ctx, n_batch);
+        let mut llm_session = orator_agent::llm::HttpSession::open(endpoint, model, ctx as u64, n_batch);
         llm_session.push_text(&prompt);
         match llm_session.step(&mut orator::Sampler::default()) {
             Ok(out) => {

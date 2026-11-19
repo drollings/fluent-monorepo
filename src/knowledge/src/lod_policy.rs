@@ -82,18 +82,21 @@ impl PromptBudget {
     /// `fluent_llm::tokens::estimate_chars_for_tokens` (exact integer
     /// equality — no behavior change). The head/tail reserve semantics stay
     /// here.
-    pub fn from_tokens(tokens: usize, chars_per_token: usize) -> Self {
-        Self::new(fluent_llm::tokens::estimate_chars_for_tokens(
-            tokens,
-            chars_per_token,
-        ))
+    pub fn from_tokens(tokens: u64, chars_per_token: u64) -> Self {
+        Self::new(
+            usize::try_from(fluent_llm::tokens::estimate_chars_for_tokens(
+                tokens,
+                chars_per_token,
+            ))
+            .expect("char budget fits usize"),
+        )
     }
 
     /// A budget from a token count at the conservative 4 chars/token default.
     ///
     /// M4: the `4` is the locked, documented default — changing it to a real
     /// tokenizer estimate is a behavior change (filed separately, M4.5).
-    pub fn from_tokens_default(tokens: usize) -> Self {
+    pub fn from_tokens_default(tokens: u64) -> Self {
         Self::from_tokens(tokens, 4)
     }
 

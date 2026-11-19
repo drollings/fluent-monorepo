@@ -104,8 +104,8 @@ fn model_entry(_key: &str, intelligence: u8) -> ModelEntry {
         cost_output: 6.0,
         cost_cached_read: 0.4,
         tok_s: 8.0,
-        total_timeout_ms: 40_000,
-        idle_timeout_ms: 8_000,
+        total_timeout: std::time::Duration::from_millis(40_000),
+        idle_timeout: std::time::Duration::from_millis(8_000),
         stream: true,
         filter_thinking: false,
         retry_count: 0,
@@ -480,7 +480,7 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
             Arc::new(StubChatBackend::new(Vec::new())) as Arc<dyn fluent_llm::client::ChatBackend>,
         ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     );
     let complexity = case["classifier_complexity"].as_u64().map(|c| c as u8);
     let matched = matcher.match_target("local", role, &routing, &candidates, complexity, "hello");

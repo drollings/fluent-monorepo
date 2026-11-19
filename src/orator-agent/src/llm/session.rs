@@ -45,7 +45,7 @@ pub struct SessionConfig {
     pub system_prompt: String,
     /// Context window in tokens.
     #[field(desc = "Context window")]
-    pub ctx_tokens: usize,
+    pub ctx_tokens: u64,
     /// Prefill chunk size in tokens (cancel-latency bound).
     #[field(desc = "Prefill chunk size")]
     pub n_batch: usize,
@@ -86,7 +86,7 @@ impl HttpSession {
     /// the CLI keeps its cost model while concurrent turns share worker
     /// slots instead of oversubscribing a worker pair per question.
     #[must_use]
-    pub fn open(endpoint_base: &str, model: &str, ctx_tokens: usize, n_batch: usize) -> Self {
+    pub fn open(endpoint_base: &str, model: &str, ctx_tokens: u64, n_batch: usize) -> Self {
         static SHARED_QUEUE: std::sync::LazyLock<Arc<LlmRequestQueue>> =
             std::sync::LazyLock::new(|| {
                 build_default_queue(
@@ -231,7 +231,7 @@ impl HttpSession {
         let config = LlmConfig::new()
             .api_url(self.config.endpoint_base.clone())
             .model(self.config.model.clone())
-            .timeout_ms(ASK_TIMEOUT_MS)
+            .timeout(std::time::Duration::from_millis(ASK_TIMEOUT_MS))
             .extra_body_params(serde_json::json!({
                 "temperature": sampler.temperature,
                 "top_p": sampler.top_p,
@@ -244,9 +244,9 @@ impl HttpSession {
 /// Fit the turn under `ctx_tokens`: the system prefix always survives;
 /// the user text truncates to what remains. Newest-turn protection and
 /// middle-truncation arrive with ledger-backed history.
-fn pack_user_text(system: &str, user: &str, ctx_tokens: usize) -> String {
-    let system_tokens = estimate_tokens(system) as usize;
-    let user_tokens = estimate_tokens(user) as usize;
+fn pack_user_text(system: &str, user: &str, ctx_tokens: u64) -> String {
+    let system_tokens = estimate_tokens(system);
+    let user_tokens = estimate_tokens(user);
     if system_tokens + user_tokens <= ctx_tokens {
         return user.to_string();
     }

@@ -1,5 +1,6 @@
 use bitvec::vec::BitVec;
 use bon::Builder;
+use common_core::registry::KeyedRegistry;
 pub use fluent_types::{ExecutorKind, TargetType};
 use internment::ArcIntern;
 use std::collections::{HashMap, HashSet};
@@ -8,7 +9,7 @@ use crate::error::RegistryError;
 
 /// Resolver-plane record: bitset capabilities plus identity.
 ///
-/// `depends`/`provides` are `BitVec` indexed by [`CapabilityRegistry`]
+/// `depends`/`provides` are `BitVec` indexed by [`CapabilityInterner`]
 /// bit index (compact, O(1) membership). Execution-plane [`WorkUnit`]s use
 /// `Vec<ArcIntern<str>>` for the same names instead.
 /// `executor` records the intended runtime (`Native` for yamake-loaded
@@ -31,7 +32,7 @@ pub struct Target {
 #[derive(Debug, Clone)]
 pub struct TargetRegistry {
     targets: Vec<Target>,
-    by_name: HashMap<ArcIntern<str>, usize>,
+    by_name: KeyedRegistry<ArcIntern<str>, usize>,
     by_bit_index: HashMap<usize, usize>,
     providers: HashMap<usize, Vec<usize>>,
 }
@@ -40,18 +41,15 @@ impl TargetRegistry {
     pub fn new() -> Self {
         Self {
             targets: Vec::new(),
-            by_name: HashMap::new(),
+            by_name: KeyedRegistry::new(),
             by_bit_index: HashMap::new(),
             providers: HashMap::new(),
         }
     }
 
     pub fn register(&mut self, target: Target) -> Result<(), RegistryError> {
-        if self.by_name.contains_key(&target.name) {
-            return Err(RegistryError::DuplicateTarget {
-                name: target.name.to_string(),
-            });
-        }
+        // First-wins via `KeyedRegistry::try_insert`: check and store are one
+        // map operation so a duplicate can never overwrite the winner.
         // `id as usize` would silently wrap a negative id into a huge index.
         if target.id < 0 {
             return Err(RegistryError::NegativeTargetId(target.id));
@@ -65,7 +63,11 @@ impl TargetRegistry {
             });
         }
         let idx = self.targets.len();
-        self.by_name.insert(target.name.clone(), idx);
+        if self.by_name.try_insert(target.name.clone(), idx).is_err() {
+            return Err(RegistryError::DuplicateTarget {
+                name: target.name.to_string(),
+            });
+        }
         self.by_bit_index.insert(bit_idx, idx);
         // Store Vec position (not target id): capability and target-id spaces
         // are both `usize` and must never be conflated.
@@ -81,11 +83,9 @@ impl TargetRegistry {
         self.by_name.get(&interned).map(|&idx| &self.targets[idx])
     }
 
-    pub fn get_by_index(&self, idx: usize) -> Option<&Target> {
-        self.targets.get(idx)
-    }
-
     pub fn get_by_bit_index(&self, bit_idx: usize) -> Option<&Target> {
+        // `bit_idx` is `id as usize` (sparse); Vec positions must never be
+        // passed here — there is no `get_by_index` by design.
         self.by_bit_index
             .get(&bit_idx)
             .map(|&idx| &self.targets[idx])
@@ -181,7 +181,7 @@ impl Default for TargetRegistry {
     }
 }
 
-pub use common_core::interner::CapabilityRegistry;
+pub use common_core::interner::CapabilityInterner;
 
 #[cfg(test)]
 #[path = "../tests/target.rs"]

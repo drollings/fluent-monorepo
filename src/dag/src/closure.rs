@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 
 use crate::error::ResolverError;
-use common_core::interner::CapabilityRegistry;
+use common_core::interner::CapabilityInterner;
 
 use crate::narrowing;
 use crate::target::TargetRegistry;
 
 pub(crate) struct ClosureCtx<'a> {
     pub registry: &'a TargetRegistry,
-    pub caps: Option<&'a CapabilityRegistry>,
+    pub caps: Option<&'a CapabilityInterner>,
     pub strict: bool,
 }
 
@@ -21,7 +21,7 @@ pub(crate) struct ClosureCtx<'a> {
 /// loop), whose control flow differs.
 pub(crate) fn implicit_provider_bit(
     registry: &TargetRegistry,
-    caps: Option<&CapabilityRegistry>,
+    caps: Option<&CapabilityInterner>,
     cap_idx: usize,
 ) -> Option<usize> {
     let caps = caps?;

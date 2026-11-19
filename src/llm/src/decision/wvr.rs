@@ -52,11 +52,11 @@ impl WorkUnit for RenderQuestionUnit {
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let state = ctx.get::<String>("state");
         let state = state.as_deref().ok_or_else(|| {
-            WorkError::Execution("decision.render: missing typed `state`".to_string())
+            WorkError::execution_display("decision.render: missing typed `state`".to_string())
         })?;
         let question = ctx.get::<String>("question");
         let question = question.as_deref().ok_or_else(|| {
-            WorkError::Execution("decision.render: missing typed `question`".to_string())
+            WorkError::execution_display("decision.render: missing typed `question`".to_string())
         })?;
         let q = Question {
             spec: &self.spec,
@@ -123,12 +123,12 @@ impl WorkUnit for DecodeDecisionUnit {
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let raw = ctx.get::<serde_json::Value>("raw_response");
         let raw = raw.as_deref().ok_or_else(|| {
-            WorkError::Execution("decision.decode: missing typed `raw_response`".to_string())
+            WorkError::execution_display("decision.decode: missing typed `raw_response`".to_string())
         })?;
         let refs: Vec<&str> = self.candidates.iter().map(String::as_str).collect();
         match crate::decision::decode_choice(raw, &refs, &self.model, self.version) {
             Ok(d) => WorkOutput::typed("decoded", &d),
-            Err(e) => Err(WorkError::Execution(e.to_string())),
+            Err(e) => Err(WorkError::execution_display(e.to_string())),
         }
     }
 }
@@ -188,7 +188,7 @@ impl WorkUnit for PolicyVerdictUnit {
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let decision = ctx.get::<crate::decision::Decision>("decision");
         let decision = decision.as_deref().ok_or_else(|| {
-            WorkError::Execution("decision.policy: missing typed `decision`".to_string())
+            WorkError::execution_display("decision.policy: missing typed `decision`".to_string())
         })?;
         let verdict = crate::decision::decide_verdict(decision, &self.thresholds);
         WorkOutput::typed("verdict", &verdict)

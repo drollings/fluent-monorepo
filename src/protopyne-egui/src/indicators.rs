@@ -1103,7 +1103,7 @@ fn parse_optional_number(value: &str) -> Result<Option<f64>, FieldError> {
     trimmed
         .parse()
         .map(Some)
-        .map_err(|_| FieldError::Parse(value.to_owned()))
+        .map_err(|_| FieldError::parse("value", value.to_owned()))
 }
 
 impl FieldAccess for KernelIndicatorConfig {
@@ -1111,7 +1111,7 @@ impl FieldAccess for KernelIndicatorConfig {
         match name {
             "kernel" => {
                 if value.trim().is_empty() {
-                    return Err(FieldError::Parse(value.to_owned()));
+                    return Err(FieldError::parse(name, value.to_owned()));
                 }
                 value.clone_into(&mut self.kernel);
                 self.params.clear();
@@ -1127,7 +1127,7 @@ impl FieldAccess for KernelIndicatorConfig {
             "length" => {
                 self.length = value
                     .parse()
-                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                    .map_err(|_| FieldError::parse(name, value.to_owned()))?;
                 if self
                     .schema()
                     .is_ok_and(|(declared, _)| declared.iter().any(|p| p.name == "length"))
@@ -1148,7 +1148,7 @@ impl FieldAccess for KernelIndicatorConfig {
                 self.normalize = Some(
                     value
                         .parse()
-                        .map_err(|_| FieldError::Parse(value.to_owned()))?,
+                        .map_err(|_| FieldError::parse(name, value.to_owned()))?,
                 );
                 Ok(())
             }
@@ -1159,13 +1159,13 @@ impl FieldAccess for KernelIndicatorConfig {
             "osc_trim" => {
                 self.osc_trim = value
                     .parse()
-                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                    .map_err(|_| FieldError::parse(name, value.to_owned()))?;
                 Ok(())
             }
             "osc_threshold" => {
                 self.osc_threshold = value
                     .parse()
-                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                    .map_err(|_| FieldError::parse(name, value.to_owned()))?;
                 Ok(())
             }
             "osc_offset" => {
@@ -1187,7 +1187,7 @@ impl FieldAccess for KernelIndicatorConfig {
             "smooth_period" => {
                 self.smooth_period = value
                     .parse()
-                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                    .map_err(|_| FieldError::parse(name, value.to_owned()))?;
                 Ok(())
             }
             other => {
@@ -1204,7 +1204,7 @@ impl FieldAccess for KernelIndicatorConfig {
                     ParamKind::Bool => value.parse::<bool>().is_ok(),
                 };
                 if !valid {
-                    return Err(FieldError::Parse(value.to_owned()));
+                    return Err(FieldError::parse(name, value.to_owned()));
                 }
                 self.params.insert(other.to_owned(), value.to_owned());
                 Ok(())

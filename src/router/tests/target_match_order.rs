@@ -48,8 +48,8 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
                         cost_output: 6e-6,
                         cost_cached_read: 4e-7,
                         tok_s: 8.0,
-                        total_timeout_ms: 40_000,
-                        idle_timeout_ms: 8_000,
+                        total_timeout: std::time::Duration::from_millis(40_000),
+                        idle_timeout: std::time::Duration::from_millis(8_000),
                         stream: true,
                         filter_thinking: true,
                         retry_count: 0,
@@ -119,7 +119,7 @@ fn matcher_with_keys(
                 as Arc<dyn fluent_llm::client::ChatBackend>,
         ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     )
 }
 
@@ -199,7 +199,7 @@ fn empty_group_returns_none_without_calls() {
             calls_backend as Arc<dyn fluent_llm::client::ChatBackend>,
         ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     );
     let routing = routing_with("default", &[]);
     assert!(matcher
@@ -252,7 +252,7 @@ fn single_candidate_makes_no_call_but_keeps_the_pick() {
                 as Arc<dyn fluent_llm::client::ChatBackend>,
         ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     );
     let cands = vec![candidate("m9-only", 4)];
     let routing = routing_with("default", &["m9-only"]);
@@ -281,7 +281,7 @@ fn singleton_keeps_expansion_pick_over_static_first() {
                 as Arc<dyn fluent_llm::client::ChatBackend>,
         ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     );
     let cands = vec![candidate("second", 4)];
     let routing = routing_with("default", &["first", "second"]);

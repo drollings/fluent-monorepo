@@ -88,7 +88,7 @@ async fn transaction_commit_and_rollback() {
                 if commit {
                     Ok(())
                 } else {
-                    Err(DbError::Other("boom".into()))
+                    Err(DbError::Spawn("boom".into()))
                 }
             });
             if commit {

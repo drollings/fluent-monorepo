@@ -866,7 +866,7 @@ mod tests {
             Some(TargetMatcher::new(
                 TargetBackends::new(HashMap::new(), Arc::clone(&client)),
                 Arc::clone(&limiter),
-                params.target_match_timeout_ms,
+                params.target_match_timeout,
             ))
         } else {
             None

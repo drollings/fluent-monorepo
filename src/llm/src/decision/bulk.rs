@@ -24,7 +24,7 @@ struct OwnedJob {
     candidates: Vec<String>,
     kind: crate::decision::DecisionKind,
     version: u64,
-    timeout_ms: u64,
+    timeout: std::time::Duration,
 }
 
 fn pool_error(error: ResultPoolError<DecisionError>) -> DecisionError {
@@ -65,7 +65,7 @@ impl DecidePool {
                             job.candidates,
                             job.kind,
                             job.version,
-                            job.timeout_ms,
+                            job.timeout,
                         )
                         .await
                 }
@@ -122,12 +122,12 @@ fn render_requests(client: &LlmClient, questions: &[Question<'_>]) -> Rendered {
                         .kind_enum()
                         .unwrap_or(crate::decision::DecisionKind::Choice),
                     version: q.spec.version,
-                    timeout_ms: q.spec.timeout_ms,
+                    timeout: std::time::Duration::from_millis(q.spec.timeout_ms),
                     model: client.model.clone(),
                 });
             }
             Err(detail) => {
-                outcomes[index] = Some(Err(DecisionError::Rejected(detail)));
+                outcomes[index] = Some(Err(DecisionError::Rejected(detail.to_string())));
             }
         }
     }
@@ -183,7 +183,7 @@ async fn fan_out_pool(
             candidates: r.options.into_iter().map(|o| o.label).collect(),
             kind: r.kind,
             version: r.version,
-            timeout_ms: r.timeout_ms,
+            timeout: r.timeout,
         })
         .collect();
     let mut slots = order.into_iter();
@@ -479,7 +479,7 @@ pub async fn decide_aggregated(
     base_seed: u64,
     abort: Option<fluent_concurrency::stream::StreamAbort>,
 ) -> Result<Decision, DecisionError> {
-    spec.validate().map_err(DecisionError::Rejected)?;
+    spec.validate().map_err(|e| DecisionError::Rejected(e.to_string()))?;
     if rotations == 0 {
         return Err(DecisionError::Rejected(
             "rotations must be >= 1".to_string(),
@@ -577,7 +577,7 @@ pub async fn route_hierarchical(
             })
             .collect();
         for sub in &subs {
-            sub.validate().map_err(DecisionError::Rejected)?;
+            sub.validate().map_err(|e| DecisionError::Rejected(e.to_string()))?;
         }
         let questions: Vec<Question<'_>> = subs
             .iter()

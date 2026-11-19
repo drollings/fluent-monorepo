@@ -219,7 +219,7 @@ impl FieldAccess for MoonshineBackend {
             "gpu" => {
                 self.gpu = value
                     .parse()
-                    .map_err(|_| FieldError::Parse(format!("invalid bool for 'gpu': {value}")))?;
+                    .map_err(|_| FieldError::parse("gpu", format!("invalid bool for 'gpu': {value}")))?;
                 self.drop_model();
                 Ok(())
             }

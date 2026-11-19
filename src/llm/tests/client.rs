@@ -23,13 +23,13 @@ fn test_llm_config_builder() {
         .api_url("http://localhost:11434/v1".into())
         .model("llama3".into())
         .think(true)
-        .timeout_ms(5000)
+        .timeout(std::time::Duration::from_secs(5))
         .debug(true)
         .show_prompts(false)
         .build();
     assert_eq!(config.model, "llama3");
     assert_eq!(config.think, Some(true));
-    assert_eq!(config.timeout_ms, 5000);
+    assert_eq!(config.timeout, std::time::Duration::from_secs(5));
 }
 
 #[test]

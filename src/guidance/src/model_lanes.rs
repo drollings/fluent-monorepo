@@ -10,7 +10,6 @@
 //! now, not because the model is unsure.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use thiserror::Error;
 
@@ -35,9 +34,11 @@ pub struct LaneConfig {
     /// Max concurrent background calls.
     pub background_in_flight: usize,
     /// Interactive call body budget.
-    pub interactive_timeout_ms: u64,
+    #[serde(rename = "interactive_timeout_ms", with = "common_core::duration_ms")]
+    pub interactive_timeout: std::time::Duration,
     /// Background call body budget.
-    pub background_timeout_ms: u64,
+    #[serde(rename = "background_timeout_ms", with = "common_core::duration_ms")]
+    pub background_timeout: std::time::Duration,
 }
 
 /// Default lane budgets (see `LaneConfig` for the policy).
@@ -46,8 +47,8 @@ pub fn default_lane_config() -> LaneConfig {
     LaneConfig {
         interactive_in_flight: 16,
         background_in_flight: 4,
-        interactive_timeout_ms: crate::config::default_role_timeout_ms(),
-        background_timeout_ms: crate::config::default_role_timeout_ms(),
+        interactive_timeout: crate::config::default_role_timeout(),
+        background_timeout: crate::config::default_role_timeout(),
     }
 }
 
@@ -64,12 +65,12 @@ impl Default for LaneConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum LaneError {
     /// The call body outran its lane timeout.
-    #[error("lane {lane:?} timed out after {timeout_ms}ms")]
+    #[error("lane {lane:?} timed out after {timeout:?}")]
     Timeout {
         /// Lane whose budget bound the call.
         lane: Lane,
         /// Budget that fired.
-        timeout_ms: u64,
+        timeout: std::time::Duration,
     },
     /// The gate shut down mid-wait.
     #[error("lane gate closed")]
@@ -165,8 +166,8 @@ impl LaneGate {
                 .await
                 .map_err(|_| LaneError::Closed)?,
         };
-        let timeout_ms = match lane {
-            Lane::Interactive => self.config.interactive_timeout_ms,
+        let timeout = match lane {
+            Lane::Interactive => self.config.interactive_timeout,
             Lane::Background => {
                 // Defer: hold no interactive capacity, just wait for some.
                 drop(
@@ -175,12 +176,12 @@ impl LaneGate {
                         .await
                         .map_err(|_| LaneError::Closed)?,
                 );
-                self.config.background_timeout_ms
+                self.config.background_timeout
             }
         };
-        match tokio::time::timeout(Duration::from_millis(timeout_ms), call()).await {
+        match tokio::time::timeout(timeout, call()).await {
             Ok(value) => Ok(value),
-            Err(_) => Err(LaneError::Timeout { lane, timeout_ms }),
+            Err(_) => Err(LaneError::Timeout { lane, timeout }),
         }
     }
 }

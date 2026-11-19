@@ -42,8 +42,8 @@ fn from_model_entry_strips_declaration_only_params() {
     assert_eq!(rt.retry_count, 2);
     assert_eq!(rt.retry_base_interval_s, 1);
     assert!(rt.stream);
-    assert_eq!(rt.idle_timeout_ms, 8000);
-    assert_eq!(rt.total_timeout_ms, 40000);
+    assert_eq!(rt.idle_timeout, std::time::Duration::from_millis(8000));
+    assert_eq!(rt.total_timeout, std::time::Duration::from_millis(40000));
 }
 
 #[test]
@@ -172,12 +172,12 @@ fn routing_target_serde_defaults_read_canonical_constants() {
     // against the 120s/10s-vs-300s/30s divergence recurring (D7).
     let rt: RoutingTarget = serde_json::from_str(r#"{"url":"u","model":"m"}"#).unwrap();
     assert_eq!(
-        rt.total_timeout_ms,
-        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS
+        rt.total_timeout,
+        fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT
     );
     assert_eq!(
-        rt.idle_timeout_ms,
-        fluent_llm::constants::DEFAULT_IDLE_TIMEOUT_MS
+        rt.idle_timeout,
+        fluent_llm::constants::DEFAULT_IDLE_TIMEOUT
     );
     assert_eq!(
         rt.retry_base_interval_s,
@@ -204,8 +204,8 @@ fn routing_target_typed_preferred_over_json() {
         retry_count: 1,
         retry_base_interval_s: 1,
         stream: true,
-        idle_timeout_ms: 8000,
-        total_timeout_ms: 30000,
+        idle_timeout: std::time::Duration::from_millis(8000),
+        total_timeout: std::time::Duration::from_millis(30000),
         api_key: None,
         fallbacks: vec![],
         is_onnx: false,
@@ -223,8 +223,8 @@ fn routing_target_typed_preferred_over_json() {
         retry_count: 1,
         retry_base_interval_s: 1,
         stream: true,
-        idle_timeout_ms: 8000,
-        total_timeout_ms: 30000,
+        idle_timeout: std::time::Duration::from_millis(8000),
+        total_timeout: std::time::Duration::from_millis(30000),
         api_key: None,
         fallbacks: vec![],
         is_onnx: false,
@@ -339,7 +339,7 @@ fn error_branch_propagates_err_without_decision() {
     let stage: std::sync::Arc<dyn fluent_wvr::prelude::Component> =
         std::sync::Arc::new(crate::test_stubs::SimplePassStage::new("stub", "boom"));
     let producer: StageProducer =
-        std::sync::Arc::new(move |_, _| Err(fluent_wvr::WorkError::Execution("boom".into())));
+        std::sync::Arc::new(move |_, _| Err(fluent_wvr::WorkError::execution_display("boom")));
     let orch = PipelineOrchestrator::builder()
         .push_with_producer(stage, producer)
         .build();
@@ -388,7 +388,7 @@ fn cache_probe_stage(
                     },
                 ))
             }
-            None => Err(WorkError::Execution("no typed request".into())),
+            None => Err(WorkError::execution_display("no typed request")),
         },
     ))
 }

@@ -21,7 +21,7 @@ fn strong(label: &str) -> Decision {
 #[test]
 fn judge_maps_labels_and_confidence() {
     let backend = ScriptedDecideBackend::new(vec![Ok(strong("strong")), Ok(strong("considered"))]);
-    let judge = DocJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = DocJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let verdicts = judge.judge(
         "how does sync work",
         &[
@@ -56,7 +56,7 @@ fn transport_failure_fails_closed_to_considered() {
     let backend = ScriptedDecideBackend::new(vec![Err(DecisionError::Unavailable(
         "transport down".to_string(),
     ))]);
-    let judge = DocJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = DocJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let verdicts = judge.judge(
         "how does sync work",
         &[(
@@ -72,7 +72,7 @@ fn transport_failure_fails_closed_to_considered() {
 #[test]
 fn empty_candidates_make_no_calls() {
     let backend = ScriptedDecideBackend::new(vec![]);
-    let judge = DocJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = DocJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     assert!(judge.judge("q", &[]).is_empty());
     assert!(backend.requests().is_empty());
 }

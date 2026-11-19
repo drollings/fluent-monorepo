@@ -274,8 +274,8 @@ fn unit_fails_on_mismatch_and_completes_on_agreement() {
         .execute(&WorkContext::default())
         .expect_err("a mismatch fails the unit");
     match err {
-        WorkError::Execution(reason) => {
-            assert!(reason.contains("RECONCILE"), "names the alert: {reason}");
+        WorkError::Execution(f) => {
+            assert!(f.message.contains("RECONCILE"), "names the alert: {}", f.message);
         }
         other => panic!("a mismatch is an execution failure, got: {other:?}"),
     }

@@ -13,7 +13,7 @@ pub const MAX_TOOL_ROUNDS: u32 = 5;
 
 /// Prompt budget in tokens for the 5-round accumulation. Newest turns
 /// survive; the middle truncates with a loud marker.
-pub const MAX_PROMPT_TOKENS: usize = 8192;
+pub const MAX_PROMPT_TOKENS: u64 = 8192;
 
 /// What the turn produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,15 +107,15 @@ pub fn run_turn(
 #[must_use]
 pub fn bound_prompt(prompt: &str) -> String {
     use fluent_llm::tokens::{estimate_chars_for_tokens, estimate_tokens, truncate_middle};
-    if estimate_tokens(prompt) as usize <= MAX_PROMPT_TOKENS {
+    if estimate_tokens(prompt) <= MAX_PROMPT_TOKENS {
         return prompt.to_string();
     }
     let total_chars = prompt.chars().count();
     let budget_chars = estimate_chars_for_tokens(MAX_PROMPT_TOKENS, 4).max(1024);
     let marker = format!("\n(truncated middle, {total_chars} total chars; newest kept)\n");
-    let keep = budget_chars.saturating_sub(marker.chars().count()).max(512);
-    let head_chars = 2048.min(keep / 4);
-    let tail_chars = keep.saturating_sub(head_chars);
+    let keep = budget_chars.saturating_sub(marker.chars().count() as u64).max(512);
+    let head_chars = (2048u64.min(keep / 4)) as usize;
+    let tail_chars = (keep.saturating_sub(head_chars as u64)) as usize;
     truncate_middle(prompt, head_chars, tail_chars, &marker)
 }
 

@@ -45,8 +45,8 @@ pub enum ToolError {
     #[error("tool {0} failed: {1}")]
     Failed(String, String),
     /// The tool outlived its budget (and was killed).
-    #[error("tool {0} timed out after {1} ms")]
-    Timeout(String, u64),
+    #[error("tool {0} timed out after {1:?}")]
+    Timeout(String, std::time::Duration),
 }
 
 /// A callable tool. Schemas are plain `serde_json` in OpenAI

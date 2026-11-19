@@ -12,8 +12,8 @@ fn tight_config() -> LaneConfig {
     LaneConfig {
         interactive_in_flight: 1,
         background_in_flight: 1,
-        interactive_timeout_ms: 5_000,
-        background_timeout_ms: 5_000,
+        interactive_timeout: std::time::Duration::from_secs(5),
+        background_timeout: std::time::Duration::from_secs(5),
     }
 }
 
@@ -57,7 +57,7 @@ async fn background_defers_while_interactive_saturated() {
 #[tokio::test]
 async fn lane_timeout_bounds_the_call_not_the_queue() {
     let gate = LaneGate::new(LaneConfig {
-        interactive_timeout_ms: 20,
+        interactive_timeout: std::time::Duration::from_millis(20),
         ..tight_config()
     });
     let err = gate
@@ -68,9 +68,9 @@ async fn lane_timeout_bounds_the_call_not_the_queue() {
         .await
         .expect_err("over-budget call times out");
     match err {
-        LaneError::Timeout { lane, timeout_ms } => {
+        LaneError::Timeout { lane, timeout } => {
             assert_eq!(lane, Lane::Interactive);
-            assert_eq!(timeout_ms, 20);
+            assert_eq!(timeout, std::time::Duration::from_millis(20));
         }
         LaneError::Closed => panic!("gate closed unexpectedly"),
         LaneError::Unavailable { detail, .. } => panic!("unexpected unavailable: {detail}"),
@@ -107,7 +107,7 @@ fn lane_defaults_preserve_single_server_behavior() {
     let config = LaneConfig::default();
     assert!(config.interactive_in_flight >= 1);
     assert!(config.background_in_flight >= 1);
-    assert_eq!(config.interactive_timeout_ms, config.background_timeout_ms);
+    assert_eq!(config.interactive_timeout, config.background_timeout);
     let gate = LaneGate::with_defaults();
     let outcome =
         common_core::runtime::block_on_shared(gate.admit(Lane::Background, || async { "direct" }));

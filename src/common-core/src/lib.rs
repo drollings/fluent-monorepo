@@ -36,6 +36,7 @@ pub use cache::{evict_until_fit, eviction_order, eviction_score, ArcLoadCache, B
 pub mod config;
 pub mod constants;
 pub mod drift;
+pub mod duration_ms;
 pub mod envelope;
 pub mod error;
 pub mod error_context;
@@ -81,7 +82,7 @@ pub use hash::{
     sha256_digest, sha256_file, sha256_hex, sha256_str, uuid_v4, verify_sha256_file,
     BatchHashResult, FileVerification, HashAlgorithm, HashState,
 };
-pub use interner::CapabilityRegistry;
+pub use interner::CapabilityInterner;
 pub use io::{
     ensure_dir, ensure_dir_or_panic, make_path_absolute, mtime, read_file_alloc,
     read_file_alloc_err, read_file_alloc_opt, read_file_alloc_result, read_to_string_err,

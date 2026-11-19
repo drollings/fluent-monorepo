@@ -400,7 +400,7 @@ impl ChartStore {
             let doc = chart_doc_text(&chart);
             let cached = store.with_conn(|conn| {
                 load_cached_embedding(conn, &chart.name, &doc)
-                    .map_err(|e| DbError::Other(e.to_string()))
+                    .map_err(|e| DbError::Serialization(e.to_string()))
             });
             let embedding = match cached {
                 Ok(Some(v)) => v,
@@ -420,10 +420,7 @@ impl ChartStore {
                 }
                 Err(e) => {
                     return Err(ChartError::Index {
-                        reason: match e {
-                            DbError::Other(s) => s,
-                            other => other.to_string(),
-                        },
+                        reason: e.to_string(),
                     })
                 }
             };

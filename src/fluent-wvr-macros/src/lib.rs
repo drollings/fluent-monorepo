@@ -540,7 +540,7 @@ fn enum_scalar_parse(ty: &syn::Type, field_path: &str) -> TokenStream2 {
         quote! { value.to_string() }
     } else if normalized == "bool" {
         quote! {
-            value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+            value.parse().map_err(|_| fluent_wvr::FieldError::parse(name, 
                 format!("invalid bool for '{}': {}", #field_path, value)
             ))?
         }
@@ -561,7 +561,7 @@ fn enum_scalar_parse(ty: &syn::Type, field_path: &str) -> TokenStream2 {
                 if value.is_empty() {
                     None
                 } else {
-                    Some(value.parse::<#inner_ty>().map_err(|_| fluent_wvr::FieldError::Parse(
+                    Some(value.parse::<#inner_ty>().map_err(|_| fluent_wvr::FieldError::parse(name, 
                         format!("invalid value for '{}': {}", #field_path, value)
                     ))?)
                 }
@@ -569,7 +569,7 @@ fn enum_scalar_parse(ty: &syn::Type, field_path: &str) -> TokenStream2 {
         }
     } else {
         quote! {
-            value.parse::<#ty>().map_err(|_| fluent_wvr::FieldError::Parse(
+            value.parse::<#ty>().map_err(|_| fluent_wvr::FieldError::parse(name, 
                 format!("invalid value for '{}': {}", #field_path, value)
             ))?
         }
@@ -804,7 +804,7 @@ fn expand_enum_field_access(input: &DeriveInput) -> TokenStream2 {
                 if name == "kind" {
                     return match value {
                         #(#kind_set),*,
-                        _ => Err(fluent_wvr::FieldError::Parse(
+                        _ => Err(fluent_wvr::FieldError::parse(name, 
                             format!("unknown union arm {value:?}")
                         )),
                     };
@@ -1025,11 +1025,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                 let max_lit = proc_macro2::Literal::usize_unsuffixed(len);
                 quote! {
                     if name == #count_name {
-                        let count: usize = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                        let count: usize = value.parse().map_err(|_| fluent_wvr::FieldError::parse(name, 
                             format!("invalid count for '{}': {}", #field_name_str, value)
                         ))?;
                         if count > #max_lit {
-                            return Err(fluent_wvr::FieldError::Constraint(
+                            return Err(fluent_wvr::FieldError::constraint(name, 
                                 format!("{}: count {} exceeds {}", #field_name_str, count, #max_lit)
                             ));
                         }
@@ -1157,11 +1157,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                         None
                     } else {
                         {
-                            let n = ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::Parse(
+                            let n = ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::parse(name, 
                                 format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
                             ))?;
                             if n.fract() != 0.0 {
-                                return Err(fluent_wvr::FieldError::Parse(
+                                return Err(fluent_wvr::FieldError::parse(name, 
                                     format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
                                 ));
                             }
@@ -1174,7 +1174,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     if value.is_empty() {
                         None
                     } else {
-                        Some(::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::Parse(
+                        Some(::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::parse(name, 
                             format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
                         ))? as #inner_ty_tokens)
                     }
@@ -1184,7 +1184,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     if value.is_empty() {
                         None
                     } else {
-                        Some(value.parse::<#inner_ty_tokens>().map_err(|_| fluent_wvr::FieldError::Parse(
+                        Some(value.parse::<#inner_ty_tokens>().map_err(|_| fluent_wvr::FieldError::parse(name, 
                             format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
                         ))?)
                     }
@@ -1197,7 +1197,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             quote! { value.into() }
         } else if ty_str == "bool" {
             quote! {
-                value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                value.parse().map_err(|_| fluent_wvr::FieldError::parse(name, 
                     format!("invalid bool for '{}': {}", #field_name_str, value)
                 ))?
             }
@@ -1213,11 +1213,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             let max_lit_fb = meta.max.map(proc_macro2::Literal::f64_unsuffixed);
             let min_check_fb = min_lit_fb.map(|m| {
                 let e = format!("{}: value below minimum {}", field_name_str, meta.min.unwrap());
-                quote! { if wide < #m { return Err(fluent_wvr::FieldError::Constraint(#e.into())); } }
+                quote! { if wide < #m { return Err(fluent_wvr::FieldError::constraint(name, #e)); } }
             });
             let max_check_fb = max_lit_fb.map(|m| {
                 let e = format!("{}: value above maximum {}", field_name_str, meta.max.unwrap());
-                quote! { if wide > #m { return Err(fluent_wvr::FieldError::Constraint(#e.into())); } }
+                quote! { if wide > #m { return Err(fluent_wvr::FieldError::constraint(name, #e)); } }
             });
             quote! {
                 match value.parse::<#ty>() {
@@ -1227,7 +1227,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                             #min_check_fb
                             #max_check_fb
                         }
-                        return Err(fluent_wvr::FieldError::Parse(
+                        return Err(fluent_wvr::FieldError::parse(name, 
                             format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                         ));
                     }
@@ -1236,11 +1236,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         } else if number_tolerant && inner_is_integer {
             quote! {
                 {
-                    let n = ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::Parse(
+                    let n = ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::parse(name, 
                         format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                     ))?;
                     if n.fract() != 0.0 {
-                        return Err(fluent_wvr::FieldError::Parse(
+                        return Err(fluent_wvr::FieldError::parse(name, 
                             format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                         ));
                     }
@@ -1249,13 +1249,13 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             }
         } else if number_tolerant {
             quote! {
-                ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::Parse(
+                ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::parse(name, 
                     format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                 ))? as #ty
             }
         } else {
             quote! {
-                value.parse::<#ty>().map_err(|_| fluent_wvr::FieldError::Parse(
+                value.parse::<#ty>().map_err(|_| fluent_wvr::FieldError::parse(name, 
                     format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                 ))?
             }
@@ -1300,10 +1300,10 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                 );
                 inner_expr = Some(match inner_expr {
                     None => {
-                        quote! { { let s: String = s; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } }
+                        quote! { { let s: String = s; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::constraint(name, #max_len_err)); } s } }
                     }
                     Some(prev) => {
-                        quote! { { let s: String = #prev; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } }
+                        quote! { { let s: String = #prev; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::constraint(name, #max_len_err)); } s } }
                     }
                 });
             }
@@ -1315,10 +1315,10 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                 );
                 inner_expr = Some(match inner_expr {
                     None => {
-                        quote! { { let s: String = s; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } }
+                        quote! { { let s: String = s; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::constraint(name, #pattern_err)); } s } }
                     }
                     Some(prev) => {
-                        quote! { { let s: String = #prev; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } }
+                        quote! { { let s: String = #prev; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::constraint(name, #pattern_err)); } s } }
                     }
                 });
             }
@@ -1365,11 +1365,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                             if is_int {
                                 parse_and_set = quote! {
                                     {
-                                        let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                        let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::parse(name, 
                                             format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                                         ))?;
                                         if n.fract() != 0.0 {
-                                            return Err(fluent_wvr::FieldError::Parse(
+                                            return Err(fluent_wvr::FieldError::parse(name, 
                                                 format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                                             ));
                                         }
@@ -1379,7 +1379,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                             } else {
                                 parse_and_set = quote! {
                                     {
-                                        let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                        let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::parse(name, 
                                             format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
                                         ))?;
                                         (n.clamp(#min, #max)) as #ty
@@ -1389,11 +1389,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                         } else if is_int {
                             parse_and_set = quote! {
                                 match (if value.is_empty() { None } else {
-                                    let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                    let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::parse(name, 
                                         format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
                                     ))?;
                                     if n.fract() != 0.0 {
-                                        return Err(fluent_wvr::FieldError::Parse(
+                                        return Err(fluent_wvr::FieldError::parse(name, 
                                             format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
                                         ));
                                     }
@@ -1406,7 +1406,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                         } else {
                             parse_and_set = quote! {
                                 match (if value.is_empty() { None } else {
-                                    let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                    let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::parse(name, 
                                         format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
                                     ))?;
                                     Some((n.clamp(#min, #max)) as #inner_ty_tokens)
@@ -1432,7 +1432,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     let min_err = format!("{}: value below minimum {}", field_name_str, min_val);
                     quote! {
                         if v < (#min_lit as #ty) {
-                            return Err(fluent_wvr::FieldError::Constraint(#min_err.into()));
+                            return Err(fluent_wvr::FieldError::constraint(name, #min_err));
                         }
                     }
                 });
@@ -1441,7 +1441,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     let max_err = format!("{}: value above maximum {}", field_name_str, max_val);
                     quote! {
                         if v > (#max_lit as #ty) {
-                            return Err(fluent_wvr::FieldError::Constraint(#max_err.into()));
+                            return Err(fluent_wvr::FieldError::constraint(name, #max_err));
                         }
                     }
                 });
@@ -1450,7 +1450,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     let min_err = format!("{}: value below minimum {}", field_name_str, min_val);
                     quote! {
                         if v < (#min_lit as #inner_ty_tokens) {
-                            return Err(fluent_wvr::FieldError::Constraint(#min_err.into()));
+                            return Err(fluent_wvr::FieldError::constraint(name, #min_err));
                         }
                     }
                 });
@@ -1459,7 +1459,7 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     let max_err = format!("{}: value above maximum {}", field_name_str, max_val);
                     quote! {
                         if v > (#max_lit as #inner_ty_tokens) {
-                            return Err(fluent_wvr::FieldError::Constraint(#max_err.into()));
+                            return Err(fluent_wvr::FieldError::constraint(name, #max_err));
                         }
                     }
                 });

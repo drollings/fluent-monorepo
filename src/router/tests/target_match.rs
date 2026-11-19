@@ -39,8 +39,8 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         cost_output: cost * 6.0,
         cost_cached_read: cost * 0.4,
         tok_s: 8.0,
-        total_timeout_ms: 40_000,
-        idle_timeout_ms: 8_000,
+        total_timeout: std::time::Duration::from_millis(40_000),
+        idle_timeout: std::time::Duration::from_millis(8_000),
         stream: true,
         filter_thinking: true,
         retry_count: 0,
@@ -215,7 +215,7 @@ fn self_assessment_calls_include_a_user_turn() {
     let matcher = TargetMatcher::new(
         TargetBackends::new(HashMap::new(), backend.clone()),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     );
     let cands = candidates(&[("small", 1, 1.0), ("qwen3.5-9b", 4, 3.0)]);
     let routing = routing_with("default", &["small", "qwen3.5-9b"]);
@@ -239,7 +239,7 @@ fn matcher_with(default_response: Vec<String>) -> TargetMatcher {
             Arc::new(StubChatBackend::new(default_response)),
         ),
         Arc::new(Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     )
 }
 
@@ -268,7 +268,7 @@ fn matcher_with_per_key(by_key: Vec<(&str, Vec<String>)>) -> TargetMatcher {
             ))),
         ),
         Arc::new(Limiter::new(4)),
-        0,
+        std::time::Duration::ZERO,
     )
 }
 

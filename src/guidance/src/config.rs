@@ -65,14 +65,14 @@ pub struct ModelRole {
     pub base_url: String,
     #[serde(default)]
     pub model: String,
-    #[serde(default = "default_role_timeout_ms")]
-    pub timeout_ms: u64,
+    #[serde(default = "default_role_timeout", rename = "timeout_ms", with = "common_core::duration_ms")]
+    pub timeout: std::time::Duration,
     #[serde(default = "default_role_enabled")]
     pub enabled: bool,
     #[serde(default)]
     pub transport: ModelTransport,
     #[serde(default)]
-    pub max_tokens: Option<usize>,
+    pub max_tokens: Option<u64>,
     #[serde(default)]
     pub thinking: Option<bool>,
 }
@@ -81,8 +81,8 @@ fn default_role_base_url() -> String {
     "http://localhost:8080".to_string()
 }
 
-pub(crate) fn default_role_timeout_ms() -> u64 {
-    30_000
+pub(crate) fn default_role_timeout() -> std::time::Duration {
+    std::time::Duration::from_secs(30)
 }
 
 /// Default lane budgets for model calls (single home: `model_lanes`).
@@ -98,7 +98,7 @@ pub fn default_decision_role() -> ModelRole {
     ModelRole {
         base_url: default_role_base_url(),
         model: "liquidai/d1-2b".to_string(),
-        timeout_ms: default_role_timeout_ms(),
+        timeout: default_role_timeout(),
         enabled: true,
         transport: ModelTransport::SystemOne,
         max_tokens: None,
@@ -112,7 +112,7 @@ pub fn default_generative_role() -> ModelRole {
     ModelRole {
         base_url: default_role_base_url(),
         model: "code".to_string(),
-        timeout_ms: default_role_timeout_ms(),
+        timeout: default_role_timeout(),
         enabled: true,
         transport: ModelTransport::Chat,
         max_tokens: Some(2048),

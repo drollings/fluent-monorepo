@@ -145,7 +145,7 @@ fn test_derive_field_access_constraint_below_min() {
     };
     let err = cfg.set_field("port", "0").unwrap_err();
     match err {
-        FieldError::Constraint(msg) => {
+        FieldError::Constraint { reason: msg, .. } => {
             assert!(msg.contains("below minimum"), "unexpected: {msg}");
         }
         other => panic!("expected Constraint, got {other:?}"),
@@ -161,7 +161,7 @@ fn test_derive_field_access_constraint_above_max() {
     };
     let err = cfg.set_field("port", "70000").unwrap_err();
     match err {
-        FieldError::Constraint(msg) => {
+        FieldError::Constraint { reason: msg, .. } => {
             assert!(msg.contains("above maximum"), "unexpected: {msg}");
         }
         other => panic!("expected Constraint, got {other:?}"),
@@ -403,7 +403,7 @@ fn max_len_rejects_long_string() {
         .set_field("short_name", "this is way too long")
         .unwrap_err();
     match err {
-        FieldError::Constraint(msg) => {
+        FieldError::Constraint { reason: msg, .. } => {
             assert!(msg.contains("exceeds maximum"), "unexpected: {msg}");
         }
         other => panic!("expected Constraint, got {other:?}"),
@@ -460,7 +460,7 @@ fn pattern_rejects_non_matching() {
     };
     let err = cfg.set_field("patterned", "goodbye").unwrap_err();
     match err {
-        FieldError::Constraint(msg) => {
+        FieldError::Constraint { reason: msg, .. } => {
             assert!(msg.contains("does not match pattern"), "unexpected: {msg}");
         }
         other => panic!("expected Constraint, got {other:?}"),

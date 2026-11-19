@@ -66,7 +66,7 @@ async fn h5_sync_sleep_blocks_timeout_characterization() {
     let rt = fluent_concurrency::tokio_runtime();
     let mut batch = fluent_concurrency::batch::SupervisedBatch::new(rt, CapabilitySet::new());
     let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = 50;
+    ctx.timeout = std::time::Duration::from_millis(50);
     ctx.max_retries = 0;
     batch.register_with_context(unit, ctx).unwrap();
     let start = Instant::now();
@@ -195,9 +195,9 @@ async fn h5_busy_loop_blocks_sibling_characterization() {
         flag: Arc::clone(&fast_done),
     });
     let mut c1 = WorkContext::for_unit(&*busy, CapabilitySet::new());
-    c1.timeout_ms = 5_000;
+    c1.timeout = std::time::Duration::from_millis(5_000);
     let mut c2 = WorkContext::for_unit(&*fast, CapabilitySet::new());
-    c2.timeout_ms = 5_000;
+    c2.timeout = std::time::Duration::from_millis(5_000);
     batch.register_with_context(busy, c1).unwrap();
     batch.register_with_context(fast, c2).unwrap();
     let start = Instant::now();
@@ -223,7 +223,7 @@ async fn h5_busy_loop_blocks_sibling_characterization() {
 
 async fn timeout_summary(
     unit: Arc<dyn Component>,
-    timeout_ms: u64,
+    timeout: std::time::Duration,
     max_retries: u32,
 ) -> (
     fluent_concurrency::batch::SupervisedBatchSummary,
@@ -232,7 +232,7 @@ async fn timeout_summary(
     let rt = fluent_concurrency::tokio_runtime();
     let mut batch = fluent_concurrency::batch::SupervisedBatch::new(rt, CapabilitySet::new());
     let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = timeout_ms;
+    ctx.timeout = timeout;
     ctx.max_retries = max_retries;
     batch.register_with_context(unit, ctx).unwrap();
     let start = Instant::now();
@@ -266,7 +266,7 @@ async fn m3_sleep_overrun_completes_late_with_flag() {
         finished: Arc::clone(&finished),
         calls: Arc::new(AtomicUsize::new(0)),
     });
-    let (summary, elapsed) = timeout_summary(unit, 50, 0).await;
+    let (summary, elapsed) = timeout_summary(unit, std::time::Duration::from_millis(50), 0).await;
     assert_eq!(
         summary.completed.len(),
         1,
@@ -337,7 +337,7 @@ async fn m3_busy_overrun_completes_late() {
         ms: 200,
         finished: Arc::clone(&finished),
     });
-    let (summary, elapsed) = timeout_summary(unit, 50, 0).await;
+    let (summary, elapsed) = timeout_summary(unit, std::time::Duration::from_millis(50), 0).await;
     assert_eq!(
         summary.completed.len(),
         1,
@@ -362,7 +362,7 @@ async fn m3_quick_body_completes_promptly() {
         finished: Arc::clone(&finished),
         calls: Arc::new(AtomicUsize::new(0)),
     });
-    let (summary, elapsed) = timeout_summary(unit, 5_000, 0).await;
+    let (summary, elapsed) = timeout_summary(unit, std::time::Duration::from_millis(5_000), 0).await;
     assert_eq!(summary.completed.len(), 1);
     assert_eq!(summary.cancelled.len(), 0);
     assert!(
@@ -423,7 +423,7 @@ async fn m3_backoff_suspend_lands_in_cancelled_timeout() {
     });
     let rt = fluent_concurrency::tokio_runtime();
     let config = fluent_concurrency::batch::SupervisedBatchConfig {
-        backoff_base_ms: 500,
+        backoff_base: std::time::Duration::from_millis(500),
         ..Default::default()
     };
     let mut batch = fluent_concurrency::batch::SupervisedBatch::new_with_config(
@@ -432,7 +432,7 @@ async fn m3_backoff_suspend_lands_in_cancelled_timeout() {
         config,
     );
     let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = 50;
+    ctx.timeout = std::time::Duration::from_millis(50);
     ctx.max_retries = 3;
     batch.register_with_context(unit, ctx).unwrap();
     let summary = batch.await;
@@ -462,7 +462,7 @@ async fn m3_current_thread_sleep_overrun_completes_late() {
     let rt = fluent_concurrency::tokio_runtime();
     let mut batch = fluent_concurrency::batch::SupervisedBatch::new(rt, CapabilitySet::new());
     let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = 50;
+    ctx.timeout = std::time::Duration::from_millis(50);
     ctx.max_retries = 0;
     batch.register_with_context(unit, ctx).unwrap();
     let start = Instant::now();
@@ -491,7 +491,7 @@ async fn m3_current_thread_quick_body_completes() {
     let rt = fluent_concurrency::tokio_runtime();
     let mut batch = fluent_concurrency::batch::SupervisedBatch::new(rt, CapabilitySet::new());
     let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = 5_000;
+    ctx.timeout = std::time::Duration::from_millis(5_000);
     ctx.max_retries = 0;
     batch.register_with_context(unit, ctx).unwrap();
     let summary = batch.await;
@@ -554,9 +554,9 @@ async fn m3_fast_sibling_completes_while_sibling_blocks() {
     let rt = fluent_concurrency::tokio_runtime();
     let mut batch = fluent_concurrency::batch::SupervisedBatch::new(rt, CapabilitySet::new());
     let mut c1 = WorkContext::for_unit(&*slow, CapabilitySet::new());
-    c1.timeout_ms = 5_000;
+    c1.timeout = std::time::Duration::from_millis(5_000);
     let mut c2 = WorkContext::for_unit(&*fast, CapabilitySet::new());
-    c2.timeout_ms = 5_000;
+    c2.timeout = std::time::Duration::from_millis(5_000);
     batch.register_with_context(slow, c1).unwrap();
     batch.register_with_context(fast, c2).unwrap();
     let summary = batch.await;
@@ -584,7 +584,7 @@ async fn m3_retry_runs_bounded_attempts_then_fails_once() {
     });
     let rt = fluent_concurrency::tokio_runtime();
     let config = fluent_concurrency::batch::SupervisedBatchConfig {
-        backoff_base_ms: 10,
+        backoff_base: std::time::Duration::from_millis(10),
         backoff_jitter_pct: 0,
         ..Default::default()
     };
@@ -594,7 +594,7 @@ async fn m3_retry_runs_bounded_attempts_then_fails_once() {
         config,
     );
     let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = 10_000;
+    ctx.timeout = std::time::Duration::from_millis(10_000);
     ctx.max_retries = 2;
     batch.register_with_context(unit, ctx).unwrap();
     let summary = batch.await;

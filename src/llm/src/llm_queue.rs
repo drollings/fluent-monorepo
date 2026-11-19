@@ -46,7 +46,7 @@ pub fn default_handler(
         let api_url = task.config.api_url.clone();
         let model = task.config.model.clone();
         let think = task.config.think;
-        let timeout_ms = task.config.timeout_ms;
+        let timeout = task.config.timeout;
         let extra_body_params = task.config.extra_body_params;
         let debug = task.config.debug;
         let show_prompts = task.config.show_prompts;
@@ -57,7 +57,7 @@ pub fn default_handler(
                 &messages,
                 &model,
                 think,
-                timeout_ms,
+                timeout,
                 extra_body_params.as_ref(),
                 debug,
                 show_prompts,

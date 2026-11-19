@@ -759,7 +759,7 @@ where
         // working because the body always suspends at an await point
         // between attempts instead of holding a worker past its budget.
         fluent_wvr::run_gated_blocking(ctx.caps.clone(), || self.execute_blocking(ctx))
-            .map_err(|join| WorkError::Execution(format!("wave worker failed: {}", join.detail)))?
+            .map_err(|join| WorkError::execution_display(format!("wave worker failed: {}", join.detail)))?
     }
 }
 
@@ -794,7 +794,7 @@ where
             Err(reason) => {
                 outcomes.push(FileOutcome::Abort { reason });
                 ctx.outputs.set(WAVE_OUTCOMES_KEY, outcomes);
-                return Err(WorkError::Execution(format!("{} aborted", self.name)));
+                return Err(WorkError::execution_display(format!("{} aborted", self.name)));
             }
         };
         let failures: HashMap<usize, EmbedFileFailure> = failures.into_iter().collect();

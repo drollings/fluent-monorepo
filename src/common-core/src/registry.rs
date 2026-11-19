@@ -22,6 +22,7 @@ use crate::sync::{lock_read, lock_write};
 /// `iter()` return results in sorted key order. Consumers that expose a
 /// listing method get a stable, reproducible order rather than arbitrary
 /// hashing order.
+#[derive(Debug, Clone)]
 pub struct KeyedRegistry<K, V> {
     entries: BTreeMap<K, V>,
 }

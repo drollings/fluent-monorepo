@@ -61,7 +61,7 @@ fn exact_controls_never_reach_a_model() {
     // wired up, these queries are not model-eligible, so an empty
     // script (any call errors loudly) stays untouched.
     let backend = ScriptedDecideBackend::new(vec![]);
-    let _judge = crate::read::decide::DocJudge::new(&backend, "decision".to_string(), 2000);
+    let _judge = crate::read::decide::DocJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     for query in [
         "clean_build_cache",
         "src/router/dispatch.rs",

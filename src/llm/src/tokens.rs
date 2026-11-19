@@ -46,11 +46,11 @@ pub fn estimate_tokens_floor(text: &str, min_tokens: u64) -> u64 {
 /// Estimate token count using a fixed characters-per-token ratio.
 ///
 /// When `chars_per_token` is 0 every byte counts as one token.
-pub fn estimate_tokens_with(text: &str, chars_per_token: usize) -> usize {
+pub fn estimate_tokens_with(text: &str, chars_per_token: u64) -> u64 {
     if chars_per_token == 0 {
-        return text.len();
+        return text.len() as u64;
     }
-    text.len().div_ceil(chars_per_token)
+    (text.len() as u64).div_ceil(chars_per_token)
 }
 
 /// Estimate the character budget for a token count at a fixed ratio.
@@ -61,7 +61,7 @@ pub fn estimate_tokens_with(text: &str, chars_per_token: usize) -> usize {
 /// char); the multiply saturates. Note the zero-guard differs deliberately
 /// from `estimate_tokens_with` (which maps 0 → `text.len()`): the two run in
 /// opposite directions and neither may change semantics for existing callers.
-pub fn estimate_chars_for_tokens(tokens: usize, chars_per_token: usize) -> usize {
+pub fn estimate_chars_for_tokens(tokens: u64, chars_per_token: u64) -> u64 {
     tokens.saturating_mul(chars_per_token.max(1))
 }
 
@@ -231,7 +231,7 @@ impl AtomicTokenBudget {
 ///
 /// let mut budget = TokenBudget(1000);
 /// let text = "This is a test prompt.";
-/// let tokens = estimate_tokens(text) as usize;
+/// let tokens = estimate_tokens(text);
 ///
 /// assert!(budget.fits(tokens));
 /// assert!(budget.consume(tokens));
@@ -254,24 +254,24 @@ impl AtomicTokenBudget {
 ///
 /// let mut budget = TokenBudget(1000);
 /// let text = "This is a test prompt.";
-/// let tokens = estimate_tokens(text) as usize;
+/// let tokens = estimate_tokens(text);
 ///
 /// assert!(budget.fits(tokens));
 /// assert!(budget.consume(tokens));
 /// assert_eq!(budget.remaining(0), 1000 - tokens);
 /// ```
-pub struct TokenBudget(pub usize);
+pub struct TokenBudget(pub u64);
 
 impl TokenBudget {
-    pub fn fits(&self, tokens: usize) -> bool {
+    pub fn fits(&self, tokens: u64) -> bool {
         tokens <= self.0
     }
 
-    pub fn remaining(&self, used: usize) -> usize {
+    pub fn remaining(&self, used: u64) -> u64 {
         self.0.saturating_sub(used)
     }
 
-    pub fn consume(&mut self, tokens: usize) -> bool {
+    pub fn consume(&mut self, tokens: u64) -> bool {
         if tokens <= self.0 {
             self.0 -= tokens;
             true
@@ -285,7 +285,7 @@ impl TokenBudget {
         if budget == 0 {
             return String::new();
         }
-        let estimated = estimate_tokens(text) as usize;
+        let estimated = estimate_tokens(text);
         if estimated <= budget {
             return text.to_string();
         }

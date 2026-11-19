@@ -8,7 +8,7 @@
 use fluent_llm::tokens::{estimate_tokens, TokenBudget};
 
 /// Budget for the rolling summary in tokens.
-pub const SUMMARY_BUDGET: usize = 1_000;
+pub const SUMMARY_BUDGET: u64 = 1_000;
 
 /// Append one fact line to the Markdown facts file content.
 #[must_use]
@@ -37,7 +37,7 @@ pub fn append_fact(facts: &str, fact: &str) -> String {
 /// refactor fold-in.
 #[must_use]
 pub fn roll_summary(summary: &str, newest_turn: &str) -> String {
-    let newest_tokens = estimate_tokens(newest_turn) as usize;
+    let newest_tokens = estimate_tokens(newest_turn);
     if newest_tokens >= SUMMARY_BUDGET {
         return newest_turn.to_string();
     }

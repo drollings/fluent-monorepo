@@ -49,8 +49,23 @@ pub enum DbError {
     #[error("unstamped content hash")]
     UnstampedContent,
     /// Any other database-layer error.
-    #[error("database error: {0}")]
-    Other(String),
+    #[error("io error: {0}")]
+    Io(#[from] common_core::error::IoError),
+    /// Invalid pool/store configuration (e.g. zero capacity).
+    #[error("invalid config: {0}")]
+    Config(String),
+    /// A blocking database task failed to join (panicked / shut down).
+    #[error("blocking task failed: {0}")]
+    Spawn(String),
+    /// An internal invariant was violated (no row where one was required).
+    #[error("internal error: {0}")]
+    Internal(String),
+    /// Stored data could not be interpreted (unknown enum text, bad row).
+    #[error("corrupt data: {0}")]
+    Data(String),
+    /// Serialization of a value for storage failed.
+    #[error("serialization error: {0}")]
+    Serialization(String),
 }
 
 #[cfg(feature = "sqlite")]
@@ -70,13 +85,6 @@ impl From<rusqlite::Error> for DbError {
             }
         }
         DbError::Sqlite(common_core::error::SqliteError(e))
-    }
-}
-
-#[cfg(feature = "sqlite")]
-impl From<common_core::error::IoError> for DbError {
-    fn from(e: common_core::error::IoError) -> Self {
-        DbError::Other(e.to_string())
     }
 }
 

@@ -116,7 +116,7 @@ fn inner_error_propagates_without_logging() {
             &[]
         }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-            Err(WorkError::Execution("boom".to_string()))
+            Err(WorkError::execution_display("boom".to_string()))
         }
     }
     fluent_wvr::impl_fieldless!(FailUnit);

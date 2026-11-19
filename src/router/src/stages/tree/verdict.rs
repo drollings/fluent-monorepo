@@ -44,7 +44,7 @@ pub fn parse_tree_verdict(response: &str) -> Result<TreeClassifierVerdict, WorkE
             coerce_string(obj, "reason", "");
         }
     })
-    .map_err(|e| WorkError::Execution(format!("tree classifier verdict parse error: {e}")))
+    .map_err(|e| WorkError::execution_display(format!("tree classifier verdict parse error: {e}")))
 }
 
 #[cfg(test)]

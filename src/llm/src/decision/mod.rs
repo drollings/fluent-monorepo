@@ -59,11 +59,12 @@ pub use transport::{
 
 pub use decode::{decode_choice, decode_noul, decode_score, match_text_label};
 pub use question::{
-    render_prompt, rotated_options, DecisionOptions, Question, QuestionSpec, MAX_DECISION_OPTIONS,
-    MAX_DECISION_PROMPT_BYTES,
+    render_prompt, rotated_options, DecisionOptions, Question, QuestionError, QuestionSpec,
+    MAX_DECISION_OPTIONS, MAX_DECISION_PROMPT_BYTES,
 };
 pub use types::{
     decide_noul_verdict, decide_score_verdict, decide_verdict, noul_p_yes, score_moment, Decision,
-    DecisionError, DecisionKind, ScoreMoment, ThresholdSet, Verdict,
+    DecisionError, DecisionKind, ScoreMoment, ThresholdError, ThresholdSet, UnknownDecisionKind,
+    Verdict,
 };
 pub use wvr::{DecodeDecisionUnit, PolicyVerdictUnit, RenderQuestionUnit};

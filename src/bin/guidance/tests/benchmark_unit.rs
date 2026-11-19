@@ -15,7 +15,7 @@ fn tokens_use_the_shared_tokenizer() {
     assert!(tokens_for_text("hello world") > 0);
     assert_eq!(
         tokens_for_text("hello world"),
-        fluent_llm::tokens::estimate_tokens("hello world") as usize
+        fluent_llm::tokens::estimate_tokens("hello world")
     );
     let long = "word ".repeat(100);
     assert!(tokens_for_text(&long) > tokens_for_text("word"));

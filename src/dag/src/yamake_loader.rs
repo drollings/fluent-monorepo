@@ -1,5 +1,5 @@
 use bitvec::vec::BitVec;
-use common_core::interner::CapabilityRegistry;
+use common_core::interner::CapabilityInterner;
 use fluent_types::{ExecutorKind, TargetType};
 use internment::ArcIntern;
 use serde::Deserialize;
@@ -27,10 +27,10 @@ struct YamakeConfig {
 
 pub fn load_yamake_config(
     json: &str,
-) -> Result<(TargetRegistry, CapabilityRegistry), RegistryError> {
+) -> Result<(TargetRegistry, CapabilityInterner), RegistryError> {
     let config: YamakeConfig = serde_json::from_str(json)
         .map_err(|e| RegistryError::InvalidCapability(format!("invalid yamake.json: {e}")))?;
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     let mut reg = TargetRegistry::new();
 
     for td in &config.targets {

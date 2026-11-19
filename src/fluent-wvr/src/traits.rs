@@ -10,12 +10,28 @@ use crate::work::{WorkError, WorkOutput};
 pub enum FieldError {
     #[error("field not found: {0}")]
     NotFound(String),
-    #[error("field parse error: {0}")]
-    Parse(String),
-    #[error("constraint violation: {0}")]
-    Constraint(String),
+    #[error("field parse error on {field}: {reason}")]
+    Parse { field: String, reason: String },
+    #[error("constraint violation on {field}: {reason}")]
+    Constraint { field: String, reason: String },
     #[error("field {0:?} is read-only on a shared Arc: {1}")]
     ReadOnly(String, String),
+}
+
+impl FieldError {
+    pub fn parse(field: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Parse {
+            field: field.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub fn constraint(field: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Constraint {
+            field: field.into(),
+            reason: reason.into(),
+        }
+    }
 }
 use thiserror::Error;
 
@@ -223,10 +239,10 @@ pub trait WorkUnit: Send + Sync {
     fn provides(&self) -> &[ArcIntern<str>];
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError>;
 
-    /// Returns the default timeout in milliseconds for this unit.
-    /// Override this to set a unit-specific timeout. Default: 30,000ms.
-    fn default_timeout_ms(&self) -> u64 {
-        30_000
+    /// Returns the default timeout for this unit.
+    /// Override this to set a unit-specific timeout. Default: 30s.
+    fn default_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(30)
     }
 
     /// Returns the Rust type name of this unit (e.g. "L3GraphUnit").

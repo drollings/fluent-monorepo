@@ -726,7 +726,7 @@ fn shadow_judge_labels_without_filtering_or_reordering() {
     let judge = JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: None,
     };
     let judged =
@@ -804,7 +804,7 @@ fn unauthorized_judge_leaves_output_identical_except_labels() {
     let judge = JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: None,
     };
     let shadowed =
@@ -885,7 +885,7 @@ fn authorized_filtering_drops_irrelevant_keeps_exact() {
     let judge = JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: Some("m7-test-fp".to_string()),
     };
     let answer =
@@ -1308,7 +1308,7 @@ fn uncalibrated_admission_keeps_today_order() {
     let judge = JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: Some("m4-uncalibrated-fp".to_string()),
     };
     let answer = engine.explain_with_judge(
@@ -1353,7 +1353,7 @@ fn calibrated_admission_filters_top_k_with_labels() {
     let judge = JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: Some("m4-test-fp".to_string()),
     };
     let answer = engine.explain_with_judge(
@@ -1404,7 +1404,7 @@ fn judge_outage_keeps_prior_without_admission() {
     let judge = JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: Some("m4-test-fp".to_string()),
     };
     let answer = engine.explain_with_judge(
@@ -1761,7 +1761,7 @@ fn uncalibrated_support_leaves_unverified() {
     let judge = JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: Some("m8-uncalibrated-fp".to_string()),
     };
     let answer = engine.explain_with_judge(
@@ -1820,7 +1820,7 @@ fn authorized_support_verifies_and_drops() {
         let judge = JudgeCtx {
             backend: &backend,
             model: "d".to_string(),
-            timeout_ms: 2000,
+            timeout: std::time::Duration::from_secs(2),
             fingerprint: Some("m8-test-fp".to_string()),
         };
         let answer = engine.explain_with_judge(

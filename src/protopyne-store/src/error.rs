@@ -114,7 +114,7 @@ impl StoreError {
 
 impl From<StoreError> for WorkError {
     fn from(err: StoreError) -> Self {
-        Self::Execution(err.to_string())
+        Self::execution_display(err)
     }
 }
 

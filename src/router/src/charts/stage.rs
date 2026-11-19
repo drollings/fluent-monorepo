@@ -142,14 +142,14 @@ impl WorkUnit for ChartPromptStage {
             .filter(|dep| !self.graph_satisfied.iter().any(|g| g == dep))
             .collect();
         if !unmatched.is_empty() {
-            return Err(WorkError::Execution(format!(
+            return Err(WorkError::execution_display(format!(
                 "chart target '{}' has unmatched required deps: {unmatched:?}",
                 self.name
             )));
         }
         if !bindings.ambiguous.is_empty() {
             let names: Vec<&str> = bindings.ambiguous.iter().map(|a| a.dep.as_str()).collect();
-            return Err(WorkError::Execution(format!(
+            return Err(WorkError::execution_display(format!(
                 "chart target '{}' has ambiguous deps: {:?}",
                 self.name, names
             )));
@@ -179,7 +179,7 @@ impl WorkUnit for ChartPromptStage {
         };
 
         let system_prompt =
-            render(&self.template, &render_ctx).map_err(|e| WorkError::Execution(e.to_string()))?;
+            render(&self.template, &render_ctx).map_err(|e| WorkError::execution_display(e.to_string()))?;
 
         let messages = vec![
             ChatMessage {
@@ -204,7 +204,7 @@ impl WorkUnit for ChartPromptStage {
             .limiter
             .run_sync(|| async { self.client.chat_complete(&messages) })
             .map_err(|e| {
-                WorkError::Execution(format!("chart target '{}' LLM call failed: {e}", self.name))
+                WorkError::execution_display(format!("chart target '{}' LLM call failed: {e}", self.name))
             })?;
 
         let output = parse_output(&response);

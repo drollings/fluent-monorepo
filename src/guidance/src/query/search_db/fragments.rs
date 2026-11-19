@@ -495,8 +495,7 @@ impl super::GuidanceSearchDb {
         let mut rows: Vec<NodeRow> = Vec::new();
         let mut seen: HashSet<(String, Option<String>)> = HashSet::new();
         for path in &json_files {
-            let content = common_core::io::read_to_string_err(path)
-                .map_err(|e| DbError::Other(format!("failed to read {}: {e}", path.display())))?;
+            let content = common_core::io::read_to_string_err(path).map_err(DbError::Io)?;
             // Sidecar receipts ride on the first line; only the JSON
             // body parses here. The header manifest feeds the GEN gate.
             let (_header, body) = fluent_types::sidecar::strip_header(&content);
@@ -505,7 +504,7 @@ impl super::GuidanceSearchDb {
             }
 
             let doc: serde_json::Value = serde_json::from_str(body)
-                .map_err(|e| DbError::Other(format!("failed to parse {}: {e}", path.display())))?;
+                .map_err(|e| DbError::Data(format!("failed to parse {}: {e}", path.display())))?;
 
             let source = doc["meta"]["source"].as_str().unwrap_or("").to_string();
             let module = doc["meta"]["module"].as_str().unwrap_or("").to_string();

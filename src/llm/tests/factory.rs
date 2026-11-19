@@ -17,7 +17,7 @@ fn qwen_options() -> CreateModelOptions {
         endpoint: Some("https://example.test/embeddings".to_string()),
         model_cache_dir: None,
         device: None,
-        timeout_ms: None,
+        timeout: None,
         extra_headers: HashMap::new(),
     }
 }
@@ -39,7 +39,7 @@ fn factory_resolves_remote_dispatch_and_rejects_unknown_models() {
             endpoint: None,
             model_cache_dir: None,
             device: None,
-            timeout_ms: None,
+            timeout: None,
             extra_headers: HashMap::new(),
         },
     )
@@ -70,7 +70,7 @@ fn factory_builds_local_gguf_entries_with_unbound_runtime() {
             endpoint: None,
             model_cache_dir: Some(std::env::temp_dir()),
             device: Some("cpu".to_string()),
-            timeout_ms: None,
+            timeout: None,
             extra_headers: HashMap::new(),
         },
     )

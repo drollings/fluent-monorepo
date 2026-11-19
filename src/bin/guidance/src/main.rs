@@ -117,7 +117,7 @@ enum Commands {
 
         /// Section budget override (tokens); per-intent table otherwise.
         #[arg(long)]
-        budget: Option<usize>,
+        budget: Option<u64>,
 
         /// Decision fingerprint authorizing filtering; absent is shadow-only.
         #[arg(long)]
@@ -1039,7 +1039,7 @@ fn cmd_explain(
     limit: usize,
     no_llm: bool,
     include_fixtures: bool,
-    budget: Option<usize>,
+    budget: Option<u64>,
     show_prompts: bool,
     strict: bool,
     readiness: guidance_core::read::readiness::Readiness,
@@ -1145,13 +1145,13 @@ fn cmd_explain(
         .map(|backend| guidance_core::read::engine::JudgeCtx {
             backend,
             model: cfg.decision.model.clone(),
-            timeout_ms: cfg.decision.timeout_ms,
+            timeout: cfg.decision.timeout,
             fingerprint: fingerprint.clone(),
         });
     let client = if !evidence_only && !no_llm && cfg.generative.enabled {
         let role = &cfg.generative;
         let mut client = fluent_llm::client::LlmClient::new(&role.base_url, &role.model);
-        client.config.timeout_ms = role.timeout_ms;
+        client.config.timeout = role.timeout;
         client.config.show_prompts = show_prompts;
         Some(client)
     } else {
@@ -3419,7 +3419,7 @@ fn cmd_calibrate(
             fluent_llm::decision::DecisionTransport::local_only(),
         );
         let judge =
-            guidance_core::read::decide::FindingJudge::new(&backend, "decision".to_string(), 2000);
+            guidance_core::read::decide::FindingJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
         let mut scores = Vec::new();
         let mut support = 0usize;
         let mut control_fires = 0usize;
@@ -3610,7 +3610,7 @@ fn cmd_calibrate(
                     .collect(),
                 kind: fluent_llm::decision::DecisionKind::Choice,
                 version: guidance_core::query::decision_points::SCOPE_VERSION,
-                timeout_ms: 2000,
+                timeout: std::time::Duration::from_secs(2),
                 model: "decision".to_string(),
             };
             // Fail-closed: transport down scores zero, never a verdict.
@@ -3716,7 +3716,7 @@ fn cmd_calibrate(
         // Score the real judge (fail-closed when the endpoint is down):
         // one single-candidate judgment per row, in query order.
         let judge =
-            guidance_core::read::decide::FindingJudge::new(&backend, "decision".to_string(), 2000);
+            guidance_core::read::decide::FindingJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
         let mut scores = Vec::new();
         let mut support = 0usize;
         let mut control_fires = 0usize;
@@ -3812,7 +3812,7 @@ fn cmd_calibrate(
             fluent_llm::decision::DecisionTransport::local_only(),
         );
         let judge =
-            guidance_core::read::decide::DocJudge::new(&backend, "decision".to_string(), 2000);
+            guidance_core::read::decide::DocJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
         let mut scores = Vec::new();
         let mut support = 0usize;
         let mut control_fires = 0usize;
@@ -4001,7 +4001,7 @@ fn pin_fingerprint_via_canary(
                 .collect(),
             kind: DecisionKind::Choice,
             version: 1,
-            timeout_ms: 2000,
+            timeout: std::time::Duration::from_secs(2),
             model: "decision".to_string(),
         };
         match fluent_llm::client::block_on(backend.decide(request)) {
@@ -4811,7 +4811,7 @@ fn run_fix_scope(
     let decision = guidance_core::waves::DecisionEndpoint {
         base_url: cfg.decision.base_url.clone(),
         model: cfg.decision.model.clone(),
-        timeout_ms: cfg.decision.timeout_ms,
+        timeout: cfg.decision.timeout,
         enabled: cfg.decision.enabled,
     };
     let clippy = guidance_core::waves::live_runner(guidance_core::clippy::ClippyCtx {
@@ -4845,7 +4845,7 @@ fn run_fix_scope(
     let generative = guidance_core::waves::GenerativeEndpoint {
         base_url: cfg.generative.base_url.clone(),
         model: cfg.generative.model.clone(),
-        timeout_ms: cfg.generative.timeout_ms,
+        timeout: cfg.generative.timeout,
         enabled: cfg.generative.enabled,
     };
     let drafts = if escalated.is_empty() {

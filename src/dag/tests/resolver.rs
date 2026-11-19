@@ -8,7 +8,7 @@ use std::time::Instant;
 
 type Entry<'a> = (i64, &'a str, TargetType, &'a [&'a str], &'a [&'a str], bool);
 
-fn register_targets(reg: &mut TargetRegistry, caps: &CapabilityRegistry, entries: &[Entry<'_>]) {
+fn register_targets(reg: &mut TargetRegistry, caps: &CapabilityInterner, entries: &[Entry<'_>]) {
     for &(id, name, ttype, depends, provides, essential) in entries {
         let d: BitVec = if depends.is_empty() {
             BitVec::new()
@@ -101,7 +101,7 @@ fn test_circular_dependency() {
 #[test]
 fn test_narrow_one_empty_input() {
     let reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     let resolver = DependencyResolver::with_narrowing(&reg, &caps);
     let plan = resolver.resolve(&[]).expect("empty input");
     assert!(plan.is_empty());
@@ -110,7 +110,7 @@ fn test_narrow_one_empty_input() {
 #[test]
 fn test_narrow_one_strict_missing_provider() {
     let mut reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     register_targets(
         &mut reg,
         &caps,
@@ -131,7 +131,7 @@ fn test_narrow_one_strict_missing_provider() {
 #[test]
 fn test_narrow_one_disambiguate_single_animal_provider() {
     let mut reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     for (i, (name, provides, deps)) in [
         ("bee", vec!["insect", "color_vision"], vec![]),
         ("insect", vec!["animal"], vec![]),
@@ -181,7 +181,7 @@ fn test_narrow_one_disambiguate_single_animal_provider() {
 #[test]
 fn test_narrow_one_disambiguate_with_locality_preference() {
     let mut reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
 
     let entries: &[Entry<'_>] = &[
         (
@@ -273,7 +273,7 @@ fn test_narrow_one_disambiguate_with_locality_preference() {
 #[test]
 fn test_narrow_one_ambiguity_reported_when_multiple_providers() {
     let mut reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
 
     register_targets(
         &mut reg,
@@ -321,7 +321,7 @@ fn test_narrow_one_ambiguity_reported_when_multiple_providers() {
 #[test]
 fn test_narrow_one_loser_not_readded_by_final_expansion() {
     let mut reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     register_targets(
         &mut reg,
         &caps,
@@ -377,7 +377,7 @@ fn test_narrow_one_loser_not_readded_by_final_expansion() {
 #[test]
 fn test_narrow_one_loser_re_enters_via_different_cap() {
     let mut reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     register_targets(
         &mut reg,
         &caps,

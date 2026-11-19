@@ -2363,7 +2363,7 @@ fn propose_via_supervised(want: &str, config: &OratorConfig) -> Result<String, E
         let mut session = HttpSession::open(
             &base,
             &model,
-            usize::from(llm.ctx),
+            u64::from(llm.ctx),
             usize::from(llm.n_batch),
         );
         session.push_text(&format!(

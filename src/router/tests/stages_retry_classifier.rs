@@ -281,8 +281,8 @@ fn test_target(role: &str) -> RoutingTarget {
         retry_count: 0,
         retry_base_interval_s: 1,
         stream: false,
-        idle_timeout_ms: 1000,
-        total_timeout_ms: 10_000,
+        idle_timeout: std::time::Duration::from_millis(1000),
+        total_timeout: std::time::Duration::from_millis(10_000),
         api_key: None,
         fallbacks: vec![],
         is_onnx: false,
@@ -442,7 +442,7 @@ impl WorkUnit for EvaluateOnlyProducer {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         self.execute_calls.fetch_add(1, Ordering::SeqCst);
-        Err(WorkError::Execution("must not be called".into()))
+        Err(WorkError::execution_display("must not be called"))
     }
 }
 

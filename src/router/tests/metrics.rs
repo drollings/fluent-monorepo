@@ -9,7 +9,7 @@ use fluent_wvr::WorkError;
 /// (fluent-llm) are foreign to the router.
 fn work_error_class(err: &WorkError) -> FailureClass {
     match err {
-        WorkError::Execution(msg) => classify_error(msg),
+        WorkError::Execution(f) => classify_error(&f.message),
         WorkError::Dependency(_) => FailureClass::Internal,
         WorkError::Timeout { .. } => FailureClass::Timeout,
     }
@@ -229,7 +229,7 @@ fn dispatch_misc_maps_to_unknown() {
 fn work_timeout_maps_directly() {
     assert_eq!(
         work_error_class(&WorkError::Timeout {
-            duration_ms: 30_000,
+            duration: std::time::Duration::from_secs(30),
             unit: "x".into(),
         }),
         FailureClass::Timeout
@@ -239,13 +239,11 @@ fn work_timeout_maps_directly() {
 #[test]
 fn work_execution_uses_regex_fallback() {
     assert_eq!(
-        work_error_class(&WorkError::Execution(
-            "build failed: compilation error".into()
-        )),
+        work_error_class(&WorkError::execution_display("build failed: compilation error")),
         FailureClass::Internal
     );
     assert_eq!(
-        work_error_class(&WorkError::Execution("[E0425] cannot find value".into())),
+        work_error_class(&WorkError::execution_display("[E0425] cannot find value")),
         FailureClass::Internal
     );
 }

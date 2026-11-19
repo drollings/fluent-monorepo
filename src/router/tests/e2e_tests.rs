@@ -99,7 +99,7 @@ fn route(
     let output = pipeline.execute(&ctx)?;
     output
         .data_take()
-        .map_err(|e| WorkError::Execution(e.to_string()))
+        .map_err(|e| WorkError::execution_display(e.to_string()))
 }
 
 #[allow(dead_code)]

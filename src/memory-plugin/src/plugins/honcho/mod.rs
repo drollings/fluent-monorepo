@@ -435,13 +435,13 @@ impl FieldAccess for HonchoMemory {
             "max_sessions" => {
                 self.config.max_sessions = value
                     .parse()
-                    .map_err(|e| FieldError::Parse(format!("invalid max_sessions: {e}")))?;
+                    .map_err(|e| FieldError::parse("max_sessions", format!("invalid max_sessions: {e}")))?;
                 Ok(())
             }
             "min_confidence" => {
                 self.config.min_confidence = value
                     .parse()
-                    .map_err(|e| FieldError::Parse(format!("invalid min_confidence: {e}")))?;
+                    .map_err(|e| FieldError::parse("min_confidence", format!("invalid min_confidence: {e}")))?;
                 Ok(())
             }
             _ => Err(FieldError::NotFound(name.into())),

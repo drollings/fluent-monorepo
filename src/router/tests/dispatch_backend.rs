@@ -47,11 +47,11 @@ impl DispatchBackend for StubBackend {
         _request: RouterRequest,
         _model: String,
         _params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         _filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<RouterResponse, DispatchError>> + Send>> {
-        let _ = (idle_timeout_ms, total_timeout_ms);
+        let _ = (idle_timeout, total_timeout);
         let mut guard = self.responses.lock().unwrap();
         let result = guard.remove(0);
         Box::pin(async move { result })
@@ -62,8 +62,8 @@ impl DispatchBackend for StubBackend {
         _request: RouterRequest,
         _model: String,
         _params: Option<Value>,
-        _idle_timeout_ms: u64,
-        _total_timeout_ms: u64,
+        _idle_timeout: std::time::Duration,
+        _total_timeout: std::time::Duration,
         _filter_thinking: bool,
         _abort: Option<StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {
@@ -175,8 +175,8 @@ async fn retry_success_on_first_attempt() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -193,8 +193,8 @@ async fn retry_on_transient_then_succeed() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -210,8 +210,8 @@ async fn retry_short_circuit_on_non_retryable() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -235,8 +235,8 @@ async fn retry_exhaustion_returns_last_error() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -257,8 +257,8 @@ async fn fallback_first_backend_succeeds() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -275,8 +275,8 @@ async fn fallback_falls_through_on_transient_error() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -293,8 +293,8 @@ async fn fallback_short_circuits_on_4xx() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -312,8 +312,8 @@ async fn fallback_all_backends_fail() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -331,8 +331,8 @@ async fn retry_stream_transient_then_succeed() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -360,17 +360,17 @@ async fn complete_times_out_against_never_responding_upstream() {
     });
 
     let backend = OpenAiChatBackend::new(reqwest::Client::new(), format!("http://{addr}"));
-    let total_timeout_ms = 200;
+    let total_timeout = std::time::Duration::from_millis(200);
     let start = std::time::Instant::now();
 
     let result = tokio::time::timeout(
-        Duration::from_millis(total_timeout_ms + 2000),
+        total_timeout + std::time::Duration::from_secs(2),
         backend.complete(
             make_test_request("hi"),
             "m".into(),
             None,
-            total_timeout_ms,
-            total_timeout_ms,
+            total_timeout,
+            total_timeout,
             false,
         ),
     )
@@ -387,8 +387,9 @@ async fn complete_times_out_against_never_responding_upstream() {
         "expected a timeout DispatchError, got: {err}"
     );
     assert!(
-        elapsed < Duration::from_millis(total_timeout_ms + 2000),
-        "complete() returned after {elapsed:?}, expected ~{total_timeout_ms}ms"
+        elapsed < total_timeout + std::time::Duration::from_secs(2),
+        "complete() returned after {elapsed:?}, expected ~{}ms",
+        total_timeout.as_millis()
     );
 }
 
@@ -475,8 +476,8 @@ async fn complete_sends_bearer_token_from_api_key_env() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -549,8 +550,8 @@ async fn complete_omits_auth_when_api_key_env_missing() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -618,8 +619,8 @@ async fn stream_group_miss_yields_instance_group_miss() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -708,8 +709,8 @@ async fn stream_abort_drops_upstream_and_finalizes_partial_answer() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
             Some(abort),
         )
@@ -886,8 +887,8 @@ async fn stream_fanout_uses_injected_runtime() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
             None,
         )
@@ -998,8 +999,8 @@ async fn retry_backend_does_not_retry_context_overflow() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;
@@ -1056,8 +1057,8 @@ async fn complete_maps_400_overflow_body_to_context_overflow() {
             make_test_request("hi"),
             "m".into(),
             None,
-            5000,
-            30000,
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             false,
         )
         .await;

@@ -205,7 +205,7 @@ fn five_round_prompt_stays_under_budget() {
     ));
     let prompt = crate::tools::loop_::last_prompt_for_tests().expect("prompt recorded");
     assert!(
-        estimate_tokens(&prompt) as usize <= MAX_PROMPT_TOKENS + 64,
+        estimate_tokens(&prompt) <= MAX_PROMPT_TOKENS + 64,
         "prompt under budget: {} tokens",
         estimate_tokens(&prompt)
     );
@@ -218,7 +218,7 @@ fn five_round_prompt_stays_under_budget() {
     );
     assert!(capped.contains("newest"), "marker keeps newest turn");
     assert!(
-        estimate_tokens(&capped) as usize <= MAX_PROMPT_TOKENS + 64,
+        estimate_tokens(&capped) <= MAX_PROMPT_TOKENS + 64,
         "capped prompt under budget"
     );
     assert!(capped.len() < huge.len());
@@ -236,7 +236,7 @@ fn bound_prompt_pins_head_tail_split_and_marker() {
     assert_eq!(bound_prompt("hi"), "hi", "small passes through");
     // Exactly at budget (32768 ASCII chars ≈ 8192 tokens) passes through.
     let at_budget = "x".repeat(32768);
-    assert_eq!(estimate_tokens(&at_budget) as usize, MAX_PROMPT_TOKENS);
+    assert_eq!(estimate_tokens(&at_budget), MAX_PROMPT_TOKENS);
     assert_eq!(
         bound_prompt(&at_budget),
         at_budget,
@@ -245,16 +245,18 @@ fn bound_prompt_pins_head_tail_split_and_marker() {
     // Over budget: split math mirrored from the implementation.
     let total = 40000;
     let prompt = "x".repeat(total);
-    assert!((estimate_tokens(&prompt) as usize) > MAX_PROMPT_TOKENS);
+    assert!(estimate_tokens(&prompt) > MAX_PROMPT_TOKENS);
     let budget_chars = estimate_chars_for_tokens(MAX_PROMPT_TOKENS, 4).max(1024);
     let marker = format!("\n(truncated middle, {total} total chars; newest kept)\n");
-    let keep = budget_chars.saturating_sub(marker.chars().count()).max(512);
-    let head_chars = 2048.min(keep / 4);
+    let keep = budget_chars
+        .saturating_sub(marker.chars().count() as u64)
+        .max(512);
+    let head_chars = 2048u64.min(keep / 4);
     let tail_chars = keep.saturating_sub(head_chars);
     let expected = format!(
         "{}{marker}{}",
-        "x".repeat(head_chars),
-        "x".repeat(tail_chars)
+        "x".repeat(head_chars as usize),
+        "x".repeat(tail_chars as usize)
     );
     assert_eq!(bound_prompt(&prompt), expected);
 }

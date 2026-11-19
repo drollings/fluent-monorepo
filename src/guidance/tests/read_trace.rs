@@ -301,7 +301,7 @@ fn trace_shows_judge_labels_without_filtering() {
     let judge = crate::read::engine::JudgeCtx {
         backend: &backend,
         model: "d".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: None,
     };
     let answer = engine.explain_with_judge(

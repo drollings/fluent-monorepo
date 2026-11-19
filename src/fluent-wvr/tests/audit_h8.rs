@@ -65,7 +65,7 @@ fn err_unit(name: &str) -> std::sync::Arc<dyn Component> {
             &[]
         }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-            Err(WorkError::Execution("boom".into()))
+            Err(WorkError::execution_display("boom"))
         }
     }
     impl FieldAccess for E {
@@ -135,7 +135,7 @@ fn err_unit_msg(name: &str, msg: &str) -> std::sync::Arc<dyn Component> {
             &[]
         }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-            Err(WorkError::Execution(self.m.clone()))
+            Err(WorkError::execution_display(self.m.clone()))
         }
     }
     impl FieldAccess for E {
@@ -337,10 +337,10 @@ fn m4_fail_never_becomes_execution() {
     // accounting. The wire keeps `Ok(fail)` distinct from `Err`.
     let out = cascade_outcome(vec![ok_unit_msg("a", "FAIL", false)]).unwrap();
     assert!(!out.is_accept());
-    assert!(!WorkError::Execution("boom".into()).is_retryable());
+    assert!(!WorkError::execution_display("boom").is_retryable());
     assert!(WorkError::Dependency("wait".into()).is_retryable());
     assert!(WorkError::Timeout {
-        duration_ms: 1,
+        duration: std::time::Duration::from_millis(1),
         unit: "u".into()
     }
     .is_retryable());

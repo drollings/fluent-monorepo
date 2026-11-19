@@ -242,7 +242,7 @@ fn support_judge_labels_entailment_per_claim() {
         decide("insufficient"),
         Err(DecisionError::Unavailable("down".to_string())),
     ]);
-    let judge = SupportJudge::new(&backend, "d".to_string(), 2000);
+    let judge = SupportJudge::new(&backend, "d".to_string(), std::time::Duration::from_secs(2));
     let verdicts: Vec<CandidateVerdict<SupportLabel>> = judge.judge(
         "Which crate owns calibration?",
         &[

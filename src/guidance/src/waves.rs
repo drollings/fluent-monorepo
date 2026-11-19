@@ -33,7 +33,7 @@ pub struct DecisionEndpoint {
     /// Model identity (also the calibration fingerprint and cache key).
     pub model: String,
     /// Per-call timeout.
-    pub timeout_ms: u64,
+    pub timeout: std::time::Duration,
     /// `false` skips the model rung entirely.
     pub enabled: bool,
 }
@@ -43,7 +43,7 @@ impl Default for DecisionEndpoint {
         Self {
             base_url: String::new(),
             model: String::new(),
-            timeout_ms: 30_000,
+            timeout: std::time::Duration::from_secs(30),
             enabled: false,
         }
     }
@@ -70,7 +70,7 @@ pub struct GenerativeEndpoint {
     /// Model identity.
     pub model: String,
     /// Per-call timeout.
-    pub timeout_ms: u64,
+    pub timeout: std::time::Duration,
     /// `false` skips the model rung entirely.
     pub enabled: bool,
 }
@@ -80,7 +80,7 @@ impl Default for GenerativeEndpoint {
         Self {
             base_url: String::new(),
             model: String::new(),
-            timeout_ms: 30_000,
+            timeout: std::time::Duration::from_secs(30),
             enabled: false,
         }
     }
@@ -142,7 +142,7 @@ pub fn run_model_draft_rung(
         return report;
     }
     let mut client = fluent_llm::client::LlmClient::new(&endpoint.base_url, &endpoint.model);
-    client.config.timeout_ms = endpoint.timeout_ms;
+    client.config.timeout = endpoint.timeout;
     for (path, reason) in files {
         let Ok(source) = common_core::io::read_to_string_err(path) else {
             report.failed += 1;
@@ -859,7 +859,7 @@ fn triage_hold(
             let config = fluent_llm::protocol::LlmConfig::new()
                 .api_url(ctx.decision.base_url.clone())
                 .model(model_id.to_string())
-                .timeout_ms(ctx.decision.timeout_ms)
+                .timeout(ctx.decision.timeout)
                 .extra_body_params(serde_json::json!({
                     "temperature": crate::triage::MODEL_TEMPERATURE,
                     "seed": crate::triage::MODEL_SEED,

@@ -25,7 +25,7 @@ fn judge_maps_labels_and_aligns_batches() {
         Ok(verdict("irrelevant", 0.8)),
         Ok(verdict("insufficient", 0.6)),
     ]);
-    let judge = FindingJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = FindingJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let verdicts = judge.judge(
         "how does sync decide what to reprocess",
         &[
@@ -63,7 +63,7 @@ fn malformed_and_transport_outcomes_fail_closed() {
         Ok(verdict("maybe", 0.5)),
         Err(DecisionError::Unavailable("transport down".to_string())),
     ]);
-    let judge = FindingJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = FindingJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let verdicts = judge.judge(
         "q",
         &[
@@ -125,7 +125,7 @@ fn shadow_records_log_without_filtering_or_reordering() {
 #[test]
 fn empty_findings_make_no_calls() {
     let backend = ScriptedDecideBackend::new(vec![]);
-    let judge = FindingJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = FindingJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     assert!(judge.judge("q", &[]).is_empty());
     assert!(backend.requests().is_empty());
 }

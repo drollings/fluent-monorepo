@@ -105,7 +105,7 @@ impl Migration for FailingMigration {
 
     fn up(&self, tx: &mut rusqlite::Transaction<'_>) -> Result<(), fluent_db::error::DbError> {
         tx.execute_batch("CREATE TABLE probe_fail (id INTEGER PRIMARY KEY);")?;
-        Err(fluent_db::error::DbError::Other("boom".to_string()))
+        Err(fluent_db::error::DbError::Spawn("boom".to_string()))
     }
 }
 

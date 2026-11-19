@@ -7,59 +7,15 @@
 //! and inserts only `Ok` decisions: `Unavailable`/`Decode` errors never
 //! populate the cache (pinned by the must-not-cache controls).
 
-use std::collections::HashMap;
 use std::future::Future;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
 
-use common_core::sync::lock;
+use fluent_concurrency::cache::AsyncLoadCache;
 
 use crate::decision::{Decision, DecisionError};
 
-/// One in-flight load shared by concurrent misses on a key.
-///
-/// The waiter control flow only needs to know *that* the leader published
-/// an outcome (then it re-loops into the cache/election); the payload
-/// itself travels via the cache on success or a fresh load on failure.
-/// A flag replaces the dead `Mutex<Option<Result>>` clone per load. The
-/// sync `get_or_load` seam cannot drive the async load (it blocks the
-/// executor on a `Condvar`), so no second cache is introduced.
-struct Inflight {
-    notify: tokio::sync::Notify,
-    published: std::sync::atomic::AtomicBool,
-}
-
-impl Inflight {
-    fn new() -> Self {
-        Self {
-            notify: tokio::sync::Notify::new(),
-            published: std::sync::atomic::AtomicBool::new(false),
-        }
-    }
-}
-
-/// Removes the leader's entry on scope exit — normal return, error, and
-/// loader cancel alike — and wakes waiters so none strands. Removal is
-/// conditional on identity: a successor election that already replaced
-/// the entry is left alone.
-struct Retire<'t> {
-    table: &'t Mutex<HashMap<String, Arc<Inflight>>>,
-    key: String,
-    shared: Arc<Inflight>,
-}
-
-impl Drop for Retire<'_> {
-    fn drop(&mut self) {
-        let mut table = lock(self.table);
-        let stale = table
-            .get(&self.key)
-            .is_some_and(|current| Arc::ptr_eq(current, &self.shared));
-        if stale {
-            table.remove(&self.key);
-        }
-        self.shared.notify.notify_waiters();
-    }
-}
+/// One in-flight load is owned by `AsyncLoadCache` (singleflight
+/// election, cancel-safe retire); this module owns only the key framing
+/// (`CacheKeyInput`) and the admission policy (degraded never stored).
 
 /// Composite cache-key input: every identity axis in one struct so the key
 /// can grow (fingerprint today) without another signature break. `key()`
@@ -149,31 +105,22 @@ impl CacheKeyInput {
 /// assert!(!decision.cached);
 /// ```
 pub struct DecisionCache {
-    inner: common_core::cache::LoadCache<String, Decision, DecisionError>,
-    inflight: Mutex<HashMap<String, Arc<Inflight>>>,
+    inner: AsyncLoadCache<String, Decision, DecisionError>,
 }
 
 impl DecisionCache {
     /// Create a cache holding up to `capacity` decisions.
     pub fn try_new(capacity: usize) -> Result<Self, String> {
         Ok(Self {
-            inner: common_core::cache::LoadCache::try_new(capacity, |_| {
-                Err(DecisionError::Unavailable(
-                    "sync load unsupported; use get_or_decide".to_string(),
-                ))
-            })?,
-            inflight: Mutex::new(HashMap::new()),
+            inner: AsyncLoadCache::try_new(capacity)?,
         })
     }
 
     /// Look up `key`, running `decide` on a miss and caching only success.
     ///
-    /// Simultaneous misses on one key coalesce: the first caller loads
-    /// while the rest wait on the in-flight slot and share its success
-    /// (re-checking the cache first, so a staggered arrival wins without
-    /// loading). Errors are never shared — each waiter falls back to its
-    /// own load, exactly the pre-change behavior — and a canceled leader
-    /// wakes its waiters into a fresh election instead of stranding them.
+    /// Singleflight election lives in `AsyncLoadCache`; the policy here is
+    /// admission only: degraded successes are usable once, never stored
+    /// (caching them would cement an uncalibrated prior as a result).
     pub async fn get_or_decide<Fut>(
         &self,
         key: String,
@@ -182,70 +129,19 @@ impl DecisionCache {
     where
         Fut: Future<Output = Result<Decision, DecisionError>> + Send,
     {
-        loop {
-            if let Some(hit) = self.inner.get(&key) {
+        if let Some(hit) = self.inner.get(&key) {
+            if !hit.degraded {
                 let mut decision = hit;
                 decision.cached = true;
                 return Ok(decision);
-            }
-            // Elect exactly one loader per key; no lock is held across the
-            // blocking sections below.
-            let shared = match lock(&self.inflight).entry(key.clone()) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    let shared = Arc::new(Inflight::new());
-                    entry.insert(Arc::clone(&shared));
-                    None
-                }
-                std::collections::hash_map::Entry::Occupied(entry) => Some(Arc::clone(entry.get())),
-            };
-            if let Some(shared) = shared {
-                // Waiter: when published, re-loop into the cache/election
-                // (leader failed or vanished); else await the publish. The
-                // wait registers before the published re-check, so a publish
-                // in the window wakes the registered waiter instead of
-                // slipping past it.
-                let notified = shared.notify.notified();
-                tokio::pin!(notified);
-                notified.as_mut().enable();
-                if shared.published.load(Ordering::Acquire) {
-                    continue;
-                }
-                notified.await;
-                continue;
-            }
-            // Leader path. The retire guard removes the entry (and wakes
-            // stragglers) on every exit, including a cancelled `decide`.
-            let shared = lock(&self.inflight)
-                .get(&key)
-                .map(Arc::clone)
-                .expect("leader entry");
-            let _retire = Retire {
-                table: &self.inflight,
-                key: key.clone(),
-                shared: Arc::clone(&shared),
-            };
-            // A staggered arrival may have populated the cache between the
-            // outer miss and the election win.
-            if let Some(hit) = self.inner.get(&key) {
-                shared.published.store(true, Ordering::Release);
-                let mut decision = hit;
-                decision.cached = true;
-                return Ok(decision);
-            }
-            match decide.await {
-                // Degraded successes are usable once, never stored: caching
-                // them would cement an uncalibrated prior as a result.
-                Ok(decision) if !decision.degraded => {
-                    self.inner.insert(key, decision.clone());
-                    shared.published.store(true, Ordering::Release);
-                    return Ok(decision);
-                }
-                outcome => {
-                    shared.published.store(true, Ordering::Release);
-                    return outcome;
-                }
             }
         }
+        let mut outcome = self
+            .inner
+            .get_or_compute_with(key, decide, |d| !d.degraded)
+            .await?;
+        outcome.cached = false;
+        Ok(outcome)
     }
 
     /// Look up `key` without loading. Hits are marked `cached`.

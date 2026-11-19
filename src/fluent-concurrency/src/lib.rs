@@ -20,6 +20,7 @@ pub mod ladder;
 // The generic executor (`pool::ResultPool`, `stream::StreamAbort`,
 // `runtime::TestRuntime`) stays and is composed by the protocol owner.
 pub mod batch;
+pub mod cache;
 pub mod pool;
 pub mod queue;
 /// Test-only reconnect/backfill sketch: no production consumer exists,

@@ -85,27 +85,27 @@ fn derive_field_access_enforces_constraints() {
     // min/max on port.
     assert!(matches!(
         cfg.set_field("port", "0"),
-        Err(FieldError::Constraint(_))
+        Err(FieldError::Constraint { .. })
     ));
     assert!(matches!(
         cfg.set_field("port", "65536"),
-        Err(FieldError::Constraint(_))
+        Err(FieldError::Constraint { .. })
     ));
     // non-numeric parse error.
     assert!(matches!(
         cfg.set_field("port", "abc"),
-        Err(FieldError::Parse(_))
+        Err(FieldError::Parse { .. })
     ));
     // max_len on host.
     let long = "x".repeat(300);
     assert!(matches!(
         cfg.set_field("host", &long),
-        Err(FieldError::Constraint(_))
+        Err(FieldError::Constraint { .. })
     ));
     // pattern (substring) on endpoint.
     assert!(matches!(
         cfg.set_field("endpoint", "http://plain"),
-        Err(FieldError::Constraint(_))
+        Err(FieldError::Constraint { .. })
     ));
     cfg.set_field("endpoint", "https://ok").unwrap();
     // unknown field.

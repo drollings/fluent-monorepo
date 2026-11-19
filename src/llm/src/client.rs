@@ -170,7 +170,7 @@ impl LlmClient {
                     messages,
                     &self.model,
                     self.config.think,
-                    self.config.timeout_ms,
+                    self.config.timeout,
                     merged.as_ref(),
                     self.config.debug,
                     self.config.show_prompts,
@@ -255,7 +255,7 @@ impl LlmClient {
     ) -> Result<crate::decision::Decision, crate::decision::DecisionError> {
         use crate::decision::{DecideRequest, DecisionError, DecisionOption};
         let spec = question.spec;
-        spec.validate().map_err(DecisionError::Rejected)?;
+        spec.validate().map_err(|e| DecisionError::Rejected(e.to_string()))?;
         self.decide_request(DecideRequest {
             prompt: question.render(),
             state: question.state.to_string(),
@@ -268,9 +268,9 @@ impl LlmClient {
                     description: String::new(),
                 })
                 .collect(),
-            kind: spec.kind_enum().map_err(DecisionError::Rejected)?,
+            kind: spec.kind_enum().map_err(|e| DecisionError::Rejected(e.to_string()))?,
             version: spec.version,
-            timeout_ms: spec.timeout_ms,
+            timeout: std::time::Duration::from_millis(spec.timeout_ms),
             model: self.model.clone(),
         })
         .await
@@ -289,7 +289,7 @@ impl LlmClient {
     ///     vec!["A".to_string(), "B".to_string()],
     ///     DecisionKind::Choice,
     ///     1,
-    ///     2000,
+    ///     std::time::Duration::from_secs(2),
     /// ));
     /// ```
     pub async fn decide_prompt(
@@ -298,7 +298,7 @@ impl LlmClient {
         candidates: Vec<String>,
         kind: crate::decision::DecisionKind,
         version: u64,
-        timeout_ms: u64,
+        timeout: std::time::Duration,
     ) -> Result<crate::decision::Decision, crate::decision::DecisionError> {
         use crate::decision::{DecideRequest, DecisionOption};
         self.decide_request(DecideRequest {
@@ -314,7 +314,7 @@ impl LlmClient {
                 .collect(),
             kind,
             version,
-            timeout_ms,
+            timeout,
             model: self.model.clone(),
         })
         .await
@@ -336,7 +336,7 @@ impl LlmClient {
     ///     options: Vec::new(),
     ///     kind: DecisionKind::Choice,
     ///     version: 1,
-    ///     timeout_ms: 2000,
+    ///     timeout: std::time::Duration::from_secs(2),
     ///     model: "model".to_string(),
     /// }));
     /// ```
@@ -374,7 +374,7 @@ impl LlmClient {
             self.config.think,
         );
         let url = crate::url::chat_completions_url(&self.api_base);
-        let timeout_ms = request.timeout_ms;
+        let timeout = request.timeout;
         let version = request.version;
         let kind = request.kind;
         let candidates: Vec<String> = request.options.into_iter().map(|o| o.label).collect();
@@ -383,7 +383,7 @@ impl LlmClient {
             let url = &url;
             let body = &body;
             let model = &self.model;
-            async move { post_chat_json_async(url, body, timeout_ms, model).await }
+            async move { post_chat_json_async(url, body, timeout, model).await }
         })
         .await
         .map_err(DecisionError::from)?;
@@ -485,7 +485,7 @@ impl LlmClient {
             self.config.think,
         );
         let url = crate::url::chat_completions_url(&self.api_base);
-        let value = post_chat_json_async(&url, &body, self.config.timeout_ms, &self.model)
+        let value = post_chat_json_async(&url, &body, self.config.timeout, &self.model)
             .await
             .map_err(DecisionError::from)?;
         Ok(crate::decision::DecisionProbe::read(&value))
@@ -527,7 +527,7 @@ pub fn block_on<F: std::future::Future>(fut: F) -> F::Output {
     common_core::runtime::block_on(fut)
 }
 
-/// Async chat completion HTTP call. Honors `LlmConfig::timeout_ms` via
+/// Async chat completion HTTP call. Honors `LlmConfig::timeout` via
 /// `tokio::time::timeout` on the whole request/response.
 ///
 /// `extra_body_params` are merged into the HTTP request body to supply
@@ -537,7 +537,7 @@ pub async fn chat_complete_http_async(
     messages: &[ChatMessage],
     model: &str,
     think: Option<bool>,
-    timeout_ms: u64,
+    timeout: std::time::Duration,
     extra_body_params: Option<&serde_json::Value>,
     debug: bool,
     show_prompts: bool,
@@ -548,7 +548,7 @@ pub async fn chat_complete_http_async(
         messages,
         model,
         think,
-        timeout_ms,
+        timeout,
         extra_body_params,
         debug,
         show_prompts,
@@ -572,14 +572,14 @@ pub fn chat_complete_http(
     debug: bool,
     show_prompts: bool,
 ) -> Result<String, LlmError> {
-    // timeout_ms=0 disables the timeout to preserve the original behavior
+    // Zero timeout disables the timeout to preserve the original behavior
     // of the sync `chat_complete_http` (which had no timeout).
     let fut = chat_complete_http_async(
         api_base,
         messages,
         model,
         think,
-        0,
+        std::time::Duration::ZERO,
         extra_body_params,
         debug,
         show_prompts,
@@ -599,7 +599,7 @@ async fn chat_complete_http_inner_async(
     messages: &[ChatMessage],
     model: &str,
     think: Option<bool>,
-    timeout_ms: u64,
+    timeout: std::time::Duration,
     extra_body_params: Option<&serde_json::Value>,
     debug: bool,
     show_prompts: bool,
@@ -626,7 +626,7 @@ async fn chat_complete_http_inner_async(
         eprintln!("[llm] model={model} url={url} messages={}", messages.len());
     }
 
-    let parsed = post_chat_json_async(url, &body, timeout_ms, model).await?;
+    let parsed = post_chat_json_async(url, &body, timeout, model).await?;
 
     // Extract content from choices[0].message.content.
     // reasoning_content is NEVER the answer — it is the model's internal
@@ -650,7 +650,7 @@ async fn chat_complete_http_inner_async(
 }
 
 /// The single send-and-parse path: POST `body` to the chat-completions `url`,
-/// map status via `HttpClass`, bound by `timeout_ms` (0 disables), and return
+/// map status via `HttpClass`, bound by `timeout` (zero disables), and return
 /// the full parsed response `Value`.
 ///
 /// Both the content-only path above and the decision seam compose this — one
@@ -659,7 +659,7 @@ async fn chat_complete_http_inner_async(
 async fn post_chat_json_async(
     url: &str,
     body: &serde_json::Value,
-    timeout_ms: u64,
+    timeout: std::time::Duration,
     model: &str,
 ) -> Result<serde_json::Value, LlmError> {
     let client = shared_http_client();
@@ -708,14 +708,14 @@ async fn post_chat_json_async(
         target: "llm.client",
         model = %model,
         url = %url,
-        timeout_ms = timeout_ms,
+        timeout_ms = timeout.as_millis() as u64,
         "chat completion request"
     );
 
-    let body_str = if timeout_ms == 0 {
+    let body_str = if timeout.is_zero() {
         send_fut.await?
     } else {
-        match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), send_fut).await {
+        match tokio::time::timeout(timeout, send_fut).await {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => return Err(e),
             Err(_) => {
@@ -723,12 +723,13 @@ async fn post_chat_json_async(
                     target: "llm.client",
                     model = %model,
                     url = %url,
-                    timeout_ms = timeout_ms,
+                    timeout_ms = timeout.as_millis() as u64,
                     latency_ms = start.elapsed().as_millis() as u64,
                     "chat completion timed out"
                 );
                 return Err(LlmError::Http(format!(
-                    "request timed out after {timeout_ms}ms"
+                    "request timed out after {}ms",
+                    timeout.as_millis()
                 )));
             }
         }

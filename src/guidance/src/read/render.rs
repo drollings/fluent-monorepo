@@ -49,7 +49,7 @@ pub fn render_code_findings(findings: &[crate::read::engine::Finding]) -> String
 pub fn render_card_section(
     title: &str,
     cards: &[(String, String)],
-    budget_tokens: usize,
+    budget_tokens: u64,
 ) -> String {
     let mut entries = String::new();
     for (card_title, body) in cards {
@@ -65,7 +65,7 @@ pub fn render_card_section(
 pub fn render_evidence_section(
     title: &str,
     entries: &[(String, String)],
-    budget_tokens: usize,
+    budget_tokens: u64,
 ) -> String {
     let mut items = String::new();
     for (source, excerpt) in entries {
@@ -82,7 +82,7 @@ pub fn render_evidence_section(
 pub fn render_capped_evidence_section(
     title: &str,
     entries: &[(String, String)],
-    budget_tokens: usize,
+    budget_tokens: u64,
 ) -> String {
     let mut items = String::new();
     let mut budget = fluent_llm::tokens::TokenBudget(budget_tokens);
@@ -93,7 +93,7 @@ pub fn render_capped_evidence_section(
         } else {
             format!("- {source}: {excerpt}\n")
         };
-        let cost = fluent_llm::tokens::estimate_tokens(&line) as usize;
+        let cost = fluent_llm::tokens::estimate_tokens(&line);
         if !budget.consume(cost) {
             break;
         }

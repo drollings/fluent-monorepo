@@ -12,7 +12,7 @@ use crate::component_map::{component_gate_for_path, ComponentGate};
 use crate::graph_index::GraphIndex;
 
 /// Default pack budget in tokens.
-pub const DEFAULT_PACK_TOKENS: usize = 8_000;
+pub const DEFAULT_PACK_TOKENS: u64 = 8_000;
 
 /// One packable excerpt in caller-priority order.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -35,7 +35,7 @@ pub struct ContextPack {
 /// Fit excerpts to a token budget through the shared packer core.
 /// Deterministic: selection is size-driven, order is caller-priority.
 #[must_use]
-pub fn pack_context(items: &[ContextItem], max_tokens: usize) -> ContextPack {
+pub fn pack_context(items: &[ContextItem], max_tokens: u64) -> ContextPack {
     let packer = ContextPacker::new(max_tokens);
     let refs: Vec<(&str, &ContextItem)> = items
         .iter()
@@ -62,7 +62,7 @@ pub fn pack_context(items: &[ContextItem], max_tokens: usize) -> ContextPack {
 /// reason. Opt-in; `pack_context` keeps its labelled shape.
 pub fn pack_context_strict(
     items: &[ContextItem],
-    max_tokens: usize,
+    max_tokens: u64,
     freshness: &crate::freshness::Freshness,
 ) -> Result<ContextPack, crate::freshness::StrictRefusal> {
     if freshness.is_fresh() {
@@ -229,7 +229,7 @@ pub struct PackInput {
     /// Read-only test excerpts.
     pub test_excerpts: Vec<String>,
     /// Token budget for the pack.
-    pub budget_tokens: usize,
+    pub budget_tokens: u64,
 }
 
 /// Citation manifest for a pack: one citation plus one hash per kept

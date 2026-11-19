@@ -365,7 +365,7 @@ fn build_rungs(rungs: &[RungKind]) -> (Vec<Arc<dyn Component>>, Vec<Arc<AtomicUs
             RungKind::Err(_) => {
                 StubComponent::ok(&format!("rung-{index}")).with_handler(move |_| {
                     probe.fetch_add(1, Ordering::SeqCst);
-                    Err(WorkError::Execution(message.clone()))
+                    Err(WorkError::execution_display(message.clone()))
                 })
             }
             RungKind::DepErr(_) => {

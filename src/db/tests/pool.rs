@@ -9,10 +9,13 @@ fn pool() -> Arc<SqlitePool> {
 
 #[test]
 fn pool_config_builder_overrides_timeout_and_keeps_size() {
-    let cfg = PoolConfig::new(3).with_busy_timeout_ms(250);
+    let cfg = PoolConfig::new(3).with_busy_timeout(std::time::Duration::from_millis(250));
     assert_eq!(cfg.size, 3);
-    assert_eq!(cfg.busy_timeout_ms, 250);
-    assert_eq!(PoolConfig::new(3).busy_timeout_ms, 5_000);
+    assert_eq!(cfg.busy_timeout, std::time::Duration::from_millis(250));
+    assert_eq!(
+        PoolConfig::new(3).busy_timeout,
+        std::time::Duration::from_secs(5)
+    );
 }
 
 #[tokio::test]
@@ -222,7 +225,7 @@ async fn transaction_commit_and_rollback() {
                             if commit {
                                 Ok(())
                             } else {
-                                Err(DbError::Other("boom".into()))
+                                Err(DbError::Spawn("boom".into()))
                             }
                         })
                         .await;
@@ -605,7 +608,7 @@ fn zero_capacity_refused() {
     assert!(PoolConfig::try_new(0).is_err());
     let opened = SqlitePool::open_in_memory(&PoolConfig::new(0));
     assert!(
-        matches!(opened, Err(DbError::Other(_))),
+        matches!(opened, Err(DbError::Config(_))),
         "zero-size pool must be refused with a typed error"
     );
     let cfg = PoolConfig::try_new(1).expect("size one is accepted");

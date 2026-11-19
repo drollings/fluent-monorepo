@@ -618,7 +618,7 @@ impl FieldAccess for HindsightMemory {
             "max_depth" => {
                 self.config.max_depth = value
                     .parse()
-                    .map_err(|e| FieldError::Parse(format!("invalid max_depth: {e}")))?;
+                    .map_err(|e| FieldError::parse("max_depth", format!("invalid max_depth: {e}")))?;
                 Ok(())
             }
             _ => Err(FieldError::NotFound(name.into())),

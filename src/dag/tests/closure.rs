@@ -2,7 +2,7 @@ use super::*;
 use crate::target::{Target, TargetRegistry};
 use crate::tests::common::{make_bitset, make_registry};
 use bitvec::vec::BitVec;
-use common_core::interner::CapabilityRegistry;
+use common_core::interner::CapabilityInterner;
 use fluent_types::{ExecutorKind, TargetType};
 
 #[test]
@@ -167,7 +167,7 @@ fn test_rejected_provider_skipped() {
 #[test]
 fn test_implicit_name_fallback() {
     let mut reg = TargetRegistry::new();
-    let caps = CapabilityRegistry::new();
+    let caps = CapabilityInterner::new();
     let cap_idx = caps.intern("helper_tool");
     reg.register(
         Target::new()

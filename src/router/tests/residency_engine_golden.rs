@@ -184,8 +184,8 @@ mod onnx_golden {
                 pinned: true,
                 no_sleep: false,
                 sleep_idle_seconds: Some(30),
-                total_timeout_ms: 0,
-                idle_timeout_ms: 0,
+                total_timeout: std::time::Duration::from_millis(0),
+                idle_timeout: std::time::Duration::from_millis(0),
                 params: None,
                 roles: None,
                 model: OnnxConfig::new()

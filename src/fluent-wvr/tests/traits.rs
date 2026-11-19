@@ -12,12 +12,12 @@ fn field_error_display_variants() {
         "field not found: x"
     );
     assert_eq!(
-        format!("{}", FieldError::Parse("bad".into())),
-        "field parse error: bad"
+        format!("{}", FieldError::parse("f", "bad")),
+        "field parse error on f: bad"
     );
     assert_eq!(
-        format!("{}", FieldError::Constraint("too big".into())),
-        "constraint violation: too big"
+        format!("{}", FieldError::constraint("f", "too big")),
+        "constraint violation on f: too big"
     );
     assert_eq!(
         format!("{}", FieldError::ReadOnly("port".into(), "shared".into())),
@@ -36,8 +36,8 @@ fn field_error_equality_and_partial_eq() {
         FieldError::NotFound("b".into())
     );
     assert_ne!(
-        FieldError::Parse("p".into()),
-        FieldError::Constraint("p".into())
+        FieldError::parse("f", "p"),
+        FieldError::constraint("f", "p")
     );
 }
 

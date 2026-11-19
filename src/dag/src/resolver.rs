@@ -39,7 +39,7 @@ use crate::closure::{self, ClosureCtx};
 use crate::error::ResolverError;
 use crate::narrowing;
 use crate::target::{Target, TargetRegistry};
-use common_core::interner::CapabilityRegistry;
+use common_core::interner::CapabilityInterner;
 use fluent_types::TargetType;
 
 #[derive(Debug, Clone)]
@@ -87,7 +87,7 @@ pub enum ProviderSelection {
 pub struct DependencyResolver<'a> {
     registry: &'a TargetRegistry,
     strict: bool,
-    caps: Option<&'a CapabilityRegistry>,
+    caps: Option<&'a CapabilityInterner>,
     selection: ProviderSelection,
 }
 
@@ -101,7 +101,7 @@ impl<'a> DependencyResolver<'a> {
         }
     }
 
-    pub fn with_narrowing(registry: &'a TargetRegistry, caps: &'a CapabilityRegistry) -> Self {
+    pub fn with_narrowing(registry: &'a TargetRegistry, caps: &'a CapabilityInterner) -> Self {
         Self {
             registry,
             strict: true,
@@ -146,7 +146,7 @@ impl<'a> DependencyResolver<'a> {
             ProviderSelection::NarrowOne => {
                 let caps = self.caps.ok_or_else(|| {
                     ResolverError::MissingDependency(
-                        "NarrowOne requires a CapabilityRegistry".into(),
+                        "NarrowOne requires a CapabilityInterner".into(),
                     )
                 })?;
                 self.resolve_narrow_one(&seed_bits, target_names, caps)
@@ -163,7 +163,7 @@ impl<'a> DependencyResolver<'a> {
     /// paths. Bare seeds pass through untouched, so unconstrained resolution
     /// behaves byte-identically to `resolve`. Provider versions come from the
     /// caller's `versions` map (target name → version) — the registry itself
-    /// is untouched. A constrained import without a `CapabilityRegistry`
+    /// is untouched. A constrained import without a `CapabilityInterner`
     /// refuses with `MissingDependency` rather than guessing.
     pub fn resolve_versioned(
         &self,
@@ -182,7 +182,7 @@ impl<'a> DependencyResolver<'a> {
             let req = VersionReq::parse(req_text).map_err(ResolverError::MissingDependency)?;
             let caps = self.caps.ok_or_else(|| {
                 ResolverError::MissingDependency(format!(
-                    "versioned import '{seed}' requires a CapabilityRegistry"
+                    "versioned import '{seed}' requires a CapabilityInterner"
                 ))
             })?;
             let cap_idx = caps.get_index(name).ok_or_else(|| {
@@ -233,7 +233,7 @@ impl<'a> DependencyResolver<'a> {
             ProviderSelection::NarrowOne => {
                 let caps = self.caps.ok_or_else(|| {
                     ResolverError::MissingDependency(
-                        "NarrowOne requires a CapabilityRegistry".into(),
+                        "NarrowOne requires a CapabilityInterner".into(),
                     )
                 })?;
                 self.resolve_narrow_one_with(&seed_bits, &refs, caps, &excluded)
@@ -276,7 +276,7 @@ impl<'a> DependencyResolver<'a> {
         &self,
         seed_bits: &[usize],
         target_names: &[&str],
-        caps: &'a CapabilityRegistry,
+        caps: &'a CapabilityInterner,
     ) -> Result<ExecutionPlan, ResolverError> {
         self.resolve_narrow_one_with(seed_bits, target_names, caps, &HashSet::new())
     }
@@ -291,7 +291,7 @@ impl<'a> DependencyResolver<'a> {
         &self,
         seed_bits: &[usize],
         target_names: &[&str],
-        caps: &'a CapabilityRegistry,
+        caps: &'a CapabilityInterner,
         excluded: &HashSet<usize>,
     ) -> Result<ExecutionPlan, ResolverError> {
         let ctx = ClosureCtx {
@@ -516,7 +516,7 @@ enum EmptyNarrowing {
 /// behavioral difference is the `empty` policy.
 fn apply_narrowed(
     target: &Target,
-    caps: Option<&CapabilityRegistry>,
+    caps: Option<&CapabilityInterner>,
     cap_idx: usize,
     providers: Vec<&Target>,
     full_provides: &HashSet<usize>,

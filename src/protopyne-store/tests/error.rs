@@ -32,7 +32,7 @@ fn a_store_failure_bridges_into_supervision_as_a_permanent_execution_error() {
     let work: WorkError = err.into();
     assert_eq!(
         work,
-        WorkError::Execution(
+        WorkError::execution_display(
             "read plan refused: unbounded read with no bar limit: refusing to scan the whole tape"
                 .to_owned()
         ),

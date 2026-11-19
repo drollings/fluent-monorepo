@@ -709,7 +709,7 @@ pub fn local_ask(question: &str, config: &orator::OratorConfig) -> Result<String
                 "orator: no LLM server answers at {base} ({error}; start a llama-server there)"
             ));
         }
-        let mut session = orator_agent::llm::HttpSession::open(&base, &model, ctx, n_batch);
+        let mut session = orator_agent::llm::HttpSession::open(&base, &model, ctx as u64, n_batch);
         session.push_text(&question);
         match session.step(&mut orator::Sampler::default()) {
             Ok(out) => Ok(out.delta.trim_end().to_string()),

@@ -123,7 +123,7 @@ impl WorkUnit for PttSetting {
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         match self.resolve() {
             Ok(level) => Ok(WorkOutput::ok(format!("ptt: {}", level.as_str()))),
-            Err(detail) => Err(WorkError::Execution(detail)),
+            Err(detail) => Err(WorkError::execution_display(detail)),
         }
     }
 }

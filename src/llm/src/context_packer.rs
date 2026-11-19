@@ -12,19 +12,19 @@ pub struct ContextPacker {
 }
 
 impl ContextPacker {
-    pub fn new(max_tokens: usize) -> Self {
+    pub fn new(max_tokens: u64) -> Self {
         Self {
             budget: TokenBudget(max_tokens),
         }
     }
 
-    pub fn max_tokens(&self) -> usize {
+    pub fn max_tokens(&self) -> u64 {
         self.budget.0
     }
 
     /// Estimate token count from text length (Unicode-script-aware).
-    pub fn estimate_tokens(text: &str) -> usize {
-        estimate_tokens(text) as usize
+    pub fn estimate_tokens(text: &str) -> u64 {
+        estimate_tokens(text)
     }
 
     /// Select the appropriate LOD level based on graph distance.
@@ -75,13 +75,13 @@ impl ContextPacker {
     /// This is the shared budget-fit core; coral's graph packing delegates to
     /// it (see `coral_context::packer`).
     pub fn ffd_pack<'a, T: ?Sized>(&self, items: &[(&'a str, &'a T)]) -> Vec<&'a T> {
-        let mut sorted: Vec<(usize, &'a T)> = items
+        let mut sorted: Vec<(u64, &'a T)> = items
             .iter()
             .map(|(text, payload)| (Self::estimate_tokens(text), *payload))
             .collect();
         sorted.sort_by_key(|(tokens, _)| std::cmp::Reverse(*tokens));
 
-        let mut used_tokens = 0usize;
+        let mut used_tokens = 0u64;
         let mut packed = Vec::new();
         for (tokens, payload) in sorted {
             if used_tokens + tokens <= self.budget.0 {

@@ -395,25 +395,25 @@ impl FieldAccess for HolographicMemory {
             "hrr_dim" => {
                 self.config.hrr_dim = value
                     .parse()
-                    .map_err(|e| FieldError::Parse(format!("invalid hrr_dim: {e}")))?;
+                    .map_err(|e| FieldError::parse("hrr_dim", format!("invalid hrr_dim: {e}")))?;
                 Ok(())
             }
             "default_trust" => {
                 self.config.default_trust = value
                     .parse()
-                    .map_err(|e| FieldError::Parse(format!("invalid default_trust: {e}")))?;
+                    .map_err(|e| FieldError::parse("default_trust", format!("invalid default_trust: {e}")))?;
                 Ok(())
             }
             "auto_extract" => {
                 self.config.auto_extract = value
                     .parse()
-                    .map_err(|e| FieldError::Parse(format!("invalid auto_extract: {e}")))?;
+                    .map_err(|e| FieldError::parse("auto_extract", format!("invalid auto_extract: {e}")))?;
                 Ok(())
             }
             "min_trust_threshold" => {
                 self.config.min_trust_threshold = value
                     .parse()
-                    .map_err(|e| FieldError::Parse(format!("invalid min_trust_threshold: {e}")))?;
+                    .map_err(|e| FieldError::parse("min_trust_threshold", format!("invalid min_trust_threshold: {e}")))?;
                 Ok(())
             }
             _ => Err(FieldError::NotFound(name.into())),

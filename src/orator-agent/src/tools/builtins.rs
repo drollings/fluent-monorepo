@@ -266,7 +266,7 @@ impl Tool for ShellTool {
         let argv = vec!["sh".to_string(), "-c".to_string(), command];
         let result = common_core::runtime::block_on(self.guarded.run("shell", &argv))?;
         if result.timed_out {
-            return Err(ToolError::Timeout("shell".to_string(), result.ms));
+            return Err(ToolError::Timeout("shell".to_string(), std::time::Duration::from_millis(result.ms)));
         }
         Ok(crate::tools::tool::truncate_tool_output(&result.output))
     }

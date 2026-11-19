@@ -36,8 +36,10 @@ pub struct Entry {
     pub result_summary: String,
     /// Unix timestamp of insertion.
     pub timestamp: u64,
-    /// Time-to-live in seconds (`0` means immediately expired).
-    pub ttl_seconds: u64,
+    /// Time-to-live (zero means immediately expired). Stored as whole
+    /// seconds in SQLite (`ttl_seconds` column — DB compat); sub-second
+    /// precision truncates on write.
+    pub ttl: std::time::Duration,
 }
 
 /// Default key derivation: store the raw key.
@@ -54,19 +56,15 @@ fn identity_key(key: &str) -> String {
 /// Reads never refresh recency: eviction is insertion-order FIFO, not LRU.
 pub struct SqliteTtlCache {
     store: SqliteStore,
-    default_ttl_seconds: u64,
+    default_ttl: std::time::Duration,
     max_entries: usize,
     hash_key: fn(&str) -> String,
 }
 
-/// Deprecated alias: use [`SqliteTtlCache`] instead.
-#[deprecated(note = "use SqliteTtlCache instead")]
-pub type TtlCache = SqliteTtlCache;
-
 impl std::fmt::Debug for SqliteTtlCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SqliteTtlCache")
-            .field("default_ttl_seconds", &self.default_ttl_seconds)
+            .field("default_ttl", &self.default_ttl)
             .field("max_entries", &self.max_entries)
             .finish_non_exhaustive()
     }
@@ -79,21 +77,21 @@ impl SqliteTtlCache {
     /// Open (or create) a cache at `path` with the default (identity) key
     /// derivation and the default entry cap. Expired entries are evicted
     /// on open. Refine with [`SqliteTtlCache::with_key`]/[`SqliteTtlCache::with_cap`].
-    pub fn open(path: &Path, default_ttl_seconds: u64) -> Result<Self, DbError> {
-        Self::open_inner(SqliteStore::open(path)?, default_ttl_seconds)
+    pub fn open(path: &Path, default_ttl: std::time::Duration) -> Result<Self, DbError> {
+        Self::open_inner(SqliteStore::open(path)?, default_ttl)
     }
 
     /// Open an in-memory cache with the default key derivation and cap.
     /// Refine with [`TtlCache::with_key`]/[`TtlCache::with_cap`].
-    pub fn open_in_memory(default_ttl_seconds: u64) -> Result<Self, DbError> {
-        Self::open_inner(SqliteStore::open_in_memory()?, default_ttl_seconds)
+    pub fn open_in_memory(default_ttl: std::time::Duration) -> Result<Self, DbError> {
+        Self::open_inner(SqliteStore::open_in_memory()?, default_ttl)
     }
 
-    fn open_inner(store: SqliteStore, default_ttl_seconds: u64) -> Result<Self, DbError> {
+    fn open_inner(store: SqliteStore, default_ttl: std::time::Duration) -> Result<Self, DbError> {
         store.init_schema(QUERY_CACHE_DDL)?;
         let cache = Self {
             store,
-            default_ttl_seconds,
+            default_ttl,
             max_entries: DEFAULT_TTL_CACHE_CAP,
             hash_key: identity_key,
         };
@@ -116,7 +114,7 @@ impl SqliteTtlCache {
         self
     }
 
-    /// Fetch a live entry for `key`. An expired entry (TTL `0`, or
+    /// Fetch a live entry for `key`. An expired entry (zero TTL, or
     /// `now > timestamp + ttl`) is deleted and treated as a miss.
     pub fn get(&self, key: &str) -> Result<Option<Entry>, DbError> {
         let hashed = (self.hash_key)(key);
@@ -124,18 +122,21 @@ impl SqliteTtlCache {
             "SELECT key, result_json, timestamp, ttl_seconds FROM query_cache WHERE key = ?1",
             rusqlite::params![hashed],
             |row| {
+                let ttl_secs: u64 = row.get(3)?;
                 Ok(Entry {
                     key: row.get(0)?,
                     result_summary: row.get(1)?,
                     timestamp: row.get(2)?,
-                    ttl_seconds: row.get(3)?,
+                    ttl: std::time::Duration::from_secs(ttl_secs),
                 })
             },
         )?;
         match entry {
             Some(entry) => {
                 let now = now_secs();
-                if entry.ttl_seconds == 0 || now > entry.timestamp + entry.ttl_seconds {
+                if entry.ttl.is_zero()
+                    || now > entry.timestamp + entry.ttl.as_secs()
+                {
                     self.store.execute(
                         "DELETE FROM query_cache WHERE key = ?1",
                         rusqlite::params![entry.key],
@@ -156,7 +157,7 @@ impl SqliteTtlCache {
         self.store.execute(
             "INSERT OR REPLACE INTO query_cache (key, result_json, timestamp, ttl_seconds) \
              VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![hashed, result, now, self.default_ttl_seconds],
+            rusqlite::params![hashed, result, now, self.default_ttl.as_secs()],
         )?;
         self.evict_fifo()?;
         Ok(())
@@ -193,19 +194,13 @@ impl SqliteTtlCache {
         }
     }
 
-    /// Deprecated alias: use [`SqliteTtlCache::evict_fifo`] instead.
-    #[deprecated(note = "use evict_fifo instead")]
-    pub fn evict_oldest(&self) -> Result<usize, DbError> {
-        self.evict_fifo()
-    }
-
     /// Remove every entry. Returns the number of rows deleted.
     pub fn clear(&self) -> Result<usize, DbError> {
         self.store.execute("DELETE FROM query_cache", &[])
     }
 
-    /// `(total entries, default ttl seconds, currently-expired entries)`.
-    pub fn stats(&self) -> Result<(usize, u64, usize), DbError> {
+    /// `(total entries, default ttl, currently-expired entries)`.
+    pub fn stats(&self) -> Result<(usize, std::time::Duration, usize), DbError> {
         let count: usize = self
             .store
             .query_row("SELECT COUNT(*) FROM query_cache", &[], |row| row.get(0))?
@@ -220,7 +215,7 @@ impl SqliteTtlCache {
                 )?
                 .unwrap_or(0)
         };
-        Ok((count, self.default_ttl_seconds, expired))
+        Ok((count, self.default_ttl, expired))
     }
 }
 

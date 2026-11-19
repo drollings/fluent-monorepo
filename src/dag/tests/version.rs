@@ -1,12 +1,12 @@
 use crate::resolver::{DependencyResolver, ProviderSelection};
 use crate::target::TargetRegistry;
 use crate::version::Version;
-use common_core::interner::CapabilityRegistry;
+use common_core::interner::CapabilityInterner;
 use fluent_types::{ExecutorKind, TargetType};
 use std::collections::HashMap;
 
-fn registry_with_caps() -> (TargetRegistry, CapabilityRegistry) {
-    let caps = CapabilityRegistry::new();
+fn registry_with_caps() -> (TargetRegistry, CapabilityInterner) {
+    let caps = CapabilityInterner::new();
     let mut reg = TargetRegistry::new();
     // Capability index 0 = "bars". bars10/bars11 provide it; app needs it.
     let provides_bars = caps.to_bitvec(&["bars"]);

@@ -101,8 +101,8 @@ fn target_builder_with_defaults() {
 
 #[test]
 fn providers_multi_provider_lookup() {
-    use common_core::interner::CapabilityRegistry;
-    let caps = CapabilityRegistry::new();
+    use common_core::interner::CapabilityInterner;
+    let caps = CapabilityInterner::new();
     let mut reg = TargetRegistry::new();
     // Non-sequential ids prove provider lookup resolves by capability, not
     // by conflating target-id and capability-id spaces.

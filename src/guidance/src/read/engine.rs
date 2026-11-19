@@ -84,7 +84,7 @@ pub struct ReadRequest {
     /// Natural-language question, run verbatim.
     pub query: String,
     /// Section budget override (tokens); per-intent table otherwise.
-    pub budget_override: Option<usize>,
+    pub budget_override: Option<u64>,
 }
 
 /// One explain request: evidence assembly over one workspace.
@@ -95,7 +95,7 @@ pub struct ExplainRequest {
     /// Code finding limit.
     pub limit: usize,
     /// Section budget override (tokens); per-intent table otherwise.
-    pub budget_override: Option<usize>,
+    pub budget_override: Option<u64>,
     /// Extractive evidence only: no synthesis call on any path.
     pub no_llm: bool,
     /// Include fixture-scope rows (default excludes them).
@@ -157,7 +157,7 @@ pub struct JudgeCtx<'a> {
     /// Model name for the backend.
     pub model: String,
     /// Timeout per question.
-    pub timeout_ms: u64,
+    pub timeout: std::time::Duration,
     /// Fingerprint authorizing filtering (absent is shadow-only).
     pub fingerprint: Option<String>,
 }
@@ -531,7 +531,7 @@ impl ReadEngine {
                 // Bounded doc funnel: cost cap, not relevance. Fewer live
                 // verifications keep p50/p95 within budget; recall is held
                 // by the budget-capped evidence sections.
-                plan.budgets.evidence.max(8) / 32,
+                (plan.budgets.evidence.max(8) / 32) as usize,
                 enforced.as_ref(),
             );
             doc_hits = hits;
@@ -563,7 +563,7 @@ impl ReadEngine {
             let doc_judge = crate::read::decide::DocJudge::new(
                 judge_ctx.backend,
                 judge_ctx.model.clone(),
-                judge_ctx.timeout_ms,
+                judge_ctx.timeout,
             );
             let cap_inputs: Vec<(String, String)> = cap_hits
                 .iter()
@@ -847,7 +847,7 @@ impl ReadEngine {
                     options,
                     kind: fluent_llm::decision::DecisionKind::Choice,
                     version: crate::query::decision_points::SCOPE_VERSION,
-                    timeout_ms: judge_ctx.timeout_ms,
+                    timeout: judge_ctx.timeout,
                     model: judge_ctx.model.clone(),
                 };
                 let fallback = fluent_llm::decision::Decision::from_distribution(
@@ -1045,7 +1045,7 @@ impl ReadEngine {
                 let finding_judge = crate::read::decide::FindingJudge::new(
                     backend,
                     judge_ctx.model.clone(),
-                    judge_ctx.timeout_ms,
+                    judge_ctx.timeout,
                 );
                 let mut miss_verdicts = finding_judge.judge(&request.query, &misses);
                 if finding_authorized {
@@ -1503,7 +1503,7 @@ impl ReadEngine {
                                 let support_judge = crate::read::decide::SupportJudge::new(
                                     judge_ctx.backend,
                                     judge_ctx.model.clone(),
-                                    judge_ctx.timeout_ms,
+                                    judge_ctx.timeout,
                                 );
                                 let judge_inputs: Vec<(usize, String)> = claims
                                     .iter()
@@ -2228,13 +2228,13 @@ fn subject_anchor_for(
 #[must_use]
 pub fn cap_findings_by_budget(
     findings: &[crate::read::engine::Finding],
-    budget_tokens: usize,
+    budget_tokens: u64,
 ) -> Vec<crate::read::engine::Finding> {
     let mut kept = Vec::new();
     let mut used = 0u64;
     for finding in findings {
         let cost = crate::read::budget::tokens_for(&finding.text);
-        if !kept.is_empty() && used + cost > budget_tokens as u64 {
+        if !kept.is_empty() && used + cost > budget_tokens {
             break;
         }
         used += cost;

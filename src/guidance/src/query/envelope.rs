@@ -261,11 +261,11 @@ pub fn gaps_of(stages: &[Stage], grounded: bool) -> Vec<String> {
 /// and re-sorting by size would corrupt it. Keeps stages while the running
 /// estimate fits; drops the tail, never the head.
 #[must_use]
-pub fn fit_stages_to_budget(stages: &[Stage], max_tokens: usize) -> Vec<Stage> {
+pub fn fit_stages_to_budget(stages: &[Stage], max_tokens: u64) -> Vec<Stage> {
     let mut budget = TokenBudget(max_tokens);
     let mut out = Vec::new();
     for stage in stages {
-        let cost = fluent_llm::tokens::estimate_tokens(&stage.content) as usize;
+        let cost = fluent_llm::tokens::estimate_tokens(&stage.content);
         if budget.consume(cost) {
             out.push(stage.clone());
         } else {

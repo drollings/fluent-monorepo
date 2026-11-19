@@ -353,7 +353,7 @@ impl WorkUnit for BackendInventory {
         &[]
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        Err(WorkError::Execution(format!(
+        Err(WorkError::execution_display(format!(
             "{} runs through QueryEngine native dispatch: call SearchBackend::search; \
              this handle is inventory only",
             self.name
@@ -407,7 +407,7 @@ impl RegisteredBackend {
             .with_execute_override(std::sync::Arc::new({
                 let name = shared.name();
                 move |_ctx: &WorkContext| {
-                    Err(WorkError::Execution(format!(
+                    Err(WorkError::execution_display(format!(
                         "{name} runs through QueryEngine native dispatch: call \
                          SearchBackend::search; this handle is inventory only"
                     )))
@@ -515,8 +515,8 @@ mod tests {
             &[]
         }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-            Err(WorkError::Execution(
-                "filter.stub runs natively: call score_relevance directly".into(),
+            Err(WorkError::execution_display(
+                "filter.stub runs natively: call score_relevance directly",
             ))
         }
     }
@@ -986,8 +986,8 @@ mod tests {
             .execute(&WorkContext::default())
             .expect_err("inventory-only");
         match err {
-            fluent_wvr::WorkError::Execution(message) => {
-                assert!(message.contains("native dispatch"), "{message}");
+            fluent_wvr::WorkError::Execution(f) => {
+                assert!(f.message.contains("native dispatch"), "{}", f.message);
             }
             other => panic!("expected Execution, got {other:?}"),
         }

@@ -204,7 +204,7 @@ fn option_cap_rejects_oversized_sets() {
     s.set_field("options_csv", &many.join(","))
         .expect("set options");
     let err = s.validate().expect_err("over cap");
-    assert!(err.contains("hierarchical"));
+    assert!(err.to_string().contains("hierarchical"));
 }
 
 #[test]

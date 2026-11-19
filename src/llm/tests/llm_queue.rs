@@ -23,7 +23,7 @@ async fn test_default_handler_routes_to_http() {
         config: LlmConfig::new()
             .api_url("http://127.0.0.1:1/v1".into())
             .model("test".into())
-            .timeout_ms(50)
+            .timeout(std::time::Duration::from_millis(50))
             .build(),
     };
     let result = queue.submit(task).await;

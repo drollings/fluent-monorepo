@@ -22,7 +22,7 @@ fn choice_request(label_a: &str, label_b: &str) -> DecideRequest {
         ],
         kind: DecisionKind::Choice,
         version: 3,
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         model: "decision".to_string(),
     }
 }

@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::metrics::FailureClass;
 use bytes::Bytes;
@@ -93,8 +93,8 @@ pub trait DispatchBackend: Send + Sync {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<RouterResponse, DispatchError>> + Send>>;
 
@@ -105,16 +105,16 @@ pub trait DispatchBackend: Send + Sync {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {
         self.stream_complete_with_abort(
             request,
             model,
             params,
-            idle_timeout_ms,
-            total_timeout_ms,
+            idle_timeout,
+            total_timeout,
             filter_thinking,
             None,
         )
@@ -136,8 +136,8 @@ pub trait DispatchBackend: Send + Sync {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
         abort: Option<StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>>;
@@ -454,11 +454,11 @@ pub(crate) fn params_with_routing_fields(
 /// and streaming dispatch paths; `label` distinguishes a total-budget expiry
 /// from an idle-stall expiry in the resulting `DispatchError::Http`.
 async fn with_total_timeout<T>(
-    ms: u64,
+    budget: std::time::Duration,
     label: &str,
     fut: impl Future<Output = Result<T, DispatchError>>,
 ) -> Result<T, DispatchError> {
-    tokio::time::timeout(Duration::from_millis(ms), fut)
+    tokio::time::timeout(budget, fut)
         .await
         .map_err(|_| DispatchError::Http(label.to_string()))?
 }
@@ -513,8 +513,8 @@ impl DispatchBackend for OpenAiChatBackend {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<RouterResponse, DispatchError>> + Send>> {
         let url = dispatch_url(&self.endpoint_url);
@@ -528,7 +528,7 @@ impl DispatchBackend for OpenAiChatBackend {
                 let body =
                     build_chat_body(&request, &model, params.as_ref(), false, filter_thinking)?;
                 let response =
-                    with_total_timeout(total_timeout_ms, "total timeout exceeded", async {
+                    with_total_timeout(total_timeout, "total timeout exceeded", async {
                         apply_auth(client.post(&url), api_key_env.as_deref())
                             .json(&body)
                             .send()
@@ -543,7 +543,7 @@ impl DispatchBackend for OpenAiChatBackend {
                 }
 
                 let json: Value = with_total_timeout(
-                    idle_timeout_ms,
+                    idle_timeout,
                     "idle timeout exceeded reading response body",
                     async {
                         response
@@ -571,8 +571,8 @@ impl DispatchBackend for OpenAiChatBackend {
                         model = %log_model,
                         url = %url,
                         latency_ms = latency_ms,
-                        total_timeout_ms = total_timeout_ms,
-                        idle_timeout_ms = idle_timeout_ms,
+                        total_timeout_ms = total_timeout.as_millis() as u64,
+                        idle_timeout_ms = idle_timeout.as_millis() as u64,
                         choices = resp.choices.len(),
                         "chat completion ok"
                     );
@@ -583,8 +583,8 @@ impl DispatchBackend for OpenAiChatBackend {
                         model = %log_model,
                         url = %url,
                         latency_ms = latency_ms,
-                        total_timeout_ms = total_timeout_ms,
-                        idle_timeout_ms = idle_timeout_ms,
+                        total_timeout_ms = total_timeout.as_millis() as u64,
+                        idle_timeout_ms = idle_timeout.as_millis() as u64,
                         error = %e,
                         error_class = FailureClass::from(e).label(),
                         "chat completion failed"
@@ -600,8 +600,8 @@ impl DispatchBackend for OpenAiChatBackend {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
         abort: Option<StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {
@@ -616,7 +616,7 @@ impl DispatchBackend for OpenAiChatBackend {
             let stream_start = Instant::now();
             let body = build_chat_body(&request, &model, params.as_ref(), true, filter_thinking)?;
             let mut response = with_total_timeout(
-                total_timeout_ms,
+                total_timeout,
                 "total timeout exceeded for stream connection",
                 async {
                     apply_auth(client.post(&url), api_key_env.as_deref())
@@ -638,8 +638,8 @@ impl DispatchBackend for OpenAiChatBackend {
                 model = %model,
                 url = %url,
                 connect_latency_ms = stream_start.elapsed().as_millis() as u64,
-                total_timeout_ms = total_timeout_ms,
-                idle_timeout_ms = idle_timeout_ms,
+                total_timeout_ms = total_timeout.as_millis() as u64,
+                idle_timeout_ms = idle_timeout.as_millis() as u64,
                 "stream connected"
             );
 
@@ -684,7 +684,7 @@ impl DispatchBackend for OpenAiChatBackend {
                     // fork interrupts the slot's generation.
                     let chunk = tokio::select! {
                         res = with_total_timeout(
-                            idle_timeout_ms,
+                            idle_timeout,
                             "idle timeout waiting for stream chunk",
                             async {
                                 response
@@ -701,7 +701,7 @@ impl DispatchBackend for OpenAiChatBackend {
                                     model = %model_for_task,
                                     error = %e,
                                     error_class = FailureClass::from(&e).label(),
-                                    idle_timeout_ms = idle_timeout_ms,
+                                    idle_timeout_ms = idle_timeout.as_millis() as u64,
                                     "stream read error or idle timeout"
                                 );
                                 finalize(&handler);
@@ -829,8 +829,8 @@ impl DispatchBackend for RetryBackend {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<RouterResponse, DispatchError>> + Send>> {
         let inner = self.inner.clone();
@@ -849,8 +849,8 @@ impl DispatchBackend for RetryBackend {
                             request.clone(),
                             model.clone(),
                             params.clone(),
-                            idle_timeout_ms,
-                            total_timeout_ms,
+                            idle_timeout,
+                            total_timeout,
                             filter_thinking,
                         )
                         .await
@@ -865,8 +865,8 @@ impl DispatchBackend for RetryBackend {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
         abort: Option<StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {
@@ -889,13 +889,13 @@ impl DispatchBackend for RetryBackend {
                 || async {
                     let abort = abort.clone();
                     match tokio::time::timeout(
-                        Duration::from_millis(total_timeout_ms),
+                        total_timeout,
                         inner.stream_complete_with_abort(
                             request.clone(),
                             model.clone(),
                             params.clone(),
-                            idle_timeout_ms,
-                            total_timeout_ms,
+                            idle_timeout,
+                            total_timeout,
                             filter_thinking,
                             abort,
                         ),
@@ -947,8 +947,8 @@ impl DispatchBackend for BackendChain {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<RouterResponse, DispatchError>> + Send>> {
         let backends = self.backends.clone();
@@ -970,8 +970,8 @@ impl DispatchBackend for BackendChain {
                                 request,
                                 model,
                                 params,
-                                idle_timeout_ms,
-                                total_timeout_ms,
+                                idle_timeout,
+                                total_timeout,
                                 filter_thinking,
                             )
                             .await
@@ -994,8 +994,8 @@ impl DispatchBackend for BackendChain {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        idle_timeout_ms: u64,
-        total_timeout_ms: u64,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
         filter_thinking: bool,
         abort: Option<StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {
@@ -1015,8 +1015,8 @@ impl DispatchBackend for BackendChain {
                                 request,
                                 model,
                                 params,
-                                idle_timeout_ms,
-                                total_timeout_ms,
+                                idle_timeout,
+                                total_timeout,
                                 filter_thinking,
                                 abort,
                             )
@@ -1111,8 +1111,8 @@ impl DispatchBackend for OnnxDispatchBackend {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        _idle_timeout_ms: u64,
-        _total_timeout_ms: u64,
+        _idle_timeout: std::time::Duration,
+        _total_timeout: std::time::Duration,
         filter_thinking: bool,
     ) -> Pin<Box<dyn Future<Output = Result<RouterResponse, DispatchError>> + Send>> {
         let backend = self.backend.clone();
@@ -1126,8 +1126,8 @@ impl DispatchBackend for OnnxDispatchBackend {
         request: RouterRequest,
         model: String,
         params: Option<Value>,
-        _idle_timeout_ms: u64,
-        _total_timeout_ms: u64,
+        _idle_timeout: std::time::Duration,
+        _total_timeout: std::time::Duration,
         filter_thinking: bool,
         abort: Option<StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {

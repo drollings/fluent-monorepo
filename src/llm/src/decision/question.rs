@@ -56,16 +56,46 @@ pub struct QuestionSpec {
     pub seed: u64,
 }
 
+/// All `QuestionSpec::validate` failure modes (no stringly errors).
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum QuestionError {
+    #[error("unknown decision kind: {0:?} (expected choice|score|noul)")]
+    UnknownKind(String),
+    #[error("option label must be a single token: {0:?}")]
+    BadLabel(String),
+    #[error("duplicate option label: {0:?}")]
+    DuplicateLabel(String),
+    #[error("unknown rotation: {0:?} (expected none|rotate|shuffle)")]
+    BadRotation(String),
+    #[error("options exceed the single-token distribution cap ({0}); split via route_hierarchical")]
+    OverCap(usize),
+    #[error("options_csv must list at least one label")]
+    EmptyOptions,
+    #[error("score needs at least two rungs")]
+    ScoreNeedsTwo,
+    #[error("noul options must be exactly Yes,No")]
+    BadNoul,
+    #[error("threshold invalid: {0}")]
+    BadThreshold(#[from] crate::decision::ThresholdError),
+}
+
+impl From<crate::decision::UnknownDecisionKind> for QuestionError {
+    fn from(e: crate::decision::UnknownDecisionKind) -> Self {
+        Self::UnknownKind(e.0)
+    }
+}
+
 impl QuestionSpec {
     /// Fallible validation: kind spelling, kind-shaped options, thresholds.
-    pub fn validate(&self) -> Result<(), String> {
-        let kind = crate::decision::DecisionKind::parse(&self.kind)?;
+    pub fn validate(&self) -> Result<(), QuestionError> {
+        let kind =
+            crate::decision::DecisionKind::parse(&self.kind).map_err(QuestionError::from)?;
         let options = self.options();
         // Single-token labels always: the single generated token must name
         // one of them for logprobs decoding to discriminate.
         for label in &options {
             if label.is_empty() || label.chars().any(char::is_whitespace) {
-                return Err(format!("option label must be a single token: {label:?}"));
+                return Err(QuestionError::BadLabel(label.clone()));
             }
         }
         // Variant normalization merges case/space twins, so duplicates are
@@ -75,33 +105,27 @@ impl QuestionSpec {
         for label in &options {
             let canonical = label.trim_start().to_lowercase();
             if seen.contains(&canonical) {
-                return Err(format!("duplicate option label: {label:?}"));
+                return Err(QuestionError::DuplicateLabel(label.clone()));
             }
             seen.push(canonical);
         }
         if !matches!(self.rotation.as_str(), "none" | "rotate" | "shuffle") {
-            return Err(format!(
-                "unknown rotation: {:?} (expected none|rotate|shuffle)",
-                self.rotation
-            ));
+            return Err(QuestionError::BadRotation(self.rotation.clone()));
         }
         // One distribution carries 10 top logprobs; larger sets cannot all
         // appear and would always degrade. Route them hierarchically.
         if options.len() > crate::decision::MAX_DECISION_OPTIONS {
-            return Err(format!(
-                "options exceed the single-token distribution cap ({}); split via route_hierarchical",
-                crate::decision::MAX_DECISION_OPTIONS
-            ));
+            return Err(QuestionError::OverCap(crate::decision::MAX_DECISION_OPTIONS));
         }
         match kind {
             crate::decision::DecisionKind::Choice => {
                 if options.is_empty() {
-                    return Err("options_csv must list at least one label".to_string());
+                    return Err(QuestionError::EmptyOptions);
                 }
             }
             crate::decision::DecisionKind::Score => {
                 if options.len() < 2 {
-                    return Err("score needs at least two rungs".to_string());
+                    return Err(QuestionError::ScoreNeedsTwo);
                 }
             }
             // The Noul decoder answers only Yes/No; anything else smuggles
@@ -111,7 +135,7 @@ impl QuestionSpec {
                     || !options.iter().any(|o| o.eq_ignore_ascii_case("yes"))
                     || !options.iter().any(|o| o.eq_ignore_ascii_case("no"))
                 {
-                    return Err("noul options must be exactly Yes,No".to_string());
+                    return Err(QuestionError::BadNoul);
                 }
             }
         }
@@ -119,12 +143,15 @@ impl QuestionSpec {
             act: self.act_threshold,
             review: self.review_threshold,
         }
-        .validate()?;
+        .validate()
+        .map_err(QuestionError::BadThreshold)?;
         Ok(())
     }
 
     /// Typed kind for the held spelling.
-    pub fn kind_enum(&self) -> Result<crate::decision::DecisionKind, String> {
+    pub fn kind_enum(
+        &self,
+    ) -> Result<crate::decision::DecisionKind, crate::decision::UnknownDecisionKind> {
         crate::decision::DecisionKind::parse(&self.kind)
     }
 
@@ -163,7 +190,7 @@ impl WorkUnit for QuestionSpec {
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         match self.validate() {
             Ok(()) => Ok(WorkOutput::ok(format!("question {}", self.id))),
-            Err(detail) => Err(WorkError::Execution(detail)),
+            Err(detail) => Err(WorkError::execution_display(detail)),
         }
     }
 }

@@ -185,14 +185,10 @@ impl FieldAccess for IndicatorStyle {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         if name == LINE_WIDTH_FIELD {
             let width: f64 = value.trim().parse().map_err(|_| {
-                FieldError::Parse(format!(
-                    "invalid line width for '{LINE_WIDTH_FIELD}': {value}"
-                ))
+                FieldError::parse(LINE_WIDTH_FIELD, format!("invalid line width: {value}"))
             })?;
             if !width.is_finite() || !(MIN_LINE_WIDTH..=MAX_LINE_WIDTH).contains(&width) {
-                return Err(FieldError::Constraint(format!(
-                    "line width must be finite and sit within [{MIN_LINE_WIDTH}, {MAX_LINE_WIDTH}]: {value}"
-                )));
+                return Err(FieldError::constraint(LINE_WIDTH_FIELD, format!("must be finite and sit within [{MIN_LINE_WIDTH}, {MAX_LINE_WIDTH}]: {value}")));
             }
             self.line_width = width;
             return Ok(());
@@ -203,7 +199,7 @@ impl FieldAccess for IndicatorStyle {
             self.colors.remove(key);
             return Ok(());
         }
-        parse_hex_color(key, slot).map_err(|error| FieldError::Constraint(format!("{error}")))?;
+        parse_hex_color(key, slot).map_err(|error| FieldError::constraint(key, format!("{error}")))?;
         self.colors.insert(key.to_owned(), slot.to_owned());
         Ok(())
     }

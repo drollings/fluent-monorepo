@@ -149,8 +149,8 @@ pub fn typed_request(ctx: &WorkContext) -> Option<std::sync::Arc<RouterRequest>>
 pub fn extract_user_message(ctx: &WorkContext) -> Result<String, WorkError> {
     let request =
         typed_request(ctx).ok_or_else(|| match ctx.structured::<serde_json::Value>("request") {
-            Err(e) => WorkError::Execution(format!("missing request: {e}")),
-            Ok(_) => WorkError::Execution("missing request: not a valid RouterRequest".into()),
+            Err(e) => WorkError::execution_display(format!("missing request: {e}")),
+            Ok(_) => WorkError::execution_display("missing request: not a valid RouterRequest"),
         })?;
 
     request
@@ -169,7 +169,7 @@ pub fn extract_user_message(ctx: &WorkContext) -> Result<String, WorkError> {
                 }
             }
         })
-        .ok_or_else(|| WorkError::Execution("no user message found".into()))
+        .ok_or_else(|| WorkError::execution_display("no user message found"))
 }
 
 pub fn get_metadata_string(ctx: &WorkContext, key: &str) -> Option<String> {

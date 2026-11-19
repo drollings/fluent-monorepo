@@ -38,17 +38,20 @@ impl DecisionKind {
     }
 
     /// Parse a canonical spelling; garbage names all three spellings.
-    pub fn parse(raw: &str) -> Result<Self, String> {
+    pub fn parse(raw: &str) -> Result<Self, UnknownDecisionKind> {
         match raw.trim().to_lowercase().as_str() {
             "choice" => Ok(Self::Choice),
             "score" => Ok(Self::Score),
             "noul" => Ok(Self::Noul),
-            _ => Err(format!(
-                "unknown decision kind: {raw:?} (expected choice|score|noul)"
-            )),
+            _ => Err(UnknownDecisionKind(raw.to_string())),
         }
     }
 }
+
+/// Rejected decision-kind spelling.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unknown decision kind: {0:?} (expected choice|score|noul)")]
+pub struct UnknownDecisionKind(pub String);
 
 /// One bounded judgment with its full distribution.
 ///
@@ -183,19 +186,28 @@ pub struct ThresholdSet {
     pub review: f64,
 }
 
+/// A rejected threshold set: bounds or ordering violated.
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum ThresholdError {
+    #[error("threshold {name} out of range [0,1]: {value}")]
+    OutOfRange { name: &'static str, value: f64 },
+    #[error("act ({act}) must be >= review ({review})")]
+    BadOrder { act: f64, review: f64 },
+}
+
 impl ThresholdSet {
     /// Check bounds (`[0,1]`) and ordering (`act >= review`).
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ThresholdError> {
         for (name, v) in [("act", self.act), ("review", self.review)] {
             if !v.is_finite() || v < 0.0 || v > 1.0 {
-                return Err(format!("threshold {name} out of range [0,1]: {v}"));
+                return Err(ThresholdError::OutOfRange { name, value: v });
             }
         }
         if self.act < self.review {
-            return Err(format!(
-                "act ({}) must be >= review ({})",
-                self.act, self.review
-            ));
+            return Err(ThresholdError::BadOrder {
+                act: self.act,
+                review: self.review,
+            });
         }
         Ok(())
     }

@@ -51,7 +51,7 @@ pub use traits::{
     Describable, FieldAccess, FieldError, FieldSchema, SchemaProvider, WorkUnit,
 };
 pub use validate::{check_for_execute, Validate};
-pub use work::{WorkContext, WorkError, WorkOutput};
+pub use work::{ExecutionFailure, ExecutionKind, WorkContext, WorkError, WorkOutput};
 
 // Re-export string utilities from common-core for use in derive macros and consumers.
 pub use common_core::string::{
@@ -75,8 +75,8 @@ impl WorkUnit for Arc<dyn WorkUnit> {
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         (**self).execute(ctx)
     }
-    fn default_timeout_ms(&self) -> u64 {
-        (**self).default_timeout_ms()
+    fn default_timeout(&self) -> std::time::Duration {
+        (**self).default_timeout()
     }
     fn type_name(&self) -> &'static str {
         (**self).type_name()
@@ -96,8 +96,8 @@ impl WorkUnit for Arc<dyn Component> {
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         (**self).execute(ctx)
     }
-    fn default_timeout_ms(&self) -> u64 {
-        (**self).default_timeout_ms()
+    fn default_timeout(&self) -> std::time::Duration {
+        (**self).default_timeout()
     }
     fn type_name(&self) -> &'static str {
         (**self).type_name()

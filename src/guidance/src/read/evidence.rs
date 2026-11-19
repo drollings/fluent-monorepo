@@ -99,7 +99,7 @@ impl EvidenceSet {
 
     /// Cap by token budget, whole findings only (first always kept).
     #[must_use]
-    pub fn capped(self, budget_tokens: usize) -> Vec<Finding> {
+    pub fn capped(self, budget_tokens: u64) -> Vec<Finding> {
         crate::read::engine::cap_findings_by_budget(&self.findings, budget_tokens)
     }
 

@@ -93,7 +93,7 @@ impl WorkUnit for LlamaBackend {
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         // Fail closed: a supervisor that schedules the inventory must hear
         // a refusal, never a fake completion.
-        Err(WorkError::Execution(
+        Err(WorkError::execution_display(
             "llama backend is inventory-only; route through weights/chat_backend".to_string(),
         ))
     }

@@ -286,7 +286,7 @@ fn tier_from_text(s: &str) -> Result<ProvenanceTier, DbError> {
         "local_model" => ProvenanceTier::LocalModel,
         "frontier" => ProvenanceTier::Frontier,
         "human_review" => ProvenanceTier::HumanReview,
-        other => return Err(DbError::Other(format!("unknown provenance tier: {other}"))),
+        other => return Err(DbError::Data(format!("unknown provenance tier: {other}"))),
     })
 }
 
@@ -304,7 +304,7 @@ fn status_from_text(s: &str) -> Result<ClaimStatus, DbError> {
         "provisional" => ClaimStatus::Provisional,
         "confirmed" => ClaimStatus::Confirmed,
         "superseded" => ClaimStatus::Superseded,
-        other => return Err(DbError::Other(format!("unknown claim status: {other}"))),
+        other => return Err(DbError::Data(format!("unknown claim status: {other}"))),
     })
 }
 
@@ -314,7 +314,7 @@ fn conv_err(e: DbError) -> rusqlite::Error {
 }
 
 fn db_err<E: std::fmt::Display>(e: E) -> DbError {
-    DbError::Other(e.to_string())
+    DbError::Data(e.to_string())
 }
 #[cfg(test)]
 #[path = "../tests/annotation_store.rs"]

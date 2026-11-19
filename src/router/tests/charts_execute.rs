@@ -660,7 +660,7 @@ impl WorkUnit for GatedStage {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         fluent_wvr::capability::check_capability(&fluent_wvr::FsCapability::new())
-            .map_err(|e| WorkError::Execution(format!("gated effect denied: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("gated effect denied: {e}")))?;
         WorkOutput::typed(
             "passed",
             &StageDecision {

@@ -170,8 +170,8 @@ impl<U: WorkUnit> WorkUnit for Instrumented<U> {
         result
     }
 
-    fn default_timeout_ms(&self) -> u64 {
-        self.inner.default_timeout_ms()
+    fn default_timeout(&self) -> std::time::Duration {
+        self.inner.default_timeout()
     }
 
     fn type_name(&self) -> &'static str {
@@ -305,8 +305,8 @@ impl WorkUnit for ComponentAdapter {
         }
     }
 
-    fn default_timeout_ms(&self) -> u64 {
-        self.inner.default_timeout_ms()
+    fn default_timeout(&self) -> std::time::Duration {
+        self.inner.default_timeout()
     }
 
     fn type_name(&self) -> &'static str {
@@ -424,9 +424,7 @@ impl ComponentCascade {
     /// accounting keep transport failures distinct from task-value verdicts.
     pub fn execute_first_ok(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         if self.units.is_empty() {
-            return Err(WorkError::Execution(
-                "component cascade has no units".into(),
-            ));
+            return Err(WorkError::execution_display("component cascade has no units"));
         }
         let mut last_fail: Option<WorkOutput> = None;
         match crate::ladder::first_accept_in_order_sync(
@@ -652,8 +650,8 @@ impl WorkUnit for SuffixedComponent {
         );
         self.inner.execute(&merged)
     }
-    fn default_timeout_ms(&self) -> u64 {
-        self.inner.default_timeout_ms()
+    fn default_timeout(&self) -> std::time::Duration {
+        self.inner.default_timeout()
     }
     fn type_name(&self) -> &'static str {
         self.inner.type_name()

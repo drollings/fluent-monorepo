@@ -20,7 +20,7 @@ use crate::embeddings::{
     EmbeddingError, EmbeddingProvider,
 };
 
-const DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_REMOTE_EMBEDDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 const QWEN3_VL_MAX_IMAGE_COUNT: usize = 10;
 
 /// Construction options for Qwen providers.
@@ -30,7 +30,7 @@ pub struct QwenTextOptions {
     pub endpoint: Option<String>,
     pub extra_headers: HashMap<String, String>,
     /// Override for the 60s default (tests use a short fuse).
-    pub timeout_ms: Option<u64>,
+    pub timeout: Option<std::time::Duration>,
 }
 
 /// Supported VL image formats.
@@ -152,11 +152,7 @@ fn resolve_qwen_config(
     Ok(ResolvedQwenConfig {
         api_key,
         endpoint,
-        timeout: Duration::from_millis(
-            options
-                .timeout_ms
-                .unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS),
-        ),
+        timeout: options.timeout.unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT),
     })
 }
 
@@ -625,11 +621,7 @@ impl Qwen3VlEmbedding {
             api_key,
             endpoint,
             extra_headers: options.extra_headers.clone(),
-            timeout: Duration::from_millis(
-                options
-                    .timeout_ms
-                    .unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS),
-            ),
+            timeout: options.timeout.unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT),
             // The workspace's shared pooled client (connection reuse across the
             // embedding fleet); the per-request `.timeout(...)` in `post`
             // overrides the shared client's 30s envelope with the model's.

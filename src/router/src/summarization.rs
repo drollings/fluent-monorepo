@@ -92,7 +92,7 @@ impl WorkUnit for ResultScorer {
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let query = extract_user_message(ctx)?;
         let response = get_metadata_string(ctx, "response")
-            .ok_or_else(|| WorkError::Execution("missing response in context metadata".into()))?;
+            .ok_or_else(|| WorkError::execution_display("missing response in context metadata"))?;
 
         let prompt = format!("User query: {query}\n\nAssistant response:\n{response}");
 
@@ -110,7 +110,7 @@ impl WorkUnit for ResultScorer {
         let response_text = self
             .client
             .chat_complete(&messages)
-            .map_err(|e| WorkError::Execution(format!("scorer error: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("scorer error: {e}")))?;
 
         // M2: LLM-produced text goes through the shared tolerant codec
         // (`parse_typed`: pristine fast path → fence-strip → extract →
@@ -118,7 +118,7 @@ impl WorkUnit for ResultScorer {
         // fence/prose-wrapped replies are recovered instead of erroring.
         let mut scored: ScoredResult =
             fluent_llm::parse_typed(&response_text, &serde_json::Value::Null, |_| {})
-                .map_err(|e| WorkError::Execution(format!("scorer parse error: {e}")))?;
+                .map_err(|e| WorkError::execution_display(format!("scorer parse error: {e}")))?;
 
         scored.content = response;
         scored.accepted = scored.score >= self.acceptance_threshold;
@@ -214,7 +214,7 @@ impl WorkUnit for Summarizer {
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let content = get_metadata_string(ctx, "content")
-            .ok_or_else(|| WorkError::Execution("missing content in context metadata".into()))?;
+            .ok_or_else(|| WorkError::execution_display("missing content in context metadata"))?;
 
         let messages = vec![
             ChatMessage {
@@ -233,7 +233,7 @@ impl WorkUnit for Summarizer {
         let summary = self
             .client
             .chat_complete(&messages)
-            .map_err(|e| WorkError::Execution(format!("summarizer error: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("summarizer error: {e}")))?;
 
         WorkOutput::typed("summarized", &serde_json::json!({"summary": summary}))
     }

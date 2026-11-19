@@ -36,7 +36,7 @@ pub struct DecideRequest {
     pub options: Vec<DecisionOption>,
     pub kind: DecisionKind,
     pub version: u64,
-    pub timeout_ms: u64,
+    pub timeout: std::time::Duration,
     pub model: String,
 }
 
@@ -114,7 +114,7 @@ pub trait DecideBackend: Send + Sync {
 ///     options: Vec::new(),
 ///     kind: DecisionKind::Choice,
 ///     version: 1,
-///     timeout_ms: 1000,
+///     timeout: std::time::Duration::from_secs(1),
 ///     model: "stub".to_string(),
 /// };
 /// let d = block_on(backend.decide(request)).expect("scripted");

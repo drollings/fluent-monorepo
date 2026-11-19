@@ -772,7 +772,7 @@ impl FieldAccess for AudioSession {
             }
             "turn_window_ms" => {
                 self.config.turn_window_ms = value.parse().map_err(|_| {
-                    FieldError::Parse("turn_window_ms must be a number".to_string())
+                    FieldError::parse("turn_window_ms", "must be a number")
                 })?;
                 Ok(())
             }

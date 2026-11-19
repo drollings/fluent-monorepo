@@ -151,7 +151,7 @@ fn high_confidence_wrong_verdict_stays_shadow() {
     // irrelevant finding must not filter, reorder, or promote. Rank
     // stays authoritative; only the shadow record observes.
     let backend = ScriptedDecideBackend::new(vec![Ok(verdict("relevant", 0.99))]);
-    let judge = FindingJudge::new(&backend, "decision".to_string(), 2000);
+    let judge = FindingJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let findings = vec![
         ("f1".to_string(), "router dispatch prose".to_string()),
         ("f2".to_string(), "sync freshness mechanism".to_string()),

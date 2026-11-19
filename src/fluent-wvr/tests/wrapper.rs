@@ -322,7 +322,7 @@ fn adapter_set_field_propagates_constraint_error() {
     // Value above max — should propagate the constraint error.
     let err = adapter.set_field("port", "9999").unwrap_err();
     match err {
-        FieldError::Constraint(msg) => {
+        FieldError::Constraint { reason: msg, .. } => {
             assert!(msg.contains("above maximum"), "unexpected: {msg}");
         }
         other => panic!("expected Constraint error, got: {other:?}"),
@@ -337,7 +337,7 @@ fn adapter_set_field_propagates_parse_error() {
     let mut adapter = ComponentAdapter::new(Arc::new(host));
     let err = adapter.set_field("port", "not_a_number").unwrap_err();
     match err {
-        FieldError::Parse(msg) => {
+        FieldError::Parse { reason: msg, .. } => {
             assert!(msg.contains("invalid u16"), "unexpected: {msg}");
         }
         other => panic!("expected Parse error, got: {other:?}"),

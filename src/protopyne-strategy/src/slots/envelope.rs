@@ -82,7 +82,7 @@ fn snapshot_of(ctx: &WorkContext, name: &str) -> Result<Arc<TapeSnapshot>, WorkE
 
 fn view_of<'a>(snapshot: &'a TapeSnapshot, name: &str) -> Result<Tape<'a>, WorkError> {
     snapshot.view().ok_or_else(|| {
-        WorkError::Execution(format!("{name}: tape snapshot cursor is out of bounds"))
+        WorkError::execution_display(format!("{name}: tape snapshot cursor is out of bounds"))
     })
 }
 

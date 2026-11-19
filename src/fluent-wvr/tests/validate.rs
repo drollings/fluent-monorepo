@@ -22,8 +22,8 @@ fn stub_validates() {
     let err = check_for_execute(&Bad, "ctx").expect_err("fails");
     assert_eq!(
         err,
-        WorkError::Execution("ctx: empty symbol".to_owned()),
-        "context prefix preserved"
+        WorkError::execution_context("ctx", "empty symbol"),
+        "context stored as data, not baked into message"
     );
     let out: WorkOutput = WorkOutput::ok("ok");
     assert!(out.success);

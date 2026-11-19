@@ -33,7 +33,7 @@ pub struct CreateModelOptions {
     pub endpoint: Option<String>,
     pub model_cache_dir: Option<PathBuf>,
     pub device: Option<String>,
-    pub timeout_ms: Option<u64>,
+    pub timeout: Option<std::time::Duration>,
     pub extra_headers: HashMap<String, String>,
 }
 
@@ -71,7 +71,7 @@ pub fn create_embedding_model(
                 api_key: options.api_key.clone(),
                 endpoint: options.endpoint.clone(),
                 extra_headers: options.extra_headers.clone(),
-                timeout_ms: options.timeout_ms,
+                timeout: options.timeout,
             };
             if entry.kind == Some("multimodal") {
                 return Ok(Box::new(Qwen3VlEmbedding::new(&qwen_options)?));

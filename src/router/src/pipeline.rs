@@ -120,12 +120,12 @@ pub struct RoutingTarget {
     /// Whether the backend model supports streaming.
     #[serde(default = "default_true")]
     pub stream: bool,
-    /// Maximum idle time between stream chunks in milliseconds.
-    #[serde(default = "default_idle_timeout_ms")]
-    pub idle_timeout_ms: u64,
-    /// Maximum total time for the entire request in milliseconds.
-    #[serde(default = "default_total_timeout_ms")]
-    pub total_timeout_ms: u64,
+    /// Maximum idle time between stream chunks.
+    #[serde(default = "default_idle_timeout", rename = "idle_timeout_ms", with = "common_core::duration_ms")]
+    pub idle_timeout: std::time::Duration,
+    /// Maximum total time for the entire request.
+    #[serde(default = "default_total_timeout", rename = "total_timeout_ms", with = "common_core::duration_ms")]
+    pub total_timeout: std::time::Duration,
     /// Name of an environment variable holding the `Authorization: Bearer`
     /// token for an external OpenAI endpoint. Resolved to the actual token at
     /// dispatch time by the backend; `None` sends no auth header.
@@ -187,8 +187,8 @@ impl RoutingTarget {
             retry_count: entry.retry_count,
             retry_base_interval_s: entry.retry_base_interval_s,
             stream: entry.stream,
-            idle_timeout_ms: entry.idle_timeout_ms,
-            total_timeout_ms: entry.total_timeout_ms,
+            idle_timeout: entry.idle_timeout,
+            total_timeout: entry.total_timeout,
             api_key: entry.api_key.clone(),
             fallbacks: vec![],
             is_onnx: false,
@@ -222,8 +222,8 @@ impl RoutingTarget {
             retry_count: entry.retry_count,
             retry_base_interval_s: entry.retry_base_interval_s,
             stream: entry.stream,
-            idle_timeout_ms: entry.idle_timeout_ms,
-            total_timeout_ms: entry.total_timeout_ms,
+            idle_timeout: entry.idle_timeout,
+            total_timeout: entry.total_timeout,
             api_key: entry.api_key.clone(),
             fallbacks: vec![],
             is_onnx: false,
@@ -237,7 +237,7 @@ impl RoutingTarget {
     /// the onnx-backend call site).
     pub fn from_onnx_role(model_key: &str) -> Self {
         use fluent_llm::constants::{
-            DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_RETRY_INTERVAL_S, DEFAULT_TOTAL_TIMEOUT_MS,
+            DEFAULT_IDLE_TIMEOUT, DEFAULT_RETRY_INTERVAL_S, DEFAULT_TOTAL_TIMEOUT,
         };
         Self {
             url: String::new(),
@@ -252,8 +252,8 @@ impl RoutingTarget {
             retry_count: 0,
             retry_base_interval_s: DEFAULT_RETRY_INTERVAL_S,
             stream: false,
-            idle_timeout_ms: DEFAULT_IDLE_TIMEOUT_MS,
-            total_timeout_ms: DEFAULT_TOTAL_TIMEOUT_MS,
+            idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            total_timeout: DEFAULT_TOTAL_TIMEOUT,
             api_key: None,
             fallbacks: vec![],
             is_onnx: true,
@@ -266,12 +266,12 @@ fn default_retry_interval() -> u64 {
     fluent_llm::constants::DEFAULT_RETRY_INTERVAL_S
 }
 
-fn default_idle_timeout_ms() -> u64 {
-    fluent_llm::constants::DEFAULT_IDLE_TIMEOUT_MS
+fn default_idle_timeout() -> std::time::Duration {
+    fluent_llm::constants::DEFAULT_IDLE_TIMEOUT
 }
 
-fn default_total_timeout_ms() -> u64 {
-    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS
+fn default_total_timeout() -> std::time::Duration {
+    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -629,7 +629,7 @@ impl WorkUnit for PipelineOrchestrator {
                         .and_then(|output| {
                             output
                                 .data_take()
-                                .map_err(|e| WorkError::Execution(e.to_string()))
+                                .map_err(|e| WorkError::execution_display(e.to_string()))
                         })
                         .map(|decision| (decision, None))
                 };

@@ -428,7 +428,7 @@ impl FieldAccess for ThemeKindColor<'_> {
         }
         let slot = value.trim();
         fluent_egui::parse_hex_color(self.kind, slot)
-            .map_err(|error| FieldError::Constraint(format!("{error}")))?;
+            .map_err(|error| FieldError::constraint("color", format!("{error}")))?;
         let slot = slot.to_owned();
         match self.kind {
             "rsi" => self.theme.rsi = slot,

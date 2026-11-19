@@ -831,7 +831,7 @@ impl ClassificationEngine {
                 r
             }
             Err(e) => {
-                return Err(WorkError::Execution(format!(
+                return Err(WorkError::execution_display(format!(
                     "tree classifier LLM error for model '{model}': {e}"
                 )));
             }

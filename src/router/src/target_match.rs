@@ -20,7 +20,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
 
 use common_core::registry::ConcurrentRegistry;
 use fluent_concurrency::pool::{Limiter, ResultPool};
@@ -65,7 +64,7 @@ pub fn parse_self_assessment(response: &str) -> Result<SelfAssessment, WorkError
             coerce_string(obj, "reason", "");
         }
     })
-    .map_err(|e| WorkError::Execution(format!("self-assessment verdict parse error: {e}")))
+    .map_err(|e| WorkError::execution_display(format!("self-assessment verdict parse error: {e}")))
 }
 
 /// One ordered member of a role the matcher climbs over.
@@ -707,15 +706,15 @@ pub struct TargetMatcher {
     /// classifier stage).
     limiter: Arc<Limiter>,
     /// Per-assessment wall-clock budget.
-    timeout_ms: u64,
+    timeout: std::time::Duration,
 }
 
 impl TargetMatcher {
-    pub fn new(backends: TargetBackends, limiter: Arc<Limiter>, timeout_ms: u64) -> Self {
+    pub fn new(backends: TargetBackends, limiter: Arc<Limiter>, timeout: std::time::Duration) -> Self {
         Self {
             backends,
             limiter,
-            timeout_ms,
+            timeout,
         }
     }
 
@@ -965,8 +964,8 @@ impl TargetMatcher {
         for submitter in submitters {
             let assessed = match submitter.await {
                 Ok(Ok(assessed)) => assessed,
-                Ok(Err(_)) | Err(_) => Err(WorkError::Execution(
-                    "self-assessment fan-out submit failed — escalating".into(),
+                Ok(Err(_)) | Err(_) => Err(WorkError::execution_display(
+                    "self-assessment fan-out submit failed — escalating",
                 )),
             };
             results.push(assessed);
@@ -979,7 +978,7 @@ impl TargetMatcher {
 
     /// One self-assessment call: build the fixed prompt, run through the
     /// shared limiter (mirroring `stages::classifier`'s sync call), bounded by
-    /// `timeout_ms`. A failed/unparseable call is `Err` — the caller escalates
+    /// `timeout`. A failed/unparseable call is `Err` — the caller escalates
     /// conservatively.
     fn assess(
         &self,
@@ -1010,9 +1009,9 @@ impl TargetMatcher {
         let call_start = std::time::Instant::now();
         let response = self.limiter.run_sync(|| async {
             let call = client.chat_complete(&messages);
-            if self.timeout_ms > 0 {
+            if !self.timeout.is_zero() {
                 let timed =
-                    tokio::time::timeout(Duration::from_millis(self.timeout_ms), async { call })
+                    tokio::time::timeout(self.timeout, async { call })
                         .await;
                 if let Ok(r) = timed {
                     r
@@ -1020,12 +1019,12 @@ impl TargetMatcher {
                     tracing::warn!(
                         target: "router.pipeline.stage2.target_match",
                         model_key = %candidate.model_key,
-                        timeout_ms = self.timeout_ms,
+                        timeout_ms = self.timeout.as_millis() as u64,
                         "target self-assessment timed out",
                     );
                     Err(fluent_llm::LlmError::Http(format!(
                         "self-assessment timed out after {}ms",
-                        self.timeout_ms
+                        self.timeout.as_millis()
                     )))
                 }
             } else {
@@ -1044,7 +1043,7 @@ impl TargetMatcher {
                     latency_ms = latency_ms,
                     "target self-assessment call failed — escalating to next candidate",
                 );
-                return Err(WorkError::Execution(e.to_string()));
+                return Err(WorkError::execution_display(e.to_string()));
             }
         };
 
@@ -1095,8 +1094,8 @@ impl TargetMatcher {
                 retry_count: 0,
                 retry_base_interval_s: 1,
                 stream: true,
-                idle_timeout_ms: fluent_llm::constants::DEFAULT_IDLE_TIMEOUT_MS,
-                total_timeout_ms: fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS,
+                idle_timeout: fluent_llm::constants::DEFAULT_IDLE_TIMEOUT,
+                total_timeout: fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT,
                 api_key: None,
                 fallbacks: vec![],
                 is_onnx: false,

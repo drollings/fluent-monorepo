@@ -481,7 +481,7 @@ fn triage_rung_names_unavailable_without_burning() {
             decision: DecisionEndpoint {
                 base_url: "http://127.0.0.1:1".to_string(),
                 model: "test-model".to_string(),
-                timeout_ms: 2_000,
+                timeout: std::time::Duration::from_secs(2),
                 enabled: true,
             },
             calibration: registry,
@@ -571,7 +571,7 @@ fn disabled_endpoint_skips_draft_rung_without_network() {
     let endpoint = crate::waves::GenerativeEndpoint {
         base_url: "http://127.0.0.1:1".to_string(),
         model: "code".to_string(),
-        timeout_ms: 1000,
+        timeout: std::time::Duration::from_secs(1),
         enabled: false,
     };
     let report = crate::waves::run_model_draft_rung(

@@ -1,4 +1,5 @@
 use common_core::watchdog::*;
+use std::time::Duration;
 
 #[test]
 fn test_budget_watchdog_fires() {
@@ -35,7 +36,7 @@ fn test_budget_watchdog_reset() {
 
 #[test]
 fn test_wall_clock_watchdog_fires_after_deadline() {
-    let dog = WallClockWatchdog::new(0);
+    let dog = WallClockWatchdog::new(Duration::ZERO);
     std::thread::sleep(std::time::Duration::from_millis(5));
     let event = dog.check().expect("should fire");
     match event {
@@ -46,7 +47,7 @@ fn test_wall_clock_watchdog_fires_after_deadline() {
 
 #[test]
 fn test_wall_clock_watchdog_not_fired_within_deadline() {
-    let dog = WallClockWatchdog::new(3600);
+    let dog = WallClockWatchdog::new(Duration::from_secs(3600));
     assert!(dog.check().is_none());
 }
 
@@ -89,7 +90,7 @@ fn test_repetition_watchdog_reset() {
 
 #[test]
 fn test_watchdog_set_composition() {
-    let set = WatchdogSet::new(100, 3600, 3, 10);
+    let set = WatchdogSet::new(100, Duration::from_secs(3600), 3, 10);
     assert!(set.check(Some("hello")).is_none());
     assert!(set.check(Some("hello")).is_none());
     let event = set.check(Some("hello")).expect("repetition should fire");
@@ -101,7 +102,7 @@ fn test_watchdog_set_composition() {
 
 #[test]
 fn test_watchdog_set_budget_triggers() {
-    let set = WatchdogSet::new(1, 3600, 10, 10);
+    let set = WatchdogSet::new(1, Duration::from_secs(3600), 10, 10);
     assert!(set.check(None).is_none());
     let event = set.check(Some("hello")).expect("budget should fire");
     match event {
@@ -118,8 +119,8 @@ fn test_log_event_does_not_panic() {
     };
     WatchdogSet::log_event(&event);
     let event = WatchdogEvent::WallClock {
-        deadline_secs: 300,
-        elapsed_secs: 301,
+        deadline: Duration::from_secs(300),
+        elapsed: Duration::from_secs(301),
     };
     WatchdogSet::log_event(&event);
     let event = WatchdogEvent::Repetition {
@@ -140,8 +141,8 @@ fn test_watchdog_event_type_from_event() {
     );
     assert_eq!(
         WatchdogEventType::from(&WatchdogEvent::WallClock {
-            deadline_secs: 1,
-            elapsed_secs: 2
+            deadline: Duration::from_secs(1),
+            elapsed: Duration::from_secs(2)
         }),
         WatchdogEventType::WallClock
     );

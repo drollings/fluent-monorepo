@@ -20,24 +20,24 @@ fn ok_slow(ms: u64) -> JobFut {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn full_queue_drops_with_visible_counter() {
-    let mut bridge = ShadowBridge::new(1, 5_000);
+    let mut bridge = ShadowBridge::new(1, std::time::Duration::from_millis(5_000));
     assert!(bridge.submit(job("a", || ok_slow(300))));
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(bridge.submit(job("b", || ok_slow(10))));
     assert!(!bridge.submit(job("c", || ok_slow(10))), "full queue drops");
     assert_eq!(bridge.dropped_count(), 1);
-    assert!(bridge.shutdown(5_000).await);
+    assert!(bridge.shutdown(std::time::Duration::from_millis(5_000)).await);
     assert_eq!(bridge.completed_count(), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn timeouts_errors_panics_never_touch_caller() {
-    let mut bridge = ShadowBridge::new(8, 50);
+    let mut bridge = ShadowBridge::new(8, std::time::Duration::from_millis(50));
     assert!(bridge.submit(job("slow", || ok_slow(500))));
     assert!(bridge.submit(job("err", || Box::pin(async { Err("bad".to_string()) }))));
     assert!(bridge.submit(job("boom", || Box::pin(async { panic!("shadow panic") }))));
     assert!(bridge.submit(job("fine", || Box::pin(async { Ok(()) }))));
-    assert!(bridge.shutdown(5_000).await);
+    assert!(bridge.shutdown(std::time::Duration::from_millis(5_000)).await);
     assert_eq!(bridge.timeout_count(), 1);
     assert_eq!(bridge.error_count(), 1);
     assert_eq!(bridge.panic_count(), 1);
@@ -46,9 +46,9 @@ async fn timeouts_errors_panics_never_touch_caller() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shutdown_is_bounded() {
-    let mut bridge = ShadowBridge::new(8, 10_000);
+    let mut bridge = ShadowBridge::new(8, std::time::Duration::from_millis(10_000));
     assert!(bridge.submit(job("long", || ok_slow(2_000))));
-    assert!(!bridge.shutdown(50).await, "bounded flush gives up");
+    assert!(!bridge.shutdown(std::time::Duration::from_millis(50)).await, "bounded flush gives up");
 }
 
 #[test]
@@ -60,9 +60,9 @@ fn submit_is_sync_callable() {
         .enable_all()
         .build()
         .expect("runtime");
-    let mut bridge = runtime.block_on(async { ShadowBridge::new(8, 1_000) });
+    let mut bridge = runtime.block_on(async { ShadowBridge::new(8, std::time::Duration::from_millis(1_000)) });
     assert!(bridge.submit(job("x", || Box::pin(async { Ok(()) }))));
-    assert!(bridge.shutdown_blocking(5_000));
+    assert!(bridge.shutdown_blocking(std::time::Duration::from_millis(5_000)));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

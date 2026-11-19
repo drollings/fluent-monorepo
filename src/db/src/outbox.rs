@@ -81,7 +81,7 @@ pub fn append(conn: &Connection, key: &str, payload: &[u8]) -> Result<i64, DbErr
         rusqlite::params![key],
         |row| row.get::<_, i64>(0),
     )?
-    .ok_or_else(|| DbError::Other(format!("outbox append for {key:?} left no row")))
+    .ok_or_else(|| DbError::Internal(format!("outbox append for {key:?} left no row")))
 }
 
 /// Claim up to `limit` rows in FIFO order, leasing them to the caller.

@@ -18,7 +18,7 @@ fn verdict(label: &str) -> Decision {
 fn doc_prompt_bytes_preserved() {
     let backend = ScriptedDecideBackend::new(vec![Ok(verdict("strong"))]);
     let judge: CandidateJudge<DocLabel> =
-        CandidateJudge::new(&backend, "decision".to_string(), 2000);
+        CandidateJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let out = judge.judge(
         "how does sync work",
         &[("doc/a.md#one".to_string(), "Sync converges.".to_string())],
@@ -52,7 +52,7 @@ fn doc_prompt_bytes_preserved() {
 fn finding_prompt_bytes_preserved() {
     let backend = ScriptedDecideBackend::new(vec![Ok(verdict("relevant"))]);
     let judge: CandidateJudge<FindingLabel> =
-        CandidateJudge::new(&backend, "decision".to_string(), 2000);
+        CandidateJudge::new(&backend, "decision".to_string(), std::time::Duration::from_secs(2));
     let out = judge.judge("q", &[("f1".to_string(), "excerpt".to_string())]);
     assert_eq!(out.len(), 1);
     let reqs = backend.requests();

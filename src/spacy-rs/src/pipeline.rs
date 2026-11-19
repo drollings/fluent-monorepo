@@ -183,9 +183,9 @@ impl WorkUnit for AnnotateStage {
         let state = (*stored).clone();
         let json = ctx
             .structured::<String>(ANNOTATION_JSON_KEY)
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(|e| WorkError::execution_display(e.to_string()))?;
         let set =
-            AnnotationSet::parse_json(&json).map_err(|e| WorkError::Execution(e.to_string()))?;
+            AnnotationSet::parse_json(&json).map_err(|e| WorkError::execution_display(e.to_string()))?;
         let mut state = common_core::sync::lock(&state);
         state.annotations = Some(set);
         Ok(WorkOutput::ok("annotations parsed"))
@@ -250,7 +250,7 @@ impl WorkUnit for ValidateStage {
             .ok_or_else(|| WorkError::Dependency("annotations missing".into()))?;
         self.validator
             .validate(doc, set)
-            .map_err(|e| WorkError::Execution(format!("validation rejected: {e}")))?;
+            .map_err(|e| WorkError::execution_display(format!("validation rejected: {e}")))?;
         state.validated = true;
         Ok(WorkOutput::ok("annotations validated"))
     }
@@ -302,7 +302,7 @@ impl WorkUnit for AttachStage {
             .doc
             .as_mut()
             .ok_or_else(|| WorkError::Dependency("pipeline doc missing".into()))?;
-        attach(doc, &set).map_err(|e| WorkError::Execution(e.to_string()))?;
+        attach(doc, &set).map_err(|e| WorkError::execution_display(e.to_string()))?;
         Ok(WorkOutput::ok("annotations attached"))
     }
 }

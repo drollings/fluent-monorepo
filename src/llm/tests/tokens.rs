@@ -92,8 +92,8 @@ fn test_estimate_chars_for_tokens() {
     assert_eq!(estimate_chars_for_tokens(0, 4), 0);
     assert_eq!(estimate_chars_for_tokens(0, 0), 0);
     assert_eq!(
-        estimate_chars_for_tokens(usize::MAX, 4),
-        usize::MAX,
+        estimate_chars_for_tokens(u64::MAX, 4),
+        u64::MAX,
         "saturates"
     );
 }
@@ -212,7 +212,7 @@ fn chunk_latin_splits() {
     let chunks = chunk_document(text, &ChunkConfig::new(10, 3));
     assert!(chunks.len() >= 2, "got {} chunks", chunks.len());
     for c in &chunks {
-        let t = estimate_tokens(c) as usize;
+        let t = estimate_tokens(c);
         assert!(t <= 12, "chunk has {t} tokens, expected ≤ 12");
     }
 }

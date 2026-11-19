@@ -66,13 +66,13 @@ fn other_error_maps_to_sqlite() {
 }
 
 #[test]
-fn io_error_maps_to_other() {
+fn io_error_maps_to_io() {
     let io_err = common_core::error::IoError(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         "missing file",
     ));
     match DbError::from(io_err) {
-        DbError::Other(msg) => assert!(msg.contains("missing file")),
-        other => panic!("expected Other, got {other:?}"),
+        DbError::Io(e) => assert!(e.to_string().contains("missing file")),
+        other => panic!("expected Io, got {other:?}"),
     }
 }

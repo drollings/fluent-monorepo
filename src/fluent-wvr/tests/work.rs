@@ -8,7 +8,7 @@ use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 fn test_work_context_default() {
     let ctx = WorkContext::default();
     assert!(!ctx.dry_run);
-    assert_eq!(ctx.timeout_ms, 30000);
+    assert_eq!(ctx.timeout, std::time::Duration::from_secs(30));
     assert!(ctx.outputs.is_empty());
 }
 
@@ -150,20 +150,20 @@ fn work_output_display_fail() {
 
 #[test]
 fn work_error_partial_eq() {
-    let a = WorkError::Execution("boom".into());
-    let b = WorkError::Execution("boom".into());
+    let a = WorkError::execution_display("boom");
+    let b = WorkError::execution_display("boom");
     assert_eq!(a, b);
 }
 
 #[test]
 fn work_error_is_retryable_classification() {
     // Execution is a permanent failure — never retry.
-    assert!(!WorkError::Execution("boom".into()).is_retryable());
+    assert!(!WorkError::execution_display("boom").is_retryable());
     // Dependency (prerequisite not yet satisfied) is transient — retry.
     assert!(WorkError::Dependency("awaiting asset".into()).is_retryable());
     // Timeout (budget exhausted under load) is transient — retry.
     assert!(WorkError::Timeout {
-        duration_ms: 100,
+        duration: std::time::Duration::from_millis(100),
         unit: "u".into()
     }
     .is_retryable());

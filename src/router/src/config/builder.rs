@@ -176,9 +176,10 @@ pub struct PipelineParams {
     #[serde(default)]
     pub target_match: TargetMatchMode,
     /// Per-self-assessment wall-clock budget for the target-matching ladder.
-    /// Defaults to `DEFAULT_TOTAL_TIMEOUT_MS` (the shared timeout constant).
-    #[serde(default = "default_target_match_timeout_ms")]
-    pub target_match_timeout_ms: u64,
+    /// Defaults to `DEFAULT_TOTAL_TIMEOUT` (the shared timeout constant).
+    /// Wire format stays milliseconds under the `target_match_timeout_ms` key.
+    #[serde(default = "default_target_match_timeout", rename = "target_match_timeout_ms", with = "common_core::duration_ms")]
+    pub target_match_timeout: std::time::Duration,
     /// Role (or literal registry key) whose onnx `ZeroShotRouting` sessions
     /// back the overlay stage's disambiguation scoring. Each entry names a
     /// role from the roles table — its head candidate serves (a
@@ -227,8 +228,8 @@ pub struct PipelineParams {
     pub refine_policy: Option<RouterRefinePolicy>,
 }
 
-fn default_target_match_timeout_ms() -> u64 {
-    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS
+fn default_target_match_timeout() -> std::time::Duration {
+    fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT
 }
 
 /// Default parse-confidence floor for the overlay disambiguation residual
@@ -277,7 +278,7 @@ impl Default for PipelineParams {
             classifier_retry_max: 0,
             classifier_retry_prompts: default_classifier_retry_prompts(),
             target_match: TargetMatchMode::SelfAssess,
-            target_match_timeout_ms: default_target_match_timeout_ms(),
+            target_match_timeout: default_target_match_timeout(),
             overlay_models: Vec::new(),
             overlay_max_concurrency: None,
             overlay_disambiguation_floor: default_overlay_disambiguation_floor(),
@@ -813,13 +814,13 @@ impl RouterConfig {
                     target: "router.config",
                     pipeline = %name,
                     target_backends = backends.len(),
-                    target_match_timeout_ms = params.target_match_timeout_ms,
+                    target_match_timeout_ms = params.target_match_timeout.as_millis() as u64,
                     "target-matching ladder enabled (self-assess)",
                 );
                 Some(TargetMatcher::new(
                     backends,
                     Arc::clone(&limiter),
-                    params.target_match_timeout_ms,
+                    params.target_match_timeout,
                 ))
             } else {
                 tracing::debug!(
@@ -1224,7 +1225,7 @@ pub(crate) fn llama_chat_backend_for_key(
     let llm_config = LlmConfig::new()
         .api_url(entry.endpoint.clone())
         .model(model)
-        .timeout_ms(entry.total_timeout_ms)
+        .timeout(entry.total_timeout)
         .maybe_extra_body_params(params)
         .build();
     Some(Arc::new(LlmClient::with_config(llm_config)))
@@ -1259,7 +1260,7 @@ pub(crate) fn llama_chat_backend_for_instance(
     let llm_config = LlmConfig::new()
         .api_url(entry.endpoint.clone())
         .model(model)
-        .timeout_ms(entry.total_timeout_ms)
+        .timeout(entry.total_timeout)
         .maybe_extra_body_params(Some(params))
         .build();
     Some(Arc::new(LlmClient::with_config(llm_config)))

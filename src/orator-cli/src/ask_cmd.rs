@@ -69,7 +69,7 @@ pub(crate) fn ask(
         let mut session = HttpSession::open(
             &live_base,
             &model,
-            usize::from(llm.ctx),
+            u64::from(llm.ctx),
             usize::from(llm.n_batch),
         );
         session.push_text(question);

@@ -24,7 +24,7 @@ fn text_options(endpoint: &str) -> QwenTextOptions {
         api_key: Some("secret-value".to_string()),
         endpoint: Some(endpoint.to_string()),
         extra_headers: Default::default(),
-        timeout_ms: None,
+        timeout: None,
     }
 }
 
@@ -65,7 +65,7 @@ fn text_model_construction_rejects_blank_key_and_endpoint() {
         api_key: Some(" ".to_string()),
         endpoint: Some("https://example.test/embeddings".to_string()),
         extra_headers: Default::default(),
-        timeout_ms: None,
+        timeout: None,
     })
     .unwrap_err();
     assert!(error.to_string().contains("requires an API key"), "{error}");
@@ -74,7 +74,7 @@ fn text_model_construction_rejects_blank_key_and_endpoint() {
         api_key: Some("secret".to_string()),
         endpoint: Some("  ".to_string()),
         extra_headers: Default::default(),
-        timeout_ms: None,
+        timeout: None,
     })
     .unwrap_err();
     assert!(
@@ -192,7 +192,7 @@ async fn text_model_enforces_timeout() {
             .delay(std::time::Duration::from_secs(30));
     });
     let model = QwenTextEmbeddingV4::new(&QwenTextOptions {
-        timeout_ms: Some(100),
+        timeout: Some(std::time::Duration::from_millis(100)),
         ..text_options(&server.url("/slow"))
     })
     .unwrap();
@@ -266,7 +266,7 @@ async fn vl_model_validates_images_encodes_bytes_and_maps_indexes() {
         api_key: Some(String::new()),
         endpoint: Some("https://example.test/vl".to_string()),
         extra_headers: Default::default(),
-        timeout_ms: None,
+        timeout: None,
     })
     .unwrap_err();
     assert!(error.to_string().contains("requires an API key"), "{error}");

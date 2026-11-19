@@ -123,7 +123,7 @@ impl StubComponent {
         Self::new(name)
     }
 
-    /// A unit that returns `Err(WorkError::Execution(...))`.
+    /// A unit that returns `Err(WorkError::execution_display(...))`.
     pub fn fail(name: &str) -> Self {
         let mut s = Self::new(name);
         s.fail = true;
@@ -188,7 +188,7 @@ impl WorkUnit for StubComponent {
             panic!("StubComponent::panic: {}", self.name);
         }
         if self.fail {
-            return Err(WorkError::Execution(format!("stub fail: {}", self.name)));
+            return Err(WorkError::execution_display(format!("stub fail: {}", self.name)));
         }
         Ok(WorkOutput::ok("stub ok"))
     }

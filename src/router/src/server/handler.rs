@@ -791,7 +791,7 @@ async fn handle_chat_completion(
             ledger.as_ref(),
             ledger_node_id,
             session_step.as_ref(),
-            rt.total_timeout_ms,
+            rt.total_timeout,
             &runtime,
             status.is_success(),
         )
@@ -825,7 +825,7 @@ async fn handle_chat_completion(
             ledger.as_ref(),
             ledger_node_id,
             session_step.as_ref(),
-            0,
+        std::time::Duration::ZERO,
             &runtime,
             status.is_success(),
         )

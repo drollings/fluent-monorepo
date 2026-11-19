@@ -187,7 +187,12 @@ pub trait Capability: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }
 
-/// A type-map of capability tokens, used to gate access to resources.
+/// A type-map scope of capability tokens, used to gate access to resources.
+///
+/// This is a type-map scope, not a registry: one token per `TypeId`,
+/// `contains` is the gate probe. For name→value registries compose
+/// `common_core::registry::KeyedRegistry`; for string→bit interning compose
+/// `common_core::interner::CapabilityInterner`.
 ///
 /// # Examples
 ///

@@ -431,7 +431,7 @@ fn unauthorized_judge_labels_do_not_render() {
     let judge = crate::read::engine::JudgeCtx {
         backend: &backend,
         model: "decision".to_string(),
-        timeout_ms: 2000,
+        timeout: std::time::Duration::from_secs(2),
         fingerprint: None,
     };
     let answer = engine.explain_with_judge(

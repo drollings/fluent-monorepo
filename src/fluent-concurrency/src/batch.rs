@@ -68,12 +68,12 @@ pub struct SupervisedBatchConfig {
     /// SupervisedBatch units wrap genuinely transient failures in
     /// `WorkError::Execution` (e.g. chart targets whose LLM call failed).
     pub is_retryable: fn(&WorkError) -> bool,
-    /// Base delay (ms) of the jittered-exponential backoff between retry
+    /// Base delay of the jittered-exponential backoff between retry
     /// attempts, forwarded to `crate::retry::retry_async` as `base_ms`.
-    /// Default `100` — the schedule before this was configurable.
-    pub backoff_base_ms: u64,
+    /// Default 100ms — the schedule before this was configurable.
+    pub backoff_base: std::time::Duration,
     /// Jitter of the backoff as a percentage (0–100) of the **base** delay
-    /// (`base_ms * jitter_pct / 100` added on top of each attempt's sleep),
+    /// (`base * jitter_pct / 100` added on top of each attempt's sleep),
     /// forwarded to `crate::retry::retry_async` as `jitter_pct`.
     /// Default `50`.
     pub backoff_jitter_pct: u64,
@@ -85,7 +85,7 @@ impl PartialEq for SupervisedBatchConfig {
         // addresses are not guaranteed unique, so equality compares the
         // numeric tuning only.
         self.poll_budget == other.poll_budget
-            && self.backoff_base_ms == other.backoff_base_ms
+            && self.backoff_base == other.backoff_base
             && self.backoff_jitter_pct == other.backoff_jitter_pct
     }
 }
@@ -97,7 +97,7 @@ impl Default for SupervisedBatchConfig {
         Self {
             poll_budget: 64,
             is_retryable: WorkError::is_retryable,
-            backoff_base_ms: 100,
+            backoff_base: std::time::Duration::from_millis(100),
             backoff_jitter_pct: 50,
         }
     }
@@ -221,9 +221,9 @@ impl SupervisedBatch {
     fn spawn_unit(&mut self, unit: Arc<dyn Component>, ctx: WorkContext) {
         let name: ArcIntern<str> = ArcIntern::from(unit.name());
         let max_retries = ctx.max_retries;
-        let timeout_ms = ctx.timeout_ms;
+        let timeout = ctx.timeout;
         let is_retryable = self.config.is_retryable;
-        let backoff_base_ms = self.config.backoff_base_ms;
+        let backoff_base = self.config.backoff_base;
         let backoff_jitter_pct = self.config.backoff_jitter_pct;
         // Q2: install the batch's capability set into the task-local for the
         // lifetime of the task, mirroring `Scope::spawn`. Without this, any
@@ -241,9 +241,9 @@ impl SupervisedBatch {
                         unit,
                         ctx,
                         max_retries,
-                        timeout_ms,
+                        timeout,
                         is_retryable,
-                        backoff_base_ms,
+                        backoff_base,
                         backoff_jitter_pct,
                     )
                     .await
@@ -426,14 +426,17 @@ async fn execute_with_timeout_and_retry(
     unit: Arc<dyn Component>,
     ctx: WorkContext,
     max_retries: u32,
-    timeout_ms: u64,
+    timeout: Duration,
     is_retryable: fn(&WorkError) -> bool,
-    backoff_base_ms: u64,
+    backoff_base: Duration,
     backoff_jitter_pct: u64,
 ) -> Result<WorkOutput, WorkError> {
     // Yield to allow pending abort signals to be processed before
     // executing the synchronous work unit body.
     tokio::task::yield_now().await;
+    // `retry_async` schedules in whole milliseconds; sub-ms bases round up
+    // so a zero base still sleeps instead of spinning.
+    let backoff_base_ms = backoff_base.as_millis().max(1).min(u64::MAX as u128) as u64;
     let fut = async {
         common_core::retry::retry_async(
             max_retries.saturating_add(1).max(1),
@@ -453,11 +456,11 @@ async fn execute_with_timeout_and_retry(
         .await
     };
 
-    if timeout_ms > 0 {
-        match tokio::time::timeout(Duration::from_millis(timeout_ms), fut).await {
+    if !timeout.is_zero() {
+        match tokio::time::timeout(timeout, fut).await {
             Ok(result) => result,
             Err(_) => Err(WorkError::Timeout {
-                duration_ms: timeout_ms,
+                duration: timeout,
                 unit: unit.name().to_string(),
             }),
         }

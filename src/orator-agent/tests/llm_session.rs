@@ -333,8 +333,8 @@ fn pack_user_text_pins_under_over_and_system_floor() {
     // Over: the remainder truncates head-only with a loud marker.
     let system = "system words ".repeat(100);
     let user = "user words ".repeat(5000);
-    let ctx: usize = 1024;
-    let remaining = ctx.saturating_sub(estimate_tokens(&system) as usize);
+    let ctx = 1024u64;
+    let remaining = ctx.saturating_sub(estimate_tokens(&system));
     let expected = TokenBudget(remaining).truncate_to_budget(&user);
     assert!(expected.ends_with("..."), "truncation marks itself");
     assert!(expected.len() < user.len());

@@ -48,7 +48,7 @@ pub async fn run_summarize(
     let config = fluent_llm::protocol::LlmConfig::new()
         .api_url(base_url.to_string())
         .model(model.to_string())
-        .timeout_ms(cfg.generative.timeout_ms)
+        .timeout(cfg.generative.timeout)
         .build();
     let client = fluent_llm::client::LlmClient::with_config(config);
     let db = guidance_core::query::search_db::GuidanceSearchDb::open(Path::new(db_path))

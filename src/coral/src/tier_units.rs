@@ -40,7 +40,7 @@ fn routing_to_work_result(
 ) -> Result<WorkOutput, WorkError> {
     match result {
         Ok(r) => make_output(&r),
-        Err(e) => Err(WorkError::Execution(e.to_string())),
+        Err(e) => Err(WorkError::execution_display(e.to_string())),
     }
 }
 
@@ -87,11 +87,11 @@ impl L2WasmUnit {
         let plugin = self
             .pool
             .get_or_load(&self.tool.path)
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(|e| WorkError::execution_display(e.to_string()))?;
         let mut plugin_guard = plugin.lock().unwrap();
         let result = plugin_guard
             .call(b"get_schema")
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(|e| WorkError::execution_display(e.to_string()))?;
         let value: serde_json::Value =
             serde_json::from_slice(&result).unwrap_or(serde_json::Value::Null);
         *guard = Some(value.clone());
@@ -114,12 +114,12 @@ impl WorkUnit for L2WasmUnit {
         let plugin = self
             .pool
             .get_or_load(&self.tool.path)
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(|e| WorkError::execution_display(e.to_string()))?;
         let result_bytes = {
             let mut guard = plugin.lock().unwrap();
             guard
                 .call(query.as_bytes())
-                .map_err(|e| WorkError::Execution(e.to_string()))?
+                .map_err(|e| WorkError::execution_display(e.to_string()))?
         };
         let result_str = String::from_utf8_lossy(&result_bytes);
         make_output(&RoutingResult {
@@ -279,9 +279,9 @@ impl WorkUnit for L4SemanticUnit {
         let emb = self
             .embedder
             .embed(&query)
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(|e| WorkError::execution_display(e.to_string()))?;
         if emb.is_empty() {
-            return Err(WorkError::Execution("empty embedding".into()));
+            return Err(WorkError::execution_display("empty embedding"));
         }
         routing_to_work_result(self.router.route_with_embedding(&query, &emb))
     }
@@ -354,7 +354,7 @@ impl L5FrontierUnit {
     /// Attach a shared `LlmRequestQueue` (worker pool) so frontier calls flow
     /// through bounded workers instead of unbounded direct HTTP. The queue's
     /// handler is `fluent_llm::llm_queue::default_handler`, which preserves
-    /// the `LlmConfig` fields (`timeout_ms`, `think`, `extra_body_params`,
+    /// the `LlmConfig` fields (`timeout`, `think`, `extra_body_params`,
     /// `debug`, `show_prompts`) exactly.
     pub fn with_queue(config: LlmConfig, queue: Arc<LlmRequestQueue>) -> Self {
         Self {
@@ -393,7 +393,7 @@ impl WorkUnit for L5FrontierUnit {
         let response = if let Some(ref backend) = self.chat_backend {
             backend
                 .chat_complete(&messages)
-                .map_err(|e| WorkError::Execution(format!("frontier error: {e}")))?
+                .map_err(|e| WorkError::execution_display(format!("frontier error: {e}")))?
         } else {
             // When a shared `LlmRequestQueue` is attached, route through its
             // worker pool (bounded concurrency) via the queued `LlmClient`;
@@ -404,10 +404,10 @@ impl WorkUnit for L5FrontierUnit {
             };
             client
                 .chat_complete(&messages)
-                .map_err(|e| WorkError::Execution(format!("frontier error: {e}")))?
+                .map_err(|e| WorkError::execution_display(format!("frontier error: {e}")))?
         };
         if is_malformed_response(&response) {
-            return Err(WorkError::Execution("malformed response".into()));
+            return Err(WorkError::execution_display("malformed response"));
         }
         make_output(&RoutingResult {
             query,
@@ -500,7 +500,7 @@ impl TierRegistry {
         }
 
         if self.cascade.is_empty() {
-            return Err(WorkError::Execution("no tiers configured".into()));
+            return Err(WorkError::execution_display("no tiers configured"));
         }
 
         let output = self.cascade.execute_first_ok(&ctx)?;
@@ -508,7 +508,7 @@ impl TierRegistry {
         // `WorkOutput::typed`, this consumes it back.
         output
             .data_take::<RoutingResult>()
-            .map_err(|e| WorkError::Execution(e.to_string()))
+            .map_err(|e| WorkError::execution_display(e.to_string()))
     }
 }
 
@@ -553,7 +553,7 @@ mod tests {
             LlmConfig::new()
                 .api_url("http://127.0.0.1:1/v1".into())
                 .model("test".into())
-                .timeout_ms(100)
+                .timeout(std::time::Duration::from_millis(100))
                 .build(),
             queue,
         );

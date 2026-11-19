@@ -271,8 +271,8 @@ pub async fn handle_dispatch(
         url = %rt.url,
         stream = target_streams,
         retry = rt.retry_count,
-        idle_timeout_ms = rt.idle_timeout_ms,
-        total_timeout_ms = rt.total_timeout_ms,
+        idle_timeout_ms = rt.idle_timeout.as_millis() as u64,
+        total_timeout_ms = rt.total_timeout.as_millis() as u64,
         filter_thinking = rt.filter_thinking,
         fallbacks = rt.fallbacks.len(),
         "real dispatch"
@@ -457,8 +457,8 @@ async fn dispatch_to_single_target(
                 router_request.clone(),
                 target.model.clone(),
                 params,
-                target.idle_timeout_ms,
-                target.total_timeout_ms,
+                target.idle_timeout,
+                target.total_timeout,
                 target.filter_thinking,
                 Some(abort),
             )
@@ -483,8 +483,8 @@ async fn dispatch_to_single_target(
             router_request.clone(),
             target.model.clone(),
             params,
-            target.idle_timeout_ms,
-            target.total_timeout_ms,
+            target.idle_timeout,
+            target.total_timeout,
             filter_thinking,
         )
         .await?;
@@ -561,8 +561,8 @@ pub async fn dispatch_real(
                     url = %target.url,
                     stream = stream,
                     retry_count = target.retry_count,
-                    idle_timeout_ms = target.idle_timeout_ms,
-                    total_timeout_ms = target.total_timeout_ms,
+                    idle_timeout_ms = target.idle_timeout.as_millis() as u64,
+                    total_timeout_ms = target.total_timeout.as_millis() as u64,
                     "dispatch attempt"
                 );
 

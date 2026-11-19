@@ -9,7 +9,7 @@ fn decision_role_defaults_match_contract() {
     assert_eq!(role.base_url, "http://localhost:8080");
     assert_eq!(role.model, "liquidai/d1-2b");
     assert!(role.enabled);
-    assert!(role.timeout_ms > 0);
+    assert!(!role.timeout.is_zero());
     assert_eq!(role.transport, ModelTransport::SystemOne);
 }
 
@@ -19,7 +19,7 @@ fn generative_role_defaults_match_contract() {
     assert_eq!(role.base_url, "http://localhost:8080");
     assert_eq!(role.model, "code");
     assert!(role.enabled);
-    assert!(role.timeout_ms > 0);
+    assert!(!role.timeout.is_zero());
     assert_eq!(role.transport, ModelTransport::Chat);
     assert_eq!(role.max_tokens, Some(2048));
 }

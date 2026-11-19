@@ -14,7 +14,7 @@ pub struct Entry {
     pub query: String,
     pub result_summary: String,
     pub timestamp: u64,
-    pub ttl_seconds: u64,
+    pub ttl: std::time::Duration,
 }
 
 /// Knowledge-specific key derivation: lowercase the query, then hash with
@@ -29,25 +29,25 @@ pub struct QueryCache {
 }
 
 impl QueryCache {
-    pub fn new(db_path: &Path, default_ttl_seconds: u64) -> Result<Self, DbError> {
-        Self::with_max_entries(db_path, default_ttl_seconds, 4096)
+    pub fn new(db_path: &Path, default_ttl: std::time::Duration) -> Result<Self, DbError> {
+        Self::with_max_entries(db_path, default_ttl, 4096)
     }
 
     pub fn with_max_entries(
         db_path: &Path,
-        default_ttl_seconds: u64,
+        default_ttl: std::time::Duration,
         max_entries: usize,
     ) -> Result<Self, DbError> {
         Ok(Self {
-            inner: SqliteTtlCache::open(db_path, default_ttl_seconds)?
+            inner: SqliteTtlCache::open(db_path, default_ttl)?
                 .with_cap(max_entries)
                 .with_key(query_key),
         })
     }
 
-    pub fn new_in_memory(default_ttl_seconds: u64) -> Result<Self, DbError> {
+    pub fn new_in_memory(default_ttl: std::time::Duration) -> Result<Self, DbError> {
         Ok(Self {
-            inner: SqliteTtlCache::open_in_memory(default_ttl_seconds)?.with_key(query_key),
+            inner: SqliteTtlCache::open_in_memory(default_ttl)?.with_key(query_key),
         })
     }
 
@@ -56,7 +56,7 @@ impl QueryCache {
             query: e.key,
             result_summary: e.result_summary,
             timestamp: e.timestamp,
-            ttl_seconds: e.ttl_seconds,
+            ttl: e.ttl,
         }))
     }
 
@@ -74,7 +74,7 @@ impl QueryCache {
         self.inner.clear()
     }
 
-    pub fn stats(&self) -> Result<(usize, u64, usize), DbError> {
+    pub fn stats(&self) -> Result<(usize, std::time::Duration, usize), DbError> {
         self.inner.stats()
     }
 }

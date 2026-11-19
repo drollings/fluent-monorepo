@@ -72,7 +72,7 @@ impl SystemOneBackend {
         let url = Self::endpoint(&self.base_url);
         let response = common_core::http::shared_http_client()
             .post(&url)
-            .timeout(std::time::Duration::from_millis(first.timeout_ms.max(1)))
+            .timeout(first.timeout.max(std::time::Duration::from_millis(1)))
             .json(&body)
             .send()
             .await
@@ -183,7 +183,7 @@ impl SystemOneBackend {
             options: Vec::new(),
             kind: DecisionKind::Noul,
             version: 0,
-            timeout_ms: 2000,
+            timeout: std::time::Duration::from_secs(2),
             model: model.to_string(),
         };
         match self.post(std::slice::from_ref(&request)).await {

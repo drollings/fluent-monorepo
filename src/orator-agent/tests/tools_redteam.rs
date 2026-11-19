@@ -52,7 +52,7 @@ fn harness() -> (crate::tools::tool::ToolRegistry, tempfile::TempDir) {
     let guarded = Arc::new(
         Guarded::new(GuardedConfig {
             root: dir.path().to_path_buf(),
-            timeout_ms: 5000,
+            timeout: std::time::Duration::from_secs(5),
             max_address_kb: 0,
             ..GuardedConfig::default()
         })

@@ -58,8 +58,8 @@ pub struct ToolAudit {
 pub struct GuardedConfig {
     /// Working-directory jail. Tools never run outside it.
     pub root: PathBuf,
-    /// Wall-clock budget per call in ms.
-    pub timeout_ms: u64,
+    /// Wall-clock budget per call.
+    pub timeout: std::time::Duration,
     /// Address-space cap in KiB (`ulimit -v`). Zero disables.
     pub max_address_kb: u64,
     /// Pinned `PATH` for every child.
@@ -83,7 +83,7 @@ impl Default for GuardedConfig {
     fn default() -> Self {
         Self {
             root: default_sandbox_root(),
-            timeout_ms: 15_000,
+            timeout: std::time::Duration::from_secs(15),
             max_address_kb: 2 * 1024 * 1024,
             path: "/usr/bin:/bin".to_string(),
             dir_cache_ttl: DEFAULT_DIR_CACHE_TTL,
@@ -341,7 +341,7 @@ impl Guarded {
             ToolError::Failed(tool.to_string(), format!("spawn: {error}"))
         })?;
         let pgid = child.id();
-        let timeout = Duration::from_millis(self.config.timeout_ms.max(1));
+        let timeout = self.config.timeout.max(std::time::Duration::from_millis(1));
         // `wait_with_output` drains the pipes concurrently (no 64 KiB
         // deadlock); the waiter stays owned so the timeout arm below can
         // re-await it after the group kill lands.
@@ -396,7 +396,7 @@ impl Guarded {
                 } else {
                     self.audit(tool, "timeout", started, Some(ms));
                 }
-                Err(ToolError::Timeout(tool.to_string(), self.config.timeout_ms))
+                Err(ToolError::Timeout(tool.to_string(), self.config.timeout))
             }
         }
     }

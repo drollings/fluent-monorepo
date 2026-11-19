@@ -156,7 +156,7 @@ impl WorkUnit for SlowPaneUnit {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         if self.fault {
-            return Err(WorkError::Execution(format!(
+            return Err(WorkError::execution_display(format!(
                 "{} injected fault",
                 self.name
             )));
@@ -668,11 +668,11 @@ async fn bind_routes_timeout_and_execution_to_distinct_failed_arms() {
     let pool = bind_pool(1, |job: u32| async move {
         if job == 1 {
             Err::<u32, WorkError>(WorkError::Timeout {
-                duration_ms: 7,
+                duration: std::time::Duration::from_millis(7),
                 unit: "bind".to_owned(),
             })
         } else {
-            Err::<u32, WorkError>(WorkError::Execution("boom".to_owned()))
+            Err::<u32, WorkError>(WorkError::execution_display("boom"))
         }
     });
     let (wakes, notify) = wake_counter();
@@ -685,13 +685,13 @@ async fn bind_routes_timeout_and_execution_to_distinct_failed_arms() {
     assert!(
         matches!(
             *bind.poll(),
-            BindState::Failed(WorkError::Timeout { duration_ms: 7, .. })
+            BindState::Failed(WorkError::Timeout { duration, .. }) if duration == std::time::Duration::from_millis(7)
         ),
         "a timeout routes to the timeout arm"
     );
     bind.submit(2).await;
     match &*bind.poll() {
-        BindState::Failed(WorkError::Execution(reason)) => assert_eq!(reason, "boom"),
+        BindState::Failed(WorkError::Execution(f)) => assert_eq!(f.message, "boom"),
         other => panic!("an execution failure routes to the execution arm, got {other:?}"),
     }
     assert_eq!(wakes.load(Ordering::SeqCst), 2, "every failure wakes once");

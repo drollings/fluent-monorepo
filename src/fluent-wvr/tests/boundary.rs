@@ -35,12 +35,12 @@ impl FieldAccess for Verdict {
             }
             "coherence" => {
                 self.coherence = fluent_wvr::coerce::parse_number(&value)
-                    .ok_or_else(|| FieldError::Parse(format!("invalid f64: {value}")))?;
+                    .ok_or_else(|| FieldError::parse("coherence", format!("invalid f64: {value}")))?;
                 Ok(())
             }
             "complexity" => {
                 self.complexity = fluent_wvr::coerce::parse_number(&value)
-                    .ok_or_else(|| FieldError::Parse(format!("invalid u8: {value}")))?
+                    .ok_or_else(|| FieldError::parse("complexity", format!("invalid u8: {value}")))?
                     as u8;
                 Ok(())
             }
@@ -308,7 +308,7 @@ impl FieldAccess for BoundaryLeaf {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         match name {
             "amount" => {
-                self.amount = value.parse().map_err(|_| FieldError::Parse(name.into()))?;
+                self.amount = value.parse().map_err(|_| FieldError::parse(name, value))?;
                 Ok(())
             }
             "label" => {

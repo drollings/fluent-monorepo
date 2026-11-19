@@ -37,7 +37,7 @@ fn h1a_exclusive_set_field_validates() {
     assert_eq!(c.port, 9000);
     // invalid below min
     let err = c.set_field("port", "0").unwrap_err();
-    assert!(matches!(err, FieldError::Constraint(_)), "got {err:?}");
+    assert!(matches!(err, FieldError::Constraint { .. }), "got {err:?}");
     // value unchanged after rejected write
     assert_eq!(c.port, 9000);
 }
@@ -80,7 +80,7 @@ fn h1b_adapter_exclusive_validates_and_stores() {
     assert_eq!(adapter.get_field("port").unwrap(), "9000");
     let err = adapter.set_field("port", "99999").unwrap_err();
     // 99999 > max 65535 -> Constraint (via f64 bound check); must NOT store
-    assert!(matches!(err, FieldError::Constraint(_)), "got {err:?}");
+    assert!(matches!(err, FieldError::Constraint { .. }), "got {err:?}");
     assert_eq!(adapter.get_field("port").unwrap(), "9000");
 }
 

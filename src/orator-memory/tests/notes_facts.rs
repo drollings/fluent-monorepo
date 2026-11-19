@@ -29,7 +29,7 @@ fn roll_summary_pins_newest_whole_and_empty_edges() {
     use fluent_llm::tokens::estimate_tokens;
     // Over-budget newest: verbatim, nothing else.
     let newest = "y".repeat(5000);
-    assert!((estimate_tokens(&newest) as usize) >= SUMMARY_BUDGET);
+    assert!(estimate_tokens(&newest) >= SUMMARY_BUDGET);
     assert_eq!(roll_summary("old context", &newest), newest);
     // Empty summary: newest alone.
     assert_eq!(roll_summary("", "hi"), "hi");
@@ -37,6 +37,6 @@ fn roll_summary_pins_newest_whole_and_empty_edges() {
     assert_eq!(roll_summary("old", ""), "old\n…\n");
     // Exactly-at-budget newest: verbatim (>= fires, not just >).
     let at_budget = "z".repeat(4000);
-    assert!((estimate_tokens(&at_budget) as usize) >= SUMMARY_BUDGET);
+    assert!(estimate_tokens(&at_budget) >= SUMMARY_BUDGET);
     assert_eq!(roll_summary("old context", &at_budget), at_budget);
 }

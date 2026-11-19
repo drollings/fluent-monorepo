@@ -342,7 +342,7 @@ fn m10_1_truncate_within_budget() {
             continue;
         }
         let budget = (est / 2).max(1);
-        let out = TokenBudget(budget as usize).truncate_to_budget(text);
+        let out = TokenBudget(budget).truncate_to_budget(text);
         let out_est = estimate_tokens(&out);
         max_overshoot = max_overshoot.max(out_est.saturating_sub(budget));
         truncated += 1;
@@ -372,7 +372,7 @@ fn m10_1_truncate_multibyte_attribution() {
     ] {
         let est = estimate_tokens(&text);
         let budget = (est / 2).max(1);
-        let out = TokenBudget(budget as usize).truncate_to_budget(&text);
+        let out = TokenBudget(budget).truncate_to_budget(&text);
         let overshoot = estimate_tokens(&out).saturating_sub(budget);
         assert_eq!(
             overshoot, want,
@@ -564,28 +564,41 @@ fn m10_3_sse_arbitrary_splits_reassemble() {
 
 type MemCache = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, CachedResponse>>>;
 
-fn mem_store() -> (
-    MemCache,
-    impl Fn(&str) -> Option<CachedResponse>,
-    impl Fn(&str, &CachedResponse),
-) {
+struct MapBackend {
+    store: MemCache,
+}
+
+impl fluent_llm::cache::CacheBackend for MapBackend {
+    fn fetch(&self, key: &str) -> Option<CachedResponse> {
+        self.store.lock().unwrap().get(key).cloned()
+    }
+    fn persist(&self, key: &str, entry: &CachedResponse) {
+        self.store
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), entry.clone());
+    }
+    fn evict_key(&self, key: &str) {
+        self.store.lock().unwrap().remove(key);
+    }
+    fn evict_all(&self) {
+        self.store.lock().unwrap().clear();
+    }
+}
+
+fn mem_store() -> (MemCache, std::sync::Arc<MapBackend>) {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     let store = Arc::new(Mutex::new(HashMap::<String, CachedResponse>::new()));
-    let s1 = store.clone();
-    let s2 = store.clone();
-    let check = move |k: &str| s1.lock().unwrap().get(k).cloned();
-    let persist = move |k: &str, v: &CachedResponse| {
-        s2.lock().unwrap().insert(k.to_string(), v.clone());
-    };
-    (store, check, persist)
+    let backend = Arc::new(MapBackend { store: Arc::clone(&store) });
+    (store, backend)
 }
 
 #[test]
 fn m10_4_cache_identity_probes() {
     use std::time::Duration;
-    let (store, check, persist) = mem_store();
-    let cache = ResponseCache::new(Some(Duration::from_secs(60)), check, persist);
+    let (store, backend) = mem_store();
+    let cache = ResponseCache::over_backend(backend, Some(Duration::from_secs(60)));
     let req = r#"{"messages":[{"role":"user","content":"hi"}]}"#;
 
     // Fresh set hits with the stored value.
@@ -648,6 +661,6 @@ fn m10_4_cache_identity_probes() {
     );
 
     // Backend-absent (malformed/uncached) must MISS.
-    let gone = ResponseCache::new(None, |_: &str| None, |_: &str, _: &CachedResponse| {});
+    let gone = ResponseCache::in_memory(16, None).expect("capacity");
     assert!(gone.get("modelA", req).is_none());
 }

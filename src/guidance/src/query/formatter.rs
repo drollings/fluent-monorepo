@@ -308,10 +308,10 @@ mod tests {
 /// Decode the `stages` structured handoff shared by every formatter unit.
 fn stages_from_ctx(ctx: &WorkContext) -> Result<Vec<Stage>, WorkError> {
     let value = ctx.structured.get("stages").ok_or_else(|| {
-        WorkError::Execution("formatter execute needs ctx.structured[\"stages\"]".into())
+        WorkError::execution_display("formatter execute needs ctx.structured[\"stages\"]")
     })?;
     serde_json::from_value(value.clone())
-        .map_err(|e| WorkError::Execution(format!("formatter execute: stages decode: {e}")))
+        .map_err(|e| WorkError::execution_display(format!("formatter execute: stages decode: {e}")))
 }
 
 macro_rules! impl_formatter_component {

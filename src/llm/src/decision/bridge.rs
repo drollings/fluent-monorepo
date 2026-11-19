@@ -71,14 +71,14 @@ struct BridgeCounters {
 /// use fluent_llm::decision::{ShadowBridge, ShadowJob};
 /// use fluent_llm::client::block_on;
 ///
-/// let mut bridge = ShadowBridge::new(64, 1_000);
+/// let mut bridge = ShadowBridge::new(64, std::time::Duration::from_secs(1));
 /// assert!(bridge.submit(ShadowJob::new(
 ///     "intent".to_string(),
 ///     "q1".to_string(),
 ///     1,
 ///     || Box::pin(async { Ok(()) }),
 /// )));
-/// assert!(block_on(bridge.shutdown(5_000)));
+/// assert!(block_on(bridge.shutdown(std::time::Duration::from_secs(5))));
 /// assert_eq!(bridge.completed_count(), 1);
 /// ```
 pub struct ShadowBridge {
@@ -89,12 +89,11 @@ pub struct ShadowBridge {
 
 impl ShadowBridge {
     /// Spawn the driver on the current runtime: `capacity` queued jobs,
-    /// `timeout_ms` per job. Panics without an active runtime.
+    /// `timeout` per job. Panics without an active runtime.
     #[must_use]
-    pub fn new(capacity: usize, timeout_ms: u64) -> Self {
+    pub fn new(capacity: usize, timeout: Duration) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ShadowJob>(capacity.max(1));
         let counters = Arc::new(BridgeCounters::default());
-        let timeout = Duration::from_millis(timeout_ms);
         let worker_counters = Arc::clone(&counters);
         let driver = tokio::spawn(async move {
             while let Some(job) = rx.recv().await {
@@ -145,21 +144,19 @@ impl ShadowBridge {
     }
 
     /// Flush with a bound: closes the queue, awaits the driver up to
-    /// `timeout_ms`. `false` leaves the driver to finish detached.
-    pub async fn shutdown(&mut self, timeout_ms: u64) -> bool {
+    /// `timeout`. `false` leaves the driver to finish detached.
+    pub async fn shutdown(&mut self, timeout: Duration) -> bool {
         self.tx.take();
         match self.driver.take() {
             None => true,
-            Some(driver) => tokio::time::timeout(Duration::from_millis(timeout_ms), driver)
-                .await
-                .is_ok(),
+            Some(driver) => tokio::time::timeout(timeout, driver).await.is_ok(),
         }
     }
 
     /// Sync `shutdown` for non-async exits via the canonical bridge.
     #[must_use]
-    pub fn shutdown_blocking(&mut self, timeout_ms: u64) -> bool {
-        common_core::runtime::block_on(self.shutdown(timeout_ms))
+    pub fn shutdown_blocking(&mut self, timeout: Duration) -> bool {
+        common_core::runtime::block_on(self.shutdown(timeout))
     }
 
     /// Jobs dropped on a full (or closed) queue.

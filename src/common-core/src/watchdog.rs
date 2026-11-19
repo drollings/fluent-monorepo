@@ -17,13 +17,13 @@ pub struct WatchdogSet {
 impl WatchdogSet {
     pub fn new(
         budget_limit: u32,
-        wall_clock_secs: u64,
+        wall_clock: Duration,
         repeat_threshold: usize,
         repeat_window: usize,
     ) -> Self {
         Self {
             budget: BudgetWatchdog::new(budget_limit),
-            wall_clock: WallClockWatchdog::new(wall_clock_secs),
+            wall_clock: WallClockWatchdog::new(wall_clock),
             repetition: RepetitionWatchdog::new(repeat_threshold, repeat_window),
         }
     }
@@ -53,12 +53,11 @@ impl WatchdogSet {
             WatchdogEvent::BudgetExceeded { limit, actual } => {
                 tracing::warn!("watchdog: budget ({limit}) exceeded with {actual} items");
             }
-            WatchdogEvent::WallClock {
-                deadline_secs,
-                elapsed_secs,
-            } => {
+            WatchdogEvent::WallClock { deadline, elapsed } => {
                 tracing::warn!(
-                    "watchdog: wall-clock deadline ({deadline_secs}s) exceeded at {elapsed_secs}s"
+                    "watchdog: wall-clock deadline ({}ms) exceeded at {}ms",
+                    deadline.as_millis(),
+                    elapsed.as_millis()
                 );
             }
             WatchdogEvent::Repetition {
@@ -106,32 +105,32 @@ impl BudgetWatchdog {
 
 /// Wall-clock deadline guardrail. Fires when the elapsed time exceeds the deadline.
 pub struct WallClockWatchdog {
-    pub deadline_secs: u64,
+    pub deadline: Duration,
     pub started_at: Instant,
 }
 
 impl WallClockWatchdog {
-    pub fn new(deadline_secs: u64) -> Self {
+    pub fn new(deadline: Duration) -> Self {
         Self {
-            deadline_secs,
+            deadline,
             started_at: Instant::now(),
         }
     }
 
     pub fn check(&self) -> Option<WatchdogEvent> {
         let elapsed = self.started_at.elapsed();
-        if elapsed >= Duration::from_secs(self.deadline_secs) {
+        if elapsed >= self.deadline {
             Some(WatchdogEvent::WallClock {
-                deadline_secs: self.deadline_secs,
-                elapsed_secs: elapsed.as_secs(),
+                deadline: self.deadline,
+                elapsed,
             })
         } else {
             None
         }
     }
 
-    pub fn reset(&mut self, deadline_secs: u64) {
-        self.deadline_secs = deadline_secs;
+    pub fn reset(&mut self, deadline: Duration) {
+        self.deadline = deadline;
         self.started_at = Instant::now();
     }
 }
@@ -185,15 +184,15 @@ impl RepetitionWatchdog {
 }
 
 /// Events emitted by the three watchdogs.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum WatchdogEvent {
     BudgetExceeded {
         limit: u32,
         actual: u32,
     },
     WallClock {
-        deadline_secs: u64,
-        elapsed_secs: u64,
+        deadline: Duration,
+        elapsed: Duration,
     },
     Repetition {
         threshold: usize,

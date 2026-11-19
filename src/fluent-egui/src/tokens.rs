@@ -208,25 +208,21 @@ impl FieldAccess for MaterialTokens {
                     self.mode = value.trim().to_ascii_lowercase();
                     Ok(())
                 }
-                _ => Err(FieldError::Constraint(
-                    "mode: must be light, dark, or auto".to_owned(),
-                )),
+                _ => Err(FieldError::constraint("mode", "must be light, dark, or auto")),
             },
             "contrast" => {
                 let parsed: f64 = value.parse().map_err(|_| {
-                    FieldError::Parse(format!("invalid f64 for 'contrast': {value}"))
+                    FieldError::parse("contrast", format!("invalid f64 for 'contrast': {value}"))
                 })?;
                 if !parsed.is_finite() || parsed < -1.0 || parsed > 1.0 {
-                    return Err(FieldError::Constraint(
-                        "contrast: must sit within [-1, 1]".to_owned(),
-                    ));
+                    return Err(FieldError::constraint("contrast", "must sit within [-1, 1]"));
                 }
                 self.contrast = parsed;
                 Ok(())
             }
             role if known_roles().contains(&role) => {
                 parse_hex_color(role, value)
-                    .map_err(|error| FieldError::Parse(error.to_string()))?;
+                    .map_err(|error| FieldError::parse(name, error.to_string()))?;
                 self.roles.insert(role.to_owned(), value.to_owned());
                 Ok(())
             }

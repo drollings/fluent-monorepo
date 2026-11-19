@@ -105,7 +105,7 @@ async fn batch_default_fans_per_question_in_order() {
             options: Vec::new(),
             kind: fluent_llm::decision::DecisionKind::Choice,
             version: 1,
-            timeout_ms: 1000,
+            timeout: std::time::Duration::from_secs(1),
             model: "stub".to_string(),
         })
         .collect();

@@ -1785,8 +1785,8 @@ async fn measure_lanes() -> Vec<Measured> {
     let gate = LaneGate::new(LaneConfig {
         interactive_in_flight: 1,
         background_in_flight: 1,
-        interactive_timeout_ms: 5_000,
-        background_timeout_ms: 5_000,
+        interactive_timeout: std::time::Duration::from_secs(5),
+        background_timeout: std::time::Duration::from_secs(5),
     });
     let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
     let holder = async {

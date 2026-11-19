@@ -170,7 +170,7 @@ async fn test_batch_real_timeout() {
     // short-circuit instantly and report `Failed` instead.)
     let unit = Arc::new(StubComponent::dep_fail("slow"));
     let ctx = WorkContext {
-        timeout_ms: 50,
+        timeout: std::time::Duration::from_millis(50),
         max_retries: 5,
         ..WorkContext::default()
     };
@@ -227,7 +227,7 @@ async fn test_batch_permanent_error_does_not_retry() {
     let cnt = Arc::clone(&counter);
     let unit = Arc::new(StubComponent::new("permanent_fail").with_handler(move |_| {
         cnt.fetch_add(1, Ordering::SeqCst);
-        Err(WorkError::Execution("permanent failure".into()))
+        Err(WorkError::execution_display("permanent failure"))
     }));
     let ctx = WorkContext {
         max_retries: 5,
@@ -552,14 +552,12 @@ fn test_batch_config_traits() {
 #[test]
 fn test_batch_config_default_retry_predicate() {
     let config = SupervisedBatchConfig::default();
-    assert!(!(config.is_retryable)(&WorkError::Execution(
-        "permanent".into()
-    )));
+    assert!(!(config.is_retryable)(&WorkError::execution_display("permanent")));
     assert!((config.is_retryable)(&WorkError::Dependency(
         "transient".into()
     )));
     assert!((config.is_retryable)(&WorkError::Timeout {
-        duration_ms: 1,
+        duration: std::time::Duration::from_millis(1),
         unit: "u".into()
     }));
 }
@@ -579,7 +577,7 @@ async fn test_batch_custom_retry_predicate_retries_execution() {
     let cnt = Arc::clone(&counter);
     let unit = StubComponent::new("retry_exec").with_handler(move |_| {
         cnt.fetch_add(1, Ordering::SeqCst);
-        Err(WorkError::Execution("boom".into()))
+        Err(WorkError::execution_display("boom"))
     });
     let ctx = WorkContext {
         max_retries: 2,
@@ -595,7 +593,7 @@ async fn test_batch_custom_retry_predicate_retries_execution() {
     );
 }
 
-/// A configured `backoff_base_ms`/`backoff_jitter_pct` drives the retry cadence.
+/// A configured `backoff_base`/`backoff_jitter_pct` drives the retry cadence.
 /// Two identical failing units with `max_retries=1` (one backoff sleep each)
 /// race: the configured fast config (base 10ms, jitter 0) must finish
 /// meaningfully sooner than the default config (base 100ms). This discriminates
@@ -603,16 +601,16 @@ async fn test_batch_custom_retry_predicate_retries_execution() {
 #[tokio::test(start_paused = true)]
 async fn test_batch_config_backoff_honored() {
     tokio::time::resume();
-    let fast_base_ms: u64 = 10;
-    let default_base_ms: u64 = SupervisedBatchConfig::default().backoff_base_ms;
+    let fast_base = std::time::Duration::from_millis(10);
+    let default_base = SupervisedBatchConfig::default().backoff_base;
     assert!(
-        fast_base_ms < default_base_ms,
+        fast_base < default_base,
         "test setup: configured base must be faster than the default"
     );
 
-    async fn run_once(base_ms: u64, jitter_ms: u64) -> Duration {
+    async fn run_once(base: std::time::Duration, jitter_ms: u64) -> Duration {
         let config = SupervisedBatchConfig {
-            backoff_base_ms: base_ms,
+            backoff_base: base,
             backoff_jitter_pct: jitter_ms,
             ..SupervisedBatchConfig::default()
         };
@@ -635,12 +633,12 @@ async fn test_batch_config_backoff_honored() {
         start.elapsed()
     }
 
-    let fast_elapsed = run_once(fast_base_ms, 0).await;
-    let default_elapsed = run_once(default_base_ms, 0).await;
+    let fast_elapsed = run_once(fast_base, 0).await;
+    let default_elapsed = run_once(default_base, 0).await;
     assert!(
         fast_elapsed < default_elapsed,
-        "configured backoff (base {fast_base_ms}ms → {fast_elapsed:?}) must be \
-         honored, not the default (base {default_base_ms}ms → {default_elapsed:?})"
+        "configured backoff (base {fast_base:?} → {fast_elapsed:?}) must be \
+         honored, not the default (base {default_base:?} → {default_elapsed:?})"
     );
 }
 

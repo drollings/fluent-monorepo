@@ -2258,8 +2258,8 @@ mod config_tests {
                 pinned: false,
                 no_sleep: false,
                 sleep_idle_seconds: None,
-                total_timeout_ms: 0,
-                idle_timeout_ms: 0,
+                total_timeout: std::time::Duration::ZERO,
+                idle_timeout: std::time::Duration::ZERO,
                 params: None,
                 instances: None,
                 model: fluent_llm::onnx_config::OnnxConfig::new()

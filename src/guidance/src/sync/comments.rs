@@ -26,7 +26,7 @@ pub fn certified_write(
     prose: &str,
     line: Option<u32>,
     known_symbols: &[&str],
-    max_tokens: usize,
+    max_tokens: u64,
 ) -> Option<String> {
     if prose.trim().is_empty() {
         return None;
@@ -36,7 +36,7 @@ pub fn certified_write(
         Some(number) if number >= 1 && number <= line_count.max(1) => {}
         _ => return None,
     }
-    if fluent_llm::tokens::estimate_tokens(prose) as usize > max_tokens {
+    if fluent_llm::tokens::estimate_tokens(prose) > max_tokens {
         return None;
     }
     for name in backticked_names(prose) {

@@ -48,7 +48,7 @@ pub(crate) async fn record_dispatch_outcome(
     ledger: Option<&Arc<ContentNodeStore>>,
     ledger_node_id: Option<fluent_types::NodeId>,
     session_step: Option<&SessionStepHandle>,
-    wait_timeout_ms: u64,
+    wait_timeout: std::time::Duration,
     runtime: &Arc<dyn fluent_wvr::Runtime>,
     accepted: bool,
 ) {
@@ -76,7 +76,7 @@ pub(crate) async fn record_dispatch_outcome(
     let step = session_step.cloned();
     runtime.spawn(Box::pin(async move {
         let content = finalizer
-            .wait(std::time::Duration::from_millis(wait_timeout_ms))
+            .wait(wait_timeout)
             .await
             .unwrap_or_else(|| label.clone());
         record_ledger_result(

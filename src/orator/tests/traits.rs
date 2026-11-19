@@ -37,7 +37,7 @@ impl FieldAccess for StubStt {
             "pushes" => {
                 self.pushes = value
                     .parse()
-                    .map_err(|_| FieldError::Parse("pushes must be a number".to_string()))?;
+                    .map_err(|_| FieldError::parse("pushes", "must be a number"))?;
                 Ok(())
             }
             _ => Err(FieldError::NotFound(name.into())),

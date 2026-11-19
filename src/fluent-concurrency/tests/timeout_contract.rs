@@ -59,7 +59,7 @@ async fn whole_unit_budget_reports_late_completed_never_cancelled() {
     let rt = crate::tokio_runtime();
     let mut batch = crate::batch::SupervisedBatch::new(rt, CapabilitySet::new());
     let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = 50;
+    ctx.timeout = std::time::Duration::from_millis(50);
     ctx.max_retries = 0;
     batch.register_with_context(unit, ctx).unwrap();
     let start = Instant::now();

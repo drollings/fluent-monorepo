@@ -14,7 +14,6 @@
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use rusqlite::Connection;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -32,23 +31,23 @@ use crate::error::DbError;
 pub struct PoolConfig {
     /// Number of `Connection`s to open up front. Defaults to `5`.
     pub size: usize,
-    /// `PRAGMA busy_timeout` in milliseconds. `0` leaves the connection's
-    /// default busy timeout untouched. Defaults to `5_000`.
-    pub busy_timeout_ms: u64,
+    /// `PRAGMA busy_timeout`. Zero leaves the connection's default busy
+    /// timeout untouched. Defaults to 5s.
+    pub busy_timeout: std::time::Duration,
 }
 
 impl Default for PoolConfig {
     fn default() -> Self {
         Self {
             size: 5,
-            busy_timeout_ms: 5_000,
+            busy_timeout: std::time::Duration::from_secs(5),
         }
     }
 }
 
 impl PoolConfig {
     /// A `PoolConfig` with the default busy timeout and the given pool size.
-    /// Refine with [`PoolConfig::with_busy_timeout_ms`].
+    /// Refine with [`PoolConfig::with_busy_timeout`].
     pub fn new(size: usize) -> Self {
         Self {
             size,
@@ -67,10 +66,10 @@ impl PoolConfig {
         })
     }
 
-    /// Override the `PRAGMA busy_timeout` (milliseconds).
+    /// Override the `PRAGMA busy_timeout`.
     #[must_use]
-    pub fn with_busy_timeout_ms(mut self, busy_timeout_ms: u64) -> Self {
-        self.busy_timeout_ms = busy_timeout_ms;
+    pub fn with_busy_timeout(mut self, busy_timeout: std::time::Duration) -> Self {
+        self.busy_timeout = busy_timeout;
         self
     }
 }
@@ -80,7 +79,7 @@ impl PoolConfig {
 fn refuse_zero_size(config: &PoolConfig) -> Result<(), DbError> {
     nonzero_capacity(config.size, "pool")
         .map(|_| ())
-        .map_err(DbError::Other)
+        .map_err(DbError::Config)
 }
 
 /// Where the pool's connections point, so a replacement opened after a
@@ -166,8 +165,8 @@ impl SqlitePool {
     /// Open a single WAL connection to `path` with the pool's busy timeout.
     fn open_wal_configured(path: &Path, config: &PoolConfig) -> Result<Connection, DbError> {
         let conn = crate::sqlite::open_wal(path).map_err(DbError::from)?;
-        if config.busy_timeout_ms > 0 {
-            conn.busy_timeout(Duration::from_millis(config.busy_timeout_ms))
+        if !config.busy_timeout.is_zero() {
+            conn.busy_timeout(config.busy_timeout)
                 .map_err(DbError::from)?;
         }
         Ok(conn)
@@ -180,8 +179,8 @@ impl SqlitePool {
         config: &PoolConfig,
     ) -> Result<Connection, DbError> {
         let conn = crate::sqlite::open_shared_in_memory(name).map_err(DbError::from)?;
-        if config.busy_timeout_ms > 0 {
-            conn.busy_timeout(Duration::from_millis(config.busy_timeout_ms))
+        if !config.busy_timeout.is_zero() {
+            conn.busy_timeout(config.busy_timeout)
                 .map_err(DbError::from)?;
         }
         Ok(conn)
@@ -270,7 +269,7 @@ impl SqlitePool {
     ///
     /// Acquires a connection, offloads `f` via `tokio::task::spawn_blocking`,
     /// and maps a `JoinError` (task panicked / runtime shutdown) to
-    /// `DbError::Other`. Requires a `DbCapability` token in the current
+    /// `DbError::Spawn`. Requires a `DbCapability` token in the current
     /// task-local, so holding a raw `Arc<SqlitePool>` does not bypass
     /// capability gating.
     pub async fn with_conn<R, F>(self: &Arc<Self>, f: F) -> Result<R, DbError>
@@ -282,7 +281,7 @@ impl SqlitePool {
         let conn = self.acquire_ungated().await?;
         tokio::task::spawn_blocking(move || f(&conn))
             .await
-            .map_err(|e| DbError::Other(format!("blocking database task failed: {e}")))?
+            .map_err(|e| DbError::Spawn(format!("blocking database task failed: {e}")))?
     }
 
     /// Execute a DML statement on a blocking worker thread; returns rows
@@ -378,7 +377,7 @@ impl SqlitePool {
         let mut conn = self.acquire_ungated().await?;
         tokio::task::spawn_blocking(move || crate::query::transaction(&mut conn, f))
             .await
-            .map_err(|e| DbError::Other(format!("blocking database task failed: {e}")))?
+            .map_err(|e| DbError::Spawn(format!("blocking database task failed: {e}")))?
     }
 
     // ── Borrowed-connection helpers ───────────────────────────────

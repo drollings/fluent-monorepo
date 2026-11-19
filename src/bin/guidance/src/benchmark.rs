@@ -23,8 +23,8 @@ use guidance_core::eval::parse_eval_tasks;
 /// Token accounting for every arm: the shared
 /// `fluent_llm::tokens::estimate_tokens` (no second estimator).
 #[must_use]
-pub fn tokens_for_text(text: &str) -> usize {
-    fluent_llm::tokens::estimate_tokens(text) as usize
+pub fn tokens_for_text(text: &str) -> u64 {
+    fluent_llm::tokens::estimate_tokens(text)
 }
 
 /// Grep exploration budget: at most this many files surface per query.
@@ -66,7 +66,7 @@ pub struct ArmResult {
     /// Rendered/read characters counted toward context.
     pub chars: usize,
     /// Estimated tokens via the shared token accounting.
-    pub tokens: usize,
+    pub tokens: u64,
     /// Surfaced files (basenames, sorted, deduped).
     pub files: Vec<String>,
     /// Surfaced files in rank order (basenames, deduped, first wins).
@@ -141,7 +141,7 @@ pub struct CorpusStats {
     /// Total bytes read.
     pub chars: usize,
     /// Estimated tokens for a full load.
-    pub tokens: usize,
+    pub tokens: u64,
     /// Walk + read wall time (milliseconds).
     pub wall_ms: u128,
 }
@@ -152,7 +152,7 @@ pub struct ArmTotals {
     /// Summed wall time (milliseconds).
     pub wall_ms: u128,
     /// Summed estimated tokens.
-    pub tokens: usize,
+    pub tokens: u64,
     /// Mean recall over queries.
     pub mean_recall: f64,
     /// Mean precision over queries.
@@ -297,7 +297,7 @@ pub fn parse_tasks_file(text: &str) -> Result<Vec<BenchTask>, String> {
 /// under the byte cap, in sorted order, plus summed token estimates.
 /// The single corpus behind both unindexed arms. Measurement fixtures
 /// never enter: benchmark corpora and eval goldens are retained out.
-pub fn walk_corpus(roots: &[PathBuf]) -> (Vec<PathBuf>, usize) {
+pub fn walk_corpus(roots: &[PathBuf]) -> (Vec<PathBuf>, u64) {
     let mut files = Vec::new();
     for root in roots {
         if root.is_file() {
@@ -526,7 +526,7 @@ pub fn explain_arm(
 pub fn cli_explain_request(
     query: &str,
     limit: usize,
-    budget_override: Option<usize>,
+    budget_override: Option<u64>,
     no_llm: bool,
     include_fixtures: bool,
     answer_mode: guidance_core::read::engine::AnswerMode,

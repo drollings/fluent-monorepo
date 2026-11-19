@@ -313,8 +313,8 @@ fn role_config_task_is_injected_from_role() {
         pinned: true,
         no_sleep: true,
         sleep_idle_seconds: Some(30),
-        total_timeout_ms: 90000,
-        idle_timeout_ms: 0,
+        total_timeout: std::time::Duration::from_millis(90000),
+        idle_timeout: std::time::Duration::from_millis(0),
         params: None,
         instances: None,
         model: OnnxConfig::new()
@@ -343,7 +343,7 @@ fn role_serde_round_trip_defaults_task_and_lifecycle() {
         "task defaults when omitted"
     );
     assert!(cfg.pinned);
-    assert_eq!(cfg.total_timeout_ms, 120000);
+    assert_eq!(cfg.total_timeout, std::time::Duration::from_millis(120000));
     assert!(!cfg.no_sleep);
     assert_eq!(cfg.sleep_idle_seconds, None);
     let back: OnnxRoleConfig = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
@@ -357,8 +357,8 @@ fn fleet_iter_yields_only_configured_roles() {
             pinned: true,
             no_sleep: false,
             sleep_idle_seconds: None,
-            total_timeout_ms: 0,
-            idle_timeout_ms: 0,
+            total_timeout: std::time::Duration::from_millis(0),
+            idle_timeout: std::time::Duration::from_millis(0),
             params: None,
             instances: None,
             model: OnnxConfig::new()
@@ -373,8 +373,8 @@ fn fleet_iter_yields_only_configured_roles() {
             pinned: false,
             no_sleep: false,
             sleep_idle_seconds: None,
-            total_timeout_ms: 0,
-            idle_timeout_ms: 0,
+            total_timeout: std::time::Duration::from_millis(0),
+            idle_timeout: std::time::Duration::from_millis(0),
             params: None,
             instances: None,
             model: OnnxConfig::new()
@@ -386,8 +386,8 @@ fn fleet_iter_yields_only_configured_roles() {
             pinned: true,
             no_sleep: false,
             sleep_idle_seconds: Some(30),
-            total_timeout_ms: 120000,
-            idle_timeout_ms: 0,
+            total_timeout: std::time::Duration::from_millis(120000),
+            idle_timeout: std::time::Duration::from_millis(0),
             params: None,
             instances: None,
             model: OnnxConfig::new()

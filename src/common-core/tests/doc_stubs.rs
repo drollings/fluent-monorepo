@@ -18,7 +18,7 @@ use common_core::score::{ScoreDimension, ScoreMatrix};
 use common_core::string::contains_token;
 #[allow(unused_imports)]
 use common_core::{
-    retry_async, BitSetDrift, CapabilityRegistry, ConcurrentRegistry, KeyedRegistry,
+    retry_async, BitSetDrift, CapabilityInterner, ConcurrentRegistry, KeyedRegistry,
     LatencyHistogram, LoadCache,
 };
 
@@ -35,7 +35,7 @@ fn stubs_name_only_real_public_items() {
         "retry_async",
         "block_on",
         "block_on_shared",
-        "CapabilityRegistry",
+        "CapabilityInterner",
         "ScoreMatrix",
         "ScoreDimension",
         "BitSetDrift",
