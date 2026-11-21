@@ -3,6 +3,7 @@
 
 use crate::extractor::{ChunkOptions, ExtractSource};
 use crate::search_types::FileKind;
+use common_core::string::utf16_len;
 
 fn code_source(format: &str, text: &str) -> ExtractSource {
     ExtractSource {
@@ -300,10 +301,7 @@ fn large_entities_emit_outlines_and_grouped_windows() {
     assert!(windows.len() >= 2, "{frags:?}");
     for window in &windows {
         assert_source_backed(&source, window);
-        assert!(
-            crate::extractor::utf16_len(&window.content_text) <= 140,
-            "{window:?}"
-        );
+        assert!(utf16_len(&window.content_text) <= 140, "{window:?}");
     }
     assert!(
         windows[0].range.end_offset > windows[1].range.start_offset,
@@ -551,10 +549,7 @@ fn chunk_boundaries_never_split_characters() {
     assert!(windows.len() > 2, "{frags:?}");
     for window in &windows {
         assert_source_backed(&source, window);
-        assert!(
-            crate::extractor::utf16_len(&window.content_text) <= 31,
-            "{window:?}"
-        );
+        assert!(utf16_len(&window.content_text) <= 31, "{window:?}");
         assert!(window
             .content_text
             .is_char_boundary(window.content_text.len()));

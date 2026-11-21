@@ -1009,10 +1009,10 @@ impl TargetMatcher {
         let call_start = std::time::Instant::now();
         let response = self.limiter.run_sync(|| async {
             let call = client.chat_complete(&messages);
-            if !self.timeout.is_zero() {
-                let timed =
-                    tokio::time::timeout(self.timeout, async { call })
-                        .await;
+            if self.timeout.is_zero() {
+                call
+            } else {
+                let timed = tokio::time::timeout(self.timeout, async { call }).await;
                 if let Ok(r) = timed {
                     r
                 } else {
@@ -1027,8 +1027,6 @@ impl TargetMatcher {
                         self.timeout.as_millis()
                     )))
                 }
-            } else {
-                call
             }
         });
         let latency_ms = call_start.elapsed().as_millis() as u64;

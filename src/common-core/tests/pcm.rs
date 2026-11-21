@@ -4,7 +4,7 @@
 use common_core::pcm::{
     decode_base64_trimmed, decode_f32_le, decode_i16_le, encode_base64, encode_f32_le,
     encode_i16_le, f32_to_i16_sample, i16_to_f32_sample, root_mean_square_f32, scale_divisor,
-    wav_frame_header, Rounding, Scale16, WAV_HEADER_LEN,
+    u16_to_f32_sample, wav_frame_header, Rounding, Scale16, WAV_HEADER_LEN,
 };
 
 #[test]
@@ -324,4 +324,22 @@ fn root_mean_square_f32_propagates_nan() {
     assert_eq!(nan.to_bits(), 2143289344);
     let mixed = root_mean_square_f32(&[1.0, f32::NAN]);
     assert!(mixed.is_nan(), "one NaN poisons the frame");
+}
+
+#[test]
+fn u16_bipolar_mapping_matches_backend_convention() {
+    // Pinned before migration: the asymmetric u16 map the audio backend
+    // already ships (0 -> -1.0, max -> 1.0, midpoint off-center by
+    // design, not by accident).
+    assert_eq!(u16_to_f32_sample(0).to_bits(), (-1.0f32).to_bits());
+    assert_eq!(u16_to_f32_sample(u16::MAX).to_bits(), 1.0f32.to_bits());
+    let mid = u16_to_f32_sample(32767);
+    assert!((mid - (-1.0 / 65535.0)).abs() < 1e-6, "mid={mid}");
+    // Monotone across the range: no fold or wrap.
+    let mut prev = u16_to_f32_sample(0);
+    for sample in [1u16, 255, 256, 32767, 32768, 65534, u16::MAX] {
+        let next = u16_to_f32_sample(sample);
+        assert!(next > prev, "monotone at {sample}");
+        prev = next;
+    }
 }

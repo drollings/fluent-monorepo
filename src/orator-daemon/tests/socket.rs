@@ -663,3 +663,27 @@ fn orator_daemon_transcribe_decode() {
     let err = decode_transcribe_audio(&payload(&big, 16_000)).expect_err("bound holds");
     assert!(err.contains("single-frame bound"), "names the bound: {err}");
 }
+
+#[test]
+fn bridge_serves_off_runtime_threads() {
+    // No active runtime: the shared fallback drives the future.
+    assert!(tokio::runtime::Handle::try_current().is_err());
+    assert_eq!(crate::socket::bridge_concurrent(async { 42 }), 42);
+}
+
+#[test]
+fn bridge_serves_runtime_worker_threads() {
+    // On a runtime worker in sync context (`spawn_blocking` analogue):
+    // the in-runtime branch drives without deadlocking the worker.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("test runtime");
+    let served = runtime.block_on(async {
+        tokio::task::spawn_blocking(|| crate::socket::bridge_concurrent(async { 7 }))
+            .await
+            .expect("join")
+    });
+    assert_eq!(served, 7);
+}

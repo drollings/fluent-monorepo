@@ -12,7 +12,6 @@ use std::time::Instant;
 
 use crate::query::search_db::{EmbeddingStatusRecord, FragmentRow, GuidanceSearchDb};
 use common_core::metrics::LatencyHistogram;
-use common_core::retry::backoff_ms;
 use fluent_concurrency::batch::SupervisedBatch;
 use fluent_concurrency::runtime::tokio::TokioRuntime;
 use fluent_dag::dep_graph::DependencyGraph;
@@ -1330,29 +1329,28 @@ fn embed_retry_core(
     histogram: Option<&LatencyHistogram>,
     mut attempt_embed: impl FnMut() -> Result<BatchEmbedding, EmbeddingError>,
 ) -> Result<BatchEmbedding, EmbedFailure> {
-    let mut attempt = 0;
-    loop {
-        attempt += 1;
-        let started = Instant::now();
-        match attempt_embed() {
-            Ok(batch) => {
+    let outcome = fluent_wvr::wrapper::retry_call_verdict(
+        options.retry_max_attempts.max(1),
+        options.retry_base_ms,
+        EMBED_RETRY_JITTER_PCT,
+        is_fail_fast,
+        |_: &EmbeddingError| true,
+        |_, started, succeeded| {
+            if succeeded {
                 if let Some(histogram) = histogram {
                     histogram.observe_duration(started);
                 }
-                return Ok(batch);
             }
-            Err(e) if is_fail_fast(&e) => return Err(EmbedFailure::FailFast(e.to_string())),
-            Err(e) if attempt >= options.retry_max_attempts.max(1) => {
-                return Err(EmbedFailure::Retryable(EmbedFileFailure {
-                    reason: e.to_string(),
-                    unavailable: is_unavailable(&e),
-                }));
-            }
-            Err(_) => {
-                let delay = backoff_ms(options.retry_base_ms, attempt, EMBED_RETRY_JITTER_PCT);
-                std::thread::sleep(std::time::Duration::from_millis(delay));
-            }
-        }
+        },
+        &mut attempt_embed,
+    );
+    match outcome {
+        Ok(batch) => Ok(batch),
+        Err(error) if is_fail_fast(&error) => Err(EmbedFailure::FailFast(error.to_string())),
+        Err(error) => Err(EmbedFailure::Retryable(EmbedFileFailure {
+            reason: error.to_string(),
+            unavailable: is_unavailable(&error),
+        })),
     }
 }
 
@@ -1851,6 +1849,10 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/module_headers.rs"]
 mod module_headers_tests;
+
+#[cfg(test)]
+#[path = "../tests/split_m0_embed.rs"]
+mod split_m0_embed_tests;
 
 #[cfg(test)]
 #[path = "../tests/m4_cutoff.rs"]

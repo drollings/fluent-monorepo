@@ -330,3 +330,48 @@ fn verify_read_error_is_an_io_error() {
         .expect_err("directory read must be an I/O error");
     assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
 }
+
+#[test]
+fn constant_time_equal_matrix() {
+    assert!(constant_time_equal(b"abc", b"abc"));
+    assert!(constant_time_equal(b"", b""));
+    assert!(constant_time_equal(&[0u8; 64], &[0u8; 64]));
+    // Content mismatches at either end fail.
+    assert!(!constant_time_equal(b"abc", b"abd"));
+    assert!(!constant_time_equal(b"xbc", b"abc"));
+    let mut tail = [0u8; 64];
+    tail[63] = 1;
+    assert!(!constant_time_equal(&[0u8; 64], &tail));
+    // Length mismatches fail in both directions, including empty.
+    assert!(!constant_time_equal(b"abc", b"abcd"));
+    assert!(!constant_time_equal(b"abcd", b"abc"));
+    assert!(!constant_time_equal(b"", b"x"));
+    assert!(!constant_time_equal(b"x", b""));
+    assert!(!constant_time_equal(
+        b"short",
+        &b"a much longer input".to_vec()[..]
+    ));
+}
+
+#[test]
+fn constant_time_equal_matches_semantic_equality() {
+    // The helper agrees with `==` on every input: uniformity is by
+    // construction (one loop over the longer input, lengths folded
+    // into the accumulator, no content-dependent branch).
+    let cases: &[(&[u8], &[u8])] = &[
+        (b"token-1", b"token-1"),
+        (b"token-1", b"token-2"),
+        (b"a", b"ab"),
+        (b"ab", b"a"),
+        (b"", b""),
+        (b"\x00\xff", b"\x00\xff"),
+        (b"\x00\xff", b"\x00\xfe"),
+    ];
+    for (left, right) in cases {
+        assert_eq!(
+            constant_time_equal(left, right),
+            left == right,
+            "left={left:?} right={right:?}"
+        );
+    }
+}

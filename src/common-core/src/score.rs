@@ -57,6 +57,27 @@ pub fn top_k_by_score<T>(
     items.truncate(k);
     items
 }
+
+/// Sort by descending `f64` score with a caller tie-break.
+///
+/// NaN scores collapse to `Equal` (same float semantics as
+/// [`top_k_by_score`]) so the tie-break owns every contested order
+/// and the sort stays total. No truncation: rank-assigning callers
+/// (fusion, RRF) sort every item and rank after; top-K callers
+/// truncate after sorting, and callers without a tie-break keep
+/// using [`top_k_by_score`].
+pub fn sort_by_score_desc<T>(
+    items: &mut [T],
+    score: impl Fn(&T) -> f64,
+    tie: impl Fn(&T, &T) -> std::cmp::Ordering,
+) {
+    items.sort_by(|a, b| {
+        score(b)
+            .partial_cmp(&score(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| tie(a, b))
+    });
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteBands<D>
 where

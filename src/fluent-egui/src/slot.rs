@@ -115,7 +115,9 @@ pub struct HotSlot {
     title: String,
     attachment: SlotAttachment,
     config: Box<dyn Component>,
-    style: Box<dyn Component>,
+    /// Live style component. Public so the terminal crate's contract tests
+    /// can read staged values without reimplementing slot internals.
+    pub style: Box<dyn Component>,
     visible: bool,
     settings_open: bool,
     settings_tab: SettingsTab,
@@ -123,7 +125,10 @@ pub struct HotSlot {
     /// pane opens. Edits land here until Apply/OK commits them through the
     /// live `FieldAccess` contracts, so Cancel discards them without ever
     /// touching the chart. `None` while the pane is closed.
-    pending: Option<PendingSettings>,
+    ///
+    /// Public so the terminal crate's contract tests can stage edits
+    /// without reimplementing slot internals.
+    pub pending: Option<PendingSettings>,
     handle: PaneHandle,
     readouts: Vec<ReadoutValue>,
     fingerprint: u64,
@@ -214,14 +219,16 @@ impl HotSlot {
 /// Card width in pixels; cards stack vertically from the stack origin.
 const STACK_CARD_WIDTH: f32 = 168.0;
 /// Card height in pixels: two compact text rows (title + readouts).
-const STACK_CARD_HEIGHT: f32 = 32.0;
+/// Card height when density is comfortable. Public so the terminal crate pins
+/// hit-test geometry against the same constants the stack lays out with.
+pub const STACK_CARD_HEIGHT: f32 = 32.0;
 /// Vertical gap between stacked cards.
-const STACK_CARD_GAP: f32 = 3.0;
+pub const STACK_CARD_GAP: f32 = 3.0;
 /// Eye/bolt control square size.
 const STACK_CONTROL_SIZE: f32 = 16.0;
 /// Minimum control zone edge in pixels: density scaling never shrinks a hit
 /// zone below this, so the smallest density keeps full-size targets.
-const STACK_TOUCH_MIN_PX: f32 = 16.0;
+pub const STACK_TOUCH_MIN_PX: f32 = 16.0;
 /// Inset of the controls from the card edges.
 const STACK_CONTROL_PAD: f32 = 3.0;
 /// Default stack origin (below the top bar, clear of the canvas edge).
@@ -514,6 +521,12 @@ impl HotSlotStack {
     #[must_use]
     pub fn get(&self, id: &str) -> Option<&HotSlot> {
         self.slots.get(id)
+    }
+
+    /// Borrow one slot mutably, for staged edits in tests and tooling.
+    #[must_use]
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut HotSlot> {
+        self.slots.get_mut(id)
     }
 
     /// Whether the slot paints (`None` for unknown ids).
@@ -879,7 +892,9 @@ fn zone_fill(response: &egui::Response, ink: egui::Color32) -> Option<egui::Colo
 /// The dot marks a draft that Apply would push through the slot's plan
 /// nodes, so its radius grows with the node count (capped to stay a corner
 /// overlay) while its presence alone marks the staged depth.
-fn badge_dot(
+/// Public so the terminal crate pins badge geometry without reimplementing it.
+#[must_use]
+pub fn badge_dot(
     card: egui::Rect,
     staged_depth: usize,
     plan_nodes: usize,
@@ -894,7 +909,7 @@ fn badge_dot(
 /// Seed a staged settings buffer from a live config: one string per declared
 /// field, read through the config's own `FieldAccess` contract. A field whose
 /// value cannot be read is skipped rather than staged as a substitute.
-fn seed_fields(config: &dyn Component) -> HashMap<String, String> {
+pub fn seed_fields(config: &dyn Component) -> HashMap<String, String> {
     config
         .field_names()
         .iter()
@@ -910,18 +925,18 @@ fn seed_fields(config: &dyn Component) -> HashMap<String, String> {
 /// A settings pane's staged edits: one buffer per component the slot owns,
 /// kept side by side so Cancel drops both and one commit writes both.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct PendingSettings {
+pub struct PendingSettings {
     /// Fields staged for the slot's configuration.
-    config: HashMap<String, String>,
+    pub config: HashMap<String, String>,
     /// Fields staged for the slot's style component.
-    style: HashMap<String, String>,
+    pub style: HashMap<String, String>,
 }
 
 /// Seed a staged buffer pair from a live config and style: one string per
 /// declared field, each read through that component's own `FieldAccess`
 /// contract. A field whose value cannot be read is skipped rather than staged
 /// as a substitute.
-fn seed_pending(config: &dyn Component, style: &dyn Component) -> PendingSettings {
+pub fn seed_pending(config: &dyn Component, style: &dyn Component) -> PendingSettings {
     PendingSettings {
         config: seed_fields(config),
         style: seed_fields(style),
@@ -937,10 +952,10 @@ fn seed_pending(config: &dyn Component, style: &dyn Component) -> PendingSetting
 /// configuration's. The two key sets are disjoint (the style component owns
 /// `color_*` and `line_width` and no configuration declares those), so the
 /// route is unambiguous and one field is never staged into both.
-struct StagedFields<'a> {
-    config: &'a mut HashMap<String, String>,
-    style: &'a mut HashMap<String, String>,
-    style_names: &'static [&'static str],
+pub struct StagedFields<'a> {
+    pub config: &'a mut HashMap<String, String>,
+    pub style: &'a mut HashMap<String, String>,
+    pub style_names: &'static [&'static str],
 }
 
 impl FieldAccess for StagedFields<'_> {
@@ -1246,6 +1261,3 @@ pub fn paint_slot_settings_modal(
     })
 }
 
-#[cfg(test)]
-#[path = "../tests/slot.rs"]
-mod tests;

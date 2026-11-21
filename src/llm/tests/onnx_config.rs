@@ -313,7 +313,7 @@ fn role_config_task_is_injected_from_role() {
         pinned: true,
         no_sleep: true,
         sleep_idle_seconds: Some(30),
-        total_timeout: std::time::Duration::from_millis(90000),
+        total_timeout: std::time::Duration::from_secs(90),
         idle_timeout: std::time::Duration::from_millis(0),
         params: None,
         instances: None,

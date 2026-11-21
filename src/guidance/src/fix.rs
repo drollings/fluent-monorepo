@@ -43,17 +43,7 @@ fn prose_pressure_keys(config_text: &str) -> Vec<String> {
 /// Find the project rustfmt config by walking up from the source file.
 /// The project's own config formats; scratch never invents one.
 pub(crate) fn find_rustfmt_config(source_path: &Path) -> Option<PathBuf> {
-    let mut dir = source_path.parent()?.to_path_buf();
-    for _ in 0..8 {
-        let candidate = dir.join("rustfmt.toml");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        if !dir.pop() {
-            return None;
-        }
-    }
-    None
+    common_core::config::find_ancestor_file(source_path, "rustfmt.toml", 8)
 }
 
 /// D1 rustfmt on a scratch copy with test-preserving splice-back. Never
@@ -381,3 +371,7 @@ mod m6_fix_tests;
 #[cfg(test)]
 #[path = "../tests/m12_redteam.rs"]
 mod m12_redteam_tests;
+
+#[cfg(test)]
+#[path = "../tests/split_m0_ancestor.rs"]
+mod split_m0_ancestor_tests;

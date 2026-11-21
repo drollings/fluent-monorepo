@@ -1,20 +1,19 @@
 //! Audit ledger: allocation shape, dependency direction, and bloat.
 //!
 //! Every assert here is API shape or source text, never wall-time: frame
-//! budgets are observed in `benches/frame_budget.rs` and recorded there,
+//! budgets are observed in the terminal crate's `benches/frame_budget.rs`
+//! and recorded there,
 //! while gates pin what the frame may *hold* (no per-widget
 //! channels, no raw spawns, no blocking I/O), which way dependencies point,
 //! and exactly which files and default-feature dependencies exist. Growth
 //! beyond this ledger fails loudly until the ledger itself is edited with a
 //! justification — that edit is the review.
 //!
-//! Boundary rule pinned here: this crate is domain-blind scaffolding. It may
-//! reuse display vocabulary (`protopyne-chart-model` rows), pure scale math
-//! (`protopyne-chart-scale`), and the shared validation bridge
-//! (`protopyne-types`), but it names no compute truth (`protopyne-kernels`),
-//! no trading path (`server`/`strategy`/`venue`), and no trading-domain
-//! vocabulary. Domain display truth lives in the terminal crate, which
-//! carries its own ledger.
+//! Boundary rule pinned here: this crate is domain-blind scaffolding with
+//! no protopyne dependencies at all — no chart-model rows, no scale math,
+//! no money types. Chart-domain geometry moved to the terminal crate with
+//! the vocabulary that names it; what remains here is generic egui paint,
+//! layout, and dialog machinery over caller-provided pixels.
 //!
 //! "Domain-blind" is not "vocabulary-free": the crate legitimately speaks in
 //! chart *shapes* — ribbons, pivots, oscillators, delta bars, bull/bear style
@@ -176,19 +175,15 @@ fn bloat_ledger_pins_source_files() {
     assert_eq!(
         src_file_names(),
         vec![
-            "annotations.rs",
-            "config.rs",
-            "context_menu.rs",
-            "dialog.rs",
+                "config.rs",
+                "dialog.rs",
             "error.rs",
             "feed.rs",
             "fields.rs",
             "fonts.rs",
-            "hittest.rs",
-            "icons.rs",
+                "icons.rs",
             "images.rs",
-            "interaction.rs",
-            "lib.rs",
+                "lib.rs",
             "modal.rs",
             "notice.rs",
             "paint.rs",
@@ -198,9 +193,7 @@ fn bloat_ledger_pins_source_files() {
             "style.rs",
             "table.rs",
             "tokens.rs",
-            "view.rs",
-            "viewport.rs",
-            "wheel.rs",
+                    "wheel.rs",
         ],
         "a new source file must justify itself by editing this ledger"
     );
@@ -283,10 +276,7 @@ fn bloat_ledger_pins_default_feature_deps() {
             "fluent-concurrency",
             "fluent-dag",
             "fluent-wvr",
-            "protopyne-chart-model",
-            "protopyne-chart-scale",
-            "protopyne-types",
-            "serde",
+                        "serde",
             "serde_json",
             "thiserror",
             "tokio",
@@ -408,20 +398,8 @@ const TRADING_VOCABULARY_DENIED: &[(&str, &str)] = &[
 /// whole-word and cannot be satisfied by an unrelated word in a comment.
 const SCAFFOLDING_VOCABULARY_OWNED: &[(&str, &str)] = &[
     (
-        "ribbon",
-        "a bounded band between two smoothed series — a shape, not a signal",
-    ),
-    (
-        "pivot_marks",
-        "detected local extremes — geometry, not a trade decision",
-    ),
-    (
-        "oscillator_points",
-        "a normalized bounded series mapped to pixels — a scale, not a strategy",
-    ),
-    (
-        "delta_bar_geoms",
-        "change-over-window bars — arithmetic, not a position",
+        "RibbonBand",
+        "a bounded band span struct — plain pane-local geometry the painters fill",
     ),
     (
         "\"bull\"",
@@ -592,13 +570,10 @@ fn timing_is_observed_never_asserted() {
             );
         }
     }
-    assert!(
-        manifest_dir()
-            .join("benches")
-            .join("frame_budget.rs")
-            .is_file(),
-        "frame budgets ride the bench harness, which must exist"
-    );
+    // The frame-budget harness moved with the chart code it measures: it
+    // lives in the terminal crate now, and this gate only forbids
+    // stopwatches inside test files, never the harness itself.
+    let _ = manifest_dir().join("benches");
 }
 
 #[test]
@@ -645,13 +620,12 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
 /// Workspace crates whose sources count as consumers of this crate's
 /// re-exported items, beyond its own tree.
 ///
-/// The terminal is the scaffolding's only production consumer and it lives in
-/// a different crate: the emitters it calls every frame — candles, ribbon
-/// fill, area fill, oscillators, pivots — would all read as unwired here while
-/// being called there. "Every crate that depends on this one" is not derivable
-/// from inside this crate, so the surface is named, and a second consumer has
-/// to be added here deliberately.
-const DOWNSTREAM_CONSUMERS: &[&str] = &["src/protopyne-egui"];
+/// The terminal is the scaffolding's only production consumer and it now
+/// lives in the split protopyne repo, so the consumer walk follows the
+/// absolute workspace path (same convention as the `path` dependencies in
+/// `Cargo.toml`, which also name the new repo absolutely). Entries here
+/// are absolute roots; relative entries keep the old in-workspace meaning.
+const DOWNSTREAM_CONSUMERS: &[&str] = &["/opt/src/rust/protopyne/src/protopyne-egui"];
 
 /// Re-exported `pub` items that nothing names, with the reason each still
 /// ships unwired.
@@ -907,7 +881,7 @@ fn downstream_consumer_surface_is_actually_scanned() {
     assert!(
         consumers
             .keys()
-            .any(|key| key.starts_with("src/protopyne-egui/")),
+            .any(|key| key.starts_with("/opt/src/rust/protopyne/src/protopyne-egui/")),
         "the terminal crate must be in the consumer surface"
     );
     // The terminal's candle blit lives in the library workspace module, so
@@ -915,7 +889,7 @@ fn downstream_consumer_surface_is_actually_scanned() {
     // rather than a single example shell.
     assert!(
         consumers.iter().any(|(key, lines)| {
-            key.starts_with("src/protopyne-egui/")
+            key.starts_with("/opt/src/rust/protopyne/src/protopyne-egui/")
                 && lines
                     .iter()
                     .any(|line| mentions(line, "paint_candles_tinted"))

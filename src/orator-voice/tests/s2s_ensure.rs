@@ -726,3 +726,34 @@ fn model_loaded_needs_a_loaded_status() {
         assert!(!crate::s2s::ensure::model_loaded("http://127.0.0.1:1", "voice-head").await);
     });
 }
+
+#[test]
+fn hint_cache_ttl_boundary() {
+    let base = format!(
+        "split-m0-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    );
+    assert_eq!(super::hint_cache_get(&base), None, "empty at first");
+    super::hint_cache_put(&base, vec!["model-a".to_string()]);
+    assert_eq!(
+        super::hint_cache_get(&base),
+        Some(vec!["model-a".to_string()]),
+        "fresh hits"
+    );
+    super::invalidate_hint_cache(&base);
+    assert_eq!(
+        super::hint_cache_get(&base),
+        None,
+        "invalidate forces refetch"
+    );
+    super::hint_cache_put(&base, vec!["model-a".to_string()]);
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    assert_eq!(
+        super::hint_cache_get(&base),
+        None,
+        "stale misses past the test TTL"
+    );
+}

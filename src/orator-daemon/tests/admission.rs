@@ -507,3 +507,15 @@ fn saturated_admission_refuses_at_the_owner_boundary() {
     );
     owner.shutdown();
 }
+
+#[test]
+fn zero_bound_normalizes_to_one_permit() {
+    let gate = AdmissionGate::new(0);
+    assert_eq!(
+        gate.max_inflight(),
+        1,
+        "degenerate bound cannot wedge the gate"
+    );
+    let _guard = gate.admit().expect("one permit");
+    assert!(gate.admit().is_err(), "second turn refuses");
+}

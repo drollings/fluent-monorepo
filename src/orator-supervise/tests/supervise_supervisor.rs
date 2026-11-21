@@ -886,3 +886,21 @@ fn text_busy_spawn_marks_transient() {
         ""
     );
 }
+
+#[test]
+fn recovery_budget_edges_zero_maps_to_one() {
+    // A zero budget still allows the first failure (max(1)); the
+    // budget burns on consecutive failures, never on a healthy probe.
+    assert_eq!(recovery_action(0, 0), RecoveryAction::Restart);
+    assert_eq!(recovery_action(1, 0), RecoveryAction::Contain);
+    assert_eq!(recovery_action(u32::MAX, 3), RecoveryAction::Contain);
+}
+
+#[test]
+fn containment_names_restarts_and_cause() {
+    let error = crate::supervisor::SupervisorError::Contained(2, "endpoint down".to_string());
+    assert_eq!(
+        error.to_string(),
+        "llama-server contained after 2 restarts: endpoint down"
+    );
+}

@@ -48,7 +48,7 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
                         cost_output: 6e-6,
                         cost_cached_read: 4e-7,
                         tok_s: 8.0,
-                        total_timeout: std::time::Duration::from_millis(40_000),
+                        total_timeout: std::time::Duration::from_secs(40),
                         idle_timeout: std::time::Duration::from_millis(8_000),
                         stream: true,
                         filter_thinking: true,

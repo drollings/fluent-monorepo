@@ -382,3 +382,18 @@ fn lifetime_cap_closes_old_connections() {
         server.await.expect("server drains");
     });
 }
+
+#[test]
+fn ct_compare_length_mismatch() {
+    use crate::ws::constant_time_eq;
+    assert!(constant_time_eq("abc", "abc"));
+    assert!(constant_time_eq("", ""));
+    assert!(!constant_time_eq("abc", "abd"));
+    assert!(
+        !constant_time_eq("abc", "abcd"),
+        "length must not leak as early true"
+    );
+    assert!(!constant_time_eq("abcd", "abc"));
+    assert!(!constant_time_eq("", "x"));
+    assert!(!constant_time_eq("x", ""));
+}

@@ -4,10 +4,10 @@
 
 use super::{
     text::{compute_line_offsets, find_line_cut},
-    utf16_len,
     vector_content::chunk_options_for_metadata,
     ChunkOptions, ExtractError, ExtractSource, FragmentMetadata, FragmentRange, PreparedFragment,
 };
+use common_core::string::{truncate_utf16_units, utf16_len};
 
 /// Extract markdown sections (empty when the format is not markdown or no
 /// headings exist — the caller falls back to text windows).
@@ -41,10 +41,7 @@ pub fn extract_markdown_fragments(
             let major_id = super::make_entity_id(&source.file_id, fragments.len());
             fragments.push(PreparedFragment {
                 id: major_id.clone(),
-                content_text: super::vector_content::fit_text_to_chars(
-                    &markdown_outline(&metadata),
-                    max,
-                ),
+                content_text: truncate_utf16_units(&markdown_outline(&metadata), max),
                 embedding_text: None,
                 range: lines_to_range(
                     &lines,

@@ -6,8 +6,8 @@
 
 pub use crate::check_for_execute;
 pub use crate::wrapper::{
-    retry_call, ComponentAdapter, ComponentCascade, ExecuteFn, Instrumented, Middleware,
-    MiddlewareChain, Pipeline, SuffixedComponent,
+    retry_call, retry_call_verdict, ComponentAdapter, ComponentCascade, ExecuteFn, Instrumented,
+    Middleware, MiddlewareChain, Pipeline, SuffixedComponent,
 };
 pub use crate::{
     boundary::{

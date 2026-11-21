@@ -15,7 +15,10 @@ fn read_text(path: &std::path::Path) -> String {
 }
 
 fn protopyne_crate_dirs() -> Vec<PathBuf> {
-    let src = workspace_root().join("src");
+    // The trading crates moved to the split repo; the paint edge follows
+    // them there. Absolute path, same convention as the workspace's own
+    // path dependencies on the shared crates.
+    let src = PathBuf::from("/opt/src/rust/protopyne/src");
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(&src)
         .unwrap_or_else(|e| panic!("list {}: {e}", src.display()))
         .filter_map(Result::ok)
@@ -56,9 +59,12 @@ fn crate_is_a_workspace_member() {
         text.contains("src/fluent-egui"),
         "workspace members must list src/fluent-egui"
     );
+    let split = read_text(&PathBuf::from(
+        "/opt/src/rust/protopyne/Cargo.toml",
+    ));
     assert!(
-        text.contains("src/protopyne-egui"),
-        "workspace members must list src/protopyne-egui"
+        split.contains("src/protopyne-egui"),
+        "split-repo workspace members must list src/protopyne-egui"
     );
 }
 

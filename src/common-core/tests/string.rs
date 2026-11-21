@@ -710,3 +710,94 @@ fn contains_token_matches_whole_words_only() {
     assert!(!contains_token("a-b c", "a-b", cue));
     assert!(contains_token("a-b c", "a-b", |c: char| c == ' '));
 }
+
+#[test]
+fn truncate_bytes_with_suffix_marks_and_snaps() {
+    assert_eq!(truncate_bytes_with_suffix("hi", 5, "..."), "hi");
+    assert_eq!(truncate_bytes_with_suffix("hello", 5, "..."), "hello");
+    assert_eq!(
+        truncate_bytes_with_suffix("hello world", 8, "... [cut]"),
+        "hello wo... [cut]"
+    );
+    // Head whitespace from the cut never trails the marker.
+    assert_eq!(
+        truncate_bytes_with_suffix("hello   world", 8, "..."),
+        "hello..."
+    );
+    // Multibyte cut snaps back to the boundary instead of panicking.
+    assert_eq!(
+        truncate_bytes_with_suffix("héllo wörld", 5, "..."),
+        "héll..."
+    );
+}
+
+#[test]
+fn truncate_chars_with_suffix_carries_total_once() {
+    let over = "y".repeat(12);
+    let cut = truncate_chars_with_suffix(&over, 10, |total| {
+        format!("\n(truncated, {total} total chars)")
+    });
+    assert_eq!(
+        cut,
+        format!("{}\n(truncated, 12 total chars)", "y".repeat(10))
+    );
+    assert_eq!(
+        truncate_chars_with_suffix("short", 10, |_| "MARK".to_string()),
+        "short"
+    );
+    assert_eq!(
+        truncate_chars_with_suffix("exact", 5, |_| "MARK".to_string()),
+        "exact"
+    );
+}
+
+#[test]
+fn truncate_utf16_units_matches_outline_contract() {
+    assert_eq!(truncate_utf16_units("hello world", 8), "hello...");
+    assert_eq!(truncate_utf16_units("hi", 10), "hi");
+    assert_eq!(truncate_utf16_units("hello", 3), "...");
+    assert_eq!(truncate_utf16_units("hello", 2), "..");
+    assert_eq!(truncate_utf16_units("", 5), "");
+    // Astral characters never split: the cut lands on a char boundary.
+    let emoji = "a𝄞bcd".repeat(40);
+    let cut = truncate_utf16_units(&emoji, 100);
+    assert!(cut.ends_with("..."));
+    assert!(cut.encode_utf16().count() <= 103);
+    // Trailing whitespace from the cut is trimmed before the marker.
+    assert_eq!(truncate_utf16_units("hello   world", 8), "hello...");
+}
+
+#[test]
+fn utf16_primitives_agree_with_std_encoding() {
+    let corpus = [
+        "",
+        "hello",
+        "héllo",
+        "日本語",
+        "𝄞",
+        "a𝄞b",
+        "x𝄞y𝄞z",
+        "  padded  ",
+    ];
+    for text in corpus {
+        assert_eq!(utf16_len(text), text.encode_utf16().count(), "{text:?}");
+        for max in [0, 1, 2, 3, 5, 8, 100] {
+            let prefix = utf16_prefix(text, max);
+            assert!(text.starts_with(prefix), "{text:?} {max}");
+            assert!(prefix.encode_utf16().count() <= max, "{text:?} {max}");
+            // A nonzero start may include a straddled character whole
+            // (documented snap-forward), so slices pin containment and
+            // boundaries, not the budget.
+            let slice = utf16_slice(text, 1, max);
+            assert!(text.contains(slice), "{text:?} {max}");
+            assert!(slice.is_char_boundary(slice.len()));
+        }
+    }
+    // No split surrogate: every prefix is valid str on a char boundary.
+    let astral = "ab𝄞cd";
+    for max in 0..8 {
+        let prefix = utf16_prefix(astral, max);
+        assert!(astral.starts_with(prefix), "max={max}");
+        assert!(prefix.is_char_boundary(prefix.len()));
+    }
+}

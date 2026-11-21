@@ -3,9 +3,8 @@
 //! Budgets count UTF-16 code units (zvec parity); ranges carry byte
 //! offsets (Rust-side slicing is byte-based — documented deviation).
 
-use super::{
-    utf16_len, ChunkOptions, ExtractError, ExtractSource, FragmentRange, PreparedFragment,
-};
+use super::{ChunkOptions, ExtractError, ExtractSource, FragmentRange, PreparedFragment};
+use common_core::string::utf16_len;
 
 /// Extract whole-file text windows (port of `extractPlainTextFragments`).
 pub fn extract_plain_text_fragments(

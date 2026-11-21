@@ -65,6 +65,16 @@ pub fn i16_to_f32_sample(sample: i16, scale: Scale16) -> f32 {
     f32::from(sample) / scale_divisor(scale)
 }
 
+/// Map one unsigned 16-bit sample to bipolar float: 0 to -1.0,
+/// `u16::MAX` to 1.0, linear between. The midpoint lands one LSB
+/// below zero by construction (asymmetric, unlike the symmetric
+/// `i16` scales) — the convention the audio backend already ships,
+/// pinned here rather than corrected.
+#[must_use]
+pub fn u16_to_f32_sample(sample: u16) -> f32 {
+    (f32::from(sample) / f32::from(u16::MAX)).mul_add(2.0, -1.0)
+}
+
 /// Encode samples as little-endian `i16` bytes, one sample per pair.
 #[must_use]
 pub fn encode_i16_le(samples: &[f32], scale: Scale16, rounding: Rounding) -> Vec<u8> {

@@ -80,15 +80,12 @@ impl LlmFilter {
 
         let scores = backend.score_relevance(query, &candidate_names)?;
 
-        let mut scores = scores;
-        scores.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        scores.truncate(max_results);
-
-        Ok(scores)
+        Ok(common_core::score::top_k_by_score(
+            scores,
+            max_results,
+            |score| score.score,
+            true,
+        ))
     }
 }
 

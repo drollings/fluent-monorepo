@@ -527,3 +527,72 @@ fn adapter_with_field_overrides_plural_last_wins() {
         .with_field_overrides(second);
     assert_eq!(adapter.get_field("k").unwrap(), "v2");
 }
+
+#[test]
+fn retry_call_verdict_failfast_takes_one_attempt() {
+    use std::cell::Cell;
+    let calls = Cell::new(0u32);
+    let attempts = Cell::new(Vec::new());
+    let result = retry_call_verdict(
+        3,
+        1,
+        50,
+        |_: &String| true,
+        |_: &String| true,
+        |attempt, _, succeeded| {
+            let mut log = attempts.take();
+            log.push((attempt, succeeded));
+            attempts.set(log);
+        },
+        || {
+            calls.set(calls.get() + 1);
+            Err::<u32, String>("fatal".to_string())
+        },
+    );
+    assert!(result.is_err());
+    assert_eq!(calls.get(), 1, "fail-fast never retries");
+    assert_eq!(attempts.take(), vec![(1, false)]);
+}
+
+#[test]
+fn retry_call_verdict_retryable_exhausts_budget() {
+    use std::cell::Cell;
+    let calls = Cell::new(0u32);
+    let attempts = Cell::new(Vec::new());
+    let result = retry_call_verdict(
+        2,
+        1,
+        0,
+        |_: &String| false,
+        |_: &String| true,
+        |attempt, _, _| {
+            let mut log = attempts.take();
+            log.push(attempt);
+            attempts.set(log);
+        },
+        || {
+            calls.set(calls.get() + 1);
+            Err::<u32, String>("transient".to_string())
+        },
+    );
+    assert!(result.is_err());
+    assert_eq!(calls.get(), 2, "retryable burns the budget");
+    assert_eq!(attempts.take(), vec![1, 2]);
+}
+
+#[test]
+fn retry_call_verdict_success_reports_attempt() {
+    use std::cell::Cell;
+    let seen = Cell::new((0u32, false));
+    let result = retry_call_verdict(
+        3,
+        1,
+        0,
+        |_: &String| false,
+        |_: &String| true,
+        |attempt, _, succeeded| seen.set((attempt, succeeded)),
+        || Ok::<u32, String>(42),
+    );
+    assert_eq!(result.unwrap(), 42);
+    assert_eq!(seen.get(), (1, true));
+}

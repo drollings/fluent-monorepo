@@ -146,3 +146,56 @@ fn home_or_dot_never_fails() {
     let home = home_or_dot();
     assert!(!home.as_os_str().is_empty());
 }
+
+#[test]
+fn find_ancestor_file_at_depth_and_cap_edge() {
+    let dir = TempDir::new().unwrap();
+    let probe = "split-m1-probe.toml";
+    fs::write(dir.path().join(probe), "x").unwrap();
+    // Direct child: found with any nonzero cap.
+    let child = dir.path().join("input.rs");
+    fs::write(&child, "x").unwrap();
+    assert_eq!(
+        find_ancestor_file(&child, probe, 8),
+        Some(dir.path().join(probe))
+    );
+    // Seven levels below the probe: the eighth check still lands on it.
+    let mut deep = dir.path().to_path_buf();
+    for part in ["d1", "d2", "d3", "d4", "d5", "d6", "d7"] {
+        deep = deep.join(part);
+    }
+    fs::create_dir_all(&deep).unwrap();
+    let edge = deep.join("input.rs");
+    fs::write(&edge, "x").unwrap();
+    assert_eq!(
+        find_ancestor_file(&edge, probe, 8),
+        Some(dir.path().join(probe))
+    );
+    // Eight levels below: the probe falls off the 8-check cap.
+    let past = deep.join("d8").join("input.rs");
+    fs::create_dir_all(past.parent().unwrap()).unwrap();
+    fs::write(&past, "x").unwrap();
+    assert_eq!(find_ancestor_file(&past, probe, 8), None);
+}
+
+#[test]
+fn find_ancestor_file_termination() {
+    let dir = TempDir::new().unwrap();
+    // Nonexistent starts still resolve upward: only probes matter.
+    let missing = dir.path().join("nope").join("input.rs");
+    assert_eq!(
+        find_ancestor_file(&missing, "split-m1-absent.toml", 8),
+        None
+    );
+    // Empty tree: terminates past the root with None, never hangs.
+    assert_eq!(
+        find_ancestor_file(&missing, "split-m1-absent.toml", 100),
+        None
+    );
+    // Zero cap never searches.
+    let probe = "split-m1-probe.toml";
+    fs::write(dir.path().join(probe), "x").unwrap();
+    let child = dir.path().join("input.rs");
+    fs::write(&child, "x").unwrap();
+    assert_eq!(find_ancestor_file(&child, probe, 0), None);
+}

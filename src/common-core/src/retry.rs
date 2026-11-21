@@ -144,6 +144,76 @@ where
     }
 }
 
+/// Verdict on one attempt value: accept it, retry with another attempt,
+/// or stop without accepting (retrying is pointless, e.g. the input is
+/// unchanged). `Stop` settles the walk; it is not an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// The value stands; the walk ends with it.
+    Accept,
+    /// The value is unusable; spend another attempt on a fresh value.
+    Retry,
+    /// The value is unusable and another attempt cannot help; settle now.
+    Stop,
+}
+
+/// Outcome of a [`retry_until_sync`] walk: the accepted value, the
+/// settled value (stopped early or budget exhausted), or the terminal error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttemptOutcome<T, E> {
+    /// A value judged `Accept` within the attempt budget.
+    Accepted(T),
+    /// A value judged `Stop`, or the last value when the budget ran out.
+    Settled(T),
+    /// A non-retryable error, or the last error when the budget ran out.
+    Failed(E),
+}
+
+/// Retry a blocking operation until its value is accepted.
+///
+/// Verdict walk with the attempt budget and backoff math shared by the
+/// async retry drivers: each `Ok` value goes through `judge` (`Accept`
+/// returns it, `Stop` settles with it, `Retry` spends another
+/// attempt); each `Err` goes through `is_retryable`. Unsuccessful
+/// attempts sleep `backoff_ms(base_ms, attempt, jitter_pct)` first —
+/// pass zero base and jitter for a latency-sensitive walk with no
+/// inter-attempt sleep. On exhaustion the last value settles or the
+/// last error fails. Explicitly blocking — never call it from a
+/// `WorkUnit::execute` body.
+pub fn retry_until_sync<V, E>(
+    max_attempts: u32,
+    base_ms: u64,
+    jitter_pct: u32,
+    is_retryable: impl Fn(&E) -> bool,
+    mut judge: impl FnMut(&V) -> Verdict,
+    mut op: impl FnMut() -> Result<V, E>,
+) -> AttemptOutcome<V, E> {
+    assert!(max_attempts >= 1);
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        match op() {
+            Ok(value) => match judge(&value) {
+                Verdict::Accept => return AttemptOutcome::Accepted(value),
+                Verdict::Stop => return AttemptOutcome::Settled(value),
+                Verdict::Retry => {
+                    if attempt >= max_attempts {
+                        return AttemptOutcome::Settled(value);
+                    }
+                    let delay = backoff_ms(base_ms, attempt, jitter_pct);
+                    std::thread::sleep(Duration::from_millis(delay));
+                }
+            },
+            Err(e) => {
+                if attempt >= max_attempts || !is_retryable(&e) {
+                    return AttemptOutcome::Failed(e);
+                }
+                let delay = backoff_ms(base_ms, attempt, jitter_pct);
+                std::thread::sleep(Duration::from_millis(delay));
+            }
+        }
+    }
+}
 /// Compute a capped linear backoff: `base_ms * min(failures + 1, cap)`.
 ///
 /// With `base=5s, cap=12` the schedule is 5, 10, 15, …, 60s — it grows

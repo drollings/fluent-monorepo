@@ -141,12 +141,7 @@ pub fn rrf_fuse(lists: &[Vec<String>], k: f64) -> Vec<FusedHit> {
             rank: 0,
         })
         .collect();
-    fused.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    common_core::score::sort_by_score_desc(&mut fused, |hit| hit.score.0, |a, b| a.id.cmp(&b.id));
     for (index, hit) in fused.iter_mut().enumerate() {
         hit.rank = index + 1;
     }

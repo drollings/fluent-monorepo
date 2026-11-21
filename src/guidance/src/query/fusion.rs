@@ -94,12 +94,11 @@ pub fn apply_scope_prior(
                 candidate.score = RrfScore::new(boosted);
             }
         }
-        candidates.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.id.cmp(&b.id))
-        });
+        common_core::score::sort_by_score_desc(
+            &mut candidates,
+            |candidate| candidate.score.0,
+            |a, b| a.id.cmp(&b.id),
+        );
         for (index, candidate) in candidates.iter_mut().enumerate() {
             candidate.rank = index + 1;
         }
@@ -135,12 +134,11 @@ pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandid
             .iter()
             .any(|trace| trace.forced == Some(true));
     }
-    candidates.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    common_core::score::sort_by_score_desc(
+        &mut candidates,
+        |candidate| candidate.score.0,
+        |a, b| a.id.cmp(&b.id),
+    );
     for (index, candidate) in candidates.iter_mut().enumerate() {
         candidate.rank = index + 1;
     }

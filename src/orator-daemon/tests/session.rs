@@ -512,3 +512,18 @@ fn ask_blocking_falls_back_to_the_voice_model_when_the_llm_endpoint_is_down() {
     assert_eq!(turns.hits(), 1, "the voice model answered");
     owner.shutdown();
 }
+
+#[test]
+fn stop_drops_the_entry_and_second_stop_fails_closed() {
+    let owner = VoiceOwner::disabled();
+    let id = owner.start_session("assistant").expect("start");
+    owner
+        .stop_session(&id)
+        .expect("stop fires its abort and drops the entry");
+    assert!(owner.list_sessions().is_empty());
+    let error = owner
+        .stop_session(&id)
+        .expect_err("dropped sessions stay unknown");
+    assert!(error.to_string().contains(&id), "names the id: {error}");
+    owner.shutdown();
+}

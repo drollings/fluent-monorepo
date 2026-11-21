@@ -4,7 +4,8 @@
 //! (markdown) lines, capped at 25% of the chunk budget, prepended to the
 //! fragment text. Char-boundary-safe truncation (the surrogate-pair rule).
 
-use super::{utf16_len, utf16_prefix, FragmentMetadata};
+use super::FragmentMetadata;
+use common_core::string::{truncate_utf16_units, utf16_len};
 
 /// Metadata budget ratio (port of `MAX_METADATA_BUDGET_RATIO`).
 pub const METADATA_BUDGET_RATIO: f64 = 0.25;
@@ -95,7 +96,7 @@ pub fn compact_metadata_lines(lines: &[String], max_chars: Option<usize>) -> Str
         .join("\n");
     match max_chars {
         None => text,
-        Some(max) => fit_text_to_chars(&text, max),
+        Some(max) => truncate_utf16_units(&text, max),
     }
 }
 
@@ -133,20 +134,6 @@ pub fn chunk_options_for_metadata(
         .max(1);
     let overlap = chunk_overlap_chars.min(max.saturating_sub(1));
     (max, overlap)
-}
-
-/// Truncate to `max_chars` UTF-16 units with a `...` marker (port of
-/// `fitTextToChars`); never splits a character.
-#[must_use]
-pub fn fit_text_to_chars(value: &str, max_chars: usize) -> String {
-    if utf16_len(value) <= max_chars {
-        return value.to_string();
-    }
-    if max_chars <= 3 {
-        return ".".repeat(max_chars);
-    }
-    let end = utf16_prefix(value, max_chars - 3);
-    format!("{}...", end.trim_end())
 }
 
 #[cfg(test)]

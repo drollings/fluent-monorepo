@@ -117,21 +117,17 @@ pub fn clippy_command(package_dir: &Path, ctx: &ClippyCtx) -> (Vec<String>, Vec<
     (argv, env)
 }
 
-/// Run one clippy invocation over a package directory. Env control
-/// needs `CARGO_BUILD_JOBS`, which the shared capture helper cannot
-/// set, so this driver spawns directly.
+/// Run one clippy invocation over a package directory. Environment
+/// shaping rides the shared env-aware capture helper; the package
+/// travels in argv via `--manifest-path`, so no working directory
+/// override is needed.
 pub fn run_clippy(package_dir: &Path, ctx: &ClippyCtx) -> std::io::Result<ClippyReport> {
     let (argv, env) = clippy_command(package_dir, ctx);
-    let mut command = std::process::Command::new(&argv[0]);
-    command.args(&argv[1..]);
-    for (key, value) in &env {
-        command.env(key, value);
-    }
-    let output = command.output()?;
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let mut report = parse_clippy_json(&stdout);
-    report.exit_ok = output.status.success();
-    report.stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let borrowed: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let output = common_core::shell::run_capture_with_env(&borrowed, &env)?;
+    let mut report = parse_clippy_json(&output.stdout);
+    report.exit_ok = output.success;
+    report.stderr = output.stderr;
     Ok(report)
 }
 
@@ -245,16 +241,8 @@ pub fn resolve_reported(package_dir: &Path, reported: &str) -> PathBuf {
 /// `None` past the search cap (detached files format without clippy).
 #[must_use]
 pub fn package_root(path: &Path) -> Option<PathBuf> {
-    let mut dir = path.parent()?.to_path_buf();
-    for _ in 0..10 {
-        if dir.join("Cargo.toml").is_file() {
-            return Some(dir);
-        }
-        if !dir.pop() {
-            return None;
-        }
-    }
-    None
+    let manifest = common_core::config::find_ancestor_file(path, "Cargo.toml", 10)?;
+    manifest.parent().map(Path::to_path_buf)
 }
 
 #[cfg(test)]

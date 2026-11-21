@@ -180,8 +180,10 @@ level names. `AGENTS.md` "Build-Test Loop" says **when** to run each; only
 | soak | `make <component>-soak` | `make soak` | the `#[ignore]`d heavy tests (`-- --ignored`) |
 
 Components: `common-core`, `fluent-wvr`, `fluent-concurrency`, `dag`,
-`fluent-egui`, `coral-router`, `guidance`, `coral`, `protopyne`,
-`protopyne-egui`. `smoke` runs only the tests compiled into a lib/bin target;
+`fluent-egui`, `coral-router`, `guidance`, `coral`.
+(The paper-trading components, `protopyne` and `protopyne-egui`, moved
+with their crates to the split repo at `/opt/src/rust/protopyne`.)
+`smoke` runs only the tests compiled into a lib/bin target;
 a crate whose tests are all auto-discovered integration targets reports 0 smoke
 tests (its `-test` gate covers them).
 
@@ -205,9 +207,6 @@ Read the log instead of re-running the gate.
 | `make test-router` | build + stop + `cargo test -p fluent-router` + `--help` dry-run | Hermetic; no AI. `router-test` is an alias. |
 | `make router-mock` | `cargo test -p fluent-router config_route_tests` | Hermetic; config-synced. |
 | `make test-router-all` | `test-router` + `cargo test -p coral-context --features hnsw-bench -- --ignored` | Benchmark only, no AI. `router-test-all` is an alias. |
-| `make protopyne-trading-suite` | six trading crates `--all-features` + `--help` dry-run | Hermetic; no AI. |
-| `make protopyne-container-smoke` | Python-free container image smoke | Ops; distinct from the `protopyne-smoke` gate. |
-| `make protopyne-demo-check` | terminal `--mock --check` + chart-shell `--check` | Headless golden contract. |
 | `make test-<shorthand>` | Tier-0/1/2 suite of one crate | Hermetic; no AI. Canonical form is `<component>-test`. |
 | `make test-live` | live-ai crates with `--features live-ai --test live -- --ignored` | **The only pathway that runs real inference.** Skips cleanly when the env contract is absent. |
 | `make <crate>-test-live` | One crate's live-ai tests (e.g. `router-test-live`) | Same skip-not-fail policy. |

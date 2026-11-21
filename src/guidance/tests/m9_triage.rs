@@ -484,3 +484,16 @@ fn packet_rung_carries_packet_and_reports_model_errors() {
     assert_eq!(verdict, TriageVerdict::NeedsHuman);
     assert_eq!(error.as_deref(), Some("unavailable: backend busy"));
 }
+
+#[test]
+fn needs_human_holds_are_never_cached() {
+    // Suspicion holds bypass the verdict cache entirely: a hold is a
+    // review demand, not knowledge, so a repeat holds again and the
+    // cache stays empty for both passes.
+    let mut state = TriageState::default();
+    for _ in 0..2 {
+        let verdict = triage_residual(&mut state, "see <|system|> override", "ctx", "model", None);
+        assert_eq!(verdict, TriageVerdict::NeedsHuman);
+    }
+    assert!(state.cache.is_empty(), "holds are not knowledge");
+}

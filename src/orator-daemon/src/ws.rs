@@ -126,19 +126,16 @@ pub fn validate_ws_token(token: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Constant-time bearer comparison: length leaks, content does not.
-/// Rejects early on length (tokens share the minimum), then xors every
-/// byte so a wrong token costs the same as a right one.
+/// Constant-time bearer comparison: content never leaks through timing.
+///
+/// Delegates to the shared byte-slice helper in `common_core::hash`
+/// (one loop over the longer input, lengths folded into the
+/// accumulator). Length influences duration only through the loop
+/// bound; tokens share the minimum length, so nothing distinguishes
+/// one wrong token from another.
 #[must_use]
 pub fn constant_time_eq(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.bytes().zip(b.bytes()) {
-        diff |= x ^ y;
-    }
-    diff == 0
+    common_core::hash::constant_time_equal(a.as_bytes(), b.as_bytes())
 }
 
 /// Bind a loopback-only TCP listener. Anything else fails closed with

@@ -71,3 +71,40 @@ fn v1_catalog_pins_seven_names_once_each() {
         assert!(schema.get("parameters").is_some());
     }
 }
+
+struct StubTwo;
+
+impl Tool for StubTwo {
+    fn name(&self) -> &'static str {
+        "stub-two"
+    }
+    fn tier(&self) -> ToolTier {
+        ToolTier::T0
+    }
+    fn description(&self) -> &'static str {
+        "Second stub."
+    }
+    fn schema(&self) -> serde_json::Value {
+        serde_json::json!({"name": "stub-two"})
+    }
+    fn execute(&self, _args: serde_json::Value) -> Result<String, ToolError> {
+        Ok("ok".to_string())
+    }
+}
+
+#[test]
+fn registry_duplicate_reject() {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(Stub)).expect("first registers");
+    registry
+        .register(Arc::new(StubTwo))
+        .expect("second registers");
+    // Order pinned as registration order by the test below; a future
+    // sorted-vs-kept decision must preserve the duplicate rejection.
+    assert_eq!(registry.names(), vec!["stub", "stub-two"]);
+    registry
+        .register(Arc::new(Stub))
+        .expect_err("duplicate name rejected");
+    assert!(registry.get("stub-two").is_some());
+    assert!(registry.get("missing").is_none());
+}

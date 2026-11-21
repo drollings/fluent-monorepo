@@ -436,7 +436,8 @@ async fn execute_with_timeout_and_retry(
     tokio::task::yield_now().await;
     // `retry_async` schedules in whole milliseconds; sub-ms bases round up
     // so a zero base still sleeps instead of spinning.
-    let backoff_base_ms = backoff_base.as_millis().max(1).min(u64::MAX as u128) as u64;
+    let backoff_base_ms = u64::try_from(backoff_base.as_millis().max(1).min(u128::from(u64::MAX)))
+        .unwrap_or(u64::MAX);
     let fut = async {
         common_core::retry::retry_async(
             max_retries.saturating_add(1).max(1),
@@ -456,7 +457,9 @@ async fn execute_with_timeout_and_retry(
         .await
     };
 
-    if !timeout.is_zero() {
+    if timeout.is_zero() {
+        fut.await
+    } else {
         match tokio::time::timeout(timeout, fut).await {
             Ok(result) => result,
             Err(_) => Err(WorkError::Timeout {
@@ -464,8 +467,6 @@ async fn execute_with_timeout_and_retry(
                 unit: unit.name().to_string(),
             }),
         }
-    } else {
-        fut.await
     }
 }
 

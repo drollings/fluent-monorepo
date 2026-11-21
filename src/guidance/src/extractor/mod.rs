@@ -3,6 +3,7 @@
 //! requires the same unit here, with char-boundary-safe slicing).
 
 use crate::search_types::{CodeSymbolType, FileKind};
+use common_core::string::{utf16_len, utf16_slice};
 
 /// Default code chunk budget (port of `DEFAULT_CODE_CHUNK_CHARS`).
 pub const DEFAULT_CHUNK_CHARS: usize = 3600;
@@ -149,46 +150,6 @@ pub fn make_entity_id(file_id: &str, index: usize) -> String {
     common_core::hash::sha256_hex(format!("{file_id}\0{index}").as_bytes())
 }
 
-/// UTF-16 width of a string (zvec parity unit for chunk budgets).
-#[must_use]
-pub fn utf16_len(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
-/// Slice `text` to at most `max_units` UTF-16 code units without splitting
-/// a character (char boundaries imply surrogate-pair safety in Rust).
-#[must_use]
-pub fn utf16_prefix(text: &str, max_units: usize) -> &str {
-    utf16_slice(text, 0, max_units)
-}
-
-/// UTF-16 window `[start_units, start_units + len_units)` snapped to char
-/// boundaries (start snaps forward to the containing character, end snaps
-/// back so the window never exceeds the budget).
-#[must_use]
-pub fn utf16_slice(text: &str, start_units: usize, len_units: usize) -> &str {
-    let end_units = start_units + len_units;
-    let mut byte_start = None;
-    let mut byte_end = None;
-    let mut units = 0;
-    for (byte, ch) in text.char_indices() {
-        let width = ch.len_utf16();
-        if byte_start.is_none() && units + width > start_units {
-            byte_start = Some(byte);
-        }
-        if byte_start.is_some() && units + width > end_units {
-            byte_end = Some(byte);
-            break;
-        }
-        units += width;
-    }
-    match (byte_start, byte_end) {
-        (Some(start), Some(end)) => &text[start..end],
-        (Some(start), None) => &text[start..],
-        (None, _) => "",
-    }
-}
-
 pub mod adapter;
 pub mod code;
 pub mod markdown;
@@ -303,3 +264,7 @@ pub(crate) fn split_long_units(
 #[cfg(test)]
 #[path = "../../tests/extract_text_shape.rs"]
 mod text_shape_tests;
+
+#[cfg(test)]
+#[path = "../../tests/split_m0_utf16.rs"]
+mod split_m0_utf16_tests;

@@ -16,7 +16,7 @@ fn base_target() -> RoutingTarget {
         retry_base_interval_s: 1,
         stream: true,
         idle_timeout: std::time::Duration::from_millis(5000),
-        total_timeout: std::time::Duration::from_millis(30000),
+        total_timeout: std::time::Duration::from_secs(30),
         api_key: None,
         fallbacks: vec![],
         is_onnx: false,

@@ -28,3 +28,15 @@ fn over_cap_keeps_head_with_total_marker() {
     );
     assert!(capped.chars().count() < big.chars().count());
 }
+
+#[test]
+fn truncate_marker_present() {
+    let over = "y".repeat(TOOL_OUTPUT_CHARS + 10);
+    let cut = truncate_tool_output(&over);
+    assert!(cut.contains("(truncated,"), "loud cut: {cut}");
+    assert!(cut.contains(&format!("{} total chars", TOOL_OUTPUT_CHARS + 10)));
+    assert_eq!(
+        truncate_tool_output(&"z".repeat(TOOL_OUTPUT_CHARS)),
+        "z".repeat(TOOL_OUTPUT_CHARS)
+    );
+}

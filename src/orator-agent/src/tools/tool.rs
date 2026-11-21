@@ -69,6 +69,9 @@ pub trait Tool: Send + Sync {
 /// The static registry. Registration rejects duplicates: a name is
 /// defined exactly once, so prompt, grammar, and executor agree.
 #[derive(Default)]
+/// Tool registry: duplicate-rejecting, registration-ordered.
+/// Iteration order is the contract (`names`/`schemas` follow
+/// registration); a sorted map would reorder tool prompts.
 pub struct ToolRegistry {
     tools: Vec<Arc<dyn Tool>>,
 }

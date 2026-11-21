@@ -38,6 +38,21 @@ impl CommandOutput {
 /// Returns `Err` only if the process fails to spawn (e.g. binary not found).
 /// Check `CommandOutput::success` for exit status.
 pub fn run_capture(argv: &[&str]) -> std::io::Result<CommandOutput> {
+    spawn_capture(argv, &[])
+}
+
+/// Runs a command with explicit environment pairs and captures
+/// stdout/stderr. Shares the single spawning implementation with
+/// [`run_capture`]; prefer it over hand-rolled `Command` assembly
+/// whenever a child needs caller-provided env.
+pub fn run_capture_with_env(
+    argv: &[&str],
+    env: &[(String, String)],
+) -> std::io::Result<CommandOutput> {
+    spawn_capture(argv, env)
+}
+
+fn spawn_capture(argv: &[&str], env: &[(String, String)]) -> std::io::Result<CommandOutput> {
     if argv.is_empty() {
         return Ok(CommandOutput {
             success: false,
@@ -45,17 +60,23 @@ pub fn run_capture(argv: &[&str]) -> std::io::Result<CommandOutput> {
             stderr: String::new(),
         });
     }
-    let output = Command::new(argv[0]).args(&argv[1..]).output()?;
-    Ok(CommandOutput::from_output(&output))
+    let mut command = Command::new(argv[0]);
+    command.args(&argv[1..]);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command
+        .output()
+        .map(|output| CommandOutput::from_output(&output))
 }
 
 /// Runs a shell command string using the platform shell (`sh -c` / `cmd /C`).
 ///
-/// Convenience wrapper over `run_capture` that prepends the shell prefix.
+/// Convenience wrapper over the shared capture implementation that
+/// prepends the shell prefix.
 pub fn run_shell_capture(command: &str) -> std::io::Result<CommandOutput> {
     let (prog, arg) = shell_cmd();
-    let output = Command::new(prog).arg(arg).arg(command).output()?;
-    Ok(CommandOutput::from_output(&output))
+    spawn_capture(&[prog, arg, command], &[])
 }
 
 pub fn run_command(argv: &[&str]) -> bool {

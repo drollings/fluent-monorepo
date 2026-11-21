@@ -190,9 +190,12 @@ pub fn score_arm(surfaced: &[String], relevant: &BTreeSet<String>) -> (f64, f64)
         .iter()
         .filter(|file| matches(relevant, file))
         .count();
+    // Division idiom only: the empty-denominator fallbacks document the
+    // control conventions above (recall 0.0 on firing, precision 1.0 on
+    // vacuous) but are unreachable here — both denominators are nonzero.
     (
-        hits as f64 / relevant.len() as f64,
-        hits as f64 / surfaced.len() as f64,
+        common_core::calibration::recall_or(hits, relevant.len(), 0.0),
+        common_core::calibration::precision_or(hits, surfaced.len(), 1.0),
     )
 }
 
@@ -228,9 +231,11 @@ pub fn score_paths(surfaced: &[String], relevant: &BTreeSet<String>) -> (f64, f6
         .map(|path| normalize_bench_path(path))
         .filter(|path| relevant.contains(path))
         .count();
+    // Same division idiom as `score_arm`: fallbacks document the
+    // control conventions but are unreachable on nonzero denominators.
     (
-        hits as f64 / relevant.len() as f64,
-        hits as f64 / surfaced.len() as f64,
+        common_core::calibration::recall_or(hits, relevant.len(), 0.0),
+        common_core::calibration::precision_or(hits, surfaced.len(), 1.0),
     )
 }
 

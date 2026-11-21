@@ -198,3 +198,22 @@ fn score_dimension_rejects_unknown_with_typed_error() {
     let err = "charisma".parse::<ScoreDimension>().unwrap_err();
     assert_eq!(err, UnknownScoreDimension("charisma".to_string()));
 }
+
+#[test]
+fn sort_by_score_desc_breaks_ties_by_caller() {
+    let mut items = vec![("b", 1.0f64), ("a", 1.0), ("c", 2.0), ("d", 0.5)];
+    sort_by_score_desc(&mut items, |(_, score)| *score, |(a, _), (b, _)| a.cmp(b));
+    assert_eq!(items, vec![("c", 2.0), ("a", 1.0), ("b", 1.0), ("d", 0.5)]);
+}
+
+#[test]
+fn sort_by_score_desc_collapses_nan_to_equal() {
+    // NaN compares Equal, so the tie-break — not input order — owns it;
+    // the sort stays total and never panics.
+    let mut items = vec![("b", f64::NAN), ("a", 1.0)];
+    sort_by_score_desc(&mut items, |(_, score)| *score, |(a, _), (b, _)| a.cmp(b));
+    assert_eq!(items[0].0, "a");
+    let mut flipped = vec![("a", 1.0), ("b", f64::NAN)];
+    sort_by_score_desc(&mut flipped, |(_, score)| *score, |(a, _), (b, _)| a.cmp(b));
+    assert_eq!(flipped[0].0, "a");
+}

@@ -847,9 +847,9 @@ fn handle_watch_error(shared: &Arc<Shared>, state: &mut LoopState, key: &str, _m
             .recovery
             .get(key)
             .map_or(1, |recovery| recovery.consecutive_errors);
-        let delay_ms = 100u64
-            .saturating_mul(2u64.pow(consecutive.saturating_sub(1).min(8)))
-            .min(5_000);
+        let delay_ms =
+            common_core::retry::capped_exp_backoff_ms(100, consecutive.saturating_sub(1), 8)
+                .min(5_000);
         let tx = shared.tx.clone();
         let key = key.to_string();
         spawn_tracked(shared, async move {
@@ -1321,3 +1321,7 @@ impl WatchBackend for ManualBackend {
 #[cfg(test)]
 #[path = "../tests/watcher.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/split_m0_watcher.rs"]
+mod split_m0_watcher_tests;

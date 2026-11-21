@@ -1,5 +1,5 @@
 {
-  "reason": "initial extraction from Makefile COMPONENT_NAMES (11 components)",
-  "date": "2026-11-08",
-  "components": ["common-core", "coral", "coral-router", "dag", "fluent-concurrency", "fluent-egui", "fluent-wvr", "guidance", "orator", "protopyne", "protopyne-egui"]
+  "reason": "protopyne + protopyne-egui moved with their crates to the split repo at /opt/src/rust/protopyne (9 components)",
+  "date": "2026-11-20",
+  "components": ["common-core", "coral", "coral-router", "dag", "fluent-concurrency", "fluent-egui", "fluent-wvr", "guidance", "orator"]
 }

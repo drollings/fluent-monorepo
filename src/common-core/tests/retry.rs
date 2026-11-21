@@ -280,3 +280,69 @@ fn capped_exp_matches_the_ws_per_ip_backoff_table() {
     }
     assert_eq!(capped_exp_backoff_ms(100, u32::MAX, 6).min(5000), 5000);
 }
+
+#[test]
+fn retry_until_sync_accepts_first_valid() {
+    use std::cell::Cell;
+    let calls = Cell::new(0);
+    let outcome = retry_until_sync(
+        3,
+        0,
+        0,
+        |_: &String| false,
+        |_: &u32| Verdict::Accept,
+        || {
+            calls.set(calls.get() + 1);
+            Ok::<u32, String>(1)
+        },
+    );
+    assert!(matches!(outcome, AttemptOutcome::Accepted(1)));
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn retry_until_sync_exhausts_and_stops() {
+    use std::cell::Cell;
+    let calls = Cell::new(0);
+    let exhausted = retry_until_sync(
+        2,
+        0,
+        0,
+        |_: &String| false,
+        |_: &u32| Verdict::Retry,
+        || {
+            calls.set(calls.get() + 1);
+            Ok::<u32, String>(0)
+        },
+    );
+    assert!(matches!(exhausted, AttemptOutcome::Settled(0)));
+    assert_eq!(calls.get(), 2);
+    let stopped = retry_until_sync(
+        3,
+        0,
+        0,
+        |_: &String| false,
+        |_: &u32| Verdict::Stop,
+        || Ok::<u32, String>(7),
+    );
+    assert!(matches!(stopped, AttemptOutcome::Settled(7)));
+}
+
+#[test]
+fn retry_until_sync_fails_fast_on_error() {
+    use std::cell::Cell;
+    let calls = Cell::new(0);
+    let outcome = retry_until_sync(
+        3,
+        0,
+        0,
+        |_: &String| false,
+        |_: &u32| Verdict::Accept,
+        || {
+            calls.set(calls.get() + 1);
+            Err::<u32, String>("fatal".to_string())
+        },
+    );
+    assert!(matches!(outcome, AttemptOutcome::Failed(_)));
+    assert_eq!(calls.get(), 1);
+}

@@ -70,7 +70,7 @@ fn rendered_top_matches_stays_within_code_budget() {
     let rendered = crate::read::render::render_code_findings(&kept);
     let capped = enforce_budget(&rendered, budget.code);
     assert!(
-        tokens_for(&capped) <= (budget.code as u64 * 11 / 10).max(1),
+        tokens_for(&capped) <= (budget.code * 11 / 10).max(1),
         "section within budget x1.1: {} tokens vs {}",
         tokens_for(&capped),
         budget.code
@@ -92,7 +92,7 @@ fn section_budgets_hold_across_intents() {
         let budgets = budgets_for(intent);
         let body = enforce_budget(&oversized_text(), budgets.total);
         assert!(
-            tokens_for(&body) <= (budgets.total as u64 * 11 / 10).max(1),
+            tokens_for(&body) <= (budgets.total * 11 / 10).max(1),
             "{intent:?} over budget"
         );
     }

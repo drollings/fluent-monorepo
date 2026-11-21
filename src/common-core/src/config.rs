@@ -58,6 +58,25 @@ pub fn load_json<T: DeserializeOwned>(path: &Path) -> Result<T, IoError> {
 ///     PathBuf::from("/home/u/.config/guidance/guidance-config.json"),
 /// ]);
 /// ```
+/// Walk up from `start` (a file path; need not exist) looking for
+/// `filename`, checking at most `cap` directories. Past the filesystem
+/// root the walk ends with `None`. Caps stay per-caller: a search bound,
+/// never a quality threshold.
+#[must_use]
+pub fn find_ancestor_file(start: &Path, filename: &str, cap: usize) -> Option<PathBuf> {
+    let mut dir = start.parent()?.to_path_buf();
+    for _ in 0..cap {
+        let candidate = dir.join(filename);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+    None
+}
+
 #[must_use]
 pub fn find_hierarchical(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|path| path.is_file()).cloned()

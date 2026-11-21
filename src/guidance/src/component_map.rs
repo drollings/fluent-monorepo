@@ -86,56 +86,6 @@ const ENTRIES: &[Entry] = &[
         component: Some("coral"),
     },
     Entry {
-        prefix: "src/protopyne-types",
-        package: "protopyne-types",
-        component: Some("protopyne"),
-    },
-    Entry {
-        prefix: "src/protopyne-kernels",
-        package: "protopyne-kernels",
-        component: Some("protopyne"),
-    },
-    Entry {
-        prefix: "src/protopyne-store",
-        package: "protopyne-store",
-        component: Some("protopyne"),
-    },
-    Entry {
-        prefix: "src/protopyne-strategy",
-        package: "protopyne-strategy",
-        component: Some("protopyne"),
-    },
-    Entry {
-        prefix: "src/protopyne-venue",
-        package: "protopyne-venue",
-        component: Some("protopyne"),
-    },
-    Entry {
-        prefix: "src/protopyne-server",
-        package: "protopyne-server",
-        component: Some("protopyne"),
-    },
-    Entry {
-        prefix: "src/protopyne-egui",
-        package: "protopyne-egui",
-        component: Some("protopyne-egui"),
-    },
-    Entry {
-        prefix: "src/protopyne-chart-model",
-        package: "protopyne-chart-model",
-        component: None,
-    },
-    Entry {
-        prefix: "src/protopyne-chart-scale",
-        package: "protopyne-chart-scale",
-        component: None,
-    },
-    Entry {
-        prefix: "src/protopyne-view",
-        package: "protopyne-view",
-        component: None,
-    },
-    Entry {
         prefix: "src/orator",
         package: "orator",
         component: Some("orator"),

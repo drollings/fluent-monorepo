@@ -4,6 +4,7 @@
 use super::*;
 use crate::extractor::{ExtractSource, FragmentMetadata};
 use crate::search_types::FileKind;
+use common_core::string::utf16_len;
 
 fn source(text: &str) -> ExtractSource {
     ExtractSource {
@@ -102,10 +103,7 @@ fn oversize_sections_emit_outline_major_plus_windows() {
             Some(major.id.as_str()),
             "{window:?}"
         );
-        assert!(
-            crate::extractor::utf16_len(&window.content_text) <= 300,
-            "{window:?}"
-        );
+        assert!(utf16_len(&window.content_text) <= 300, "{window:?}");
     }
     // Ids are unique positional hashes.
     let mut ids: Vec<&str> = frags.iter().map(|f| f.id.as_str()).collect();

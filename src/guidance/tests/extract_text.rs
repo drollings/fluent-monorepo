@@ -5,6 +5,7 @@
 use super::*;
 use crate::extractor::ExtractSource;
 use crate::search_types::FileKind;
+use common_core::string::utf16_len;
 
 fn source(text: &str) -> ExtractSource {
     ExtractSource {
@@ -45,7 +46,7 @@ fn windows_respect_budget_and_overlap() {
     let chunks = chunk_text(&text, opts(140, 30));
     assert!(chunks.len() >= 2, "{}", chunks.len());
     for chunk in &chunks {
-        assert!(crate::extractor::utf16_len(&chunk.text) <= 140, "{chunk:?}");
+        assert!(utf16_len(&chunk.text) <= 140, "{chunk:?}");
         assert!(!chunk.text.trim().is_empty());
     }
     // Adjacent windows overlap (shared line).

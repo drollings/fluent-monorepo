@@ -14,9 +14,6 @@ common-core = { path = "../common-core" }
 fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-dag = { path = "../dag" }
 fluent-wvr = { path = "../fluent-wvr" }
-protopyne-chart-model = { path = "../protopyne-chart-model" }
-protopyne-chart-scale = { path = "../protopyne-chart-scale" }
-protopyne-types = { path = "../protopyne-types" }
 bon = { workspace = true }
 dashmap = { workspace = true }
 serde = { workspace = true }
@@ -28,13 +25,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
-criterion = { workspace = true }
 rust_decimal = { workspace = true }
-trybuild = "1"
-
-[[bench]]
-name = "frame_budget"
-harness = false
 
 [lints]
 workspace = true

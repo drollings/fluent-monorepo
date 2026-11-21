@@ -4,6 +4,7 @@
 use super::*;
 use crate::extractor::FragmentMetadata;
 use crate::search_types::CodeSymbolType;
+use common_core::string::{truncate_utf16_units, utf16_len};
 
 fn code_meta() -> FragmentMetadata {
     FragmentMetadata::Code {
@@ -37,7 +38,7 @@ fn metadata_budget_caps_prefix_at_quarter_chunk() {
     assert!(overlap <= 10, "{overlap}");
     let text = vector_content_for_fragment(&Some(code_meta()), "body", Some(100));
     let prefix = text.strip_suffix("\nbody").expect("suffix");
-    assert!(crate::extractor::utf16_len(prefix) <= 25, "{prefix:?}");
+    assert!(utf16_len(prefix) <= 25, "{prefix:?}");
 }
 
 #[test]
@@ -49,17 +50,17 @@ fn no_metadata_returns_content_unchanged() {
 }
 
 #[test]
-fn fit_text_to_chars_marks_truncation() {
-    assert_eq!(fit_text_to_chars("hello world", 8), "hello...");
-    assert_eq!(fit_text_to_chars("hi", 10), "hi");
-    assert_eq!(fit_text_to_chars("hello", 3), "...");
-    assert_eq!(fit_text_to_chars("hello", 2), "..");
+fn truncate_utf16_units_marks_truncation() {
+    assert_eq!(truncate_utf16_units("hello world", 8), "hello...");
+    assert_eq!(truncate_utf16_units("hi", 10), "hi");
+    assert_eq!(truncate_utf16_units("hello", 3), "...");
+    assert_eq!(truncate_utf16_units("hello", 2), "..");
 }
 
 #[test]
 fn truncation_never_splits_characters() {
     let emoji = "😀".repeat(80);
-    let cut = fit_text_to_chars(&emoji, 100);
+    let cut = truncate_utf16_units(&emoji, 100);
     assert!(cut.ends_with("..."), "{cut:?}");
     assert!(cut.is_char_boundary(cut.len() - 3), "char boundary");
     // The payload is whole emoji snapped back under budget + marker.

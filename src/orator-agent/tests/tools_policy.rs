@@ -143,3 +143,16 @@ fn policy_field_surface_pins_schema_and_table() {
     policy.set_field("nope", "1").expect_err("unknown rejects");
     policy.get_field("nope").expect_err("unknown reads reject");
 }
+
+#[test]
+fn effectful_tier_always_asks_even_when_clean() {
+    // T2 asks no matter what: a verified, untainted, direct call still
+    // holds for approval. Taint adds a reason, never the verdict.
+    let policy = Policy::new();
+    let mut clean = ctx(SessionKind::Assistant);
+    clean.verified = true;
+    assert!(matches!(
+        policy.decide(&call("shell"), ToolTier::T2, &clean),
+        Verdict::Ask(_)
+    ));
+}

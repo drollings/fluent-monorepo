@@ -697,6 +697,95 @@ pub fn truncate_at_sentence(text: &str, max_chars: usize) -> String {
     truncated.to_string()
 }
 
+/// Truncate to `max_bytes` at a UTF-8 char boundary, appending `suffix`.
+/// The cut head is trailing-trimmed so the marker never trails
+/// whitespace. Short inputs pass through verbatim.
+#[must_use]
+pub fn truncate_bytes_with_suffix(text: &str, max_bytes: usize, suffix: &str) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{suffix}", text[..end].trim_end())
+}
+
+/// Truncate to `max_chars` characters, appending a suffix computed from
+/// the total char count. The count runs once: short inputs pass through
+/// verbatim without invoking the suffix.
+#[must_use]
+pub fn truncate_chars_with_suffix(
+    text: &str,
+    max_chars: usize,
+    suffix: impl FnOnce(usize) -> String,
+) -> String {
+    let total = text.chars().count();
+    if total <= max_chars {
+        return text.to_string();
+    }
+    format!(
+        "{}{}",
+        text.chars().take(max_chars).collect::<String>(),
+        suffix(total)
+    )
+}
+
+/// UTF-16 width of a string (vector-index parity unit for chunk budgets).
+#[must_use]
+pub fn utf16_len(text: &str) -> usize {
+    text.encode_utf16().count()
+}
+
+/// Slice `text` to at most `max_units` UTF-16 code units without splitting
+/// a character (char boundaries imply surrogate-pair safety in Rust).
+#[must_use]
+pub fn utf16_prefix(text: &str, max_units: usize) -> &str {
+    utf16_slice(text, 0, max_units)
+}
+
+/// UTF-16 window `[start_units, start_units + len_units)` snapped to char
+/// boundaries (start snaps forward to the containing character, end snaps
+/// back so the window never exceeds the budget).
+#[must_use]
+pub fn utf16_slice(text: &str, start_units: usize, len_units: usize) -> &str {
+    let end_units = start_units + len_units;
+    let mut byte_start = None;
+    let mut byte_end = None;
+    let mut units = 0;
+    for (byte, ch) in text.char_indices() {
+        let width = ch.len_utf16();
+        if byte_start.is_none() && units + width > start_units {
+            byte_start = Some(byte);
+        }
+        if byte_start.is_some() && units + width > end_units {
+            byte_end = Some(byte);
+            break;
+        }
+        units += width;
+    }
+    match (byte_start, byte_end) {
+        (Some(start), Some(end)) => &text[start..end],
+        (Some(start), None) => &text[start..],
+        (None, _) => "",
+    }
+}
+
+/// Truncate to `max_chars` UTF-16 units with a `...` marker (never splits
+/// a character). Tiny budgets degrade to dots; the cut head is trimmed
+/// so the marker never trails whitespace.
+#[must_use]
+pub fn truncate_utf16_units(text: &str, max_chars: usize) -> String {
+    if utf16_len(text) <= max_chars {
+        return text.to_string();
+    }
+    if max_chars <= 3 {
+        return ".".repeat(max_chars);
+    }
+    format!("{}...", utf16_prefix(text, max_chars - 3).trim_end())
+}
+
 /// Truncate to `max_bytes` at a UTF-8 char boundary, appending `…` if the
 /// input was truncated. Never panics on mid-character boundaries (unlike a
 /// raw `&s[..n]` byte slice) and never exceeds `max_bytes`.

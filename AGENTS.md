@@ -16,10 +16,12 @@ is the priority.
 ## Build-Test Loop
 
 One Makefile convention drives every component. Each **component** — a
-binary/product target (`coral-router`, `guidance`, `protopyne`,
-`protopyne-egui`, `coral`) or a main shared crate (`common-core`,
-`fluent-wvr`, `fluent-concurrency`, `dag`, `fluent-egui`) — exposes the same
-five gates, named `<component>-<level>`:
+binary/product target (`coral-router`, `guidance`, `coral`) or a main shared
+crate (`common-core`, `fluent-wvr`, `fluent-concurrency`, `dag`,
+`fluent-egui`) — exposes the same five gates, named `<component>-<level>`:
+(The paper-trading components, `protopyne` and `protopyne-egui`, moved
+with their crates to the split repo at `/opt/src/rust/protopyne`, which
+carries the same convention.)
 
 | Gate | Meaning | Command |
 |---|---|---|

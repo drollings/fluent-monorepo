@@ -54,6 +54,50 @@ where
     }
 }
 
+/// Retry a synchronous closure with a fail-fast arm and a per-attempt hook.
+///
+/// Sibling of [`retry_call`] for callers that must abort at once on one
+/// error class (auth/config) while retrying another (transport), and
+/// observe each attempt (latency attribution). `op` runs up to
+/// `max_attempts` times (must be ≥ 1): `Ok` returns at once; `Err`
+/// returns at once when `is_fail_fast` holds; otherwise a retryable
+/// error sleeps `backoff_ms(base_ms, attempt, jitter_pct)` before the
+/// next attempt, and a non-retryable error or an exhausted budget
+/// returns the error. `on_attempt` fires after every attempt with the
+/// 1-based attempt number, its start time, and whether it succeeded.
+/// Explicitly blocking — never call it from a `WorkUnit::execute` body.
+pub fn retry_call_verdict<T, E>(
+    max_attempts: u32,
+    base_ms: u64,
+    jitter_pct: u32,
+    is_fail_fast: impl Fn(&E) -> bool,
+    is_retryable: impl Fn(&E) -> bool,
+    mut on_attempt: impl FnMut(u32, Instant, bool),
+    mut op: impl FnMut() -> Result<T, E>,
+) -> Result<T, E> {
+    assert!(max_attempts >= 1);
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        let started = Instant::now();
+        match op() {
+            Ok(value) => {
+                on_attempt(attempt, started, true);
+                return Ok(value);
+            }
+            Err(e) => {
+                on_attempt(attempt, started, false);
+                if is_fail_fast(&e) || attempt >= max_attempts || !is_retryable(&e) {
+                    return Err(e);
+                }
+                std::thread::sleep(Duration::from_millis(common_core::retry::backoff_ms(
+                    base_ms, attempt, jitter_pct,
+                )));
+            }
+        }
+    }
+}
+
 /// A `WorkUnit` wrapper that logs execution timing and optionally records
 /// durations into a shared `LatencyHistogram`.
 ///

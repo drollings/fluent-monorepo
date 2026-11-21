@@ -112,3 +112,37 @@ fn run_shell_capture_false() {
     let result = run_shell_capture("false").unwrap();
     assert!(!result.success);
 }
+
+#[test]
+fn run_capture_with_env_honors_env() {
+    let out = run_capture_with_env(
+        &["sh", "-c", "echo $SPLIT_M11_PROBE"],
+        &[("SPLIT_M11_PROBE".to_string(), "found".to_string())],
+    )
+    .expect("spawns");
+    assert!(out.success);
+    assert_eq!(out.stdout.trim(), "found");
+}
+
+#[test]
+fn run_capture_with_env_empty_matches_plain_capture() {
+    let plain = run_capture(&["echo", "hello"]).expect("spawns");
+    let with_empty: Vec<(String, String)> = Vec::new();
+    let via_variant = run_capture_with_env(&["echo", "hello"], &with_empty).expect("spawns");
+    assert_eq!(plain.stdout, via_variant.stdout);
+    assert_eq!(plain.success, via_variant.success);
+}
+
+#[test]
+fn run_capture_with_env_empty_argv() {
+    let out =
+        run_capture_with_env(&[], &[("A".to_string(), "b".to_string())]).expect("never spawns");
+    assert!(!out.success);
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn run_capture_with_env_decodes_lossy() {
+    let out = run_capture_with_env(&["sh", "-c", "printf '\\xff'"], &[]).expect("spawns");
+    assert!(out.stdout.contains('\u{fffd}'), "lossy: {:?}", out.stdout);
+}

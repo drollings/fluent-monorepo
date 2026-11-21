@@ -20,6 +20,6 @@ use fluent_llm::constants::*;
 fn values_match_spec() {
     assert_eq!(MAX_EMBEDDING_DIMENSIONS, 4_096);
     assert_eq!(DEFAULT_TOTAL_TIMEOUT, std::time::Duration::from_millis(300_000));
-    assert_eq!(DEFAULT_IDLE_TIMEOUT, std::time::Duration::from_millis(30_000));
+    assert_eq!(DEFAULT_IDLE_TIMEOUT, std::time::Duration::from_secs(30));
     assert_eq!(DEFAULT_RETRY_INTERVAL_S, 1);
 }

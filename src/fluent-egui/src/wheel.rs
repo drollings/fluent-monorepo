@@ -324,6 +324,3 @@ impl From<egui::Pos2> for Pos2 {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/wheel.rs"]
-mod tests;

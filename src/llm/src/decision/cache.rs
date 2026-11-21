@@ -16,7 +16,6 @@ use crate::decision::{Decision, DecisionError};
 /// One in-flight load is owned by `AsyncLoadCache` (singleflight
 /// election, cancel-safe retire); this module owns only the key framing
 /// (`CacheKeyInput`) and the admission policy (degraded never stored).
-
 /// Composite cache-key input: every identity axis in one struct so the key
 /// can grow (fingerprint today) without another signature break. `key()`
 /// frames each part with its length; an absent fingerprint contributes

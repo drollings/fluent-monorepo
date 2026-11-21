@@ -10,11 +10,11 @@ use super::{
     adapter::{classify_code_node, is_structural_symbol, resolve_adapter, NodeView, TsAdapter},
     make_entity_id,
     text::extract_plain_text_fragments,
-    utf16_len, utf16_slice,
     vector_content::chunk_options_for_metadata,
     ChunkOptions, ExtractError, ExtractSource, FragmentMetadata, FragmentRange, PreparedFragment,
 };
 use crate::ast_parser::{AstParser, CommentBlock};
+use common_core::string::{truncate_utf16_units, utf16_len, utf16_slice};
 use crate::search_constants::{
     OUTLINE_HEADER_MAX_CHARS, OUTLINE_HEADER_MAX_LINES, OUTLINE_MAX_CALLS, OUTLINE_MAX_LINE_CHARS,
     OUTLINE_MAX_MEMBERS, OUTLINE_WALK_MAX_DEPTH,
@@ -533,30 +533,11 @@ fn symbol_type_name(symbol: crate::search_types::CodeSymbolType) -> &'static str
 }
 
 fn truncate_outline(outline: &str, max_chars: usize) -> String {
-    if utf16_len(outline) <= max_chars {
-        return outline.to_string();
-    }
-    if max_chars <= 3 {
-        return ".".repeat(max_chars);
-    }
-    format!("{}...", utf16_prefix_trim_end(outline, max_chars - 3))
-}
-
-fn utf16_prefix_trim_end(text: &str, max_units: usize) -> String {
-    super::utf16_slice(text, 0, max_units)
-        .trim_end()
-        .to_string()
+    truncate_utf16_units(outline, max_chars)
 }
 
 fn truncate_outline_line(value: &str) -> String {
-    if utf16_len(value) > OUTLINE_MAX_LINE_CHARS {
-        format!(
-            "{}...",
-            super::utf16_slice(value, 0, OUTLINE_MAX_LINE_CHARS - 3).trim_end()
-        )
-    } else {
-        value.to_string()
-    }
+    truncate_utf16_units(value, OUTLINE_MAX_LINE_CHARS)
 }
 
 fn collect_members(

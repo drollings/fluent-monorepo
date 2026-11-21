@@ -81,3 +81,17 @@ fn torn_frames_count_as_dropped_not_audio() {
     assert_eq!(dropped, 0);
     assert!(out.is_empty());
 }
+
+#[test]
+fn u16_mapping_pinned() {
+    // Post-migration: the backend arm delegates to the shared helper,
+    // so this pins the shipped mapping through the shared home.
+    use common_core::pcm::u16_to_f32_sample;
+    assert_eq!(u16_to_f32_sample(0).to_bits(), (-1.0f32).to_bits());
+    assert_eq!(u16_to_f32_sample(u16::MAX).to_bits(), 1.0f32.to_bits());
+    let mid = u16_to_f32_sample(32767);
+    assert!(
+        (mid - (-1.0 / 65535.0)).abs() < 1e-6,
+        "asymmetric midpoint: {mid}"
+    );
+}

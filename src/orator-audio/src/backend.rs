@@ -125,7 +125,7 @@ impl CpalBackend {
                 &config.into(),
                 producer,
                 dropped_counter(),
-                |sample: u16| (f32::from(sample) / f32::from(u16::MAX)).mul_add(2.0, -1.0),
+                common_core::pcm::u16_to_f32_sample,
             ),
             format => {
                 return Err(AudioError::Stream(format!(

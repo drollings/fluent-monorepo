@@ -43,7 +43,7 @@ fn from_model_entry_strips_declaration_only_params() {
     assert_eq!(rt.retry_base_interval_s, 1);
     assert!(rt.stream);
     assert_eq!(rt.idle_timeout, std::time::Duration::from_millis(8000));
-    assert_eq!(rt.total_timeout, std::time::Duration::from_millis(40000));
+    assert_eq!(rt.total_timeout, std::time::Duration::from_secs(40));
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn routing_target_typed_preferred_over_json() {
         retry_base_interval_s: 1,
         stream: true,
         idle_timeout: std::time::Duration::from_millis(8000),
-        total_timeout: std::time::Duration::from_millis(30000),
+        total_timeout: std::time::Duration::from_secs(30),
         api_key: None,
         fallbacks: vec![],
         is_onnx: false,
@@ -224,7 +224,7 @@ fn routing_target_typed_preferred_over_json() {
         retry_base_interval_s: 1,
         stream: true,
         idle_timeout: std::time::Duration::from_millis(8000),
-        total_timeout: std::time::Duration::from_millis(30000),
+        total_timeout: std::time::Duration::from_secs(30),
         api_key: None,
         fallbacks: vec![],
         is_onnx: false,

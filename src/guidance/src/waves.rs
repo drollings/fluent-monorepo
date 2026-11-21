@@ -119,6 +119,21 @@ pub fn draft_prompt(source: &str, reason: &str) -> String {
     )
 }
 
+/// One draft attempt outcome for the verdict walk: only a kept draft
+/// ends the file's walk with a keep; an identical draft ends it without one.
+enum DraftAttempt {
+    /// No fence parsed; another draft may parse.
+    Unparseable,
+    /// Applied but gates still fail; another draft may pass.
+    Unkept,
+    /// Backend refused the draft; another draft may be accepted.
+    Refused,
+    /// Draft identical to source; retrying is pointless.
+    NoProgress,
+    /// Gates pass; the draft stands.
+    Kept,
+}
+
 /// First rust fence in a draft response, trimmed. No fence parses to
 /// nothing: the rung asks for a fresh draft instead of guessing.
 /// Shared contract via `fluent_llm::parse::extract_fence`
@@ -157,69 +172,87 @@ pub fn run_model_draft_rung(
             "--check".to_string(),
             path.to_string_lossy().into_owned(),
         ];
-        let mut kept = false;
         let mut detail = String::from("no green draft in 3 tries");
-        for _ in 0..MODEL_DRAFT_ATTEMPTS.max(1) {
-            report.attempted += 1;
-            let prompt = draft_prompt(&source, reason);
-            let messages = vec![
-                fluent_llm::protocol::ChatMessage::with_role(
-                    fluent_llm::roles::ChatRole::System,
-                    "You repair Rust source files. Answer with the whole fixed file in one ```rust fence.",
-                ),
-                fluent_llm::protocol::ChatMessage::with_role(
-                    fluent_llm::roles::ChatRole::User,
-                    prompt,
-                ),
-            ];
-            let extras = serde_json::json!({
-                "temperature": 0.0,
-                "max_tokens": 8192,
-            });
-            let response = match client.chat_complete_with_extras(&messages, &extras) {
-                Ok(text) => text,
-                Err(error) => {
-                    detail = format!("model unreachable: {error}");
-                    break;
+        let outcome = common_core::retry::retry_until_sync(
+            MODEL_DRAFT_ATTEMPTS.max(1),
+            0,
+            0,
+            |_: &String| false,
+            |attempt: &DraftAttempt| match attempt {
+                DraftAttempt::Kept => common_core::retry::Verdict::Accept,
+                DraftAttempt::NoProgress => common_core::retry::Verdict::Stop,
+                _ => common_core::retry::Verdict::Retry,
+            },
+            || {
+                report.attempted += 1;
+                let prompt = draft_prompt(&source, reason);
+                let messages = vec![
+                    fluent_llm::protocol::ChatMessage::with_role(
+                        fluent_llm::roles::ChatRole::System,
+                        "You repair Rust source files. Answer with the whole fixed file in one ```rust fence.",
+                    ),
+                    fluent_llm::protocol::ChatMessage::with_role(
+                        fluent_llm::roles::ChatRole::User,
+                        prompt,
+                    ),
+                ];
+                let extras = serde_json::json!({
+                    "temperature": 0.0,
+                    "max_tokens": 8192,
+                });
+                let response = match client.chat_complete_with_extras(&messages, &extras) {
+                    Ok(text) => text,
+                    Err(error) => return Err(format!("model unreachable: {error}")),
+                };
+                let Some(draft) = parse_draft_fence(&response) else {
+                    detail = String::from("model answered without a rust fence");
+                    return Ok(DraftAttempt::Unparseable);
+                };
+                match crate::offload::apply_draft(
+                    path,
+                    crate::offload::TriageClass::ClippyFix,
+                    &draft,
+                    &verify,
+                    1,
+                ) {
+                    Ok(applied)
+                        if applied.changed
+                            && matches!(applied.verdict, crate::offload::ApplyVerdict::Kept) =>
+                    {
+                        Ok(DraftAttempt::Kept)
+                    }
+                    Ok(applied) if applied.changed => {
+                        detail = capped_gate_output(&applied.gate_output);
+                        Ok(DraftAttempt::Unkept)
+                    }
+                    Ok(_) => {
+                        detail = String::from("draft identical to source; no progress");
+                        Ok(DraftAttempt::NoProgress)
+                    }
+                    Err(error) => {
+                        detail = format!("draft refused: {error}");
+                        Ok(DraftAttempt::Refused)
+                    }
                 }
-            };
-            let Some(draft) = parse_draft_fence(&response) else {
-                detail = String::from("model answered without a rust fence");
-                continue;
-            };
-            match crate::offload::apply_draft(
-                path,
-                crate::offload::TriageClass::ClippyFix,
-                &draft,
-                &verify,
-                1,
-            ) {
-                Ok(applied)
-                    if applied.changed
-                        && matches!(applied.verdict, crate::offload::ApplyVerdict::Kept) =>
-                {
-                    kept = true;
-                    report.kept += 1;
-                    report.kept_files.push(path.to_string_lossy().into_owned());
-                    break;
-                }
-                Ok(applied) if applied.changed => {
-                    detail = capped_gate_output(&applied.gate_output);
-                }
-                Ok(_) => {
-                    detail = String::from("draft identical to source; no progress");
-                    break;
-                }
-                Err(error) => {
-                    detail = format!("draft refused: {error}");
-                }
+            },
+        );
+        match outcome {
+            common_core::retry::AttemptOutcome::Accepted(_) => {
+                report.kept += 1;
+                report.kept_files.push(path.to_string_lossy().into_owned());
             }
-        }
-        if !kept {
-            report.failed += 1;
-            report
-                .failures
-                .push((path.to_string_lossy().into_owned(), detail));
+            common_core::retry::AttemptOutcome::Failed(error) => {
+                report.failed += 1;
+                report
+                    .failures
+                    .push((path.to_string_lossy().into_owned(), error));
+            }
+            common_core::retry::AttemptOutcome::Settled(_) => {
+                report.failed += 1;
+                report
+                    .failures
+                    .push((path.to_string_lossy().into_owned(), detail));
+            }
         }
     }
     report
@@ -229,15 +262,7 @@ pub fn run_model_draft_rung(
 /// complete error, but unbounded compiler spew drowns the verdict.
 fn capped_gate_output(output: &str) -> String {
     const MAX_HANDOFF_CHARS: usize = 2000;
-    let trimmed = output.trim();
-    if trimmed.len() <= MAX_HANDOFF_CHARS {
-        return trimmed.to_string();
-    }
-    let mut end = MAX_HANDOFF_CHARS;
-    while !trimmed.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}… [truncated]", trimmed[..end].trim_end())
+    common_core::string::truncate_bytes_with_suffix(output.trim(), MAX_HANDOFF_CHARS, "… [truncated]")
 }
 
 /// Build the live runner over one clippy context.
@@ -1016,3 +1041,7 @@ fn apply_kept(
 #[cfg(test)]
 #[path = "../tests/m8_waves.rs"]
 mod m8_waves_tests;
+
+#[cfg(test)]
+#[path = "../tests/split_m0_waves.rs"]
+mod split_m0_waves_tests;

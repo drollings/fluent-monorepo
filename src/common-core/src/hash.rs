@@ -101,6 +101,25 @@ pub fn fnv1a64(input: &[u8]) -> u64 {
     hash
 }
 
+/// Constant-time byte-slice equality: no content-dependent branch.
+///
+/// Iterates the longer input once, folding the length difference and
+/// every byte difference into one accumulator. Differing lengths fail
+/// without leaking where (or whether) the content matches. Timing is
+/// a function of the longer length only — never assert on durations
+/// (flaky by nature); correctness is pinned by the equality matrix.
+#[must_use]
+pub fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
+    let mut diff = (left.len() ^ right.len()) as u64;
+    let longest = left.len().max(right.len());
+    for index in 0..longest {
+        let x = left.get(index).copied().unwrap_or(0);
+        let y = right.get(index).copied().unwrap_or(0);
+        diff |= u64::from(x ^ y);
+    }
+    diff == 0
+}
+
 /// Fingerprint of a JSON-serializable value: `serde_json::to_vec` bytes
 /// hashed once through [`fnv1a64`]. An encode failure hashes the empty
 /// encoding (the `unwrap_or_default` fail-soft the terminal config

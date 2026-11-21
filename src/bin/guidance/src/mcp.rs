@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common_core::jsonrpc::{JsonRpcError, JsonRpcHandler, JsonRpcRequest, JsonRpcResponse};
+use common_core::string::truncate_chars;
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::LazyNlp;
@@ -350,14 +351,6 @@ fn evidence_text(content: &FragmentContent) -> Option<String> {
             (!first.is_empty()).then(|| truncate_chars(first, 200))
         }
         FragmentContent::Image { .. } => None,
-    }
-}
-
-fn truncate_chars(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        text.to_string()
-    } else {
-        text.chars().take(max).collect()
     }
 }
 
@@ -863,6 +856,10 @@ pub fn serve_stdio_with_options(
 #[cfg(test)]
 #[path = "../tests/mcp_explain.rs"]
 mod explain_tests;
+
+#[cfg(test)]
+#[path = "../tests/split_m0_truncate.rs"]
+mod split_m0_truncate_tests;
 
 #[cfg(test)]
 mod tests {

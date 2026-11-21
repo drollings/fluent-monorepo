@@ -24,7 +24,7 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         cost_output: cost * 6.0,
         cost_cached_read: cost * 0.4,
         tok_s: 8.0,
-        total_timeout: std::time::Duration::from_millis(40_000),
+        total_timeout: std::time::Duration::from_secs(40),
         idle_timeout: std::time::Duration::from_millis(8_000),
         stream: true,
         filter_thinking: true,

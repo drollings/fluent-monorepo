@@ -38,32 +38,9 @@ CORAL_ROUTER_HEALTH_URL := http://$(CORAL_ROUTER_BIND_ADDR)/health
 ROUTER_START_TIMEOUT_S ?= 300
 ROUTER_WAIT_SCRIPT := bin/router-wait-health.sh
 ROUTER_LOG := /tmp/coral-router.out
-# ── protopyne-rs ─────────────────────────────────────────────────────────────
-# Paper-trading HTTP surface over versioned bar history (default port :9060).
-# PROTOPYNE_PORT and PROTOPYNE_HISTORY override the bind port and history
-# source: a CSV/Parquet file loads directly, a directory opens as a
-# history root (TICKER/YYYY/MM/*.parquet + *.csv supplements, SPY served):
-# `make protopyne-start PROTOPYNE_PORT=9061`.
-PROTOPYNE_SERVER_BIN := target/debug/protopyne-server
-PROTOPYNE_HISTORY := src/protopyne-server/tests/data/SPY_15M.csv
-# Durable tape store root (empty by default: the server serves the boot
-# history; set to a store root to serve symbol-scoped chart reads through
-# the tape): `make protopyne-start PROTOPYNE_TAPE=/data/tape`.
-PROTOPYNE_TAPE ?=
-PROTOPYNE_PORT ?= 9060
-PROTOPYNE_BIND_ADDR := 127.0.0.1:$(PROTOPYNE_PORT)
-PROTOPYNE_HEALTH_URL := http://$(PROTOPYNE_BIND_ADDR)/health
-PROTOPYNE_START_TIMEOUT_S ?= 30
-PROTOPYNE_LOG := /tmp/protopyne-server.out
-# Native terminal demo shell over the headless chart stack (needs a display).
-# PROTOPYNE_GUI_HISTORY names the history: a directory opens as a history
-# root (TICKER/YYYY/MM/*.parquet months with *.csv supplements, tickers
-# loaded on demand as the symbol modal picks them), a file keeps the legacy
-# single-file load. PROTOPYNE_GUI_ARGS carries extra demo args
-# (`--symbol GLD --check` runs the headless data path only).
-PROTOPYNE_GUI_HISTORY ?= data/protopyne-rs/historical
-# data/protopyne-rs/historical/SPY-2026-03-1M.parquet
-PROTOPYNE_GUI_ARGS ?=
+# Paper-trading now lives in the split repo at /opt/src/rust/protopyne
+# (protopyne-server on :9060, trading terminal, chart shell, and all
+# protopyne-* gates moved there with the crates).
 CONFIG      := .guidance/guidance-config.json
 INSTALLDIR  := $(HOME)/.local/bin
 
@@ -201,17 +178,12 @@ $(CORAL_ROUTER_BIN): $(RUST_SRC_FILES)
 	$(Q)echo "Building coral-router $(if $(ROUTER_FEATURES),with features: $(ROUTER_FEATURES), (ort-free default))"
 	$(Q)cargo build --bin coral-router $(ROUTER_FEATURE_ARGS)
 
-$(PROTOPYNE_SERVER_BIN): $(RUST_SRC_FILES)
-	$(Q)echo "Building protopyne-server"
-	$(Q)cargo build -p protopyne-server
-
 .PHONY: install
-install: $(CARGO_BIN) $(CORAL_ROUTER_BIN) $(PROTOPYNE_SERVER_BIN)
+install: $(CARGO_BIN) $(CORAL_ROUTER_BIN)
 	$(Q)mkdir -p $(INSTALLDIR)
 	$(Q)cp $(CARGO_BIN) $(INSTALLDIR)/guidance
 	$(Q)cp $(CORAL_ROUTER_BIN) $(INSTALLDIR)/coral-router
-	$(Q)cp $(PROTOPYNE_SERVER_BIN) $(INSTALLDIR)/protopyne-server
-	$(Q)echo "Installed guidance, coral-router, and protopyne-server in $(INSTALLDIR)"
+	$(Q)echo "Installed guidance and coral-router in $(INSTALLDIR)"
 
 # ── Router Targets ────────────────────────────────────────────────────────────
 
@@ -297,15 +269,12 @@ test-router-all: $(CORAL_ROUTER_BIN) ## test-router + coral-context HNSW benchma
 	$(Q)$(CORAL_ROUTER_BIN) --help > /dev/null && echo "All router tests passed." || echo "ERRROR: coral-router did NOT successfully run."
 
 .PHONY: test-heavy
-test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/contention + router supervisor/HNSW calibration + search-vector scale-corpus calibration + protopyne tape/breaker/stream soaks + db hnsw races / s2s readiness calibration
+test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/contention + router supervisor/HNSW calibration + search-vector scale-corpus calibration + db hnsw races / s2s readiness calibration (protopyne soaks moved with the crates to /opt/src/rust/protopyne)
 	$(Q)cargo test -p spacy-rs --lib -- --ignored
 	$(Q)cargo test -p spacy-rs --test arceager_golden -- --ignored
 	$(Q)cargo test -p fluent-router --lib -- --ignored
 	$(Q)cargo test -p fluent-router --test threshold_calibration -- --ignored
 	$(Q)cargo test -p search-vector --lib -- --ignored
-	$(Q)cargo test -p protopyne-kernels --features pine,research --lib soak -- --ignored
-	$(Q)cargo test -p protopyne-server --lib soak -- --ignored
-	$(Q)cargo test -p protopyne-venue --lib soak -- --ignored
 	$(Q)cargo test -p fluent-db --test hnsw_concurrent -- --ignored
 	$(Q)cargo test -p orator-voice --test s2s_calibration -- --ignored
 
@@ -338,85 +307,6 @@ router-tree: ## Run config-synced routing tests against the tree config (M7; hon
 	$(stop-router)
 	$(Q)echo "Running tree config routing tests (flat vs tree equivalence)"
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS) flat_tree -- --nocapture
-
-# ── protopyne-rs Targets ─────────────────────────────────────────────────────
-# Same shape as the router targets: build, (re)start + wait for /health,
-# crate suites + binary dry-run, and the container smoke.
-
-# Kill any running protopyne-server and wait for it to actually exit before
-# the caller starts a fresh one.
-#
-# Match by full command line (`pkill -f 'protopyne-server --b[i]nd'`): the
-# binary name alone is 16 characters, past the 15-character comm(2) limit, so
-# `pkill -x protopyne-server` can never match and would leave a stale server
-# on the port. The `[i]` character class keeps the pattern from matching the
-# invoking shell's own literal text, so it only ever kills server processes.
-# Every managed start (make, container CMD) passes --bind, so this covers
-# them all.
-define stop-protopyne
-	$(Q)echo "Stopping any running protopyne-server"
-	$(Q)pkill -f 'protopyne-server --b[i]nd' 2>/dev/null || true
-	$(Q)for i in $$(seq 1 25); do pgrep -f 'protopyne-server --b[i]nd' >/dev/null 2>&1 || break; sleep 0.2; done
-endef
-
-.PHONY: protopyne
-protopyne: $(PROTOPYNE_SERVER_BIN) ## Build protopyne-server (fast, no run)
-
-.PHONY: protopyne-stop
-protopyne-stop: ## Stop protopyne-server
-	$(stop-protopyne)
-
-.PHONY: protopyne-start
-protopyne-start: $(PROTOPYNE_SERVER_BIN) ## Build (if needed), (re)start protopyne-server on :9060, and wait for /health (PROTOPYNE_PORT=<p>, PROTOPYNE_HISTORY=<csv>, and PROTOPYNE_TAPE=<root> override; stops the old server first)
-	$(stop-protopyne)
-	$(Q)echo "Starting protopyne-server on $(PROTOPYNE_BIND_ADDR)"
-	$(Q)nohup $(PROTOPYNE_SERVER_BIN) --bind $(PROTOPYNE_BIND_ADDR) --history $(PROTOPYNE_HISTORY) $(if $(PROTOPYNE_TAPE),--tape $(PROTOPYNE_TAPE)) > $(PROTOPYNE_LOG) 2>&1 &
-	$(Q)bash $(ROUTER_WAIT_SCRIPT) $(PROTOPYNE_HEALTH_URL) $(PROTOPYNE_START_TIMEOUT_S) $(PROTOPYNE_LOG) protopyne-server
-
-.PHONY: protopyne-trading-suite
-protopyne-trading-suite: $(PROTOPYNE_SERVER_BIN) ## Six trading-crate protopyne-rs suites (--all-features) + a protopyne-server --help dry-run (stops a running server first; the per-component regular gate is protopyne-test)
-	$(stop-protopyne)
-	$(Q)echo "Running protopyne-rs unit + integration suites (--all-features)"
-	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server -p protopyne-store --all-features
-	$(Q)echo "Validating protopyne-server --help"
-	$(Q)$(PROTOPYNE_SERVER_BIN) --help > /dev/null && echo "All protopyne tests passed." || (echo "ERROR: protopyne-server did NOT successfully run."; exit 1)
-
-.PHONY: protopyne-matrix
-protopyne-matrix: ## Lean-build matrix: no-default kernels build+tests, polars-free ship closure, full --all-features suites
-	$(Q)bin/protopyne-build-matrix.sh
-
-.PHONY: protopyne-container-smoke
-protopyne-container-smoke: ## Build the Python-free container image and run the full smoke (no-Python proof, /health, paper preview, chart contract)
-	$(Q)bash src/protopyne-server/smoke-container.sh
-
-# The trading demo contract, headless: the mock terminal's `--check` output
-# shows the gateway-backed trading views (health, portfolio, proposals,
-# chart reads, replay), then the chart shell's `--check` covers the canvas
-# data path over the same history arg. Both outputs are pinned in
-# `src/protopyne-egui/tests/data/` and reproduced byte-for-byte, so
-# `protopyne-demo-check` is the headless CI form of the demo. For the
-# interactive windows, `protopyne-demo` opens the trading terminal UI
-# (`terminal` example with `--mock`, no server boot) and
-# `protopyne-demo-chart` opens the chart shell (`demo` example) directly.
-# PROTOPYNE_DEMO_MOCK=1 uses the mock gateway (tiny fixture data) instead of
-# the loopback server over PROTOPYNE_GUI_HISTORY.
-PROTOPYNE_DEMO_MOCK ?= 0
-.PHONY: protopyne-demo
-protopyne-demo: ## Open the interactive trading terminal UI (needs a display; boots a loopback server over PROTOPYNE_GUI_HISTORY by default, PROTOPYNE_DEMO_MOCK=1 uses the mock gateway instead; PROTOPYNE_GUI_ARGS forwards extra terminal args such as --base 1M)
-ifeq ($(PROTOPYNE_DEMO_MOCK),0)
-	$(Q)cargo run -p protopyne-egui --features server-gateway,demo --example terminal -- $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
-else
-	$(Q)cargo run -p protopyne-egui --features server-gateway,demo --example terminal -- --mock $(PROTOPYNE_GUI_ARGS)
-endif
-
-.PHONY: protopyne-demo-chart
-protopyne-demo-chart: ## Open the interactive chart shell UI (needs a display; PROTOPYNE_GUI_HISTORY selects the history, PROTOPYNE_GUI_ARGS forwards extra args such as --symbol GLD)
-	$(Q)cargo run -p protopyne-egui --features demo --example demo -- $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
-
-.PHONY: protopyne-demo-check
-protopyne-demo-check: ## Run the protopyne-rs trading-demo contract headless: terminal --mock --check (trading views) plus demo --check (chart shell); PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects the chart history
-	$(Q)cargo run -p protopyne-egui --features server-gateway,demo --example terminal -- --mock --check
-	$(Q)cargo run -p protopyne-egui --features demo --example demo -- --check $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
 
 # ── YaGO Taxonomy + Async Parse-Review ───────────────────────────────────────
 # The interlingua spine (ROADMAP_20260826_INTERLINGUA_V2): the YaGO 4.5 class
@@ -488,7 +378,7 @@ test-ort-onnx: ## Run the fluent-onnx Tier-0/1/2 suite with the ort workers (onn
 
 # ── Rigor Gates (per-component matrix) ───────────────────────────────────────
 # Every major component — a product/binary target (`coral-router`, `guidance`,
-# `protopyne`, `protopyne-egui`, `coral`) or a shared library crate
+# `coral`) or a shared library crate
 # (`common-core`, `fluent-wvr`, `fluent-concurrency`, `dag`, `fluent-egui`) —
 # exposes the SAME five gates, named `<component>-<level>`:
 #
@@ -507,8 +397,7 @@ test-ort-onnx: ## Run the fluent-onnx Tier-0/1/2 suite with the ort workers (onn
 # level: smoke for a minor milestone on the component you are working in,
 # regular for a concluded component, and the repo-wide levels only at the ends
 # described there. The rich, composite targets keep their own names
-# (`test-router`, `protopyne-trading-suite`, `protopyne-demo-check`,
-# `test-<shorthand>`, `test-live`, …); the matrix is the uniform
+# (`test-router`, `test-<shorthand>`, `test-live`, …); the matrix is the uniform
 # format/lint/smoke/test/soak subset every component shares.
 
 COMPONENT_NAMES := \
@@ -520,8 +409,6 @@ COMPONENT_NAMES := \
 	coral-router \
 	guidance \
 	coral \
-	protopyne \
-	protopyne-egui \
 	orator
 
 # component -> the Cargo packages that make it up, plus any extra cargo args
@@ -536,13 +423,7 @@ fluent-egui_PKGS        := fluent-egui
 coral-router_PKGS       := fluent-router coral-router
 guidance_PKGS           := guidance-core guidance fluent-concept
 coral_PKGS              := coral-context coral
-protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
-protopyne-egui_PKGS     := protopyne-egui
 orator_PKGS            := orator orator-audio orator-voice orator-agent orator-models orator-memory orator-supervise orator-desktop orator-testkit orator-daemon orator-cli
-# The trading terminal's golden/contract tests compile only under these
-# features, so its gates carry them (its `demo_shell` golden suite is skipped
-# without them).
-protopyne-egui_ARGS     := --features server-gateway,demo
 
 # Emit the five gates for one component. `$(1)` is the component name; the
 # PKGS/ARGS variables are looked up through it. Kept as a macro so the five
@@ -563,19 +444,7 @@ $(1)-soak: ## SLOW gate for $(1): ignored heavy tests
 endef
 $(foreach c,$(COMPONENT_NAMES),$(eval $(call component-gates,$(c))))
 
-# ── Regular-gate probe leg ──────────────────────────────────────────────────
-# The component matrix builds the trading crates with no optional features,
-# which leaves every `pine`-, `research`-, and `bytecode`-gated correctness
-# probe uncompiled and therefore unpoliced. This leg compiles the kernels
-# crate with all three so a probe cannot exist only in the soak tier. It is
-# a prerequisite of `protopyne-test`, never of `protopyne-smoke`.
-.PHONY: protopyne-probes
-protopyne-probes: ## REGULAR-gate probe leg: pine + research + bytecode probes on every crate that gates them
-	$(Q)bin/gate-run.sh protopyne-probes test kernels -- cargo test --quiet -p protopyne-kernels --lib --features pine,research,bytecode
-	$(Q)bin/gate-run.sh protopyne-probes test server -- cargo test --quiet -p protopyne-server --lib --features pine
-	$(Q)bin/gate-run.sh protopyne-probes test strategy -- cargo test --quiet -p protopyne-strategy --lib --features pine
-
-protopyne-test: protopyne-probes
+# (The trading-crate probe leg moved with its crates to /opt/src/rust/protopyne.)
 
 # ── Live-AI Test Pathway ────────────────────────────────────────────────────
 # THE ONLY pathway that runs real inference. Every live test is `#[ignore]` +
@@ -591,7 +460,6 @@ LIVE_CRATES := \
 	llm:fluent-llm \
 	spacy:spacy-rs \
 	ort:fluent-onnx \
-	venue:protopyne-venue \
 	orator_agent:orator-agent \
 	orator_voice:orator-voice \
 	orator_cli:orator-cli \
@@ -605,7 +473,6 @@ LIVE_FEATURES_router := live-ai
 LIVE_FEATURES_guidance := live-ai
 LIVE_FEATURES_llm := live-ai
 LIVE_FEATURES_spacy := live-ai
-LIVE_FEATURES_venue := live-ai
 LIVE_FEATURES_orator_agent := live-ai
 LIVE_FEATURES_orator_voice := live-ai
 LIVE_FEATURES_orator_cli := live-ai
@@ -677,8 +544,8 @@ lint-live-ai: ## Hermeticity guard: every #[ignore] has a reason; no hermetic te
 	$(Q)bin/live-ai-guard.sh
 
 .PHONY: test-budget
-test-budget: ## Per-test 60s budget audit: every non-ignored protopyne test runs once under timeout 60 (bin/test-budget-guard.sh --workspace for the full tree)
-	$(Q)bin/test-budget-guard.sh
+test-budget: ## Per-test 60s budget audit: every non-ignored test runs once under timeout 60 (bin/test-budget-guard.sh --workspace for the full tree)
+	$(Q)bin/test-budget-guard.sh --workspace
 
 .PHONY: lint-no-dup
 lint-no-dup: ## Guardrail: no bespoke ladder/retry/eviction duplicates outside canonical primitives (advisory)
@@ -688,9 +555,9 @@ lint-no-dup: ## Guardrail: no bespoke ladder/retry/eviction duplicates outside c
 	@! grep -R "tokio::time::sleep.*retry" src/guidance src/coral --include="*.rs" | grep -v "retry_async" | grep -v "retry::" || (echo "FAIL: raw sleep retry loop found"; exit 1)
 	@echo "ok: no bespoke ladder/retry duplicates"
 
-.PHONY: lint-unwired
-lint-unwired: ## Advisory: list public protopyne symbols with no non-test reference outside their file (always exits 0)
-	$(Q)bin/protopyne-unwired-symbols.sh
+.PHONY: lint-split-dup
+lint-split-dup: ## SPLIT-roadmap duplication sweep: no second implementation of a unified shared helper, and every migrated call site still composes it
+	$(Q)bin/split-dup-guard.sh
 
 .PHONY: health
 health: ## Run cargo tarpaulin and verify 85% coverage

@@ -330,11 +330,11 @@ fn refuse_lemma_evidence(hits: &[crate::search_types::SearchHit], k: usize) -> V
         .collect();
     let scores = crate::query::rrf::score_postings(postings, RRF_K);
     let mut fused: Vec<(String, f64)> = scores.into_iter().collect();
-    fused.sort_by(|a, b| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.0.cmp(&b.0))
-    });
+    common_core::score::sort_by_score_desc(
+        &mut fused,
+        |(_, score)| *score,
+        |(a, _), (b, _)| a.cmp(b),
+    );
     fused.into_iter().take(k).map(|(id, _)| id).collect()
 }
 

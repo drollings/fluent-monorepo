@@ -12,12 +12,9 @@ pub const TOOL_OUTPUT_CHARS: usize = 6000;
 /// Small outputs pass through verbatim.
 #[must_use]
 pub fn truncate_tool_output(text: &str) -> String {
-    if text.chars().count() <= TOOL_OUTPUT_CHARS {
-        return text.to_string();
-    }
-    let total = text.chars().count();
-    let head: String = text.chars().take(TOOL_OUTPUT_CHARS).collect();
-    format!("{head}\n(truncated, {total} total chars)")
+    common_core::string::truncate_chars_with_suffix(text, TOOL_OUTPUT_CHARS, |total| {
+        format!("\n(truncated, {total} total chars)")
+    })
 }
 
 #[cfg(test)]

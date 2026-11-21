@@ -87,15 +87,24 @@ pub fn fallback_if_unavailable<T>(
     result: Result<T, String>,
     fallback: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-    match result {
-        Ok(value) => Ok(value),
-        Err(error) => {
-            if voice_unavailable(&error) {
-                fallback()
-            } else {
-                Err(error)
-            }
-        }
+    // Two-rung walk: the precomputed daemon result, then the fallback.
+    // Only unavailable refusals continue past the first rung; every
+    // other error short-circuits, and exhaustion surfaces the last
+    // rung error (a failing fallback is terminal, never re-entered).
+    let mut primary = Some(result);
+    let mut fallback = Some(fallback);
+    let walked = fluent_wvr::ladder::first_accept_in_order_sync(
+        [0u8, 1],
+        |rung| match rung {
+            0 => primary.take().expect("first rung runs once").map(Some),
+            _ => fallback.take().expect("second rung runs once")().map(Some),
+        },
+        |error: &String| !voice_unavailable(error),
+    );
+    match walked {
+        Ok(Some(value)) => Ok(value),
+        Ok(None) => unreachable!("every rung yields a value"),
+        Err(error) => Err(error),
     }
 }
 

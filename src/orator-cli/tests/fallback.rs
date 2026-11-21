@@ -1440,3 +1440,92 @@ fn role_head_gates_fire_only_for_servable_non_voice_heads() {
         None => std::env::remove_var("XDG_RUNTIME_DIR"),
     }
 }
+
+#[test]
+fn unavailable_falls_back_other_propagates() {
+    use std::cell::Cell;
+    let calls = Cell::new(0u32);
+    // Ok passes through without calling the fallback.
+    let ok: Result<&str, String> = fallback_if_unavailable(Ok("served"), || {
+        calls.set(calls.get() + 1);
+        Ok("fallback")
+    });
+    assert_eq!(ok, Ok("served"));
+    assert_eq!(calls.get(), 0);
+    // Unavailable invokes the fallback exactly once.
+    let down: Result<&str, String> = fallback_if_unavailable(
+        Err("voice auto-boot is off: no voice server answers".to_string()),
+        || {
+            calls.set(calls.get() + 1);
+            Ok("fallback")
+        },
+    );
+    assert_eq!(down, Ok("fallback"));
+    assert_eq!(calls.get(), 1);
+    // Foreign errors propagate without touching the fallback.
+    let foreign: Result<&str, String> =
+        fallback_if_unavailable(Err("admission saturated: bound 2".to_string()), || {
+            calls.set(calls.get() + 1);
+            Ok("fallback")
+        });
+    assert_eq!(foreign, Err("admission saturated: bound 2".to_string()));
+    assert_eq!(calls.get(), 1);
+    // A failing fallback is terminal, never swallowed.
+    let failed: Result<&str, String> =
+        fallback_if_unavailable(Err("no voice server binary: /bin/nope".to_string()), || {
+            Err("fallback exploded".to_string())
+        });
+    assert_eq!(failed, Err("fallback exploded".to_string()));
+}
+
+#[test]
+fn fallback_error_is_terminal_even_when_unavailable_shaped() {
+    // Exhaustion returns the last rung error: a failing fallback never
+    // re-enters the walk, whatever its wording.
+    let failed: Result<&str, String> =
+        fallback_if_unavailable(Err("no voice server binary: /bin/nope".to_string()), || {
+            Err("voice server disabled here".to_string())
+        });
+    assert_eq!(failed, Err("voice server disabled here".to_string()));
+}
+
+#[test]
+fn kokoro_cache_reuses_keys_and_evicts_past_cap() {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    let stem = format!("split-m8-{}", std::process::id());
+    let key = |n: u32| {
+        (
+            PathBuf::from(format!("/nonexistent/{stem}-model{n}")),
+            PathBuf::from(format!("/nonexistent/{stem}-voices{n}")),
+            format!("voice{n}"),
+            false,
+        )
+    };
+    let (m1, v1, voice1, gpu1) = key(1);
+    let first = crate::fallback::cached_kokoro(m1, v1, voice1, gpu1);
+    let (m1b, v1b, voice1b, gpu1b) = key(1);
+    assert!(
+        Arc::ptr_eq(
+            &first,
+            &crate::fallback::cached_kokoro(m1b, v1b, voice1b, gpu1b)
+        ),
+        "same key reuses the resident"
+    );
+    // Fill past the cap of 8: the blunt clear drops every resident.
+    for n in 2..=10u32 {
+        let (m, v, voice, gpu) = key(n);
+        crate::fallback::cached_kokoro(m, v, voice, gpu);
+    }
+    let (m1c, v1c, voice1c, gpu1c) = key(1);
+    let revived = crate::fallback::cached_kokoro(m1c, v1c, voice1c, gpu1c);
+    assert!(!Arc::ptr_eq(&first, &revived), "past-cap insert clears");
+    let (m1d, v1d, voice1d, gpu1d) = key(1);
+    assert!(
+        Arc::ptr_eq(
+            &revived,
+            &crate::fallback::cached_kokoro(m1d, v1d, voice1d, gpu1d)
+        ),
+        "revived entry reuses again"
+    );
+}

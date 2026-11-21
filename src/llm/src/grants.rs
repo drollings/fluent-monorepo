@@ -424,17 +424,7 @@ fn verify_grant(grant: &serde_json::Value, key: &[u8]) -> bool {
         return false;
     };
     let expected = hex_encode(&hmac_sha256(key, payload.as_bytes()));
-    constant_time_equal(expected.as_bytes(), signature.as_bytes())
-}
-
-fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    left.iter()
-        .zip(right.iter())
-        .fold(0u8, |acc, (left, right)| acc | (left ^ right))
-        == 0
+    common_core::hash::constant_time_equal(expected.as_bytes(), signature.as_bytes())
 }
 
 fn new_id() -> String {
